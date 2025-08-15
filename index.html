@@ -2,14 +2,14 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — Supabase (v16.2)</title>
+  <title>Dashboard Vendas — Supabase (v16.3)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body{margin:0;background:#f6f7fb;color:#0f172a;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
     .wrap{max-width:1050px;margin:24px auto;padding:0 16px}
     h1{font-size:22px;margin:0 0 4px}
     .muted{color:#6b7280;font-size:12px}
-    .row{display:flex;flex-wrap:wrap;gap:10px;align-items: center}
+    .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
     select,input,button{font:inherit;border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;background:#fff}
     button{cursor:pointer}
     .pill{padding:6px 10px;border-radius:999px;border:1px solid #d1d5db;background:#fff}
@@ -27,7 +27,7 @@
   </style>
   <!-- Supabase UMD -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <!-- Chart.js (evita CORS do Recharts e é leve) -->
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -35,7 +35,7 @@
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px">
       <div>
         <h1>Dashboard Vendas — Supabase</h1>
-        <div class="muted">Build <b>v16.2</b> • fonte: <code id="fonte">detectando…</code></div>
+        <div class="muted">Build <b>v16.3</b> • fonte: <code id="fonte">public.vendas_kpi_daily</code></div>
         <div class="muted">URL: <code>uahmcfzerofhzjvlzrqc.supabase.co</code></div>
       </div>
       <div class="muted" id="periodo">Período: —</div>
@@ -107,13 +107,12 @@
   </div>
 
   <script>
-    // ====== CREDENCIAIS (as suas) ======
+    // ====== CREDENCIAIS ======
     const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
     const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
 
     // ====== UI helpers ======
     const elLog = document.getElementById("log");
-    const elFonte = document.getElementById("fonte");
     const elPeriodo = document.getElementById("periodo");
     const elUni = document.getElementById("f_unidade");
     const pills = Array.from(document.querySelectorAll(".pill[data-dias]"));
@@ -126,7 +125,6 @@
     function log(m){ elLog.textContent += "\n" + m; }
     function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
     function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)); }
-
     function toISO(d){ return d.toISOString().slice(0,10); }
     function addDays(date, days){ const d=new Date(date); d.setDate(d.getDate()+days); return d; }
     function parseDMY(s){
@@ -138,63 +136,49 @@
       if(d.getFullYear()!==yy || d.getMonth()!==mm || d.getDate()!==dd) return null;
       return d;
     }
-
     function pctDiff(cur, prev){
       if(!isFinite(cur) || !isFinite(prev) || prev===0) return "—";
       const p = ((cur - prev) / prev) * 100;
       const sign = p>0 ? "+" : "";
       return `${sign}${p.toFixed(1)}% vs ant.`;
     }
+    function toNum(x){ const n = Number(x); return isFinite(n) ? n : 0; }
 
     // ====== Supabase client ======
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-    // ====== Fonte (view) preferida e fallback ======
-    const TBL_RICH = "vendas_kpi_daily_dims";   // com dimensões (quando existir)
-    const TBL_BASE = "vendas_kpi_daily";        // fallback diário agregado
+    // ====== Fonte fixa (evita regressão e duplicidade) ======
+    const TABLE = "vendas_kpi_daily";
 
     // ====== Estado ======
-    let TABLE = TBL_BASE;
     let daysQuick = 30;        // padrão
     let userStart = null;      // datas manuais (Date)
     let userEnd = null;
 
-    // ====== Carregar Unidades distintas (sempre rápido) ======
+    // ====== Unidades (distinct da tabela fixa) ======
     async function loadUnidades(){
-      // tenta dims primeiro; se 500, usa base
-      let tried = [TBL_RICH, TBL_BASE];
-      for(const t of tried){
-        const r = await supa.from(t).select("unidade", {head:false, count:null}).neq("unidade", "").limit(1000);
-        if(!r.error && Array.isArray(r.data)){
-          TABLE = t;
-          elFonte.textContent = `public.${t}`;
-          const seen = new Set();
-          const items = r.data.filter(x => x.unidade).map(x => x.unidade);
-          elUni.innerHTML = `<option value="Todas">Todas</option>`;
-          items.forEach(u => { if(!seen.has(u)){ seen.add(u); elUni.insertAdjacentHTML("beforeend", `<option value="${u}">${u}</option>`); }});
-          log(`[Boot] v16.2 — fonte: public.${t}`);
-          return;
-        }
-      }
-      // se tudo falhar, mantém base e mostra log
-      elFonte.textContent = `public.${TABLE}`;
-      log("[Boot] v16.2 — nenhum dims disponível; usando fallback diário.");
+      const seen = new Set();
+      const r = await supa.from(TABLE).select("unidade").neq("unidade","").limit(1000);
+      if(r.error){ log("[Boot] erro ao carregar unidades: "+r.error.message); return; }
+      elUni.innerHTML = `<option value="Todas">Todas</option>`;
+      (r.data||[]).forEach(x=>{
+        if(x.unidade && !seen.has(x.unidade)){ seen.add(x.unidade); elUni.insertAdjacentHTML("beforeend", `<option value="${x.unidade}">${x.unidade}</option>`); }
+      });
+      log(`[Boot] v16.3 — fonte fixa public.${TABLE} • unidades carregadas: ${seen.size}`);
     }
 
-    // ====== Construção de intervalo ======
+    // ====== Intervalos ======
     function getInterval(){
       let start, end;
       if(userStart && userEnd){
         start = new Date(userStart); end = new Date(userEnd);
         if(start > end){ const tmp = start; start = end; end = tmp; }
       }else{
-        // período rápido: últimos N dias incluindo hoje como fim
         end = new Date(); end.setHours(0,0,0,0);
         start = addDays(end, -(daysQuick-1));
       }
       return { start, end };
     }
-
     function getPrevInterval(curStart, curEnd){
       const days = Math.round((curEnd - curStart)/86400000) + 1;
       const prevEnd = addDays(curStart, -1);
@@ -202,15 +186,14 @@
       return { prevStart, prevEnd, days };
     }
 
-    // ====== Paginação robusta ======
+    // ====== Paginação ======
     async function fetchPaged(table, sel, filters, pageSize=2000){
       let acc=[], from=0, to=pageSize-1;
       for(;;){
         let q = supa.from(table).select(sel).range(from, to);
-        // aplica filtros
         for(const f of filters){ q = q[f.op](f.col, f.val); }
         const r = await q;
-        if(r.error){ throw r.error; }
+        if(r.error) throw r.error;
         const arr = r.data || [];
         acc = acc.concat(arr);
         if(arr.length < pageSize) break;
@@ -219,23 +202,17 @@
       return acc;
     }
 
-    // ====== Números ======
-    function toNum(x){ const n = Number(x); return isFinite(n) ? n : 0; }
-
-    // ====== KPIs e Gráficos ======
+    // ====== KPIs/Gráficos ======
     let chart1 = null, chart2 = null;
     function resetCanvas(idWrap, id){
       const wrap = document.getElementById(idWrap);
       wrap.innerHTML = `<canvas id="${id}" height="120"></canvas>`;
       return document.getElementById(id);
     }
-
     function drawCharts(rows){
-      // rows: [{dia, …, fat, des, fre}]
-      // 1) linha por dia (faturamento)
       const byDay = {};
       rows.forEach(r=>{
-        const d = r.dia;
+        const d = r.dia; // DATE no servidor
         byDay[d] = (byDay[d]||0) + toNum(r.fat);
       });
       const labels = Object.keys(byDay).sort();
@@ -249,8 +226,6 @@
         options:{ responsive:true, maintainAspectRatio:false, scales:{x:{ticks:{maxRotation:0}}}}
       });
 
-      // 2) barras por dia da semana
-      // 0=Dom … 6=Sáb no JS? (getUTCDay usa 0=Dom). Vamos mapear usando a data como UTC.
       const semana = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
       const byDow = Array(7).fill(0);
       rows.forEach(r=>{
@@ -267,19 +242,6 @@
         options:{ responsive:true, maintainAspectRatio:false }
       });
     }
-
-    function applyKPIs(cur, prev){
-      // cur/prev: {ped, fat, des, fre}
-      document.getElementById("k_ped").textContent = fmtInt(cur.ped);
-      document.getElementById("k_fat").textContent = fmtBRL(cur.fat);
-      document.getElementById("k_des").textContent = fmtBRL(cur.des);
-      document.getElementById("k_fre").textContent = fmtBRL(cur.fre);
-      document.getElementById("k_ped_vs").textContent = pctDiff(cur.ped, prev.ped);
-      document.getElementById("k_fat_vs").textContent = pctDiff(cur.fat, prev.fat);
-      document.getElementById("k_des_vs").textContent = pctDiff(cur.des, prev.des);
-      document.getElementById("k_fre_vs").textContent = pctDiff(cur.fre, prev.fre);
-    }
-
     function sumKPIs(rows){
       let ped=0,fat=0,des=0,fre=0;
       for(const r of rows){
@@ -290,30 +252,37 @@
       }
       return { ped, fat, des, fre };
     }
+    function applyKPIs(cur, prev){
+      document.getElementById("k_ped").textContent = fmtInt(cur.ped);
+      document.getElementById("k_fat").textContent = fmtBRL(cur.fat);
+      document.getElementById("k_des").textContent = fmtBRL(cur.des);
+      document.getElementById("k_fre").textContent = fmtBRL(cur.fre);
+      document.getElementById("k_ped_vs").textContent = pctDiff(cur.ped, prev.ped);
+      document.getElementById("k_fat_vs").textContent = pctDiff(cur.fat, prev.fat);
+      document.getElementById("k_des_vs").textContent = pctDiff(cur.des, prev.des);
+      document.getElementById("k_fre_vs").textContent = pctDiff(cur.fre, prev.fre);
+    }
 
     async function go(){
       try{
         const { start, end } = getInterval();
-        elPeriodo.textContent = `Período: ${toISO(start)} → ${toISO(end)}`;
+        document.getElementById("periodo").textContent = `Período: ${toISO(start)} → ${toISO(end)}`;
         log(`[Query] public.${TABLE} | ${toISO(start)} → ${toISO(end)} | UNI=${elUni.value}`);
 
-        // filtros
-        const filters = [
+        const baseFilters = [
           {op:"gte", col:"dia", val: toISO(start)},
           {op:"lte", col:"dia", val: toISO(end)}
         ];
         if(elUni.value !== "Todas"){
-          filters.push({op:"eq", col:"unidade", val: elUni.value});
+          baseFilters.push({op:"eq", col:"unidade", val: elUni.value});
         }
 
-        // seleção mínima comum às duas views
         const sel = "dia,unidade,pedidos,fat,des,fre";
 
-        // período atual
-        const rowsCur = await fetchPaged(TABLE, sel, filters, 2000);
+        const rowsCur = await fetchPaged(TABLE, sel, baseFilters, 2000);
 
-        // período anterior (mesma quantidade de dias)
-        const { prevStart, prevEnd } = getPrevInterval(start, end);
+        const { prevStart, prevEnd, days } = getPrevInterval(start, end);
+        log(`[Info] Dias na janela: ${days}`);
         const prevFilters = [
           {op:"gte", col:"dia", val: toISO(prevStart)},
           {op:"lte", col:"dia", val: toISO(prevEnd)}
@@ -323,12 +292,9 @@
         }
         const rowsPrev = await fetchPaged(TABLE, sel, prevFilters, 2000);
 
-        // KPIs
         const curK = sumKPIs(rowsCur);
         const prevK = sumKPIs(rowsPrev);
         applyKPIs(curK, prevK);
-
-        // Gráficos (somente janela atual)
         drawCharts(rowsCur);
 
         log(`[OK] Carregadas ${rowsCur.length.toLocaleString("pt-BR")} linhas (atual).`);
@@ -344,29 +310,22 @@
         pills.forEach(b=>b.classList.remove("active"));
         btn.classList.add("active");
         daysQuick = Number(btn.dataset.dias);
-        userStart = userEnd = null;  // ignora datas manuais
+        userStart = userEnd = null;
         dIni.value = ""; dFim.value = "";
         go();
       });
     });
-
-    bAplicar.addEventListener("click", ()=>{
+    document.getElementById("b_aplicar").addEventListener("click", ()=>{
       const p1 = parseDMY(dIni.value.trim());
       const p2 = parseDMY(dFim.value.trim());
-      if(!p1 || !p2){
-        alert("Preencha as duas datas no formato dd/mm/aaaa.");
-        return;
-      }
+      if(!p1 || !p2){ alert("Preencha as duas datas no formato dd/mm/aaaa."); return; }
       userStart = p1; userEnd = p2;
       pills.forEach(b=>b.classList.remove("active"));
       go();
     });
-
     elUni.addEventListener("change", go);
-    bRecarregar.addEventListener("click", go);
-
-    bLimpar.addEventListener("click", ()=>{
-      // volta ao padrão sem retroceder nada
+    document.getElementById("b_recarregar").addEventListener("click", go);
+    document.getElementById("b_limpar").addEventListener("click", ()=>{
       elUni.value = "Todas";
       daysQuick = 30;
       userStart = userEnd = null;
@@ -379,7 +338,7 @@
 
     // ====== Boot ======
     (async function boot(){
-      log("[Boot] v16.2 — corrigido intervalo > 30 dias + botão Limpar filtros");
+      log("[Boot] v16.3 — fonte fixa vendas_kpi_daily (evita duplicidade >30d)");
       await loadUnidades();
       go();
     })();
