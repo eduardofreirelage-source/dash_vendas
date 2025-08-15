@@ -2,7 +2,7 @@
 <html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
-    <title>Dashboard Vendas — Supabase (v7.1 COM FONTE FIXA)</title>
+    <title>Dashboard Vendas — Supabase (v8 autodetect)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root{--bg:#f6f7fb;--card:#fff;--muted:#6b7280;--border:#e5e7eb;--ink:#0f172a}
@@ -17,6 +17,8 @@
       .val{font-size:22px;font-weight:700;margin-top:6px}
       pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
       code{background:#eef2ff;padding:0 4px;border-radius:4px}
+      .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+      .pill{font-size:12px;border:1px solid var(--border);border-radius:999px;padding:2px 8px;background:#fff}
       @media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
       @media (max-width:520px){.grid{grid-template-columns:1fr}}
     </style>
@@ -29,10 +31,11 @@
         <div>
           <h1>Dashboard Vendas — Supabase</h1>
           <div class="muted">
-            <strong>FONTE FIXA:</strong> <code>public.vendas_import_csv</code> •
-            <strong>Coluna de data:</strong> <code>data_venda</code> •
-            <strong>Build:</strong> v7.1 (sem <code>max()</code>)
+            <span class="pill">Build v8 (autodetect, sem <code>max()</code>)</span>
+            <span class="pill">Github Pages</span>
           </div>
+          <div class="muted" id="fonte">Fonte: —</div>
+          <div class="muted" id="cols">Colunas: —</div>
         </div>
         <div class="muted" id="periodo">Período: —</div>
       </div>
@@ -51,18 +54,24 @@
     </div>
 
     <script>
-      // ====== CREDENCIAIS (as que você me passou) ======
+      // ====== CREDENCIAIS (usando as que você passou) ======
       const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
       const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
 
-      // ====== PARÂMETROS FIXOS DA SUA BASE ======
-      const TABLE  = "vendas_import_csv";   // nome EXATO da tabela carregada
-      const COL_DT = "data_venda";          // nome EXATO da coluna de data (YYYY-MM-DD)
-      const SEL    = [COL_DT, "valor_total", "desconto", "entrega", "unidade"].join(",");
+      // ====== CANDIDATAS ======
+      const DEFAULT_TABLES = ["vendas","vendas_import_csv","VENDAS","VENDAS_IMPORT_CSV"];
+      const DATE_CANDS = ["data_venda","data","data venda","data da venda","dt_venda","dtvenda","datavenda","dia","order_date","created_at","created at","createdat"];
+      const TOTAL_CANDS = ["valor_total","total","total_venda","total venda","valor","valor_venda","valor venda"];
+      const DESC_CANDS  = ["desconto","descontos","incentivo","incentivos","valor_desconto","valor desconto","desconto_total"];
+      const ENT_CANDS   = ["entrega","frete","taxa_entrega","taxa entrega","delivery_fee"];
+      const UNIT_CANDS  = ["unidade","unid","loja","filial","nome da loja","nome_loja","unidade_venda","unidade venda"];
 
-      // ====== UI helpers ======
-      const elLog = document.getElementById("log");
-      function log(msg){ elLog.textContent += "\n" + msg; }
+      // ====== HELPERS ======
+      const elLog   = document.getElementById("log");
+      const elFonte = document.getElementById("fonte");
+      const elCols  = document.getElementById("cols");
+
+      function log(m){ elLog.textContent += "\n" + m; }
       function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
       function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)); }
       function toNum(x){
@@ -74,36 +83,94 @@
         return isFinite(n)?n:0;
       }
       function toISO(d){ return d.toISOString().slice(0,10); }
-
-      // ====== Supabase client ======
-      const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-
-      // (A) pega última data por ORDER DESC + limit 1 (sem max())
-      async function getLastDate(){
-        // sanity ping
-        const ping = await supa.from(TABLE).select(COL_DT).limit(1);
-        if(ping.error){
-          throw new Error("Tabela/coluna indisponível: " + ping.error.message + " (TABLE=" + TABLE + ", COL=" + COL_DT + ")");
+      function norm(s){
+        return String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,"");
+      }
+      function pickCol(keys, cands){
+        const map = new Map();
+        for(const k of keys){ map.set(norm(k), k); }
+        // prioridade: igualdade exata normalizada
+        for(const c of cands){
+          const n = norm(c);
+          if(map.has(n)) return map.get(n);
         }
-        const r = await supa.from(TABLE).select(COL_DT).order(COL_DT, { ascending:false }).limit(1);
-        if(r.error){ throw new Error("ORDER DESC falhou: " + r.error.message); }
-        const v = r.data && r.data[0] && r.data[0][COL_DT];
-        if(!v){ throw new Error("Tabela sem linhas (ou RLS bloqueou)."); }
-        return String(v).slice(0,10);
+        // fallback: "contém" (p.ex. "data venda" encontra "data_venda")
+        for(const c of cands){
+          const n = norm(c);
+          for(const k of keys){
+            if(norm(k).includes(n)) return k;
+          }
+        }
+        return null;
       }
 
-      // (B) pagina (sem ORDER, pra não pesar/expirar)
-      async function fetchRange(fromISO, toISO){
-        const page = 10000; let acc = [], off = 0;
+      // ====== Supabase ======
+      const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+      // pega tabela (param ?table=) ou detecta pela 1ª linha disponível
+      async function detectTable() {
+        const url = new URL(window.location.href);
+        const forced = url.searchParams.get("table");
+        const list = forced ? [forced] : DEFAULT_TABLES;
+        log("[Detect] Tabelas candidatas: " + list.join(", "));
+        for (const t of list) {
+          const r = await supa.from(t).select("*").limit(1);
+          if (r.error) { log(`[-] ${t}: ${r.error.message}`); continue; }
+          if ((r.data||[]).length === 0) { log(`[-] ${t}: vazia`); continue; }
+          log(`[+] ${t}: OK (tem dados)`);
+          return { table: t, sample: r.data[0] };
+        }
+        throw new Error("Nenhuma tabela com dados encontrada.");
+      }
+
+      // mapeia colunas a partir das chaves do sample
+      function detectColumns(sample){
+        const keys = Object.keys(sample||{});
+        const dateCol  = pickCol(keys, DATE_CANDS);
+        const totalCol = pickCol(keys, TOTAL_CANDS);
+        const descCol  = pickCol(keys, DESC_CANDS);
+        const entCol   = pickCol(keys, ENT_CANDS);
+        const unitCol  = pickCol(keys, UNIT_CANDS);
+
+        if(!dateCol) throw new Error("Não encontrei coluna de data (ex.: data_venda).");
+        if(!totalCol) log("[Warn] Não encontrei 'valor_total' — vou considerar 0.");
+        if(!descCol)  log("[Warn] Não encontrei 'desconto' — vou considerar 0.");
+        if(!entCol)   log("[Warn] Não encontrei 'entrega' — vou considerar 0.");
+
+        return { dateCol, totalCol, descCol, entCol, unitCol };
+      }
+
+      // permite forçar a coluna de data (?date=nome)
+      function maybeOverrideDate(colset){
+        const url = new URL(window.location.href);
+        const forcedDate = url.searchParams.get("date");
+        if(forcedDate){
+          log("[Info] Coluna de data forçada por querystring: " + forcedDate);
+          colset.dateCol = forcedDate;
+        }
+        return colset;
+      }
+
+      // última data via ORDER DESC (sem max())
+      async function getLastDate(table, dateCol){
+        const r = await supa.from(table).select(dateCol).order(dateCol, { ascending:false }).limit(1);
+        if(r.error) throw new Error("ORDER DESC falhou: " + r.error.message + " (coluna: " + dateCol + ")");
+        const v = r.data && r.data[0] && r.data[0][dateCol];
+        if(!v) throw new Error("Não consegui obter a última data (tabela pode estar vazia).");
+        return String(v);
+      }
+
+      // busca paginada
+      async function fetchRange(table, dateCol, cols, fromISO, toISO){
+        const selectList = [dateCol, ...cols.filter(Boolean)].join(",");
+        const page=10000; let acc=[], off=0;
         for(;;){
-          const qr = await supa.from(TABLE)
-            .select(SEL)
-            .gte(COL_DT, fromISO)
-            .lte(COL_DT, toISO)
+          const qr = await supa.from(table)
+            .select(selectList)
+            .gte(dateCol, fromISO)
+            .lte(dateCol, toISO)
             .range(off, off+page-1);
-          if(qr.error){
-            throw new Error("Erro REST: " + qr.error.message + " (range " + off + "-" + (off+page-1) + ")");
-          }
+          if(qr.error) throw new Error("Erro REST: " + qr.error.message + " (range " + off + "-" + (off+page-1) + ")");
           const arr = qr.data || [];
           acc = acc.concat(arr);
           if(arr.length < page) break;
@@ -112,33 +179,48 @@
         return acc;
       }
 
-      // (C) fluxo principal
       (async function main(){
         try{
-          log("[Boot] Iniciando… build v7.1 (fonte fixa, sem max())");
-          log("[Info] TABLE=" + TABLE + " • COL_DT=" + COL_DT);
+          log("[Boot] v8 — autodetecção de tabela/colunas (sem max())");
 
-          const lastISO = await getLastDate();
-          const end = new Date(lastISO + "T23:59:59");
-          const start = new Date(end); start.setDate(end.getDate()-29);
+          // 1) Detecta tabela e sample
+          const picked = await detectTable();
+          const table  = picked.table;
+          const sample = picked.sample;
+          elFonte.textContent = "Fonte: " + table;
+
+          // 2) Detecta colunas
+          let cols = detectColumns(sample);
+          cols = maybeOverrideDate(cols);
+          document.getElementById("cols").textContent =
+            `Colunas → data: ${cols.dateCol} | total: ${cols.totalCol||"—"} | desconto: ${cols.descCol||"—"} | entrega: ${cols.entCol||"—"} | unidade: ${cols.unitCol||"—"}`;
+
+          // 3) Últimos 30 dias
+          const last = await getLastDate(table, cols.dateCol);
+          const end  = new Date(last); end.setHours(23,59,59,999);
+          const start= new Date(end);  start.setDate(end.getDate()-29); start.setHours(0,0,0,0);
           document.getElementById("periodo").textContent = "Período: " + toISO(start) + " → " + toISO(end);
           log("[Query] Intervalo: " + toISO(start) + " → " + toISO(end));
 
-          const rows = await fetchRange(toISO(start), toISO(end));
+          // 4) Busca e soma
+          const optCols = [cols.totalCol, cols.descCol, cols.entCol, cols.unitCol].filter(Boolean);
+          const rows = await fetchRange(table, cols.dateCol, optCols, toISO(start), toISO(end));
           log("[Query] Linhas retornadas: " + rows.length.toLocaleString("pt-BR"));
 
-          let pedidos = rows.length, fat = 0, desc = 0, fre = 0;
+          let pedidos=rows.length, fat=0, des=0, fre=0;
           for(const r of rows){
-            fat  += toNum(r.valor_total);
-            desc += toNum(r.desconto);
-            fre  += toNum(r.entrega);
+            if(cols.totalCol) fat += toNum(r[cols.totalCol]);
+            if(cols.descCol)  des += toNum(r[cols.descCol]);
+            if(cols.entCol)   fre += toNum(r[cols.entCol]);
           }
+
           document.getElementById("k_ped").textContent = fmtInt(pedidos);
           document.getElementById("k_fat").textContent = fmtBRL(fat);
-          document.getElementById("k_desc").textContent = fmtBRL(desc);
+          document.getElementById("k_desc").textContent = fmtBRL(des);
           document.getElementById("k_fre").textContent = fmtBRL(fre);
+
           log("[OK] KPIs preenchidos.");
-          log("[Próximo] Confirmado? Aí adiciono filtro por UNIDADE mantendo este mesmo arquivo.");
+          log("[Próximo] Confirmando KPIs, adiciono filtro por UNIDADE mantendo esta base.");
         }catch(e){
           log("[ERRO] " + (e.message || String(e)));
         }
