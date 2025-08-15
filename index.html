@@ -2,7 +2,7 @@
 <html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
-    <title>Dashboard Vendas — v11.0 (fixo: public.vendas)</title>
+    <title>Dashboard Vendas — v11.1 (fallback automático)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root{
@@ -32,7 +32,8 @@
       .delta.up{color:var(--ok)} .delta.down{color:var(--down)}
       pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;white-space:pre-wrap;overflow:auto}
       code{background:#eef2ff;padding:0 4px;border-radius:4px}
-      canvas{width:100%;height:360px;display:block}
+      .chartbox{height:360px}       /* altura fixa do container */
+      canvas{width:100%;height:100%;display:block} /* ocupa o container, sem “crescer” */
       @media (max-width:960px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
       @media (max-width:560px){.grid,.grid-2{grid-template-columns:1fr}}
     </style>
@@ -46,7 +47,7 @@
       <div class="row" style="align-items:flex-end">
         <div>
           <h1>Dashboard Vendas — Supabase</h1>
-          <div class="muted">Build <strong>v11.0</strong> • fonte fixa <code>public.vendas</code> • sem ORDER/max • paginação</div>
+          <div class="muted">Build <strong>v11.1</strong> • fonte preferida <code>public.vendas</code> → fallback <code>public.vendas_import_csv</code> • sem ORDER/max • paginação</div>
           <div class="muted">URL: <code>https://uahmcfzerofhzjvlzrqc.supabase.co</code></div>
         </div>
         <div class="spacer"></div>
@@ -100,16 +101,16 @@
 
       <!-- Gráficos -->
       <div class="grid-2">
-        <div class="card">
+        <div class="card chartbox">
           <div class="title">Receita diária (R$)</div>
           <canvas id="chartDaily"></canvas>
         </div>
-        <div class="card">
+        <div class="card chartbox">
           <div class="title">Totais por dia da semana (R$)</div>
           <canvas id="chartWeekday"></canvas>
         </div>
       </div>
-      <div class="card" style="margin-top:12px">
+      <div class="card chartbox" style="margin-top:12px">
         <div class="title">Comparativo período atual × anterior</div>
         <canvas id="chartCompare"></canvas>
       </div>
@@ -122,17 +123,18 @@
     </div>
 
     <script>
-      // ====== CREDENCIAIS ======
+      // ====== CREDENCIAIS (suas) ======
       var SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
       var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
 
-      // ====== MAPEAMENTO FIXO ======
-      var TABLE   = "vendas";       // view/tabela normalizada
-      var COL_DT  = "data_venda";   // DATE
-      var COL_TOT = "valor_total";  // numeric
-      var COL_DES = "desconto";     // numeric
-      var COL_ENT = "entrega";      // numeric
-      var COL_UNI = "unidade";      // text
+      // ====== FONTES (preferida + fallback) ======
+      var SOURCES = [
+        // 0) view/tabela normalizada
+        { table:"vendas",            dt:"data_venda",      tot:"valor_total", des:"desconto", ent:"entrega", uni:"unidade", label:"public.vendas" },
+        // 1) CSV cru com coluna normalizada data_venda_date
+        { table:"vendas_import_csv", dt:"data_venda_date", tot:"Total",       des:"Desconto", ent:"Entrega", uni:"Unidade", label:"public.vendas_import_csv" }
+      ];
+      var active = 0; // tenta 'vendas' primeiro
 
       // ====== UI refs ======
       var elLog=document.getElementById("log");
@@ -166,29 +168,32 @@
       // ====== supabase client ======
       var supa=window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-      async function fetchRange(fromISO, toISO, unidade){
+      // faz select com paginação; retorna {rows, error?, status?}
+      async function runPagedSelect(src, fromISO, toISO, unidade){
         const page=10000; let acc=[], off=0;
         for(;;){
-          let q = supa.from(TABLE)
-            .select([COL_DT,COL_TOT,COL_DES,COL_ENT,COL_UNI].join(","))
-            .gte(COL_DT, fromISO).lte(COL_DT, toISO);
-          if(unidade) q = q.eq(COL_UNI, unidade);
+          let q = supa.from(src.table)
+            .select([src.dt,src.tot,src.des,src.ent,src.uni].join(","))
+            .gte(src.dt, fromISO).lte(src.dt, toISO);
+          if(unidade) q = q.eq(src.uni, unidade);
           q = q.range(off, off+page-1);
           const r = await q;
-          if(r.error) throw r.error;
+          if(r.error){
+            return { rows:null, error:r.error, status:r.status||0 };
+          }
           const arr=r.data||[];
           acc=acc.concat(arr);
           if(arr.length<page) break;
           off += page;
         }
-        return acc;
+        return { rows:acc, error:null, status:200 };
       }
 
-      function bucketDaily(rows){
+      function bucketDaily(rows, src){
         const map=new Map();
         for(const r of rows){
-          const d=String(r[COL_DT]).slice(0,10);
-          const tot=toNum(r[COL_TOT]);
+          const d=String(r[src.dt]).slice(0,10);
+          const tot=toNum(r[src.tot]);
           map.set(d, (map.get(d)||0)+tot);
         }
         const labels=Array.from(map.keys()).sort();
@@ -196,28 +201,28 @@
         return {labels,vals};
       }
 
-      function bucketWeekday(rows){
+      function bucketWeekday(rows, src){
         const labels=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
         const agg=[0,0,0,0,0,0,0];
         for(const r of rows){
-          const d=new Date(String(r[COL_DT]).slice(0,10)+"T00:00:00");
-          const dow=d.getDay(); // 0..6
-          agg[dow]+=toNum(r[COL_TOT]);
+          const d=new Date(String(r[src.dt]).slice(0,10)+"T00:00:00");
+          const dow=d.getDay();
+          agg[dow]+=toNum(r[src.tot]);
         }
         return {labels,vals:agg};
       }
 
-      function kpis(rows){
+      function kpis(rows, src){
         let ped=rows.length,fat=0,des=0,fre=0;
         for(const r of rows){
-          fat+=toNum(r[COL_TOT]); des+=toNum(r[COL_DES]); fre+=toNum(r[COL_ENT]);
+          fat+=toNum(r[src.tot]); des+=toNum(r[src.des]); fre+=toNum(r[src.ent]);
         }
         return {ped,fat,des,fre};
       }
 
-      function fillUnits(rows){
+      function fillUnits(rows, src){
         const set=new Set();
-        for(const r of rows){ if(r[COL_UNI]) set.add(String(r[COL_UNI])); }
+        for(const r of rows){ if(r[src.uni]) set.add(String(r[src.uni])); }
         const cur=elUni.value;
         elUni.innerHTML='<option value="">Todas</option>';
         Array.from(set).sort().forEach(u=>{
@@ -226,45 +231,37 @@
         if(cur && set.has(cur)) elUni.value=cur;
       }
 
-      function setDelta(el, now, prev, suffix){
+      function setDelta(el, now, prev){
         const p=pct(now,prev);
         if(p===null){ el.textContent="—"; el.className="delta"; return; }
         const s=(p>=0?"+":"")+p.toFixed(1).replace(".",",")+"% vs ant.";
-        el.textContent=s+(suffix||"");
+        el.textContent=s;
         el.className="delta "+(p>=0?"up":"down");
       }
 
-      // ====== Charts (mantemos instâncias para destruir no reload) ======
+      // ====== Charts ======
       let cDaily=null, cWeek=null, cComp=null;
 
-      function renderCharts(rowsNow, rowsPrev){
-        // Daily
-        const dailyNow=bucketDaily(rowsNow);
-        const dailyPrev=bucketDaily(rowsPrev);
-        if(cDaily){ cDaily.destroy(); }
+      function renderCharts(rowsNow, rowsPrev, src){
+        const dailyNow=bucketDaily(rowsNow, src);
+        const dailyPrev=bucketDaily(rowsPrev, src);
+        if(cDaily) cDaily.destroy();
         cDaily=new Chart(document.getElementById("chartDaily"),{
           type:"line",
-          data:{
-            labels: dailyNow.labels,
-            datasets:[
-              {label:"Atual", data:dailyNow.vals, tension:.25, fill:true},
-            ]
-          },
-          options:{responsive:true, maintainAspectRatio:false}
+          data:{ labels: dailyNow.labels, datasets:[{label:"Atual", data:dailyNow.vals, tension:.25, fill:true}] },
+          options:{responsive:true, maintainAspectRatio:false, animation:false}
         });
 
-        // Weekday
-        const wNow=bucketWeekday(rowsNow);
-        if(cWeek){ cWeek.destroy(); }
+        const wNow=bucketWeekday(rowsNow, src);
+        if(cWeek) cWeek.destroy();
         cWeek=new Chart(document.getElementById("chartWeekday"),{
           type:"bar",
           data:{ labels:wNow.labels, datasets:[{label:"Total", data:wNow.vals}] },
-          options:{responsive:true, maintainAspectRatio:false}
+          options:{responsive:true, maintainAspectRatio:false, animation:false}
         });
 
-        // Compare totals
-        const kNow=kpis(rowsNow), kPrev=kpis(rowsPrev);
-        if(cComp){ cComp.destroy(); }
+        const kNow=kpis(rowsNow, src), kPrev=kpis(rowsPrev, src);
+        if(cComp) cComp.destroy();
         cComp=new Chart(document.getElementById("chartCompare"),{
           type:"bar",
           data:{
@@ -274,61 +271,81 @@
               {label:"Anterior", data:[kPrev.fat,kPrev.des,kPrev.fre,kPrev.ped]}
             ]
           },
-          options:{responsive:true, maintainAspectRatio:false}
+          options:{responsive:true, maintainAspectRatio:false, animation:false}
         });
 
-        // KPIs cards
-        elKPed.textContent=fmtInt(kNow.ped);
-        elKFat.textContent=fmtBRL(kNow.fat);
-        elKDes.textContent=fmtBRL(kNow.des);
-        elKFre.textContent=fmtBRL(kNow.fre);
-        setDelta(elDPed, kNow.ped, kPrev.ped);
-        setDelta(elDFat, kNow.fat, kPrev.fat);
-        setDelta(elDDes, kNow.des, kPrev.des);
-        setDelta(elDFre, kNow.fre, kPrev.fre);
+        // KPIs
+        document.getElementById("k_ped").textContent=fmtInt(kNow.ped);
+        document.getElementById("k_fat").textContent=fmtBRL(kNow.fat);
+        document.getElementById("k_desc").textContent=fmtBRL(kNow.des);
+        document.getElementById("k_fre").textContent=fmtBRL(kNow.fre);
+        setDelta(document.getElementById("d_ped"), kNow.ped, kPrev.ped);
+        setDelta(document.getElementById("d_fat"), kNow.fat, kPrev.fat);
+        setDelta(document.getElementById("d_desc"), kNow.des, kPrev.des);
+        setDelta(document.getElementById("d_fre"), kNow.fre, kPrev.fre);
       }
 
-      async function load(){
+      // ====== fluxo principal com fallback ======
+      async function loadOnce(currentTry=0){
+        const src = SOURCES[active];
         try{
           elLog.textContent="Iniciando…";
+          log(`[Boot] v11.1 — fonte ativa: ${src.label}`);
           const unidade = elUni.value||"";
           const ndays   = Number(elDays.value||30);
 
-          // Janela atual
           const end = new Date(); end.setHours(23,59,59,999);
           const start=new Date(end); start.setDate(end.getDate()-(ndays-1)); start.setHours(0,0,0,0);
           elPer.textContent="Período: "+toISO(start)+" → "+toISO(end);
-          log(`[Query] ${TABLE} | janela ${ndays}d ${toISO(start)} → ${toISO(end)}${unidade?` | UNIDADE=${unidade}`:""}`);
+          log(`[Query] ${src.table} | janela ${ndays}d ${toISO(start)} → ${toISO(end)}${unidade?` | UNIDADE=${unidade}`:""}`);
 
-          const rowsNow = await fetchRange(toISO(start), toISO(end), unidade);
-          log(`[OK] Atual: ${rowsNow.length.toLocaleString("pt-BR")} linhas`);
+          const nowRes  = await runPagedSelect(src, toISO(start), toISO(end), unidade);
+          if(nowRes.error){
+            log(`[ERRO] ${src.label} (atual) → ${nowRes.error.message||nowRes.error}`);
+            // fallback só se estamos na fonte 0 e erro 5xx/timeout
+            const msg = String(nowRes.error.message||"");
+            if(active===0 && (nowRes.status>=500 || /timeout|statement|internal/i.test(msg))){
+              active = 1; // troca para CSV
+              log(`[Fallback] Trocando para ${SOURCES[1].label}…`);
+              return loadOnce(currentTry+1);
+            }
+            throw nowRes.error;
+          }
 
-          // Janela anterior (mesmo tamanho)
           const prevEnd  = new Date(start); prevEnd.setDate(prevEnd.getDate()-1); prevEnd.setHours(23,59,59,999);
           const prevStart= new Date(prevEnd); prevStart.setDate(prevEnd.getDate()-(ndays-1)); prevStart.setHours(0,0,0,0);
           log(`[Query] Período anterior: ${toISO(prevStart)} → ${toISO(prevEnd)}`);
 
-          const rowsPrev = await fetchRange(toISO(prevStart), toISO(prevEnd), unidade);
-          log(`[OK] Anterior: ${rowsPrev.length.toLocaleString("pt-BR")} linhas`);
+          const prevRes = await runPagedSelect(src, toISO(prevStart), toISO(prevEnd), unidade);
+          if(prevRes.error){
+            log(`[ERRO] ${src.label} (anterior) → ${prevRes.error.message||prevRes.error}`);
+            if(active===0 && (prevRes.status>=500 || /timeout|statement|internal/i.test(String(prevRes.error.message||"")))){
+              active = 1;
+              log(`[Fallback] Trocando para ${SOURCES[1].label}…`);
+              return loadOnce(currentTry+1);
+            }
+            throw prevRes.error;
+          }
 
-          // preencher unidades (a partir do “agora”)
-          fillUnits(rowsNow);
-
-          // gráficos + KPIs
-          renderCharts(rowsNow, rowsPrev);
+          // preencher unidades e renderizar
+          fillUnits(nowRes.rows, src);
+          renderCharts(nowRes.rows, prevRes.rows, src);
           log("[OK] KPIs e gráficos atualizados.");
         }catch(e){
-          log("[ERRO] "+(e.message||String(e)));
+          log("[ERRO-Fatal] "+(e.message||String(e)));
         }
       }
 
-      // listeners (uma vez só)
-      elReload.addEventListener("click", load);
-      elDays  .addEventListener("change", load);
-      elUni   .addEventListener("change", load);
+      // listeners
+      document.getElementById("btnReload").addEventListener("click", ()=>loadOnce());
+      elDays.addEventListener("change", ()=>loadOnce());
+      elUni.addEventListener("change",  ()=>loadOnce());
 
-      // boot
-      (async function(){ await load(); })();
+      // evita múltiplos boots (cache duplicado)
+      if(!window.__DASH_BOOTED__){
+        window.__DASH_BOOTED__=true;
+        loadOnce();
+      }
     </script>
   </body>
 </html>
