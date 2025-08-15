@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — v14 (vendas_kpi_daily)</title>
+  <title>Dashboard Vendas — v14.1 (vendas_kpi_daily)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{--bg:#f6f7fb;--ink:#0f172a;--mut:#6b7280;--card:#fff;--brd:#e5e7eb}
@@ -19,7 +19,9 @@
     select,button{border:1px solid var(--brd);background:#fff;border-radius:10px;padding:8px 10px}
     button{cursor:pointer}
     .charts{display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px}
-    pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
+    /* Alturas fixas para evitar “crescimento” visual */
+    #c1,#c2,#c3{height:160px !important}
+    pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap;max-height:220px}
     .seg{display:flex;gap:8px;align-items:center}
     .seg label{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#334155;background:#eef2ff;border:1px solid #c7d2fe;border-radius:999px;padding:6px 10px}
     .seg input{accent-color:#4f46e5}
@@ -28,7 +30,7 @@
   </style>
   <!-- Supabase UMD -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <!-- Chart.js para gráficos -->
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -36,7 +38,7 @@
     <div class="row">
       <div>
         <h1>Dashboard Vendas — Supabase</h1>
-        <div class="muted">Fonte: <code>public.vendas_kpi_daily</code> • Build <b>v14</b></div>
+        <div class="muted">Fonte: <code>public.vendas_kpi_daily</code> • Build <b>v14.1</b></div>
       </div>
       <div class="muted" id="periodo">Período: —</div>
     </div>
@@ -77,15 +79,15 @@
     <div class="charts">
       <div class="card">
         <div class="title">Receita diária (R$)</div>
-        <canvas id="c1" height="120"></canvas>
+        <canvas id="c1"></canvas>
       </div>
       <div class="card">
         <div class="title">Totais por dia da semana (R$)</div>
-        <canvas id="c2" height="140"></canvas>
+        <canvas id="c2"></canvas>
       </div>
       <div class="card">
         <div class="title">Comparativo período atual × anterior</div>
-        <canvas id="c3" height="140"></canvas>
+        <canvas id="c3"></canvas>
       </div>
     </div>
 
@@ -96,209 +98,234 @@
   </div>
 
   <script>
-    // ====== CREDENCIAIS — as suas ======
-    const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-    const TBL = "vendas_kpi_daily"; // fonte diária agregada
+  // ---- Guarda para impedir inicialização duplicada (evita gráficos “infinitos” e múltiplos eventos)
+  if (!window.__DASH_V141__) {
+    window.__DASH_V141__ = true;
 
-    // ====== Helpers UI ======
-    const elLog = document.getElementById("log");
-    const elPed = document.getElementById("k_ped");
-    const elFat = document.getElementById("k_fat");
-    const elDes = document.getElementById("k_des");
-    const elFre = document.getElementById("k_fre");
-    const elPedVs = document.getElementById("k_ped_vs");
-    const elFatVs = document.getElementById("k_fat_vs");
-    const elDesVs = document.getElementById("k_des_vs");
-    const elFreVs = document.getElementById("k_fre_vs");
-    const elPeriodo = document.getElementById("periodo");
-    const selDays = document.getElementById("selDays");
-    const selUnidade = document.getElementById("selUnidade");
-    const btnReload = document.getElementById("btnReload");
+    (function(){
+      // ====== CREDENCIAIS ======
+      const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
+      const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+      const TBL = "vendas_kpi_daily";
 
-    let chart1=null, chart2=null, chart3=null;
+      // ====== UI refs ======
+      const elLog = document.getElementById("log");
+      const elPed = document.getElementById("k_ped");
+      const elFat = document.getElementById("k_fat");
+      const elDes = document.getElementById("k_des");
+      const elFre = document.getElementById("k_fre");
+      const elPedVs = document.getElementById("k_ped_vs");
+      const elFatVs = document.getElementById("k_fat_vs");
+      const elDesVs = document.getElementById("k_des_vs");
+      const elFreVs = document.getElementById("k_fre_vs");
+      const elPeriodo = document.getElementById("periodo");
+      const selDays = document.getElementById("selDays");
+      const selUnidade = document.getElementById("selUnidade");
+      const btnReload = document.getElementById("btnReload");
 
-    function log(m){ elLog.textContent += "\n" + m; }
-    const fmtBRL = n => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(+n||0);
-    const fmtInt = n => new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(+n||0));
-    const iso = d => d.toISOString().slice(0,10);
-    const toNum = x => { const n = Number(x); return isFinite(n)?n:0; };
+      // ====== Helpers ======
+      function log(m){ elLog.textContent += "\n" + m; }
+      const fmtBRL = n => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(+n||0);
+      const fmtInt = n => new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(+n||0));
+      const iso = d => d.toISOString().slice(0,10);
+      const toNum = x => { const n = Number(x); return isFinite(n)?n:0; };
+      const normUnit = u => (u??"").toString().trim().replace(/\s+/g," ");
 
-    // ====== Supabase client ======
-    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+      // ====== Supabase ======
+      const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-    async function getLastDia(){
-      // view diária é pequena → ORDER é seguro e rápido
-      const r = await supa.from(TBL).select("dia").order("dia",{ascending:false}).limit(1);
-      if(r.error) throw r.error;
-      const v = r.data?.[0]?.dia;
-      if(!v) throw new Error("Sem dados em "+TBL);
-      return String(v).slice(0,10);
-    }
+      // ====== Charts (com cleanup garantido) ======
+      let chart1=null, chart2=null, chart3=null;
+      function destroyCharts(){
+        try{ chart1 && chart1.destroy() }catch(e){}
+        try{ chart2 && chart2.destroy() }catch(e){}
+        try{ chart3 && chart3.destroy() }catch(e){}
+        chart1=chart2=chart3=null;
+        // limpa canvas para evitar “fantasmas”
+        ["c1","c2","c3"].forEach(id=>{
+          const cv = document.getElementById(id);
+          const ctx = cv.getContext("2d");
+          ctx.clearRect(0,0,cv.width,cv.height);
+        });
+      }
 
-    async function fetchRange(fromISO, toISO, unidade){
-      const page = 2000;
-      let out = [], off = 0;
-      for(;;){
-        let q = supa.from(TBL)
-          .select("dia,unidade,pedidos,fat,des,fre")
-          .gte("dia", fromISO).lte("dia", toISO)
-          .range(off, off+page-1);
-        if(unidade && unidade!=="Todas") q = q.eq("unidade", unidade);
-        const r = await q;
+      async function getLastDia(){
+        const r = await supa.from(TBL).select("dia").order("dia",{ascending:false}).limit(1);
         if(r.error) throw r.error;
-        const arr = r.data || [];
-        out = out.concat(arr);
-        if(arr.length < page) break;
-        off += page;
+        const v = r.data?.[0]?.dia;
+        if(!v) throw new Error("Sem dados em "+TBL);
+        return String(v).slice(0,10);
       }
-      return out;
-    }
 
-    async function loadUnidades(){
-      // pega uma amostra grande e deduplica no cliente
-      const r = await supa.from(TBL).select("unidade").order("unidade",{ascending:true}).limit(2000);
-      if(r.error){ log("[Unidades] erro: "+r.error.message); return; }
-      const set = new Set((r.data||[]).map(x => x.unidade || "—"));
-      const list = ["Todas", ...Array.from(set)];
-      selUnidade.innerHTML = "";
-      for(const u of list){
-        const o = document.createElement("option");
-        o.textContent = u; o.value = u;
-        selUnidade.appendChild(o);
+      async function loadUnidadesOnce(){
+        if (loadUnidadesOnce.done) return;
+        loadUnidadesOnce.done = true;
+        // pega bastante e de-duplica (case-insensitive + trim)
+        const r = await supa.from(TBL).select("unidade").order("unidade",{ascending:true}).limit(5000);
+        if(r.error){ log("[Unidades] erro: "+r.error.message); return; }
+        const seen = new Map();
+        for(const row of (r.data||[])){
+          const raw = normUnit(row.unidade);
+          if(!raw) continue;
+          const key = raw.toLowerCase();
+          if(!seen.has(key)) seen.set(key, raw);
+        }
+        const list = ["Todas", ...Array.from(seen.values()).sort((a,b)=>a.localeCompare(b,"pt-BR"))];
+        selUnidade.innerHTML = "";
+        for(const u of list){
+          const o = document.createElement("option");
+          o.value = u; o.textContent = u;
+          selUnidade.appendChild(o);
+        }
       }
-    }
 
-    function aggKPIs(rows){
-      let pedidos=0,fat=0,des=0,fre=0;
-      for(const r of rows){
-        pedidos += toNum(r.pedidos);
-        fat     += toNum(r.fat);
-        des     += toNum(r.des);
-        fre     += toNum(r.fre);
+      async function fetchRange(fromISO, toISO, unidade){
+        const page = 2000;
+        let out = [], off = 0;
+        for(;;){
+          let q = supa.from(TBL)
+            .select("dia,unidade,pedidos,fat,des,fre")
+            .gte("dia", fromISO).lte("dia", toISO)
+            .range(off, off+page-1);
+          if(unidade && unidade!=="Todas") q = q.eq("unidade", unidade);
+          const r = await q;
+          if(r.error) throw r.error;
+          const arr = r.data || [];
+          out = out.concat(arr);
+          if(arr.length < page) break;
+          off += page;
+        }
+        return out;
       }
-      return {pedidos,fat,des,fre};
-    }
 
-    function seriesByDay(rows, modo){
-      // soma por dia (pode ter 2 unidades por dia)
-      const m = new Map();
-      for(const r of rows){
-        const k = String(r.dia).slice(0,10);
-        const val = (modo==="liquido" ? toNum(r.fat)-toNum(r.fre) : toNum(r.fat));
-        m.set(k, (m.get(k)||0)+val);
+      function aggKPIs(rows){
+        let pedidos=0,fat=0,des=0,fre=0;
+        for(const r of rows){
+          pedidos += toNum(r.pedidos);
+          fat += toNum(r.fat);
+          des += toNum(r.des);
+          fre += toNum(r.fre);
+        }
+        return {pedidos,fat,des,fre};
       }
-      const days = Array.from(m.keys()).sort();
-      const vals = days.map(d => m.get(d));
-      return {days, vals};
-    }
 
-    function seriesWeek(rows, modo){
-      const nomes = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
-      const acc = [0,0,0,0,0,0,0];
-      for(const r of rows){
-        const d = new Date(String(r.dia).slice(0,10)+"T00:00:00");
-        const dow = d.getDay(); // 0..6
-        const val = (modo==="liquido" ? toNum(r.fat)-toNum(r.fre) : toNum(r.fat));
-        acc[dow] += val;
+      function seriesByDay(rows, modo){
+        const m = new Map();
+        for(const r of rows){
+          const k = String(r.dia).slice(0,10);
+          const val = (modo==="liquido" ? toNum(r.fat)-toNum(r.fre) : toNum(r.fat));
+          m.set(k, (m.get(k)||0)+val);
+        }
+        const days = Array.from(m.keys()).sort();
+        const vals = days.map(d => m.get(d));
+        return {days, vals};
       }
-      return {labels: nomes, vals: acc};
-    }
 
-    function pct(a,b){ // variação vs anterior
-      if(!isFinite(b) || Math.abs(b)<1e-9) return 0;
-      return ((a-b)/b)*100;
-    }
-
-    function setKPIs(cur, prev){
-      elPed.textContent = fmtInt(cur.pedidos);
-      elFat.textContent = fmtBRL(cur.fat);
-      elDes.textContent = fmtBRL(cur.des);
-      elFre.textContent = fmtBRL(cur.fre);
-      elPedVs.textContent = (pct(cur.pedidos, prev.pedidos)).toFixed(1).replace('.',',')+"% vs ant.";
-      elFatVs.textContent = (pct(cur.fat,      prev.fat     )).toFixed(1).replace('.',',')+"% vs ant.";
-      elDesVs.textContent = (pct(cur.des,      prev.des     )).toFixed(1).replace('.',',')+"% vs ant.";
-      elFreVs.textContent = (pct(cur.fre,      prev.fre     )).toFixed(1).replace('.',',')+"% vs ant.";
-    }
-
-    function drawCharts(curRows, prevRows, modo){
-      // limpa gráficos antigos
-      if(chart1){ chart1.destroy(); chart1=null; }
-      if(chart2){ chart2.destroy(); chart2=null; }
-      if(chart3){ chart3.destroy(); chart3=null; }
-
-      const s1 = seriesByDay(curRows, modo);
-      const s2 = seriesWeek(curRows, modo);
-
-      chart1 = new Chart(document.getElementById("c1"), {
-        type: "line",
-        data: { labels: s1.days, datasets: [{ label: (modo==="liquido"?"Receita líquida":"Receita bruta"), data: s1.vals }] },
-        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{ticks:{maxRotation:0,minRotation:0}}} }
-      });
-
-      chart2 = new Chart(document.getElementById("c2"), {
-        type: "bar",
-        data: { labels: s2.labels, datasets: [{ label: (modo==="liquido"?"Líquido":"Bruto"), data: s2.vals }] },
-        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}} }
-      });
-
-      // comparativo atual x anterior (soma do período)
-      const cur = aggKPIs(curRows);
-      const prv = aggKPIs(prevRows);
-      chart3 = new Chart(document.getElementById("c3"), {
-        type: "bar",
-        data: {
-          labels: ["Pedidos","Faturamento"+(modo==="liquido"?" (Liq.)":" (Bruto)"),"Incentivos","Frete"],
-          datasets: [
-            { label:"Atual", data:[cur.pedidos, (modo==="liquido"?cur.fat-cur.fre:cur.fat), cur.des, cur.fre] },
-            { label:"Anterior", data:[prv.pedidos, (modo==="liquido"?prv.fat-prv.fre:prv.fat), prv.des, prv.fre] }
-          ]
-        },
-        options:{ responsive:true, maintainAspectRatio:false }
-      });
-    }
-
-    async function go(){
-      try{
-        log("[Boot] v14 — fonte diária "+TBL);
-        // carrega unidades uma única vez no boot
-        await loadUnidades();
-
-        const last = await getLastDia();
-        const days = +selDays.value;
-        const end = new Date(last+"T00:00:00");
-        const start = new Date(end); start.setDate(end.getDate()-(days-1));
-        const endPrev = new Date(start); endPrev.setDate(start.getDate()-1);
-        const startPrev = new Date(endPrev); startPrev.setDate(endPrev.getDate()-(days-1));
-
-        elPeriodo.textContent = "Período: "+iso(start)+" → "+iso(end);
-
-        const unidade = selUnidade.value || "Todas";
-        const modo = (document.querySelector('input[name="modo"]:checked')||{}).value || "bruto";
-
-        log(`[Query] Janela ${days}d ${iso(start)} → ${iso(end)} | UNIDADE=${unidade} | modo=${modo}`);
-        const curRows = await fetchRange(iso(start), iso(end), unidade);
-        log(`[OK] Linhas (atual): ${curRows.length.toLocaleString("pt-BR")}`);
-
-        const prvRows = await fetchRange(iso(startPrev), iso(endPrev), unidade);
-        log(`[OK] Linhas (anterior): ${prvRows.length.toLocaleString("pt-BR")}`);
-
-        setKPIs(aggKPIs(curRows), aggKPIs(prvRows));
-        drawCharts(curRows, prvRows, modo);
-      }catch(e){
-        console.error(e);
-        log("[ERRO] "+(e.message||String(e)));
+      function seriesWeek(rows, modo){
+        const nomes = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+        const acc = [0,0,0,0,0,0,0];
+        for(const r of rows){
+          const d = new Date(String(r.dia).slice(0,10)+"T00:00:00");
+          const dow = d.getDay(); // 0..6
+          const val = (modo==="liquido" ? toNum(r.fat)-toNum(r.fre) : toNum(r.fat));
+          acc[dow] += val;
+        }
+        return {labels: nomes, vals: acc};
       }
-    }
 
-    // eventos
-    btnReload.addEventListener("click", go);
-    selDays.addEventListener("change", go);
-    selUnidade.addEventListener("change", go);
-    document.querySelectorAll('input[name="modo"]').forEach(r => r.addEventListener("change", go));
+      function pct(a,b){ if(!isFinite(b)||Math.abs(b)<1e-9) return 0; return ((a-b)/b)*100; }
 
-    // inicializa
-    go();
+      function setKPIs(cur, prev){
+        elPed.textContent = fmtInt(cur.pedidos);
+        elFat.textContent = fmtBRL(cur.fat);
+        elDes.textContent = fmtBRL(cur.des);
+        elFre.textContent = fmtBRL(cur.fre);
+        elPedVs.textContent = (pct(cur.pedidos, prev.pedidos)).toFixed(1).replace('.',',')+"% vs ant.";
+        elFatVs.textContent = (pct(cur.fat,      prev.fat     )).toFixed(1).replace('.',',')+"% vs ant.";
+        elDesVs.textContent = (pct(cur.des,      prev.des     )).toFixed(1).replace('.',',')+"% vs ant.";
+        elFreVs.textContent = (pct(cur.fre,      prev.fre     )).toFixed(1).replace('.',',')+"% vs ant.";
+      }
+
+      function drawCharts(curRows, prevRows, modo){
+        destroyCharts(); // <<< garante limpeza total
+
+        const s1 = seriesByDay(curRows, modo);
+        const s2 = seriesWeek(curRows, modo);
+
+        chart1 = new Chart(document.getElementById("c1"), {
+          type: "line",
+          data: { labels: s1.days, datasets: [{ label:(modo==="liquido"?"Receita líquida":"Receita bruta"), data: s1.vals }] },
+          options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, animation:false, scales:{x:{ticks:{maxRotation:0,minRotation:0}}} }
+        });
+
+        chart2 = new Chart(document.getElementById("c2"), {
+          type: "bar",
+          data: { labels: s2.labels, datasets: [{ label:(modo==="liquido"?"Líquido":"Bruto"), data: s2.vals }] },
+          options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, animation:false }
+        });
+
+        const cur = aggKPIs(curRows);
+        const prv = aggKPIs(prevRows);
+        chart3 = new Chart(document.getElementById("c3"), {
+          type: "bar",
+          data: {
+            labels: ["Pedidos","Faturamento"+(modo==="liquido"?" (Liq.)":" (Bruto)"),"Incentivos","Frete"],
+            datasets: [
+              { label:"Atual", data:[cur.pedidos, (modo==="liquido"?cur.fat-cur.fre:cur.fat), cur.des, cur.fre] },
+              { label:"Anterior", data:[prv.pedidos, (modo==="liquido"?prv.fat-prv.fre:prv.fat), prv.des, prv.fre] }
+            ]
+          },
+          options:{ responsive:true, maintainAspectRatio:false, animation:false }
+        });
+      }
+
+      // Abort para evitar sobreposição de requisições se o usuário clicar rápido
+      let currentRun = 0;
+
+      async function go(){
+        const runId = ++currentRun;
+        try{
+          log("[Boot] v14.1 — fonte diária "+TBL);
+          await loadUnidadesOnce();
+
+          const last = await getLastDia();
+          const days = +selDays.value;
+          const end = new Date(last+"T00:00:00");
+          const start = new Date(end); start.setDate(end.getDate()-(days-1));
+          const endPrev = new Date(start); endPrev.setDate(start.getDate()-1);
+          const startPrev = new Date(endPrev); startPrev.setDate(endPrev.getDate()-(days-1));
+          elPeriodo.textContent = "Período: "+iso(start)+" → "+iso(end);
+
+          const unidade = normUnit(selUnidade.value || "Todas");
+          const modo = (document.querySelector('input[name="modo"]:checked')||{}).value || "bruto";
+          log(`[Query] Janela ${days}d ${iso(start)} → ${iso(end)} | UNIDADE=${unidade} | modo=${modo}`);
+
+          const curRows = await fetchRange(iso(start), iso(end), (unidade==="Todas"?null:unidade));
+          if(runId!==currentRun) return; // abort se já existe outra execução
+          log(`[OK] Linhas (atual): ${curRows.length.toLocaleString("pt-BR")}`);
+
+          const prvRows = await fetchRange(iso(startPrev), iso(endPrev), (unidade==="Todas"?null:unidade));
+          if(runId!==currentRun) return;
+          log(`[OK] Linhas (anterior): ${prvRows.length.toLocaleString("pt-BR")}`);
+
+          setKPIs(aggKPIs(curRows), aggKPIs(prvRows));
+          drawCharts(curRows, prvRows, modo);
+        }catch(e){
+          console.error(e);
+          log("[ERRO] "+(e.message||String(e)));
+        }
+      }
+
+      // eventos — adicionados UMA vez
+      btnReload.addEventListener("click", go);
+      selDays.addEventListener("change", go);
+      selUnidade.addEventListener("change", go);
+      document.querySelectorAll('input[name="modo"]').forEach(r => r.addEventListener("change", go));
+
+      // inicializa
+      go();
+    })();
+  } // fim do guard
   </script>
 </body>
 </html>
