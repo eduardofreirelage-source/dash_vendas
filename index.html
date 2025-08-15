@@ -1,299 +1,390 @@
-=<!doctype html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — Supabase (v14.2)</title>
+  <title>Dashboard Vendas — v14.3 (sem libs externas)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root { --fg:#0f172a; --muted:#6b7280; --card:#fff; --bd:#e5e7eb; --bg:#f6f7fb; }
+    :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --line:#e5e7eb; }
+    *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
     .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
     h1{font-size:22px;margin:0 0 4px}
     .muted{color:var(--muted);font-size:12px}
-    .row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
-    .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-    .grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:12px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
     .title{font-size:12px;color:var(--muted)}
     .val{font-size:22px;font-weight:700;margin-top:4px}
-    select,button{border:1px solid var(--bd);background:#fff;border-radius:8px;padding:8px 10px;font:inherit}
-    button{cursor:pointer}
+    .kpiSub{font-size:11px;color:var(--muted);margin-top:2px}
+    select,button{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+    .section{margin-top:14px}
+    .charts{display:grid;grid-template-columns:1fr; gap:12px}
+    canvas{width:100%; height:280px; display:block; background:#fff; border:1px solid var(--line); border-radius:10px}
     pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
-    .charts{display:grid;grid-template-columns:1fr;gap:12px}
-    .chart{min-height:240px}
-    @media (max-width:900px){.grid4{grid-template-columns:repeat(2,minmax(0,1fr))}}
-    @media (max-width:520px){.grid4{grid-template-columns:1fr}}
+    .controls small{display:block;color:var(--muted);margin-top:4px}
+    .radio{display:flex;gap:10px;align-items:center}
+    .badge{padding:2px 6px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:12px;color:#374151}
+    @media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media (max-width:520px){.grid{grid-template-columns:1fr}}
   </style>
   <!-- Supabase UMD -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <!-- Recharts + React + ReactDOM UMD (para os gráficos) -->
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/recharts/umd/Recharts.min.js"></script>
 </head>
 <body>
   <div class="wrap">
     <div class="row" style="justify-content:space-between">
       <div>
         <h1>Dashboard Vendas — Supabase</h1>
-        <div class="muted">Build v14.2 • fonte: <code>public.vendas_kpi_daily</code></div>
+        <div class="muted">Build v14.3 • fonte: <span class="badge">public.vendas_kpi_daily</span></div>
+        <div class="muted">URL: <code>uahmcfzerofhzjvlzrqc.supabase.co</code></div>
       </div>
       <div class="muted" id="periodo">Período: —</div>
     </div>
 
-    <div class="row" style="margin-top:12px">
-      <div class="card">
+    <div class="row controls section">
+      <div class="card" style="flex:1 1 260px">
         <div class="title">Período</div>
-        <select id="selPeriodo">
+        <select id="selPeriodo" style="width:100%">
           <option value="30">Últimos 30 dias</option>
-          <option value="60" selected>Últimos 60 dias</option>
+          <option value="60">Últimos 60 dias</option>
           <option value="90">Últimos 90 dias</option>
           <option value="180">Últimos 180 dias</option>
-          <option value="365">Últimos 365 dias</option>
+          <option value="365" selected>Últimos 365 dias</option>
         </select>
       </div>
-      <div class="card">
+      <div class="card" style="flex:1 1 260px">
         <div class="title">UNIDADE</div>
-        <select id="selUnidade"><option>Todas</option></select>
-      </div>
-      <div class="card">
-        <div class="title">FATURAMENTO</div>
-        <select id="selModo">
-          <option value="bruto" selected>Total (bruto)</option>
-          <option value="liquido">Líquido (Total − Entrega)</option>
+        <select id="selUnidade" style="width:100%">
+          <option>Carregando…</option>
         </select>
+        <small id="unitsInfo" class="muted"></small>
       </div>
-      <div class="card">
-        <div class="title">Ações</div>
-        <button id="btnReload">Recarregar</button>
+      <div class="card" style="flex:1 1 260px">
+        <div class="title">Modo de faturamento</div>
+        <div class="radio">
+          <label><input type="radio" name="modo" value="bruto" checked> Total (bruto)</label>
+          <label><input type="radio" name="modo" value="liquido"> Líquido (Total − Entrega)</label>
+        </div>
+      </div>
+      <div class="card" style="display:flex;gap:8px;align-items:center">
+        <button id="btnRecarregar">Recarregar</button>
       </div>
     </div>
 
-    <div class="grid4" style="margin-top:12px">
-      <div class="card"><div class="title">Pedidos</div><div class="val" id="k_ped">—</div><div class="muted" id="k_ped_v">—</div></div>
-      <div class="card"><div class="title">Faturamento</div><div class="val" id="k_fat">—</div><div class="muted" id="k_fat_v">—</div></div>
-      <div class="card"><div class="title">Incentivos</div><div class="val" id="k_desc">—</div><div class="muted" id="k_desc_v">—</div></div>
-      <div class="card"><div class="title">Frete</div><div class="val" id="k_fre">—</div><div class="muted" id="k_fre_v">—</div></div>
+    <div class="grid section">
+      <div class="card"><div class="title">Pedidos</div><div class="val" id="k_ped">—</div><div class="kpiSub" id="k_ped_sub">—</div></div>
+      <div class="card"><div class="title">Faturamento</div><div class="val" id="k_fat">—</div><div class="kpiSub" id="k_fat_sub">—</div></div>
+      <div class="card"><div class="title">Incentivos</div><div class="val" id="k_desc">—</div><div class="kpiSub" id="k_desc_sub">—</div></div>
+      <div class="card"><div class="title">Frete</div><div class="val" id="k_fre">—</div><div class="kpiSub" id="k_fre_sub">—</div></div>
     </div>
 
-    <div class="charts" style="margin-top:12px">
-      <div class="card"><div class="title">Receita diária (R$)</div><div id="chart1" class="chart"></div></div>
-      <div class="card"><div class="title">Totais por dia da semana (R$)</div><div id="chart2" class="chart"></div></div>
+    <div class="section charts">
+      <div class="title">Receita diária (R$)</div>
+      <canvas id="chartDaily"></canvas>
+      <div class="title">Totais por dia da semana (R$)</div>
+      <canvas id="chartDOW"></canvas>
     </div>
 
-    <div class="card" style="margin-top:12px">
+    <div class="card section">
       <div class="title">Status / Logs</div>
       <pre id="log">Iniciando…</pre>
     </div>
   </div>
 
-  <script>
-    // ====== CONFIG — use os seus dados ======
-    const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-    const TABLE = "vendas_kpi_daily"; // view agregada: dia, unidade, pedidos, fat, des, fre
+<script>
+/* ============ CONFIG ============ */
+const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+const TABLE_DAILY   = "vendas_kpi_daily"; // dia (date), unidade (text), pedidos (int), fat/des/fre (numeric)
 
-    // ====== Helpers ======
-    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-    const $ = (id)=>document.getElementById(id);
-    const logEl = $("log");
-    function log(t){ logEl.textContent += "\n" + t; }
-    const BRL = (n)=> new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(+n||0);
-    const INT = (n)=> new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(+n||0));
-    const pct = (v)=> (isFinite(v)? (v>0? `+${v.toFixed(1)}%` : `${v.toFixed(1)}%`) : "—");
+/* ============ HELPERS ============ */
+const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+const $ = (id)=>document.getElementById(id);
+const elLog = $("log"); function log(m){elLog.textContent += "\n"+m}
+function fmtBRL(n){return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0)}
+function fmtInt(n){return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0))}
 
-    function rangeDays(days){
-      const end = new Date(); end.setHours(23,59,59,999);
-      const start = new Date(end); start.setDate(end.getDate()-(days-1)); // inclusive
-      return { start: start.toISOString().slice(0,10), end: end.toISOString().slice(0,10) };
-    }
+function addDays(d, delta){const x = new Date(d); x.setDate(x.getDate()+delta); return x}
+function toISO(d){return d.toISOString().slice(0,10)}
+function pctDelta(cur, prev){
+  if(!prev) return "—";
+  const d = ((cur - prev) / prev) * 100;
+  const s = (d>=0? "+":"") + d.toFixed(1).replace(".",",") + "% vs ant.";
+  return s;
+}
 
-    // ====== CONSULTAS ======
-    // (1) UNIDADES (sem filtro de unidade! dedup client-side; pega amostra grande)
-    async function loadUnidades(){
-      log("[Boot] v14.2 — carregando unidades globais…");
-      const page = 5000;
-      let off = 0, set = new Set(), tentativas = 0;
+/* ============ DATA FETCH ============ */
+async function fetchUnits(){
+  // pega UNIDADES distintas nos últimos 365d (sem filtro), dedup no cliente
+  const end = new Date();
+  const start = addDays(end, -365);
+  const q = await supa
+    .from(TABLE_DAILY)
+    .select("unidade")
+    .gte("dia", toISO(start))
+    .lte("dia", toISO(end))
+    .range(0, 4999); // sobra
+  if(q.error){ log("[ERRO-Units] "+q.error.message); throw q.error }
+  const set = new Set();
+  (q.data||[]).forEach(r=>{ if(r.unidade) set.add(r.unidade) });
+  return Array.from(set).sort();
+}
 
-      // Busca apenas a coluna 'unidade' (payload mínimo) e deduplica
-      while (tentativas < 3) { // 3 páginas * 5000 já cobre bem
-        const q = await supa.from(TABLE)
-          .select("unidade")
-          .order("unidade", { ascending: true })
-          .range(off, off+page-1);
-        if (q.error){ log("[ERRO-UNIDADES] "+q.error.message); break; }
-        (q.data||[]).forEach(r => { if (r.unidade && r.unidade.trim()) set.add(r.unidade.trim()); });
-        if (!q.data || q.data.length < page) break;
-        off += page; tentativas++;
-      }
-      const arr = ["Todas", ...Array.from(set).sort((a,b)=>a.localeCompare(b))];
-      const sel = $("selUnidade");
-      sel.innerHTML = "";
-      arr.forEach(v=>{
-        const opt = document.createElement("option");
-        opt.value = v; opt.textContent = v;
-        sel.appendChild(opt);
-      });
-      log("[OK] UNIDADES disponíveis: " + arr.join(", "));
-    }
+async function fetchDaily(winDays, unidade){
+  const end = new Date();
+  const start = addDays(end, -winDays+1); // inclui hoje
+  $("periodo").textContent = "Período: "+toISO(start)+" → "+toISO(end);
 
-    // (2) Linhas do período (com filtro unidade opcional), sem sum() no servidor
-    async function fetchPeriodo(d1, d2, unidade){
-      const page = 2000;
-      let off = 0, acc = [];
-      for(;;){
-        let req = supa.from(TABLE)
-          .select("dia,unidade,pedidos,fat,des,fre")
-          .gte("dia", d1).lte("dia", d2)
-          .order("dia", { ascending: true })
-          .range(off, off+page-1);
-        if (unidade && unidade !== "Todas"){
-          req = req.eq("unidade", unidade);
-        }
-        const r = await req;
-        if (r.error){ throw r.error; }
-        const arr = r.data || [];
-        acc = acc.concat(arr);
-        if (arr.length < page) break;
-        off += page;
-      }
-      return acc;
-    }
+  // atual
+  let cur = supa
+    .from(TABLE_DAILY)
+    .select("dia,unidade,pedidos,fat,des,fre")
+    .gte("dia", toISO(start))
+    .lte("dia", toISO(end))
+    .order("dia", { ascending: true })
+    .range(0, 5000);
+  if(unidade && unidade!=="Todas"){ cur = cur.eq("unidade", unidade) }
 
-    // (3) KPIs e séries
-    function computeKpis(rows, modo){
-      let ped=0,fat=0,des=0,fre=0;
-      for(const r of rows){
-        ped += (r.pedidos||0);
-        const bruto = +r.fat || 0;
-        const d = +r.des || 0;
-        const f = +r.fre || 0;
-        fat += (modo==="liquido" ? (bruto - f) : bruto);
-        des += d;
-        fre += f;
-      }
-      return { ped, fat, des, fre };
-    }
+  // anterior: janela imediatamente anterior
+  const prevEnd = addDays(start, -1);
+  const prevStart = addDays(prevEnd, -(winDays-1));
+  let prev = supa
+    .from(TABLE_DAILY)
+    .select("dia,unidade,pedidos,fat,des,fre")
+    .gte("dia", toISO(prevStart))
+    .lte("dia", toISO(prevEnd))
+    .order("dia", { ascending: true })
+    .range(0, 5000);
+  if(unidade && unidade!=="Todas"){ prev = prev.eq("unidade", unidade) }
 
-    // (4) Desenha gráficos (limpando o container para não “infinito”)
-    function drawCharts(rows, modo){
-      // limpa
-      $("chart1").innerHTML = "";
-      $("chart2").innerHTML = "";
+  log(`[Query] ${TABLE_DAILY} | ${winDays}d ${toISO(start)} → ${toISO(end)} | UNIDADE=${unidade||"Todas"}`);
+  const [curR, prevR] = await Promise.all([cur, prev]);
+  if(curR.error){ log("[ERRO] "+curR.error.message); throw curR.error }
+  if(prevR.error){ log("[ERRO] "+prevR.error.message); throw prevR.error }
+  return { cur: curR.data||[], prev: prevR.data||[] };
+}
 
-      // consolida por dia
-      const byDay = new Map();
-      for(const r of rows){
-        const key = r.dia;
-        const bruto = +r.fat || 0, fre = +r.fre || 0;
-        const valor = (modo==="liquido" ? (bruto - fre) : bruto);
-        const prev = byDay.get(key) || 0;
-        byDay.set(key, prev + valor);
-      }
-      const data1 = Array.from(byDay.entries()).map(([dia,val])=>({ dia, valor: +val.toFixed(2)}));
-      data1.sort((a,b)=> a.dia.localeCompare(b.dia));
+/* ============ AGGREGATION ============ */
+function aggKPIs(rows, modo){
+  let ped=0, fat=0, des=0, fre=0;
+  for(const r of rows){
+    ped += Number(r.pedidos)||0;
+    fat += Number(r.fat)||0;
+    des += Number(r.des)||0;
+    fre += Number(r.fre)||0;
+  }
+  const fatShow = (modo==="liquido") ? (fat - fre) : fat;
+  return { ped, fat: fatShow, des, fre };
+}
+function groupByDay(rows, modo){
+  // soma por dia (se vier por unidade, consolida)
+  const map = new Map();
+  for(const r of rows){
+    const k = r.dia;
+    const fat = Number(r.fat)||0;
+    const fre = Number(r.fre)||0;
+    const val = (modo==="liquido") ? (fat - fre) : fat;
+    map.set(k, (map.get(k)||0) + val);
+  }
+  const days = Array.from(map.keys()).sort();
+  return days.map(d=>({x:d, y: map.get(d)}));
+}
+function groupByDOW(rows, modo){
+  const arr = new Array(7).fill(0);
+  for(const r of rows){
+    const d = new Date(r.dia+"T00:00:00");
+    const dow = d.getDay(); // 0=dom
+    const fat = Number(r.fat)||0;
+    const fre = Number(r.fre)||0;
+    const val = (modo==="liquido") ? (fat - fre) : fat;
+    arr[dow] += val;
+  }
+  // nomes PT
+  const nomes = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+  return nomes.map((n,i)=>({x:n, y:arr[i]}));
+}
 
-      // por dia da semana
-      const dowNames = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
-      const byDow = new Array(7).fill(0);
-      for(const d of data1){
-        const dt = new Date(d.dia+"T12:00:00");
-        const dow = dt.getDay();
-        byDow[dow] += d.valor;
-      }
-      const data2 = dowNames.map((nome,idx)=>({ dia:nome, valor:+byDow[idx].toFixed(2) }));
+/* ============ CANVAS CHARTS (sem libs) ============ */
+function clearCanvas(cv){
+  const ctx = cv.getContext("2d");
+  ctx.clearRect(0,0,cv.width,cv.height);
+}
+function drawLineChart(cv, data){
+  // data: [{x: 'YYYY-MM-DD', y: number}]
+  const dpi = window.devicePixelRatio||1;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = Math.floor(W * dpi); cv.height = Math.floor(H * dpi);
+  const ctx = cv.getContext("2d"); ctx.scale(dpi,dpi);
+  // padding
+  const padL=40, padR=10, padT=10, padB=24;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle="#e5e7eb"; ctx.lineWidth=1;
 
-      // Render (Recharts UMD)
-      const { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, BarChart, Bar, Legend } = window.Recharts;
+  // escalas
+  const xs = data.map(d=>d.x);
+  const ys = data.map(d=>d.y);
+  const minY = 0, maxY = Math.max(1, Math.max(...ys));
+  const nx = xs.length || 1;
+  function xPos(i){ return padL + (nx<=1? 0.5*plotW : (i/(nx-1))*plotW) }
+  function yPos(v){ return padT + plotH - ( (v-minY)/(maxY-minY) )*plotH }
 
-      // Chart 1
-      ReactDOM.render(
-        React.createElement(ResponsiveContainer, { width:"100%", height:240 },
-          React.createElement(LineChart, { data:data1 },
-            React.createElement(CartesianGrid, { strokeDasharray:"3 3" }),
-            React.createElement(XAxis, { dataKey:"dia" }),
-            React.createElement(YAxis, { tickFormatter:(v)=>BRL(v) }),
-            React.createElement(Tooltip, { formatter:(v)=>BRL(v) }),
-            React.createElement(Line, { type:"monotone", dataKey:"valor", dot:false })
-          )
-        ),
-        $("chart1")
-      );
+  // grid horizontal (3 linhas)
+  ctx.beginPath();
+  for(let t=0;t<=3;t++){
+    const y = padT + (t/3)*plotH;
+    ctx.moveTo(padL,y); ctx.lineTo(W-padR,y);
+  }
+  ctx.stroke();
 
-      // Chart 2
-      ReactDOM.render(
-        React.createElement(ResponsiveContainer, { width:"100%", height:240 },
-          React.createElement(BarChart, { data:data2 },
-            React.createElement(CartesianGrid, { strokeDasharray:"3 3" }),
-            React.createElement(XAxis, { dataKey:"dia" }),
-            React.createElement(YAxis, { tickFormatter:(v)=>BRL(v) }),
-            React.createElement(Tooltip, { formatter:(v)=>BRL(v) }),
-            React.createElement(Legend, null),
-            React.createElement(Bar, { dataKey:"valor" })
-          )
-        ),
-        $("chart2")
-      );
-    }
+  // eixo Y labels
+  ctx.fillStyle="#6b7280"; ctx.font="12px system-ui";
+  for(let t=0;t<=3;t++){
+    const v = (minY + (t/3)*(maxY-minY));
+    const y = padT + plotH - (t/3)*plotH;
+    ctx.fillText(fmtBRL(v), 6, y+4);
+  }
 
-    // ====== FLUXO PRINCIPAL ======
-    async function go(){
-      try{
-        const days = +$("selPeriodo").value;
-        const unidade = $("selUnidade").value;
-        const modo = $("selModo").value;
+  // linha
+  if(data.length>0){
+    ctx.strokeStyle="#2563eb"; ctx.lineWidth=2;
+    ctx.beginPath();
+    data.forEach((d,i)=>{ const x=xPos(i), y=yPos(d.y); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
+    ctx.stroke();
+  }
 
-        const { start, end } = rangeDays(days);
-        $("periodo").textContent = `Período: ${start} → ${end}`;
+  // ticks X (4)
+  ctx.fillStyle="#6b7280"; ctx.font="11px system-ui";
+  for(let t=0;t<4;t++){
+    const i = Math.round((t/(4-1))*(nx-1));
+    if(i<0||i>=nx) continue;
+    const x = xPos(i), y = H - padB + 14;
+    const lab = (xs[i]||"").slice(5); // MM-DD
+    ctx.fillText(lab, x-16, y);
+  }
+}
 
-        log(`[Query] ${TABLE} | janela ${days}d ${start} → ${end} | UNIDADE=${unidade} | modo=${modo}`);
+function drawBarChart(cv, data){
+  // data: [{x:'Seg', y:number}]
+  const dpi = window.devicePixelRatio||1;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = Math.floor(W * dpi); cv.height = Math.floor(H * dpi);
+  const ctx = cv.getContext("2d"); ctx.scale(dpi,dpi);
+  const padL=40, padR=10, padT=10, padB=24;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle="#e5e7eb"; ctx.lineWidth=1;
 
-        // atual
-        const rowsNow = await fetchPeriodo(start, end, unidade);
+  const ys = data.map(d=>d.y);
+  const maxY = Math.max(1, Math.max(...ys));
+  const n = data.length||1;
+  const gap = 8;
+  const bw = (plotW - gap*(n+1)) / n;
 
-        // anterior
-        const s2 = new Date(start); s2.setDate(s2.getDate()-days);
-        const e2 = new Date(end);   e2.setDate(e2.getDate()-days);
-        const prevStart = s2.toISOString().slice(0,10);
-        const prevEnd   = e2.toISOString().slice(0,10);
-        const rowsPrev  = await fetchPeriodo(prevStart, prevEnd, unidade);
+  // grid
+  ctx.beginPath();
+  for(let t=0;t<=3;t++){
+    const y = padT + (t/3)*plotH;
+    ctx.moveTo(padL,y); ctx.lineTo(W-padR,y);
+  }
+  ctx.stroke();
 
-        // KPIs
-        const kNow  = computeKpis(rowsNow, modo);
-        const kPrev = computeKpis(rowsPrev, modo);
-        const vPed = (kPrev.ped? ((kNow.ped - kPrev.ped)/kPrev.ped*100) : NaN);
-        const vFat = (kPrev.fat? ((kNow.fat - kPrev.fat)/kPrev.fat*100) : NaN);
-        const vDes = (kPrev.des? ((kNow.des - kPrev.des)/kPrev.des*100) : NaN);
-        const vFre = (kPrev.fre? ((kNow.fre - kPrev.fre)/kPrev.fre*100) : NaN);
+  // eixo Y labels
+  ctx.fillStyle="#6b7280"; ctx.font="12px system-ui";
+  for(let t=0;t<=3;t++){
+    const v = (t/3)*maxY;
+    const y = padT + plotH - (t/3)*plotH;
+    ctx.fillText(fmtBRL(v), 6, y+4);
+  }
 
-        $("k_ped").textContent = INT(kNow.ped);
-        $("k_fat").textContent = BRL(kNow.fat);
-        $("k_desc").textContent = BRL(kNow.des);
-        $("k_fre").textContent = BRL(kNow.fre);
-        $("k_ped_v").textContent = pct(vPed) + " vs ant.";
-        $("k_fat_v").textContent = pct(vFat) + " vs ant.";
-        $("k_desc_v").textContent = pct(vDes) + " vs ant.";
-        $("k_fre_v").textContent = pct(vFre) + " vs ant.";
+  // barras
+  ctx.fillStyle="#10b981";
+  data.forEach((d,i)=>{
+    const x = padL + gap + i*(bw+gap);
+    const h = plotH * (d.y/maxY);
+    const y = padT + plotH - h;
+    ctx.fillRect(x, y, bw, h);
+    // label X
+    ctx.fillStyle="#6b7280"; ctx.font="11px system-ui";
+    ctx.fillText(d.x, x + bw/2 - 12, H - padB + 14);
+    ctx.fillStyle="#10b981";
+  });
+}
 
-        drawCharts(rowsNow, modo);
+/* ============ UI HOOKS ============ */
+const selPeriodo = $("selPeriodo");
+const selUnidade = $("selUnidade");
+const btnRecarregar = $("btnRecarregar");
+let lastUnitsLoaded = [];
 
-        log(`[OK] Carregadas ${rowsNow.length.toLocaleString("pt-BR")} linhas (atual).`);
-      }catch(e){
-        console.error(e);
-        log("[ERRO] " + (e.message || String(e)));
-      }
-    }
+function fillUnits(units){
+  // evita repetir; sempre inclui "Todas" primeiro
+  selUnidade.innerHTML = "";
+  const optAll = document.createElement("option"); optAll.value = "Todas"; optAll.textContent = "Todas";
+  selUnidade.appendChild(optAll);
+  for(const u of units){ const o=document.createElement("option"); o.value=o.textContent=u; selUnidade.appendChild(o); }
+  $("unitsInfo").textContent = `UNIDADES: ${["Todas",...units].join(", ")}`;
+}
 
-    // eventos
-    $("btnReload").addEventListener("click", go);
-    $("selPeriodo").addEventListener("change", go);
-    $("selUnidade").addEventListener("change", go);
-    $("selModo").addEventListener("change", go);
+async function loadUnitsOnce(){
+  try{
+    const units = await fetchUnits();
+    lastUnitsLoaded = units;
+    fillUnits(units);
+    log("[OK] UNIDADES disponíveis: "+["Todas",...units].join(", "));
+  }catch(e){
+    fillUnits([]); // mantém "Todas"
+  }
+}
 
-    // boot
-    (async function boot(){
-      await loadUnidades(); // carrega opções sem aplicar filtro
-      await go();           // faz a primeira carga
-    })();
-  </script>
+async function go(){
+  const win = Number(selPeriodo.value)||30;
+  const unidade = selUnidade.value||"Todas";
+  const modo = (document.querySelector('input[name="modo"]:checked')||{}).value || "bruto";
+  try{
+    const {cur, prev} = await fetchDaily(win, unidade);
+    // KPIs
+    const K1 = aggKPIs(cur, modo);
+    const K0 = aggKPIs(prev, modo);
+    $("k_ped").textContent = fmtInt(K1.ped);
+    $("k_fat").textContent = fmtBRL(K1.fat);
+    $("k_desc").textContent = fmtBRL(K1.des);
+    $("k_fre").textContent = fmtBRL(K1.fre);
+    $("k_ped_sub").textContent = pctDelta(K1.ped, K0.ped);
+    $("k_fat_sub").textContent = pctDelta(K1.fat, K0.fat);
+    $("k_desc_sub").textContent = pctDelta(K1.des, K0.des);
+    $("k_fre_sub").textContent = pctDelta(K1.fre, K0.fre);
+
+    // Charts (sempre limpar antes)
+    const cv1 = $("chartDaily"), cv2 = $("chartDOW");
+    clearCanvas(cv1); clearCanvas(cv2);
+    const seriesDaily = groupByDay(cur, modo);
+    drawLineChart(cv1, seriesDaily);
+    const seriesDOW = groupByDOW(cur, modo);
+    drawBarChart(cv2, seriesDOW);
+
+    log("[OK] KPIs e gráficos atualizados.");
+  }catch(e){
+    log("[ERRO] "+(e.message||String(e)));
+  }
+}
+
+/* ============ BOOT ============ */
+async function boot(){
+  log("[Boot] v14.3 — sem libs externas; fonte="+TABLE_DAILY);
+  await loadUnitsOnce();
+  await go();
+  // listeners (uma vez)
+  btnRecarregar.onclick = go;
+  selPeriodo.onchange = go;
+  selUnidade.onchange = go;
+  document.querySelectorAll('input[name="modo"]').forEach(r=>r.onchange=go);
+
+  // redraw on resize
+  let t=null; window.onresize = ()=>{ clearTimeout(t); t=setTimeout(go, 120); };
+}
+boot();
+</script>
 </body>
 </html>
