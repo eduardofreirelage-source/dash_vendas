@@ -2,7 +2,7 @@
 <html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
-    <title>Dashboard Vendas — Supabase (v10.1 fixo: vendas)</title>
+    <title>Dashboard Vendas — Supabase (v10.2: sem ORDER / sem max)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root{--bg:#f6f7fb;--ink:#0f172a;--muted:#6b7280;--card:#fff;--bd:#e5e7eb;}
@@ -19,9 +19,7 @@
       code{background:#eef2ff;padding:0 4px;border-radius:4px}
       label{font-size:12px;color:#374151}
       input,select,button{font:inherit}
-      input[type=text], select{
-        width:100%;padding:8px 10px;border:1px solid var(--bd);border-radius:8px;background:#fff;color:#111827
-      }
+      input[type=text], select{width:100%;padding:8px 10px;border:1px solid var(--bd);border-radius:8px;background:#fff;color:#111827}
       .row{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
       .row > div{display:flex;flex-direction:column;gap:6px}
       .btn{padding:8px 12px;border:1px solid var(--bd);border-radius:8px;background:#fff;cursor:pointer}
@@ -31,7 +29,6 @@
       @media (max-width:980px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
       @media (max-width:560px){.grid{grid-template-columns:1fr}.row{grid-template-columns:1fr}}
     </style>
-    <!-- Supabase UMD -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   </head>
   <body>
@@ -39,7 +36,7 @@
       <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px">
         <div>
           <h1>Dashboard Vendas — Supabase</h1>
-          <div class="muted">Build v10.1 (GitHub Pages) • mapeamento padrão fixo: <code>vendas</code></div>
+          <div class="muted">Build v10.2 (GitHub Pages) • sem ORDER / sem max() • fallback de janelas</div>
         </div>
         <div class="muted" id="periodo">Período: —</div>
       </div>
@@ -87,7 +84,7 @@
 
         <div class="toolbar" style="margin-top:10px">
           <button id="bt_test" class="btn">Testar tabela & listar colunas</button>
-          <button id="bt_load" class="btn primary">Carregar KPIs (30 dias)</button>
+          <button id="bt_load" class="btn primary">Carregar KPIs (30–365 dias)</button>
           <button id="bt_save" class="btn">Salvar mapeamento</button>
           <div class="muted" id="cols" style="margin-left:auto">Colunas: —</div>
         </div>
@@ -116,7 +113,7 @@
     </div>
 
     <script>
-      // ====== CREDENCIAIS (fixas — as que você forneceu) ======
+      // ====== DEFAULTS fixos (os seus) ======
       const DEFAULTS = {
         url: "https://uahmcfzerofhzjvlzrqc.supabase.co",
         key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU",
@@ -125,9 +122,9 @@
         col_total: "valor_total",
         col_desc: "desconto",
         col_ent: "entrega",
-        col_uni: "unidade" // opcional; se não existir, tudo roda sem filtro
+        col_uni: "unidade"
       };
-      const LSKEY = "dash_map_v1";
+      const LSKEY = "dash_map_v102";
 
       // ====== UI refs ======
       const el = {
@@ -153,7 +150,7 @@
       };
 
       // ====== helpers ======
-      function log(m){ el.log.textContent += "\\n" + m; }
+      function log(m){ el.log.textContent += "\n" + m; }
       function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
       function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)); }
       function toNum(x){
@@ -161,21 +158,13 @@
         if(typeof x==="number")return x;
         const s=String(x).trim();
         if(!s)return 0;
-        const t=s.replace(/\\./g,"").replace(/,/g,".");
+        const t=s.replace(/\./g,"").replace(/,/g,".");
         const n=Number(t);
         return isFinite(n)?n:0;
       }
       function toISO(d){ return d.toISOString().slice(0,10); }
-      function loadMapFromLS(){
-        try{
-          const s=localStorage.getItem(LSKEY);
-          if(!s) return null;
-          return JSON.parse(s);
-        }catch{ return null; }
-      }
-      function saveMapToLS(map){
-        try{ localStorage.setItem(LSKEY, JSON.stringify(map)); }catch{}
-      }
+      function loadMapFromLS(){ try{ const s=localStorage.getItem(LSKEY); return s?JSON.parse(s):null; }catch{return null;} }
+      function saveMapToLS(map){ try{ localStorage.setItem(LSKEY, JSON.stringify(map)); }catch{} }
       function getMap(){
         return {
           url: el.url.value.trim(),
@@ -199,68 +188,29 @@
         el.uni.value = map.col_uni || DEFAULTS.col_uni;
       }
 
-      // ====== Supabase client (dinâmico por mapeamento) ======
+      // ====== Supabase ======
       let supa = null;
       function createClient(url,key){ return window.supabase.createClient(url,key); }
 
-      // ====== Estado de dados carregados ======
+      // ====== Estado ======
       let ROWS_ALL = [];
       let UNIQUES = [];
 
-      // ====== Testar tabela: pega 1 linha e lista colunas ======
+      // ====== Testar tabela ======
       async function testTable(){
         const map = getMap();
         if(!map.tbl){ log("[ERRO-Teste] Informe o nome da tabela."); return; }
         supa = createClient(map.url, map.key);
-        log(`[Test] Buscando 1 linha de ${map.tbl} (sem ORDER, sem casts) …`);
+        log(`[Test] Buscando 1 linha de ${map.tbl} (sem ORDER)…`);
         const r = await supa.from(map.tbl).select("*").limit(1);
-        if(r.error){
-          el.cols.textContent = "Colunas: erro";
-          log("[ERRO-Teste] " + r.error.message);
-          return;
-        }
-        if(!r.data || !r.data.length){
-          el.cols.textContent = "Colunas: vazia ou bloqueada por RLS";
-          log("[ERRO-Teste] Tabela vazia ou sem permissão (RLS).");
-          return;
-        }
+        if(r.error){ el.cols.textContent="Colunas: erro"; log("[ERRO-Teste] "+r.error.message); return; }
+        if(!r.data || !r.data.length){ el.cols.textContent="Colunas: vazia ou RLS"; log("[ERRO-Teste] Tabela vazia ou sem permissão (RLS)."); return; }
         const cols = Object.keys(r.data[0]);
         el.cols.textContent = "Colunas: " + cols.join(", ");
-        log("[OK] Colunas listadas. Ajuste os campos acima se necessário.");
+        log("[OK] Colunas listadas.");
       }
 
-      // ====== Última data por ORDER (sem max()) com fallback ======
-      async function getLastDate(map){
-        // tenta ordenar desc na coluna de data
-        const q = await supa.from(map.tbl).select(map.col_dt).not(map.col_dt,"is",null).order(map.col_dt,{ascending:false}).limit(1);
-        if(q.error || !q.data || !q.data.length){
-          if(q.error) log("[Warn] Falhou ORDER por data: " + q.error.message);
-          // fallback: usa hoje (pode dar 0 linhas se base não tem hoje, mas o pedido é não usar max())
-          const end = new Date();
-          end.setHours(23,59,59,999);
-          return end;
-        }
-        const v = q.data[0][map.col_dt];
-        // v pode ser "YYYY-MM-DD" ou "DD/MM/YYYY"
-        let d = null;
-        if(typeof v === "string"){
-          const s = v.trim();
-          if(/^\\d{4}-\\d{2}-\\d{2}/.test(s)){ d = new Date(s+"T12:00:00"); }
-          else if(/^\\d{2}\\/\\d{2}\\/\\d{4}/.test(s)){
-            const [dd,mm,yyyy] = s.split("/").map(n=>parseInt(n,10));
-            d = new Date(yyyy, mm-1, dd, 12, 0, 0);
-          }else{
-            d = new Date(s);
-          }
-        }else{
-          d = new Date(v);
-        }
-        if(!(d instanceof Date) || isNaN(d)) d = new Date();
-        d.setHours(23,59,59,999);
-        return d;
-      }
-
-      // ====== Busca paginada ======
+      // ====== Busca paginada (sem ORDER) ======
       async function fetchRange(map, fromISO, toISO){
         const page=10000; let acc=[], off=0;
         const cols = [map.col_dt, map.col_total, map.col_desc, map.col_ent].filter(Boolean);
@@ -283,74 +233,69 @@
 
       function fillUnits(map, rows){
         const set = new Set();
-        if(map.col_uni){
-          for(const r of rows){ const u = r[map.col_uni]; if(u!=null && String(u).trim()!=="") set.add(String(u)); }
-        }
+        if(map.col_uni){ for(const r of rows){ const u=r[map.col_uni]; if(u!=null && String(u).trim()!=="") set.add(String(u)); } }
         const list = ["__ALL__", ...Array.from(set).sort((a,b)=>a.localeCompare(b,"pt-BR"))];
-        el.selUni.innerHTML = "";
-        for(const u of list){
-          const opt = document.createElement("option");
-          opt.value = u; opt.textContent = (u==="__ALL__" ? "Todas" : u);
-          el.selUni.appendChild(opt);
-        }
-        UNIQUES = list;
+        el.selUni.innerHTML=""; for(const u of list){ const o=document.createElement("option"); o.value=u; o.textContent=(u==="__ALL__"?"Todas":u); el.selUni.appendChild(o); }
+        UNIQUES=list;
       }
 
       function renderKPIs(map, rows){
         const uni = el.selUni.value || "__ALL__";
         const data = (uni==="__ALL__" || !map.col_uni) ? rows : rows.filter(r => String(r[map.col_uni])===uni);
-
-        let pedidos = data.length, fat=0, des=0, fre=0;
-        for(const r of data){
-          fat += toNum(r[map.col_total]);
-          des += toNum(r[map.col_desc]);
-          fre += toNum(r[map.col_ent]);
-        }
+        let pedidos=data.length, fat=0, des=0, fre=0;
+        for(const r of data){ fat+=toNum(r[map.col_total]); des+=toNum(r[map.col_desc]); fre+=toNum(r[map.col_ent]); }
         el.ped.textContent = fmtInt(pedidos);
         el.fat.textContent = fmtBRL(fat);
         el.dsc.textContent = fmtBRL(des);
         el.fre.textContent = fmtBRL(fre);
       }
 
+      // ====== Carregar KPIs — sem ORDER; tenta 30→60→90→180→365 ======
       async function loadKPIs(){
         const map = getMap();
         if(!map.tbl || !map.col_dt || !map.col_total){
-          log("[ERRO-Carregar] Informe ao menos: tabela, coluna de data e valor total.");
-          return;
+          log("[ERRO-Carregar] Informe: tabela, coluna de data e valor total."); return;
         }
         supa = createClient(map.url, map.key);
 
-        log(`[Query] ${map.tbl} → localizando última data por ORDER em '${map.col_dt}' …`);
-        const end = await getLastDate(map);
-        const start = new Date(end); start.setDate(end.getDate()-29); start.setHours(0,0,0,0);
-        el.periodo.textContent = "Período: " + toISO(start) + " → " + toISO(end);
-        log("[Query] Janela " + toISO(start) + " → " + toISO(end));
+        const end = new Date(); end.setHours(23,59,59,999);
+        const windows = [30,60,90,180,365];
+        let used=null, rows=[];
 
-        try{
-          const rows = await fetchRange(map, toISO(start), toISO(end));
-          ROWS_ALL = rows;
-          log("[OK] Linhas retornadas: " + rows.length.toLocaleString("pt-BR"));
-          fillUnits(map, rows);
-          renderKPIs(map, rows);
-          log("[OK] KPIs calculados.");
-        }catch(e){
-          log("[ERRO] " + (e.message||String(e)));
+        for(const days of windows){
+          const start = new Date(end); start.setDate(end.getDate()-(days-1)); start.setHours(0,0,0,0);
+          el.periodo.textContent = "Período: " + toISO(start) + " → " + toISO(end);
+          log(`[Query] Tentando janela ${days}d: ${toISO(start)} → ${toISO(end)}`);
+          try{
+            const r = await fetchRange(map, toISO(start), toISO(end));
+            if(r.length>0){ used=days; rows=r; break; }
+          }catch(e){ log("[Warn] Falha na janela "+days+"d: "+(e.message||String(e))); }
         }
+
+        if(!used){
+          log("[ERRO] Nenhuma janela retornou dados (verifique mapeamento/coluna de data).");
+          return;
+        }
+
+        ROWS_ALL = rows;
+        log("[OK] Linhas retornadas: "+rows.length.toLocaleString("pt-BR")+" (janela "+used+"d)");
+        fillUnits(map, rows);
+        renderKPIs(map, rows);
+        log("[OK] KPIs calculados.");
       }
 
       // ====== Eventos ======
       el.btTest.onclick = testTable;
       el.btLoad.onclick = loadKPIs;
-      el.btSave.onclick = () => { saveMapToLS( getMap() ); log("[OK] Mapeamento salvo no navegador."); };
+      el.btSave.onclick = () => { saveMapToLS(getMap()); log("[OK] Mapeamento salvo no navegador."); };
       el.selUni.onchange = () => { if(ROWS_ALL.length){ renderKPIs(getMap(), ROWS_ALL); } };
 
       // ====== Boot ======
       (function boot(){
-        log("[Boot] v10.1 — mapeamento fixo padrão para 'vendas' (sem max())");
+        log("[Boot] v10.2 — sem ORDER/sem max; fallback 30→60→90→180→365 dias.");
         const saved = loadMapFromLS();
-        setMap( saved || DEFAULTS );
-        // Auto-teste na primeira carga (não trava se falhar)
-        testTable().then(()=>{}).catch(()=>{});
+        setMap(saved || DEFAULTS);
+        testTable().catch(()=>{});
       })();
     </script>
   </body>
