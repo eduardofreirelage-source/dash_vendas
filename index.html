@@ -2,231 +2,267 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — v13.5 (vendas_kpi • paginação 1k)</title>
+  <title>Dashboard Vendas — v13.6 (vendas_kpi • agregação no banco)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root{--bg:#f6f7fb;--fg:#0f172a;--muted:#6b7280;--card:#fff;--b:#e5e7eb}
-    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);
-    font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
+    :root{
+      --bg:#f5f7fb; --card:#fff; --muted:#6b7280; --ink:#0f172a; --line:#e5e7eb;
+      --accent:#2563eb;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
     .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
-    h1{font-size:22px;margin:0 0 6px} .muted{color:var(--muted);font-size:12px}
-    .controls{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}
-    .ctrl{background:var(--card);border:1px solid var(--b);border-radius:10px;padding:10px}
-    select,button{font:inherit;padding:8px 10px;border:1px solid var(--b);border-radius:8px;background:#fff}
-    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-    .card{background:var(--card);border:1px solid var(--b);border-radius:12px;padding:14px}
-    .title{font-size:12px;color:var(--muted)} .big{font-size:22px;font-weight:700;margin-top:4px}
-    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    canvas{width:100%;height:260px;display:block}
-    pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;white-space:pre-wrap;overflow:auto;max-height:340px}
-    @media(max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-    @media(max-width:520px){.grid{grid-template-columns:1fr}}
+    h1{margin:0 0 6px;font-size:22px}
+    .muted{color:var(--muted);font-size:12px}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:12px}
+    .select,.btn{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit}
+    .btn{cursor:pointer}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:14px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+    .title{font-size:12px;color:var(--muted)}
+    .kpi{font-size:22px;font-weight:800;margin-top:4px}
+    .delta{font-size:12px;color:var(--muted)}
+    canvas{width:100%;height:320px}
+    pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:10px;white-space:pre-wrap;overflow:auto}
+    @media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media (max-width:520px){.grid{grid-template-columns:1fr}}
   </style>
+  <!-- Supabase e Chart.js (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <div class="wrap">
     <h1>Dashboard Vendas — Supabase</h1>
-    <div class="muted">Build v13.5 • fonte fixa: <b>public.vendas_kpi</b> • paginação 1k</div>
+    <div class="muted">Build <b>v13.6</b> • fonte fixa: <code>public.vendas_kpi</code> • agregação no banco (COUNT/SUM)</div>
 
-    <div class="controls">
-      <div class="ctrl">
-        <div class="title">Período</div>
-        <select id="selPeriod">
+    <div class="row">
+      <label>Período
+        <select id="selPeriodo" class="select">
           <option value="30">Últimos 30 dias</option>
           <option value="60">Últimos 60 dias</option>
           <option value="90">Últimos 90 dias</option>
           <option value="180">Últimos 180 dias</option>
           <option value="365" selected>Últimos 365 dias</option>
         </select>
-      </div>
-      <div class="ctrl">
-        <div class="title">UNIDADE</div>
-        <select id="selUnit">
-          <option value="__ALL__">Todas</option>
+      </label>
+
+      <label>UNIDADE
+        <select id="selUnidade" class="select">
+          <option>Carregando…</option>
         </select>
-      </div>
-      <div class="ctrl">
-        <div class="title">Ações</div>
-        <div class="row">
-          <button id="btnReload">Recarregar</button>
-          <span class="muted" id="periodo">Período: —</span>
-        </div>
-      </div>
+      </label>
+
+      <label style="display:flex;gap:8px;align-items:center">
+        <input type="radio" name="modo" value="bruto" checked> Total (bruto)
+      </label>
+      <label style="display:flex;gap:8px;align-items:center">
+        <input type="radio" name="modo" value="liquido"> Líquido (Total − Entrega)
+      </label>
+
+      <button id="btnGo" class="btn">Recarregar</button>
+      <div class="muted" id="periodoTxt">Período: —</div>
     </div>
 
     <div class="grid">
-      <div class="card"><div class="title">Pedidos</div><div class="big" id="k_ped">…</div><div class="muted" id="k_ped_trend">+0,0% vs ant.</div></div>
-      <div class="card"><div class="title">Faturamento</div><div class="big" id="k_fat">…</div><div class="muted" id="k_fat_trend">+0,0% vs ant.</div></div>
-      <div class="card"><div class="title">Incentivos</div><div class="big" id="k_des">…</div><div class="muted" id="k_des_trend">+0,0% vs ant.</div></div>
-      <div class="card"><div class="title">Frete</div><div class="big" id="k_fre">…</div><div class="muted" id="k_fre_trend">+0,0% vs ant.</div></div>
+      <div class="card"><div class="title">Pedidos</div><div class="kpi" id="k_ped">…</div><div class="delta" id="d_ped">+0,0% vs ant.</div></div>
+      <div class="card"><div class="title">Faturamento</div><div class="kpi" id="k_fat">…</div><div class="delta" id="d_fat">+0,0% vs ant.</div></div>
+      <div class="card"><div class="title">Incentivos</div><div class="kpi" id="k_desc">…</div><div class="delta" id="d_desc">+0,0% vs ant.</div></div>
+      <div class="card"><div class="title">Frete</div><div class="kpi" id="k_fre">…</div><div class="delta" id="d_fre">+0,0% vs ant.</div></div>
     </div>
 
-    <div class="card" style="margin-top:16px">
+    <div class="card" style="margin-top:14px">
       <div class="title">Receita diária (R$)</div>
-      <canvas id="chartFat"></canvas>
+      <canvas id="chartDia"></canvas>
     </div>
 
-    <div class="card" style="margin-top:16px">
+    <div class="card" style="margin-top:14px">
+      <div class="title">Totais por dia da semana (R$)</div>
+      <canvas id="chartWeek"></canvas>
+    </div>
+
+    <div class="card" style="margin-top:14px">
       <div class="title">Status / Logs</div>
       <pre id="log">Iniciando…</pre>
     </div>
   </div>
 
 <script>
-/** ====== CREDENCIAIS ====== */
+/* ====== CREDENCIAIS ====== */
 const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-
-/** ====== FONTE FIXA ====== */
 const TABLE = "vendas_kpi";
-const COLS  = "data_venda,unidade,valor_total,desconto,entrega";
 
+/* ====== Helpers ====== */
 const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-
-/** ====== UI helpers ====== */
-const elLog = document.getElementById("log");
-const elPeriod = document.getElementById("periodo");
-const selPeriod = document.getElementById("selPeriod");
-const selUnit = document.getElementById("selUnit");
-const btnReload = document.getElementById("btnReload");
-
-function log(s){ elLog.textContent += "\n" + s; elLog.scrollTop = elLog.scrollHeight; }
-function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
-function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)); }
-function toNum(x){
-  if (x==null || x==="") return 0;
-  if (typeof x === "number") return x;
-  const t = String(x).replace(/\./g,"").replace(/,/g,".");
-  const n = Number(t);
+const el = s => document.querySelector(s);
+const log = msg => { el("#log").textContent += "\n" + msg; };
+const fmtBRL = n => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0);
+const fmtInt = n => new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0));
+const toISO = d => d.toISOString().slice(0,10);
+const toNum = x => {
+  if(x==null||x==="")return 0;
+  if(typeof x==="number")return x;
+  const s=String(x).trim();
+  if(!s) return 0;
+  const t=s.replace(/\./g,"").replace(/,/g,".");
+  const n=Number(t);
   return isFinite(n) ? n : 0;
+};
+
+/* ====== Controles ====== */
+const selPeriodo = el("#selPeriodo");
+const selUnidade = el("#selUnidade");
+const btnGo      = el("#btnGo");
+
+/* ====== Charts ====== */
+let chartDia, chartWeek;
+function drawLine(id, labels, data){
+  const ctx = el(id).getContext("2d");
+  if(id==="#chartDia" && chartDia){ chartDia.destroy(); }
+  if(id==="#chartWeek" && chartWeek){ chartWeek.destroy(); }
+  const inst = new Chart(ctx,{
+    type:"line",
+    data:{ labels, datasets:[{ label:"Faturamento diário (R$)", data, tension:.25 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:true} }, scales:{ x:{ ticks:{maxRotation:0,autoSkip:true} } } }
+  });
+  if(id==="#chartDia") chartDia = inst; else chartWeek = inst;
 }
-function toISO(d){ return d.toISOString().slice(0,10); }
-function addDays(d, n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
 
-/** ====== Paginação 1k (continua até varrer tudo) ====== */
-async function fetchRange(table, fromISO, toISO, unidade){
-  const page = 1000;          // <= limite do PostgREST
-  let off = 0, acc = [], pg = 0;
-  for(;;){
-    let q = supa.from(table).select(COLS)
-      .gte("data_venda", fromISO)
-      .lte("data_venda", toISO)
-      .range(off, off + page - 1);
+/* ====== Dados distintos de unidade ====== */
+async function loadUnidades(){
+  log("[Boot] v13.6 — carregando unidades (distinct) …");
+  let q = supa.from(TABLE).select('unidade',{ distinct:true }).order('unidade', { ascending:true });
+  const r = await q;
+  if(r.error){ log("[ERRO] Unidades: "+r.error.message); selUnidade.innerHTML = `<option>Todas</option>`; return; }
+  const arr = (r.data||[]).map(x => x.unidade).filter(Boolean);
+  selUnidade.innerHTML = `<option>Todas</option>` + arr.map(u=>`<option>${u}</option>`).join("");
+}
 
-    if (unidade && unidade !== "__ALL__") q = q.eq("unidade", unidade);
+/* ====== Janela de datas ====== */
+function getWindow(days){
+  const end = new Date(); end.setDate(end.getDate()-1); // D-1 pra evitar dia incompleto
+  const start = new Date(end); start.setDate(end.getDate()-(Number(days)-1));
+  el("#periodoTxt").textContent = `Período: ${toISO(start)} → ${toISO(end)}`;
+  return { start: toISO(start), end: toISO(end) };
+}
 
-    const r = await q;
-    if (r.error) throw r.error;
+/* ====== KPIs via agregação no banco ====== */
+async function kpis({from, to, unidade, modo}){
+  // 1) COUNT (só cabeçalho)
+  let qCount = supa.from(TABLE).select('*',{ head:true, count:'exact' })
+    .gte('data_venda', from).lte('data_venda', to);
+  if(unidade && unidade!=="Todas") qCount = qCount.eq('unidade', unidade);
+  const rCount = await qCount;
+  if(rCount.error) throw rCount.error;
+  const pedidos = rCount.count||0;
 
-    const rows = r.data || [];
-    pg++;
-    acc.push(...rows);
-    log(`[Page] ${pg}: +${rows.length} (acum: ${acc.length})`);
+  // 2) SUMs
+  let qSum = supa.from(TABLE)
+    .select('fat:sum(valor_total),desc:sum(desconto),fre:sum(entrega)')
+    .gte('data_venda', from).lte('data_venda', to);
+  if(unidade && unidade!=="Todas") qSum = qSum.eq('unidade', unidade);
+  const rSum = await qSum;
+  if(rSum.error) throw rSum.error;
+  const fat = toNum(rSum.data?.[0]?.fat);
+  const des = toNum(rSum.data?.[0]?.desc);
+  const fre = toNum(rSum.data?.[0]?.fre);
 
-    if (rows.length < page) break;   // chegou na última página
-    off += page;                     // próxima janela: +1000
+  // 3) Série diária (client-side, mas somente 30/60/90/180/365 dias)
+  const rows = await fetchPagedRows({from,to,unidade});
+  const byDay = {};
+  for(const r of rows){
+    const d = String(r.data_venda).slice(0,10);
+    const vFat = toNum(r.valor_total);
+    const vFre = toNum(r.entrega);
+    const val = (modo==='liquido') ? (vFat - vFre) : vFat;
+    byDay[d] = (byDay[d]||0) + val;
   }
+  const days = Object.keys(byDay).sort();
+  const series = days.map(d=>byDay[d]);
+
+  // 4) Semana (0..6 Dom..Sáb)
+  const weekAgg = new Array(7).fill(0);
+  for(const d of days){
+    const wd = new Date(d+"T00:00:00").getDay();
+    weekAgg[wd] += byDay[d];
+  }
+
+  return { pedidos, fat, des, fre, days, series, weekAgg };
+}
+
+/* ====== Paginação moderada (2k por página) ====== */
+async function fetchPagedRows({from,to,unidade}){
+  const page = 2000; let off=0, acc=[];
+  for(;;){
+    let q = supa.from(TABLE)
+      .select('data_venda,valor_total,entrega,unidade')
+      .gte('data_venda', from).lte('data_venda', to)
+      .range(off, off+page-1);
+    if(unidade && unidade!=="Todas") q = q.eq('unidade', unidade);
+    const r = await q;
+    if(r.error) throw r.error;
+    const arr = r.data||[];
+    acc = acc.concat(arr);
+    if(arr.length<page) break;
+    off += page;
+  }
+  log(`[OK] Série diária: ${acc.length.toLocaleString("pt-BR")} linhas carregadas (paginado).`);
   return acc;
 }
 
-/** ====== KPIs + tendências ====== */
-async function loadAll(){
+/* ====== Atualização da tela ====== */
+function setKPIs({pedidos,fat,des,fre}){
+  el("#k_ped").textContent = fmtInt(pedidos);
+  el("#k_fat").textContent = fmtBRL(fat);
+  el("#k_desc").textContent = fmtBRL(des);
+  el("#k_fre").textContent = fmtBRL(fre);
+  // deltas fictícios por enquanto (sem período anterior nesta versão)
+  el("#d_ped").textContent = "—";
+  el("#d_fat").textContent = "—";
+  el("#d_desc").textContent = "—";
+  el("#d_fre").textContent = "—";
+}
+
+/* ====== GO ====== */
+async function GO(){
   try{
-    const days = Number(selPeriod.value);
-    const unit = selUnit.value;
-    log(`[Boot] v13.5 — fonte ${TABLE} • paginação 1k`);
+    const days = Number(selPeriodo.value||30);
+    const { start, end } = getWindow(days);
+    const unidade = selUnidade.value||"Todas";
+    const modo = (document.querySelector('input[name="modo"]:checked')||{}).value||'bruto';
 
-    const end = addDays(new Date(), -1);
-    const start = addDays(end, -(days-1));
-    const prevEnd = addDays(start, -1);
-    const prevStart = addDays(prevEnd, -(days-1));
-    elPeriod.textContent = `Período: ${toISO(start)} → ${toISO(end)}`;
+    log(`[Query] ${TABLE} | janela ${days}d ${start} → ${end} | UNIDADE=${unidade} | modo=${modo}`);
 
-    // período atual
-    log(`[Query] ${TABLE} | janela ${days}d ${toISO(start)} → ${toISO(end)} | UNIDADE=${unit==="__ALL__"?"Todas":unit}`);
-    const cur = await fetchRange(TABLE, toISO(start), toISO(end), unit);
+    const res = await kpis({from:start,to:end,unidade,modo});
+    setKPIs(res);
 
-    // popular unidades na primeira carga
-    if (selUnit.options.length <= 1){
-      const set = new Set(cur.map(r => r.unidade).filter(Boolean));
-      [...set].sort().forEach(u => {
-        const opt = document.createElement("option");
-        opt.value = u; opt.textContent = u;
-        selUnit.appendChild(opt);
-      });
-    }
+    // Gráfico diário
+    drawLine("#chartDia", res.days, res.series);
 
-    // período anterior
-    const prev = await fetchRange(TABLE, toISO(prevStart), toISO(prevEnd), unit);
+    // Gráfico por dia da semana
+    const lbl = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+    drawLine("#chartWeek", lbl, res.weekAgg);
 
-    // somatórios
-    const sum = rows => rows.reduce((a,r)=>({
-      ped: a.ped+1,
-      fat: a.fat+toNum(r.valor_total),
-      des: a.des+toNum(r.desconto),
-      fre: a.fre+toNum(r.entrega)
-    }),{ped:0,fat:0,des:0,fre:0});
-
-    const A = sum(cur), B = sum(prev);
-    const pct = (x,y)=> y>0 ? ((x-y)/y*100) : 0;
-
-    // KPIs
-    document.getElementById("k_ped").textContent = fmtInt(A.ped);
-    document.getElementById("k_fat").textContent = fmtBRL(A.fat);
-    document.getElementById("k_des").textContent = fmtBRL(A.des);
-    document.getElementById("k_fre").textContent = fmtBRL(A.fre);
-
-    document.getElementById("k_ped_trend").textContent = `${pct(A.ped,B.ped).toFixed(1)}% vs ant.`;
-    document.getElementById("k_fat_trend").textContent = `${pct(A.fat,B.fat).toFixed(1)}% vs ant.`;
-    document.getElementById("k_des_trend").textContent = `${pct(A.des,B.des).toFixed(1)}% vs ant.`;
-    document.getElementById("k_fre_trend").textContent = `${pct(A.fre,B.fre).toFixed(1)}% vs ant.`;
-
-    // gráfico
-    drawLine(cur);
-
-    log(`[OK] Linhas (atual): ${cur.length.toLocaleString("pt-BR")} • KPIs atualizados.`);
+    log("[OK] KPIs e gráficos atualizados.");
   }catch(e){
-    log(`[ERRO] ${e.message||String(e)}`);
-    console.error(e);
+    console.error(e); log("[ERRO] "+(e.message||String(e)));
   }
 }
 
-/** ====== Gráfico simples em canvas ====== */
-function drawLine(rows){
-  const c = document.getElementById("chartFat");
-  const g = c.getContext("2d");
-  const W = c.width = c.clientWidth;
-  const H = c.height = c.clientHeight;
-  g.clearRect(0,0,W,H);
-  if(!rows.length) return;
-
-  // soma por dia
-  const map = new Map();
-  for(const r of rows){
-    const d = String(r.data_venda).slice(0,10);
-    map.set(d, (map.get(d)||0) + toNum(r.valor_total));
-  }
-  const pts = [...map.entries()].sort((a,b)=>a[0]<b[0]?-1:1);
-  const xs = pts.map((_,i)=>i), ys = pts.map(p=>p[1]);
-  const max = Math.max(...ys), min = Math.min(...ys);
-  const pad = 20;
-  const X = i => pad + (W-2*pad) * (i/(xs.length-1 || 1));
-  const Y = v => H - pad - (H-2*pad) * ((v-min)/((max-min)||1));
-
-  g.lineWidth = 2; g.strokeStyle = "#3b82f6";
-  g.beginPath(); g.moveTo(X(xs[0]), Y(ys[0]));
-  for(let i=1;i<xs.length;i++){ g.lineTo(X(xs[i]), Y(ys[i])); }
-  g.stroke();
-}
-
-/** ====== Eventos ====== */
-btnReload.onclick = loadAll;
-selPeriod.onchange = loadAll;
-selUnit.onchange = loadAll;
-
-/** ====== Start ====== */
-loadAll();
+/* ====== Boot ====== */
+(async function(){
+  await loadUnidades();
+  // valor inicial do período
+  selPeriodo.value = "30";
+  // eventos
+  btnGo.onclick = GO;
+  selPeriodo.onchange = GO;
+  selUnidade.onchange = GO;
+  document.querySelectorAll('input[name="modo"]').forEach(r=>r.onchange=GO);
+  // primeira carga
+  GO();
+})();
 </script>
 </body>
 </html>
