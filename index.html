@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — Supabase (v16.2)</title>
+  <title>Dashboard Vendas — Supabase (v16.3)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body{margin:0;background:#f6f7fb;color:#0f172a;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
@@ -31,14 +31,14 @@
   </style>
   <!-- Supabase UMD -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <!-- Chart.js para os gráficos -->
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <div class="wrap">
     <h1>Dashboard Vendas — Supabase</h1>
     <div class="muted">
-      Build <b>v16.2</b> • fonte: <code>public.vendas_kpi_daily</code> • URL:
+      Build <b>v16.3</b> • fonte: <code>public.vendas_kpi_daily</code> • URL:
       <code>uahmcfzerofhzjvlzrqc.supabase.co</code>
     </div>
 
@@ -69,24 +69,41 @@
           <button class="btn ghost" id="clear">Limpar filtros</button>
         </div>
         <div class="muted" id="periodoTxt">Período: —</div>
+        <div class="muted" id="periodoAntTxt">Anterior: —</div>
       </div>
     </div>
 
     <div class="grid">
-      <div class="card"><div class="k-title">Pedidos</div><div class="k-val" id="k_ped">…</div><div class="k-sub" id="k_ped_sub">+0,0% vs ant.</div></div>
-      <div class="card"><div class="k-title">Faturamento</div><div class="k-val" id="k_fat">…</div><div class="k-sub" id="k_fat_sub">+0,0% vs ant.</div></div>
-      <div class="card"><div class="k-title">Incentivos</div><div class="k-val" id="k_des">…</div><div class="k-sub" id="k_des_sub">+0,0% vs ant.</div></div>
-      <div class="card"><div class="k-title">Frete</div><div class="k-val" id="k_fre">…</div><div class="k-sub" id="k_fre_sub">+0,0% vs ant.</div></div>
+      <div class="card">
+        <div class="k-title">Pedidos</div>
+        <div class="k-val" id="k_ped">…</div>
+        <div class="k-sub" id="k_ped_sub">—</div>
+      </div>
+      <div class="card">
+        <div class="k-title">Faturamento</div>
+        <div class="k-val" id="k_fat">…</div>
+        <div class="k-sub" id="k_fat_sub">—</div>
+      </div>
+      <div class="card">
+        <div class="k-title">Incentivos</div>
+        <div class="k-val" id="k_des">…</div>
+        <div class="k-sub" id="k_des_sub">—</div>
+      </div>
+      <div class="card">
+        <div class="k-title">Frete</div>
+        <div class="k-val" id="k_fre">…</div>
+        <div class="k-sub" id="k_fre_sub">—</div>
+      </div>
     </div>
 
     <div class="card" style="margin-top:14px">
       <div class="k-title">Receita diária (R$)</div>
-      <canvas id="c1" class="chart"></canvas>
+      <div id="c1_wrap"><canvas id="c1" class="chart"></canvas></div>
     </div>
 
     <div class="card" style="margin-top:14px">
       <div class="k-title">Totais por dia da semana (R$)</div>
-      <canvas id="c2" class="chart"></canvas>
+      <div id="c2_wrap"><canvas id="c2" class="chart"></canvas></div>
     </div>
 
     <div class="card" style="margin-top:14px">
@@ -99,13 +116,13 @@
     // ====== CREDENCIAIS ======
     const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
     const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     const TABLE = "vendas_kpi_daily";  // colunas: dia(date), unidade, pedidos, fat, des, fre
 
     // ====== UI helpers ======
     const elLog = document.getElementById('log');
     const elPeriodoTxt = document.getElementById('periodoTxt');
+    const elPeriodoAntTxt = document.getElementById('periodoAntTxt');
     const elUni = document.getElementById('f_uni');
     const elQuick = document.getElementById('quickDays');
     const elIni = document.getElementById('dt_ini');
@@ -121,8 +138,7 @@
     const parseBR = s => {
       const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec((s||'').trim());
       if(!m) return null;
-      const d = new Date(Date.UTC(+m[3], +m[2]-1, +m[1], 0,0,0));
-      return d;
+      return new Date(Date.UTC(+m[3], +m[2]-1, +m[1], 0,0,0));
     };
     const toISO = d => d.toISOString().slice(0,10);
     const addDaysUTC = (d, n) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()+n));
@@ -131,39 +147,46 @@
     // ====== Estado ======
     let state = {
       uni: 'Todas',
-      start: addDaysUTC(new Date(), -29),  // padrão 30d
+      start: addDaysUTC(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate())), -29),
       end: new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()))
     };
 
-    // ====== Chart.js instâncias ======
-    let ch1=null, ch2=null;
+    // ====== Charts & helpers ======
+    let ch1=null, ch2=null, runId=0;
 
-    function resetCharts(){
-      if(ch1) { ch1.destroy(); ch1 = null; }
-      if(ch2) { ch2.destroy(); ch2 = null; }
+    function freshCanvas(id){
+      // remove o canvas e cria outro (zera qualquer estado interno do Chart.js)
+      const old = document.getElementById(id);
+      const wrap = old.parentNode;
+      wrap.removeChild(old);
+      const c = document.createElement('canvas');
+      c.id = id;
+      c.className = 'chart';
+      wrap.appendChild(c);
+      return c.getContext('2d');
     }
 
     function renderCharts(series, weekday){
-      resetCharts();
+      // recria os canvases para evitar “infinito”
+      const ctx1 = freshCanvas('c1');
+      const ctx2 = freshCanvas('c2');
 
-      const ctx1 = document.getElementById('c1').getContext('2d');
       ch1 = new Chart(ctx1, {
         type:'line',
         data:{ labels: series.map(x=>x.dia), datasets:[{label:'Faturamento diário (R$)', data:series.map(x=>x.val)}]},
-        options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:false}}}
+        options:{responsive:true, maintainAspectRatio:false, animation:false, scales:{y:{beginAtZero:false}}}
       });
 
-      const ctx2 = document.getElementById('c2').getContext('2d');
       ch2 = new Chart(ctx2, {
         type:'bar',
-        data:{ labels: ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'], datasets:[{label:'Total por dia da semana (R$)', data:weekday} ]},
-        options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:false}}}
+        data:{ labels: ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'], datasets:[{label:'Total por dia da semana (R$)', data:weekday}]},
+        options:{responsive:true, maintainAspectRatio:false, animation:false, scales:{y:{beginAtZero:false}}}
       });
     }
 
     // ====== Dados ======
     async function loadUnidades(){
-      log("[Boot] v16.2 — carregando unidades (distinct) …");
+      log("[Boot] v16.3 — carregando unidades (distinct) …");
       const r = await supa.from(TABLE).select('unidade').neq('unidade', null);
       if(r.error){ log("[Warn] unidades: "+r.error.message); return ['Todas']; }
       const set = new Set( r.data.map(x=>String(x.unidade).trim()).filter(Boolean) );
@@ -181,15 +204,12 @@
 
     async function queryWindow(start, end, unidade){
       const sISO = toISO(start), eISO = toISO(end);
-      elPeriodoTxt.textContent = `Período: ${sISO} → ${eISO}`;
-
       let q = supa.from(TABLE)
         .select('dia,unidade,pedidos,fat,des,fre')
         .gte('dia', sISO)
         .lte('dia', eISO);
       if(unidade && unidade !== 'Todas') q = q.eq('unidade', unidade);
 
-      // paginação 2k
       const page = 2000; let off=0, acc=[];
       for(;;){
         const r = await q.range(off, off + page - 1);
@@ -227,26 +247,35 @@
     }
 
     async function go(){
+      const my = ++runId; // token anti-corrida
       try{
         const {start, end, uni} = state;
+
+        // textos de período
+        elPeriodoTxt.textContent = `Período: ${toISO(start)} → ${toISO(end)}`;
+        const {startPrev, endPrev} = prevWindow(start, end);
+        elPeriodoAntTxt.textContent = `Anterior: ${toISO(startPrev)} → ${toISO(endPrev)}`;
+
         log(`[Query] ${TABLE} | ${toISO(start)} → ${toISO(end)} | UNI=${uni}`);
 
         const curr = await queryWindow(start, end, uni);
+        if(my !== runId) return; // ignora respostas antigas
         const a = agg(curr);
 
-        const {startPrev, endPrev} = prevWindow(start, end);
         const prevRows = await queryWindow(startPrev, endPrev, uni);
+        if(my !== runId) return;
         const b = agg(prevRows);
 
-        // KPIs
+        // KPIs (com valor do período anterior)
         document.getElementById('k_ped').textContent = fmtInt(a.ped);
         document.getElementById('k_fat').textContent = fmtBRL(a.fat);
         document.getElementById('k_des').textContent = fmtBRL(a.des);
         document.getElementById('k_fre').textContent = fmtBRL(a.fre);
-        document.getElementById('k_ped_sub').textContent = pct(a.ped, b.ped);
-        document.getElementById('k_fat_sub').textContent = pct(a.fat, b.fat);
-        document.getElementById('k_des_sub').textContent = pct(a.des, b.des);
-        document.getElementById('k_fre_sub').textContent = pct(a.fre, b.fre);
+
+        document.getElementById('k_ped_sub').textContent = `${pct(a.ped, b.ped)} (ant.: ${fmtInt(b.ped)})`;
+        document.getElementById('k_fat_sub').textContent = `${pct(a.fat, b.fat)} (ant.: ${fmtBRL(b.fat)})`;
+        document.getElementById('k_des_sub').textContent = `${pct(a.des, b.des)} (ant.: ${fmtBRL(b.des)})`;
+        document.getElementById('k_fre_sub').textContent = `${pct(a.fre, b.fre)} (ant.: ${fmtBRL(b.fre)})`;
 
         // Gráficos
         renderCharts(a.series, a.byWeek);
@@ -260,7 +289,7 @@
     // ====== UI bindings ======
     elUni.addEventListener('change', ()=>{ state.uni = elUni.value; go(); });
 
-    elQuick.addEventListener('click', ev=>{
+    document.getElementById('quickDays').addEventListener('click', ev=>{
       const el = ev.target.closest('.chip'); if(!el) return;
       [...elQuick.querySelectorAll('.chip')].forEach(c=>c.classList.remove('active'));
       el.classList.add('active');
@@ -275,7 +304,6 @@
     btnApply.addEventListener('click', ()=>{
       const a = parseBR(elIni.value), b = parseBR(elFim.value);
       if(!a || !b){ alert("Preencha as duas datas no formato dd/mm/aaaa."); return; }
-      // garante ordem e inclusivo (sem somar 1 dia!)
       const start = (a<=b)?a:b, end = (a<=b)?b:a;
       state.start = start; state.end = end;
       [...elQuick.querySelectorAll('.chip')].forEach(c=>c.classList.remove('active'));
@@ -286,7 +314,6 @@
       elIni.value = ""; elFim.value = "";
       elUni.value = "Todas"; state.uni = "Todas";
       [...elQuick.querySelectorAll('.chip')].forEach(c=>c.classList.remove('active'));
-      // volta para 30 dias inclusivo até hoje (UTC)
       const todayUTC = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
       state.end = todayUTC;
       state.start = addDaysUTC(todayUTC, -29);
@@ -296,9 +323,7 @@
     // ====== Boot ======
     (async function boot(){
       await loadUnidades();
-      // seleciona “Todas”
       elUni.value = "Todas"; state.uni = "Todas";
-      // pinta chip 30d como ativo e dispara primeira carga
       go();
     })();
   </script>
