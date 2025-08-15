@@ -2,13 +2,10 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — v13.6 (vendas_kpi • agregação no banco)</title>
+  <title>Dashboard Vendas — v13.7 (vendas_kpi • paginação no cliente)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root{
-      --bg:#f5f7fb; --card:#fff; --muted:#6b7280; --ink:#0f172a; --line:#e5e7eb;
-      --accent:#2563eb;
-    }
+    :root{--bg:#f5f7fb;--card:#fff;--muted:#6b7280;--ink:#0f172a;--line:#e5e7eb}
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
     .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
@@ -27,23 +24,22 @@
     @media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media (max-width:520px){.grid{grid-template-columns:1fr}}
   </style>
-  <!-- Supabase e Chart.js (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <div class="wrap">
     <h1>Dashboard Vendas — Supabase</h1>
-    <div class="muted">Build <b>v13.6</b> • fonte fixa: <code>public.vendas_kpi</code> • agregação no banco (COUNT/SUM)</div>
+    <div class="muted">Build <b>v13.7</b> • fonte fixa: <code>public.vendas_kpi</code> • sem sum() no servidor (paginação 2k)</div>
 
     <div class="row">
       <label>Período
         <select id="selPeriodo" class="select">
-          <option value="30">Últimos 30 dias</option>
+          <option value="30" selected>Últimos 30 dias</option>
           <option value="60">Últimos 60 dias</option>
           <option value="90">Últimos 90 dias</option>
           <option value="180">Últimos 180 dias</option>
-          <option value="365" selected>Últimos 365 dias</option>
+          <option value="365">Últimos 365 dias</option>
         </select>
       </label>
 
@@ -65,10 +61,10 @@
     </div>
 
     <div class="grid">
-      <div class="card"><div class="title">Pedidos</div><div class="kpi" id="k_ped">…</div><div class="delta" id="d_ped">+0,0% vs ant.</div></div>
-      <div class="card"><div class="title">Faturamento</div><div class="kpi" id="k_fat">…</div><div class="delta" id="d_fat">+0,0% vs ant.</div></div>
-      <div class="card"><div class="title">Incentivos</div><div class="kpi" id="k_desc">…</div><div class="delta" id="d_desc">+0,0% vs ant.</div></div>
-      <div class="card"><div class="title">Frete</div><div class="kpi" id="k_fre">…</div><div class="delta" id="d_fre">+0,0% vs ant.</div></div>
+      <div class="card"><div class="title">Pedidos</div><div class="kpi" id="k_ped">…</div><div class="delta" id="d_ped">—</div></div>
+      <div class="card"><div class="title">Faturamento</div><div class="kpi" id="k_fat">…</div><div class="delta" id="d_fat">—</div></div>
+      <div class="card"><div class="title">Incentivos</div><div class="kpi" id="k_desc">…</div><div class="delta" id="d_desc">—</div></div>
+      <div class="card"><div class="title">Frete</div><div class="kpi" id="k_fre">…</div><div class="delta" id="d_fre">—</div></div>
     </div>
 
     <div class="card" style="margin-top:14px">
@@ -103,92 +99,48 @@ const toISO = d => d.toISOString().slice(0,10);
 const toNum = x => {
   if(x==null||x==="")return 0;
   if(typeof x==="number")return x;
-  const s=String(x).trim();
-  if(!s) return 0;
+  const s=String(x).trim(); if(!s) return 0;
   const t=s.replace(/\./g,"").replace(/,/g,".");
   const n=Number(t);
-  return isFinite(n) ? n : 0;
+  return isFinite(n)?n:0;
 };
 
 /* ====== Controles ====== */
 const selPeriodo = el("#selPeriodo");
 const selUnidade = el("#selUnidade");
 const btnGo      = el("#btnGo");
+let loading = false;
 
 /* ====== Charts ====== */
 let chartDia, chartWeek;
-function drawLine(id, labels, data){
+function drawLine(id, labels, data, labelTxt){
   const ctx = el(id).getContext("2d");
   if(id==="#chartDia" && chartDia){ chartDia.destroy(); }
   if(id==="#chartWeek" && chartWeek){ chartWeek.destroy(); }
   const inst = new Chart(ctx,{
     type:"line",
-    data:{ labels, datasets:[{ label:"Faturamento diário (R$)", data, tension:.25 }] },
+    data:{ labels, datasets:[{ label:labelTxt, data, tension:.25 }] },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:true} }, scales:{ x:{ ticks:{maxRotation:0,autoSkip:true} } } }
   });
   if(id==="#chartDia") chartDia = inst; else chartWeek = inst;
 }
 
-/* ====== Dados distintos de unidade ====== */
+/* ====== Unidades (distinct) ====== */
 async function loadUnidades(){
-  log("[Boot] v13.6 — carregando unidades (distinct) …");
-  let q = supa.from(TABLE).select('unidade',{ distinct:true }).order('unidade', { ascending:true });
+  log("[Boot] v13.7 — carregando unidades (distinct) …");
+  let q = supa.from(TABLE).select('unidade',{ distinct:true }).order('unidade',{ascending:true});
   const r = await q;
   if(r.error){ log("[ERRO] Unidades: "+r.error.message); selUnidade.innerHTML = `<option>Todas</option>`; return; }
-  const arr = (r.data||[]).map(x => x.unidade).filter(Boolean);
+  const arr = (r.data||[]).map(x=>x.unidade).filter(Boolean);
   selUnidade.innerHTML = `<option>Todas</option>` + arr.map(u=>`<option>${u}</option>`).join("");
 }
 
-/* ====== Janela de datas ====== */
+/* ====== Janela ====== */
 function getWindow(days){
-  const end = new Date(); end.setDate(end.getDate()-1); // D-1 pra evitar dia incompleto
+  const end = new Date(); end.setDate(end.getDate()-1);
   const start = new Date(end); start.setDate(end.getDate()-(Number(days)-1));
   el("#periodoTxt").textContent = `Período: ${toISO(start)} → ${toISO(end)}`;
   return { start: toISO(start), end: toISO(end) };
-}
-
-/* ====== KPIs via agregação no banco ====== */
-async function kpis({from, to, unidade, modo}){
-  // 1) COUNT (só cabeçalho)
-  let qCount = supa.from(TABLE).select('*',{ head:true, count:'exact' })
-    .gte('data_venda', from).lte('data_venda', to);
-  if(unidade && unidade!=="Todas") qCount = qCount.eq('unidade', unidade);
-  const rCount = await qCount;
-  if(rCount.error) throw rCount.error;
-  const pedidos = rCount.count||0;
-
-  // 2) SUMs
-  let qSum = supa.from(TABLE)
-    .select('fat:sum(valor_total),desc:sum(desconto),fre:sum(entrega)')
-    .gte('data_venda', from).lte('data_venda', to);
-  if(unidade && unidade!=="Todas") qSum = qSum.eq('unidade', unidade);
-  const rSum = await qSum;
-  if(rSum.error) throw rSum.error;
-  const fat = toNum(rSum.data?.[0]?.fat);
-  const des = toNum(rSum.data?.[0]?.desc);
-  const fre = toNum(rSum.data?.[0]?.fre);
-
-  // 3) Série diária (client-side, mas somente 30/60/90/180/365 dias)
-  const rows = await fetchPagedRows({from,to,unidade});
-  const byDay = {};
-  for(const r of rows){
-    const d = String(r.data_venda).slice(0,10);
-    const vFat = toNum(r.valor_total);
-    const vFre = toNum(r.entrega);
-    const val = (modo==='liquido') ? (vFat - vFre) : vFat;
-    byDay[d] = (byDay[d]||0) + val;
-  }
-  const days = Object.keys(byDay).sort();
-  const series = days.map(d=>byDay[d]);
-
-  // 4) Semana (0..6 Dom..Sáb)
-  const weekAgg = new Array(7).fill(0);
-  for(const d of days){
-    const wd = new Date(d+"T00:00:00").getDay();
-    weekAgg[wd] += byDay[d];
-  }
-
-  return { pedidos, fat, des, fre, days, series, weekAgg };
 }
 
 /* ====== Paginação moderada (2k por página) ====== */
@@ -196,7 +148,7 @@ async function fetchPagedRows({from,to,unidade}){
   const page = 2000; let off=0, acc=[];
   for(;;){
     let q = supa.from(TABLE)
-      .select('data_venda,valor_total,entrega,unidade')
+      .select('data_venda,valor_total,desconto,entrega,unidade')
       .gte('data_venda', from).lte('data_venda', to)
       .range(off, off+page-1);
     if(unidade && unidade!=="Todas") q = q.eq('unidade', unidade);
@@ -207,25 +159,56 @@ async function fetchPagedRows({from,to,unidade}){
     if(arr.length<page) break;
     off += page;
   }
-  log(`[OK] Série diária: ${acc.length.toLocaleString("pt-BR")} linhas carregadas (paginado).`);
+  log(`[OK] Carregadas ${acc.length.toLocaleString("pt-BR")} linhas (paginado).`);
   return acc;
 }
 
-/* ====== Atualização da tela ====== */
+/* ====== KPIs & séries (no cliente) ====== */
+async function compute({from,to,unidade,modo}){
+  const rows = await fetchPagedRows({from,to,unidade});
+
+  let pedidos = rows.length, fat=0, des=0, fre=0;
+  const byDay = {};
+  const add = (d,val)=>{ byDay[d]=(byDay[d]||0)+val; };
+
+  for(const r of rows){
+    const d = String(r.data_venda).slice(0,10);
+    const vFat = toNum(r.valor_total);
+    const vDes = toNum(r.desconto);
+    const vFre = toNum(r.entrega);
+    fat += vFat; des += vDes; fre += vFre;
+    const val = (modo==='liquido') ? (vFat - vFre) : vFat;
+    add(d, val);
+  }
+  const days = Object.keys(byDay).sort();
+  const series = days.map(d=>byDay[d]);
+
+  // semana
+  const weekAgg = new Array(7).fill(0);
+  for(const d of days){
+    const wd = new Date(d+"T00:00:00").getDay();
+    weekAgg[wd] += byDay[d];
+  }
+
+  return { pedidos,fat,des,fre, days,series,weekAgg };
+}
+
+/* ====== UI ====== */
 function setKPIs({pedidos,fat,des,fre}){
   el("#k_ped").textContent = fmtInt(pedidos);
   el("#k_fat").textContent = fmtBRL(fat);
   el("#k_desc").textContent = fmtBRL(des);
   el("#k_fre").textContent = fmtBRL(fre);
-  // deltas fictícios por enquanto (sem período anterior nesta versão)
   el("#d_ped").textContent = "—";
   el("#d_fat").textContent = "—";
   el("#d_desc").textContent = "—";
   el("#d_fre").textContent = "—";
 }
 
-/* ====== GO ====== */
+/* ====== GO (com trava p/ evitar cliques múltiplos) ====== */
 async function GO(){
+  if(loading) return;
+  loading = true;
   try{
     const days = Number(selPeriodo.value||30);
     const { start, end } = getWindow(days);
@@ -233,34 +216,27 @@ async function GO(){
     const modo = (document.querySelector('input[name="modo"]:checked')||{}).value||'bruto';
 
     log(`[Query] ${TABLE} | janela ${days}d ${start} → ${end} | UNIDADE=${unidade} | modo=${modo}`);
-
-    const res = await kpis({from:start,to:end,unidade,modo});
+    const res = await compute({from:start,to:end,unidade,modo});
     setKPIs(res);
-
-    // Gráfico diário
-    drawLine("#chartDia", res.days, res.series);
-
-    // Gráfico por dia da semana
-    const lbl = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
-    drawLine("#chartWeek", lbl, res.weekAgg);
-
+    drawLine("#chartDia", res.days, res.series, "Faturamento diário (R$)");
+    drawLine("#chartWeek", ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"], res.weekAgg, "Totais por dia da semana (R$)");
     log("[OK] KPIs e gráficos atualizados.");
   }catch(e){
-    console.error(e); log("[ERRO] "+(e.message||String(e)));
+    console.error(e);
+    log("[ERRO] "+(e.message||String(e)));
+  }finally{
+    loading = false;
   }
 }
 
 /* ====== Boot ====== */
 (async function(){
   await loadUnidades();
-  // valor inicial do período
   selPeriodo.value = "30";
-  // eventos
   btnGo.onclick = GO;
   selPeriodo.onchange = GO;
   selUnidade.onchange = GO;
   document.querySelectorAll('input[name="modo"]').forEach(r=>r.onchange=GO);
-  // primeira carga
   GO();
 })();
 </script>
