@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — v13.4 (vendas_kpi)</title>
+  <title>Dashboard Vendas — v13.5 (vendas_kpi • paginação 1k)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{--bg:#f6f7fb;--fg:#0f172a;--muted:#6b7280;--card:#fff;--b:#e5e7eb}
@@ -18,17 +18,16 @@
     .title{font-size:12px;color:var(--muted)} .big{font-size:22px;font-weight:700;margin-top:4px}
     .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
     canvas{width:100%;height:260px;display:block}
-    pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;white-space:pre-wrap;overflow:auto}
+    pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;white-space:pre-wrap;overflow:auto;max-height:340px}
     @media(max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:520px){.grid{grid-template-columns:1fr}}
   </style>
-  <!-- Supabase UMD -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 </head>
 <body>
   <div class="wrap">
     <h1>Dashboard Vendas — Supabase</h1>
-    <div class="muted">Build v13.4 • fonte fixa: <b>public.vendas_kpi</b></div>
+    <div class="muted">Build v13.5 • fonte fixa: <b>public.vendas_kpi</b> • paginação 1k</div>
 
     <div class="controls">
       <div class="ctrl">
@@ -75,13 +74,13 @@
   </div>
 
 <script>
-/** ====== CREDENCIAIS (as mesmas que você passou) ====== */
+/** ====== CREDENCIAIS ====== */
 const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
 
 /** ====== FONTE FIXA ====== */
-const TABLE = "vendas_kpi";              // <<—— usamos SEMPRE esta view
-const COLS  = "data_venda, unidade, valor_total, desconto, entrega";
+const TABLE = "vendas_kpi";
+const COLS  = "data_venda,unidade,valor_total,desconto,entrega";
 
 const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
@@ -105,22 +104,28 @@ function toNum(x){
 function toISO(d){ return d.toISOString().slice(0,10); }
 function addDays(d, n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
 
-/** ====== Paginação segura ====== */
-async function fetchRows(table, fromISO, toISO, unidade){
-  const page = 2000;
-  let off = 0, acc = [];
+/** ====== Paginação 1k (continua até varrer tudo) ====== */
+async function fetchRange(table, fromISO, toISO, unidade){
+  const page = 1000;          // <= limite do PostgREST
+  let off = 0, acc = [], pg = 0;
   for(;;){
     let q = supa.from(table).select(COLS)
       .gte("data_venda", fromISO)
-      .lte("data_venda", toISO);
+      .lte("data_venda", toISO)
+      .range(off, off + page - 1);
+
     if (unidade && unidade !== "__ALL__") q = q.eq("unidade", unidade);
-    q = q.range(off, off + page - 1);
+
     const r = await q;
-    if (r.error){ throw r.error; }
+    if (r.error) throw r.error;
+
     const rows = r.data || [];
-    acc = acc.concat(rows);
-    if (rows.length < page) break;
-    off += page;
+    pg++;
+    acc.push(...rows);
+    log(`[Page] ${pg}: +${rows.length} (acum: ${acc.length})`);
+
+    if (rows.length < page) break;   // chegou na última página
+    off += page;                     // próxima janela: +1000
   }
   return acc;
 }
@@ -130,18 +135,19 @@ async function loadAll(){
   try{
     const days = Number(selPeriod.value);
     const unit = selUnit.value;
-    log(`[Boot] v13.4 — fonte fixa ${TABLE} • paginação 2k`);
+    log(`[Boot] v13.5 — fonte ${TABLE} • paginação 1k`);
+
     const end = addDays(new Date(), -1);
     const start = addDays(end, -(days-1));
     const prevEnd = addDays(start, -1);
     const prevStart = addDays(prevEnd, -(days-1));
     elPeriod.textContent = `Período: ${toISO(start)} → ${toISO(end)}`;
 
-    // atual
+    // período atual
     log(`[Query] ${TABLE} | janela ${days}d ${toISO(start)} → ${toISO(end)} | UNIDADE=${unit==="__ALL__"?"Todas":unit}`);
-    const cur = await fetchRows(TABLE, toISO(start), toISO(end), unit);
+    const cur = await fetchRange(TABLE, toISO(start), toISO(end), unit);
 
-    // popular unidades (a partir do período atual)
+    // popular unidades na primeira carga
     if (selUnit.options.length <= 1){
       const set = new Set(cur.map(r => r.unidade).filter(Boolean));
       [...set].sort().forEach(u => {
@@ -151,8 +157,8 @@ async function loadAll(){
       });
     }
 
-    // anterior
-    const prev = await fetchRows(TABLE, toISO(prevStart), toISO(prevEnd), unit);
+    // período anterior
+    const prev = await fetchRange(TABLE, toISO(prevStart), toISO(prevEnd), unit);
 
     // somatórios
     const sum = rows => rows.reduce((a,r)=>({
@@ -176,7 +182,7 @@ async function loadAll(){
     document.getElementById("k_des_trend").textContent = `${pct(A.des,B.des).toFixed(1)}% vs ant.`;
     document.getElementById("k_fre_trend").textContent = `${pct(A.fre,B.fre).toFixed(1)}% vs ant.`;
 
-    // gráfico simples (sem libs externas)
+    // gráfico
     drawLine(cur);
 
     log(`[OK] Linhas (atual): ${cur.length.toLocaleString("pt-BR")} • KPIs atualizados.`);
@@ -186,39 +192,31 @@ async function loadAll(){
   }
 }
 
-/** ====== Gráfico minimalista em canvas ====== */
+/** ====== Gráfico simples em canvas ====== */
 function drawLine(rows){
   const c = document.getElementById("chartFat");
   const g = c.getContext("2d");
   const W = c.width = c.clientWidth;
   const H = c.height = c.clientHeight;
   g.clearRect(0,0,W,H);
+  if(!rows.length) return;
 
-  if(!rows.length){ return; }
-
-  // agrega por data (soma do valor_total)
+  // soma por dia
   const map = new Map();
   for(const r of rows){
     const d = String(r.data_venda).slice(0,10);
     map.set(d, (map.get(d)||0) + toNum(r.valor_total));
   }
   const pts = [...map.entries()].sort((a,b)=>a[0]<b[0]?-1:1);
-
-  const xs = pts.map((_,i)=>i);
-  const ys = pts.map(p=>p[1]);
+  const xs = pts.map((_,i)=>i), ys = pts.map(p=>p[1]);
   const max = Math.max(...ys), min = Math.min(...ys);
-
   const pad = 20;
   const X = i => pad + (W-2*pad) * (i/(xs.length-1 || 1));
   const Y = v => H - pad - (H-2*pad) * ((v-min)/((max-min)||1));
 
-  g.lineWidth = 2;
-  g.strokeStyle = "#3b82f6";
-  g.beginPath();
-  g.moveTo(X(xs[0]), Y(ys[0]));
-  for(let i=1;i<xs.length;i++){
-    g.lineTo(X(xs[i]), Y(ys[i]));
-  }
+  g.lineWidth = 2; g.strokeStyle = "#3b82f6";
+  g.beginPath(); g.moveTo(X(xs[0]), Y(ys[0]));
+  for(let i=1;i<xs.length;i++){ g.lineTo(X(xs[i]), Y(ys[i])); }
   g.stroke();
 }
 
@@ -228,7 +226,7 @@ selPeriod.onchange = loadAll;
 selUnit.onchange = loadAll;
 
 /** ====== Start ====== */
-(async function(){ await loadAll(); })();
+loadAll();
 </script>
 </body>
 </html>
