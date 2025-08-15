@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — v15.1 (filtros em cascata / fallback seguro)</title>
+  <title>Dashboard Vendas — v15.2 (fallback fix, sem 500 no console)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --line:#e5e7eb; }
@@ -37,7 +37,7 @@
     <div class="row" style="justify-content:space-between">
       <div>
         <h1>Dashboard Vendas — Supabase</h1>
-        <div class="muted">Build v15.1 • fonte preferida: <span class="badge" id="srcTag">public.vendas_kpi_daily_dims</span> (fallback: vendas_kpi_daily)</div>
+        <div class="muted">Build v15.2 • <span class="badge">fonte fixa: public.vendas_kpi_daily</span></div>
         <div class="muted">URL: <code>uahmcfzerofhzjvlzrqc.supabase.co</code></div>
       </div>
       <div class="muted" id="periodo">Período: —</div>
@@ -74,44 +74,8 @@
         </div>
       </div>
 
-      <!-- filtros “extras” (somem no fallback) -->
-      <div id="extraFilters" class="row" style="margin-top:10px">
-        <div class="col" style="min-width:160px;flex:1">
-          <div class="title">Turno</div>
-          <select id="f_turno"><option value="__ALL__">Todos</option></select>
-        </div>
-        <div class="col" style="min-width:200px;flex:1.2">
-          <div class="title">Canal de venda</div>
-          <select id="f_canal"><option value="__ALL__">Todos</option></select>
-        </div>
-        <div class="col" style="min-width:140px;flex:1">
-          <div class="title">Com cupom</div>
-          <select id="f_cupom">
-            <option value="__ALL__">Todos</option>
-            <option value="S">S</option>
-            <option value="N">N</option>
-          </select>
-        </div>
-        <div class="col" style="min-width:200px;flex:1.2">
-          <div class="title">Pagamento</div>
-          <select id="f_pgto"><option value="__ALL__">Todos</option></select>
-        </div>
-        <div class="col" style="min-width:160px;flex:1">
-          <div class="title">Está cancelado</div>
-          <select id="f_cancel">
-            <option value="__ALL__">Todos</option>
-            <option value="S">S</option>
-            <option value="N">N</option>
-          </select>
-        </div>
-        <div class="col" style="min-width:200px;flex:1.2">
-          <div class="title">Entregador</div>
-          <select id="f_entregador"><option value="__ALL__">Todos</option></select>
-        </div>
-        <div class="col" style="align-self:flex-end">
-          <button id="b_recarregar">Recarregar</button>
-        </div>
-      </div>
+      <!-- Filtros extras ficam ocultos no fallback -->
+      <div id="extraFilters" class="row" style="display:none"></div>
     </div>
 
     <!-- KPIs -->
@@ -140,8 +104,7 @@
 /* ===== CONFIG ===== */
 const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-const T_DIM  = "vendas_kpi_daily_dims";   // preferida (todas dimensões)
-const T_BASE = "vendas_kpi_daily";        // fallback (unidade+data)
+const TABLE = "vendas_kpi_daily"; // fixa no fallback: sem 500 no console
 
 const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 const $ = (id)=>document.getElementById(id);
@@ -152,11 +115,8 @@ function addDays(d, delta){ const x=new Date(d); x.setDate(x.getDate()+delta); r
 function toISO(d){ return d.toISOString().slice(0,10) }
 function pct(cur, prev){ if(!prev) return "—"; const d=((cur-prev)/prev)*100; return ((d>=0?"+":"")+d.toFixed(1).replace(".",",")+"% vs ant.") }
 
-const f_unidade=$("f_unidade"), f_turno=$("f_turno"), f_canal=$("f_canal"), f_cupom=$("f_cupom"),
-      f_pgto=$("f_pgto"), f_cancel=$("f_cancel"), f_entregador=$("f_entregador"),
-      quickDiv=$("quick"), d_ini=$("d_ini"), d_fim=$("d_fim");
-
-let TABLE=T_DIM, HAS_DIMS=true, quickDays=30;
+const f_unidade=$("f_unidade"), quickDiv=$("quick"), d_ini=$("d_ini"), d_fim=$("d_fim");
+let quickDays=30;
 
 /* ===== CANVAS CHARTS ===== */
 function clearCanvas(cv){ const ctx=cv.getContext("2d"); ctx.clearRect(0,0,cv.width,cv.height) }
@@ -211,82 +171,26 @@ function dateWindow(){
   const end=new Date(); const start=addDays(end, -(quickDays-1));
   return {start,end,label:`${toISO(start)} → ${toISO(end)}`, used:'quick'};
 }
-async function tableOK(name){
-  const r = await supa.from(name).select("*").limit(1);
-  return !r.error;
-}
 function fillSelect(sel, values, withAll=true){
   const old = sel.value;
   sel.innerHTML = "";
-  if(withAll){ const o=document.createElement("option"); o.value="__ALL__"; o.textContent="Todos"; sel.appendChild(o); }
+  if(withAll){ const o=document.createElement("option"); o.value="Todas"; o.textContent="Todas"; sel.appendChild(o); }
   values.forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; sel.appendChild(o); });
   if([...sel.options].some(o=>o.value===old)) sel.value=old;
 }
 
 /* ===== DATA FETCH ===== */
-async function fetchDistinct(col, baseFilters){
-  // se estiver no fallback, NÃO tente buscar colunas que não existem
-  if(!HAS_DIMS) return [];
-  let q = supa.from(TABLE).select(col)
-    .gte("dia", baseFilters.d0).lte("dia", baseFilters.d1).range(0,4999);
-  if(baseFilters.unidade && baseFilters.unidade!=="Todas") q = q.eq("unidade", baseFilters.unidade);
-  if(baseFilters.turno   && baseFilters.turno!=="__ALL__") q = q.eq("turno", baseFilters.turno);
-  if(baseFilters.canal   && baseFilters.canal!=="__ALL__") q = q.eq("canal", baseFilters.canal);
-  if(baseFilters.cupom   && baseFilters.cupom!=="__ALL__") q = q.eq("cupom", baseFilters.cupom);
-  if(baseFilters.pgto    && baseFilters.pgto!=="__ALL__")  q = q.eq("pagamento", baseFilters.pgto);
-  if(baseFilters.cancel  && baseFilters.cancel!=="__ALL__")q = q.eq("cancelado", baseFilters.cancel);
-  if(baseFilters.entregador && baseFilters.entregador!=="__ALL__") q = q.eq("entregador", baseFilters.entregador);
-  const r = await q;
-  if(r.error){ log("[ERRO-Distinct] "+r.error.message); return [] }
-  const set = new Set();
-  (r.data||[]).forEach(x=>{ const v=x[col]; if(v!==null && v!==undefined && String(v).trim()!=="") set.add(String(v)); });
-  return Array.from(set).sort((a,b)=>a.localeCompare(b,'pt-BR'));
-}
-
-async function loadCascata(){
-  if(!HAS_DIMS){ // fallback: só unidade já estará preenchida; nada a fazer aqui
-    return;
-  }
-  const {start,end} = dateWindow();
-  const base = { d0: toISO(start), d1: toISO(end), unidade: f_unidade.value };
-
-  const turnos = await fetchDistinct("turno", base);
-  fillSelect(f_turno, turnos, true);
-
-  const canais = await fetchDistinct("canal", {...base, turno:f_turno.value});
-  fillSelect(f_canal, canais, true);
-
-  const pg = await fetchDistinct("pagamento", {...base, turno:f_turno.value, canal:f_canal.value});
-  fillSelect(f_pgto, pg, true);
-
-  const ents = await fetchDistinct("entregador", {...base, turno:f_turno.value, canal:f_canal.value, pgto:f_pgto.value, cupom:f_cupom.value, cancel:f_cancel.value});
-  fillSelect(f_entregador, ents, true);
-}
-
 async function fetchDaily(filters){
   const {start,end} = filters;
   $("periodo").textContent = "Período: "+toISO(start)+" → "+toISO(end);
 
-  // SELECT seguro: depende se estamos com dims ou fallback
-  const sel = HAS_DIMS
-    ? "dia,unidade,turno,canal,cupom,pagamento,cancelado,entregador,pedidos,fat,des,fre"
-    : "dia,unidade,pedidos,fat,des,fre";
-
-  let q = supa.from(TABLE).select(sel)
+  let q = supa.from(TABLE)
+    .select("dia,unidade,pedidos,fat,des,fre")
     .gte("dia", toISO(start)).lte("dia", toISO(end))
     .order("dia",{ascending:true})
     .range(0, 100000);
 
   if(filters.unidade && filters.unidade!=="Todas") q = q.eq("unidade", filters.unidade);
-
-  if(HAS_DIMS){
-    if(filters.turno   && filters.turno!=="__ALL__") q = q.eq("turno", filters.turno);
-    if(filters.canal   && filters.canal!=="__ALL__") q = q.eq("canal", filters.canal);
-    if(filters.cupom   && filters.cupom!=="__ALL__") q = q.eq("cupom", filters.cupom);
-    if(filters.pgto    && filters.pgto!=="__ALL__")  q = q.eq("pagamento", filters.pgto);
-    if(filters.cancel  && filters.cancel!=="__ALL__")q = q.eq("cancelado", filters.cancel);
-    if(filters.entregador && filters.entregador!=="__ALL__") q = q.eq("entregador", filters.entregador);
-  }
 
   const r = await q;
   if(r.error){ log("[ERRO-Query] "+r.error.message); throw r.error }
@@ -314,18 +218,9 @@ function seriesByDOW(rows){
 /* ===== GO ===== */
 async function go(){
   const {start,end} = dateWindow();
-  const filters = {
-    start,end,
-    unidade: f_unidade.value || "Todas",
-    turno: HAS_DIMS ? (f_turno.value || "__ALL__") : "__ALL__",
-    canal: HAS_DIMS ? (f_canal.value || "__ALL__") : "__ALL__",
-    cupom: HAS_DIMS ? (f_cupom.value || "__ALL__") : "__ALL__",
-    pgto:  HAS_DIMS ? (f_pgto.value  || "__ALL__") : "__ALL__",
-    cancel:HAS_DIMS ? (f_cancel.value|| "__ALL__") : "__ALL__",
-    entregador: HAS_DIMS ? (f_entregador.value||"__ALL__") : "__ALL__"
-  };
+  const filters = { start,end, unidade: f_unidade.value || "Todas" };
 
-  log(`[Query] ${TABLE} | ${toISO(start)} → ${toISO(end)} | UNI=${filters.unidade}${HAS_DIMS?` | TUR=${filters.turno} | CAN=${filters.canal} | CUP=${filters.cupom} | PG=${filters.pgto} | CANCL=${filters.cancel} | ENT=${filters.entregador}`:""}`);
+  log(`[Query] ${TABLE} | ${toISO(start)} → ${toISO(end)} | UNI=${filters.unidade}`);
 
   const cur = await fetchDaily(filters);
   const win = Math.round( (end - start) / (1000*60*60*24) ) + 1;
@@ -348,46 +243,28 @@ async function go(){
 
 /* ===== BOOT ===== */
 async function boot(){
-  log("[Boot] v15.1 — checando view completa…");
-  const dimOK = await tableOK(T_DIM);  // se 500/404, cai pro fallback
-  if(!dimOK){
-    TABLE=T_BASE; HAS_DIMS=false; $("srcTag").textContent="public.vendas_kpi_daily (fallback)";
-    log("[Info] Usando fallback (vendas_kpi_daily). Filtros extras ocultados.");
-    document.getElementById("extraFilters").style.display="none";
-  }
+  log("[Boot] v15.2 — usando fonte fixa (fallback) para evitar 500 no console.");
 
   // Unidades (últimos 365d)
   const end=new Date(), start=addDays(end,-365);
   const r = await supa.from(TABLE).select("unidade").gte("dia", toISO(start)).lte("dia", toISO(end)).range(0,4999);
   const set=new Set(); (r.data||[]).forEach(x=>{ if(x.unidade) set.add(x.unidade) });
-  const units = ["Todas", ...Array.from(set).sort((a,b)=>a.localeCompare(b,'pt-BR'))];
-  f_unidade.innerHTML = units.map(u=>`<option value="${u}">${u}</option>`).join("");
+  const units = Array.from(set).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  fillSelect(f_unidade, units, true);
 
   // listeners
-  document.getElementById("b_aplicar").onclick=()=>{ if(d_ini.value && d_fim.value){ quickDiv.querySelectorAll(".btn").forEach(b=>b.classList.remove("active")); loadCascata().then(go); } };
-  document.getElementById("b_recarregar").onclick=()=> go();
+  document.getElementById("b_aplicar").onclick=()=>{ if(d_ini.value && d_fim.value){ quickDiv.querySelectorAll(".btn").forEach(b=>b.classList.remove("active")); go(); } };
   quickDiv.querySelectorAll(".btn").forEach(btn=>{
     btn.onclick=()=>{
       quickDiv.querySelectorAll(".btn").forEach(b=>b.classList.remove("active"));
       btn.classList.add("active");
       quickDays = Number(btn.dataset.d)||30;
       d_ini.value=""; d_fim.value="";
-      loadCascata().then(go);
+      go();
     };
   });
+  f_unidade.onchange = ()=> go();
 
-  // cascata: só dispara se tiver dims
-  f_unidade.onchange = ()=> loadCascata().then(go);
-  if(HAS_DIMS){
-    f_turno.onchange   = ()=> loadCascata().then(go);
-    f_canal.onchange   = ()=> loadCascata().then(go);
-    f_cupom.onchange   = ()=> loadCascata().then(go);
-    f_pgto.onchange    = ()=> loadCascata().then(go);
-    f_cancel.onchange  = ()=> loadCascata().then(go);
-    f_entregador.onchange = ()=> go();
-  }
-
-  await loadCascata();
   await go();
 
   // redimensiona = redesenha (sem “gráfico infinito”)
