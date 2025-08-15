@@ -2,8 +2,9 @@
 <html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
-    <title>Dashboard Vendas (Supabase) — v5</title>
+    <title>Dashboard Vendas (Supabase) — v6</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- evita cache do GitHub Pages -->
     <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0"/>
     <meta http-equiv="Pragma" content="no-cache"/>
     <meta http-equiv="Expires" content="0"/>
@@ -21,7 +22,6 @@
       @media (max-width:820px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
       @media (max-width:480px){.grid{grid-template-columns:1fr}}
     </style>
-    <!-- Supabase UMD -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   </head>
   <body>
@@ -30,7 +30,7 @@
         <div>
           <h1>Dashboard Vendas — Supabase</h1>
           <div class="muted">Fonte usada: <code id="fonte">detectando…</code></div>
-          <div class="muted">Detecção automática de coluna de data • Build v5</div>
+          <div class="muted">Build <b>v6</b> • sem <code>max(...)</code> • paginação</div>
         </div>
         <div class="muted" id="periodo">Período: —</div>
       </div>
@@ -49,12 +49,12 @@
     </div>
 
     <script>
-      // ====== CREDENCIAIS ======
+      // ====== CREDENCIAIS DO SEU PROJETO ======
       var SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
       var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
 
       // ====== UI helpers ======
-      var elLog = document.getElementById("log");
+      var elLog   = document.getElementById("log");
       var elFonte = document.getElementById("fonte");
       function log(msg){ elLog.textContent += "\n" + msg; }
       function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
@@ -63,61 +63,65 @@
         if(x==null||x==="")return 0;
         if(typeof x==="number")return x;
         var s=String(x).trim(); if(!s)return 0;
-        var t=s.replace(/\./g,"").replace(/,/g,".");
+        var t=s.replace(/\./g,"").replace(/,/g,"."); // 1.234,56 -> 1234.56
         var n=Number(t); return isFinite(n)?n:0;
       }
       function toISO(d){ return d.toISOString().slice(0,10); }
-      function qcol(c){ return /[^a-z0-9_]/i.test(c) ? '"' + c + '"' : c; } // p/ nomes com espaço
 
       // ====== Supabase client ======
       var supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-      // Vamos usar apenas as tabelas do import CSV
-      var TBL_CANDIDATAS = ["vendas_import_csv","VENDAS_IMPORT_CSV"];
+      // Vamos usar as tabelas do import CSV
+      var TABELAS = ["vendas_import_csv","VENDAS_IMPORT_CSV"];
 
-      // 1) Detecta qual tabela existe e qual coluna é a de data
+      // 1) Detecta qual tabela existe e qual coluna é a de data (sem max())
       async function detectarTabelaEColunaData(){
-        for(const tbl of TBL_CANDIDATAS){
-          // pega 1 linha para descobrir os nomes REAIS das colunas
+        for(const tbl of TABELAS){
           const r1 = await supa.from(tbl).select("*").limit(1);
-          if(r1.error){ log(`[Detect] ${tbl} falhou: ${r1.error.message}`); continue; }
+          if(r1.error){ log(`[Detect] ${tbl} erro: ${r1.error.message}`); continue; }
           if(!r1.data || !r1.data.length){ log(`[Detect] ${tbl} vazia.`); continue; }
 
-          const row = r1.data[0];
+          const row  = r1.data[0];
           const cols = Object.keys(row);
           log(`[Detect] ${tbl} colunas: ${cols.join(", ")}`);
 
           // tenta achar a coluna de data por nomes comuns
           const preferidas = ["data_venda","Data da venda","Data venda","data","Data"];
           let colData = null;
-          for(const guess of preferidas){
-            if(cols.includes(guess)){ colData = guess; break; }
-          }
+          for(const guess of preferidas){ if(cols.includes(guess)){ colData = guess; break; } }
           if(!colData){
-            // fallback: qualquer coluna cujo valor pareça uma data (aaaa-mm-dd)
-            for(const c of cols){
-              const v = row[c];
-              if(typeof v==="string" && /^\d{4}-\d{2}-\d{2}/.test(v)){ colData = c; break; }
-            }
+            // fallback heurístico: primeira que "parece" aaaa-mm-dd
+            for(const c of cols){ const v=row[c]; if(typeof v==="string" && /^\d{4}-\d{2}-\d{2}/.test(v)){ colData=c; break; } }
           }
-          if(!colData){ log(`[Detect] ${tbl}: não achei coluna de data.`); continue; }
+          if(!colData){ log(`[Detect] ${tbl}: nenhuma coluna de data identificada.`); continue; }
 
-          // confirma a última data (ordenando por essa coluna)
-          const r2 = await supa.from(tbl).select(qcol(colData)).not(colData, "is", null).order(colData, { ascending:false }).limit(1);
-          if(r2.error){ log(`[Detect] ${tbl}: erro ao ordenar por ${colData}: ${r2.error.message}`); continue; }
-          const last = r2.data && r2.data[0] ? String(Object.values(r2.data[0])[0]).slice(0,10) : null;
-          if(!last){ log(`[Detect] ${tbl}: sem valor válido em ${colData}.`); continue; }
-
-          return { tabela: tbl, colData, ultimaISO: last };
+          // tenta descobrir a última data por ordenação (se falhar, usa "hoje" como fallback)
+          let ultimaISO=null;
+          try{
+            const r2 = await supa.from(tbl).select(colData).not(colData,"is",null).order(colData,{ascending:false}).limit(1);
+            if(r2.error){ log(`[Detect] order por ${colData} falhou: ${r2.error.message}`); }
+            else{
+              const v = r2.data && r2.data[0] ? r2.data[0][colData] : null;
+              if(v) ultimaISO = String(v).slice(0,10);
+            }
+          }catch(e){
+            log(`[Detect] exceção no order: ${e.message||e}`);
+          }
+          if(!ultimaISO){
+            ultimaISO = toISO(new Date()); // fallback seguro
+            log(`[Detect] usando fallback de data final (hoje): ${ultimaISO}`);
+          }
+          return { tabela: tbl, colData, ultimaISO };
         }
-        throw new Error("Nenhuma tabela/coluna de data detectada (import CSV).");
+        throw new Error("Nenhuma tabela válida encontrada (import CSV).");
       }
 
       // 2) Busca paginada no intervalo
       async function buscarIntervalo(tbl, colData, deISO, ateISO){
         const page=10000; let acc=[], off=0;
-        const sel = [colData,"valor_total","desconto","entrega","unidade"].map(qcol).join(",");
+        const campos = [colData,"valor_total","desconto","entrega","unidade"];
         for(;;){
+          const sel = campos.join(",");
           const qr = await supa.from(tbl)
             .select(sel, { count: "estimated" })
             .gte(colData, deISO)
@@ -134,34 +138,32 @@
 
       (async function main(){
         try{
-          log("[Boot] Iniciando… (v5, sem max())");
+          log("[Boot] Iniciando… build v6 (sem max())");
 
           const pick = await detectarTabelaEColunaData();
           const tbl = pick.tabela, colData = pick.colData, last = pick.ultimaISO;
-          elFonte.textContent = `${tbl} (data: ${colData})`;
-          log(`[Detect] Tabela: ${tbl} | Coluna data: ${colData} | Última: ${last}`);
+          document.getElementById("fonte").textContent = `${tbl} (data: ${colData})`;
+          log(`[Detect] Tabela: ${tbl} | Coluna-data: ${colData} | Última: ${last}`);
 
+          // período: últimos 30 dias até "last" (ou hoje se fallback)
           const end = new Date(last+"T23:59:59");
           const start = new Date(end); start.setDate(end.getDate()-29);
-          document.getElementById("periodo").textContent = "Período: "+toISO(start)+" → "+toISO(end);
-          log("[Query] Intervalo: "+toISO(start)+" → "+toISO(end));
+          document.getElementById("periodo").textContent = `Período: ${toISO(start)} → ${toISO(end)}`;
+          log(`[Query] Intervalo: ${toISO(start)} → ${toISO(end)}`);
 
           const rows = await buscarIntervalo(tbl, colData, toISO(start), toISO(end));
-          log("[Query] Linhas: "+rows.length.toLocaleString("pt-BR"));
+          log(`[Query] Linhas retornadas: ${rows.length.toLocaleString("pt-BR")}`);
 
           let pedidos=rows.length, fat=0, desc=0, fre=0;
-          for(const r of rows){
-            fat  += toNum(r.valor_total);
-            desc += toNum(r.desconto);
-            fre  += toNum(r.entrega);
-          }
+          for(const r of rows){ fat+=toNum(r.valor_total); desc+=toNum(r.desconto); fre+=toNum(r.entrega); }
 
           document.getElementById("k_ped").textContent = fmtInt(pedidos);
           document.getElementById("k_fat").textContent = fmtBRL(fat);
           document.getElementById("k_desc").textContent = fmtBRL(desc);
           document.getElementById("k_fre").textContent = fmtBRL(fre);
 
-          log("[OK] KPIs preenchidos. Se estiver tudo certo, adiciono o filtro por UNIDADE.");
+          log("[OK] KPIs preenchidos.");
+          log("[Próximo] Confirmando aqui, adiciono filtro de UNIDADE e os gráficos.");
         }catch(e){
           log("[ERRO] "+(e.message||String(e)));
         }
