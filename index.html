@@ -6,24 +6,23 @@
     <title>Dashboard Vendas</title>
     <link rel="icon" href="data:," />
 
-    <!-- ======== COLOQUE SUAS CREDENCIAIS AQUI (ou use URL/localStorage) ======== -->
+    <!-- Credenciais (definidas de forma simples, sem objetos literais para evitar erro com ":") -->
     <script>
-      // Forma sem objeto literal (evita ":" problemático em alguns casos)
-      // Substitua pelas SUAS credenciais reais:
-      // Ex.: "https://abcd1234.supabase.co" e "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-      window.ENV = window.ENV || {};
-      window.ENV.VITE_SUPABASE_URL = https://uahmcfzerofhzjvlzrqc.supabase.co;
-      window.ENV.VITE_SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU;
+      (function () {
+        window.ENV = window.ENV || {};
+        window.ENV.VITE_SUPABASE_URL = "https://uahmcfzerofhzjvlzrqc.supabase.co";
+        window.ENV.VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+      })();
     </script>
 
-    <!-- Tailwind (CSS rápido) -->
+    <!-- Tailwind para o layout -->
     <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- React 18 UMD -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
-    <!-- Babel para JSX no navegador -->
+    <!-- Babel para permitir JSX inline -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <!-- Supabase JS UMD -->
@@ -37,11 +36,11 @@
   <body class="bg-gray-50">
     <div id="root" class="min-h-full"></div>
 
-    <!-- App (JSX via Babel) -->
+    <!-- App -->
     <script type="text/babel">
       const { useEffect, useMemo, useState } = React;
 
-      // ---------- Utils ----------
+      // ===== utils =====
       const fmtInt = (v) =>
         new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(Math.round(Number(v) || 0));
       const fmtCur = (v) =>
@@ -62,23 +61,11 @@
         const [error, setError] = useState("");
         const [kpis, setKpis] = useState({ pedidos: 0, faturamento: 0, descontos: 0, frete: 0, periodo: "" });
 
-        // Tabela-fonte (ajuste se necessário)
-        const TABLE_NAME = "vendas_import_csv";
+        const TABLE_NAME = "vendas_import_csv"; // fonte principal no seu banco
 
-        // ----- Credenciais (prioridade: URL > window.ENV > localStorage)
         function getEnv() {
-          const qs = new URLSearchParams(location.search);
-          const urlFromQs = qs.get("supabaseUrl");
-          const anonFromQs = qs.get("anon");
-
-          const urlFromHead = (window.ENV && window.ENV.VITE_SUPABASE_URL) || "";
-          const anonFromHead = (window.ENV && window.ENV.VITE_SUPABASE_ANON_KEY) || "";
-
-          const urlFromLs = localStorage.getItem("SUPABASE_URL");
-          const anonFromLs = localStorage.getItem("SUPABASE_ANON_KEY");
-
-          const url = urlFromQs || urlFromHead || urlFromLs || "";
-          const anon = anonFromQs || anonFromHead || anonFromLs || "";
+          const url = (window.ENV && window.ENV.VITE_SUPABASE_URL) || "";
+          const anon = (window.ENV && window.ENV.VITE_SUPABASE_ANON_KEY) || "";
           return { url, anon };
         }
 
@@ -96,30 +83,20 @@
           (async () => {
             try {
               const { url, anon } = getEnv();
-
               if (!url || !anon) {
                 setStatus("Credenciais ausentes.");
-                setError([
-                  "Defina as credenciais de uma destas formas:",
-                  "1) Edite o index.html e preencha window.ENV no <head>.",
-                  "2) Use parâmetros na URL: ?supabaseUrl=...&anon=...",
-                  "3) Pelo Console do navegador:",
-                  "   localStorage.setItem('SUPABASE_URL','https://SEU-PROJETO.supabase.co')",
-                  "   localStorage.setItem('SUPABASE_ANON_KEY','SUA-ANON-KEY-AQUI')",
-                  "   e atualize a página.",
-                ].join("\n"));
+                setError("Verifique as variáveis logo no topo deste HTML.");
                 return;
               }
-
               if (!supabaseClient) {
                 setStatus("Falha ao criar cliente Supabase.");
-                setError("Verifique se a URL e a ANON KEY estão corretas.");
+                setError("URL/ANON inválidos.");
                 return;
               }
 
               setStatus("Conectando à Supabase…");
 
-              // Último dia com venda
+              // 1) último dia com venda
               const { data: last, error: e1 } = await supabaseClient
                 .from(TABLE_NAME)
                 .select("data_venda")
@@ -138,9 +115,9 @@
               start.setDate(end.getDate() - 29);
               const toISO = (d) => d.toISOString().slice(0, 10);
 
-              setStatus(`Consultando KPIs em ${TABLE_NAME} de ${toISO(start)} até ${toISO(end)}…`);
+              setStatus(`Consultando KPIs (30d) em ${TABLE_NAME} de ${toISO(start)} até ${toISO(end)}…`);
 
-              // Paginação simples
+              // 2) ler tudo em páginas
               let all = [];
               const pageSize = 5000;
               for (let from = 0; ; from += pageSize) {
@@ -152,17 +129,17 @@
                   .lte("data_venda", toISO(end))
                   .order("data_venda", { ascending: true })
                   .range(from, to);
-
                 if (e2) throw e2;
                 if (!data || data.length === 0) break;
                 all = all.concat(data);
                 if (data.length < pageSize) break;
               }
 
+              // 3) KPIs
               const pedidos = all.length;
               const faturamento = all.reduce((s, r) => s + Number(r.valor_total || 0), 0);
-              const descontos = all.reduce((s, r) => s + Number(r.desconto || 0), 0);
-              const frete = all.reduce((s, r) => s + Number(r.entrega || 0), 0);
+              const descontos  = all.reduce((s, r) => s + Number(r.desconto    || 0), 0);
+              const frete      = all.reduce((s, r) => s + Number(r.entrega     || 0), 0);
 
               setKpis({
                 pedidos,
@@ -172,7 +149,7 @@
                 periodo: `${toISO(start)} → ${toISO(end)}`
               });
 
-              setStatus("Conectado e KPIs carregados com sucesso.");
+              setStatus("Conectado e KPIs carregados.");
               setError("");
             } catch (err) {
               console.error("[Supabase] Erro:", err);
@@ -207,15 +184,6 @@
                 <pre className="mt-3 text-xs text-rose-700 whitespace-pre-wrap bg-rose-50 p-2 rounded border border-rose-200">
 {error}
                 </pre>
-              ) : null}
-              {!url || !anon ? (
-                <div className="mt-3 text-xs text-gray-500">
-                  Você também pode informar credenciais via URL, por exemplo:<br />
-                  <code>?supabaseUrl=https://SEU-PROJETO.supabase.co&anon=SUA-ANON-KEY</code><br />
-                  ou salvar no navegador (Console):<br />
-                  <code>localStorage.setItem('SUPABASE_URL','https://SEU-PROJETO.supabase.co')</code><br />
-                  <code>localStorage.setItem('SUPABASE_ANON_KEY','SUA-ANON-KEY')</code>
-                </div>
               ) : null}
             </div>
 
