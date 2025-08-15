@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — v13.7 (vendas_kpi • paginação no cliente)</title>
+  <title>Dashboard Vendas — v13.8 (vendas_kpi • paginação no cliente)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{--bg:#f5f7fb;--card:#fff;--muted:#6b7280;--ink:#0f172a;--line:#e5e7eb}
@@ -19,7 +19,7 @@
     .title{font-size:12px;color:var(--muted)}
     .kpi{font-size:22px;font-weight:800;margin-top:4px}
     .delta{font-size:12px;color:var(--muted)}
-    canvas{width:100%;height:320px}
+    #chartDia,#chartWeek{width:100%;height:320px;display:block}
     pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:10px;white-space:pre-wrap;overflow:auto}
     @media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media (max-width:520px){.grid{grid-template-columns:1fr}}
@@ -30,7 +30,7 @@
 <body>
   <div class="wrap">
     <h1>Dashboard Vendas — Supabase</h1>
-    <div class="muted">Build <b>v13.7</b> • fonte fixa: <code>public.vendas_kpi</code> • sem sum() no servidor (paginação 2k)</div>
+    <div class="muted">Build <b>v13.8</b> • fonte fixa: <code>public.vendas_kpi</code> • sem <code>sum()</code> no servidor (paginação 2k)</div>
 
     <div class="row">
       <label>Período
@@ -69,12 +69,12 @@
 
     <div class="card" style="margin-top:14px">
       <div class="title">Receita diária (R$)</div>
-      <canvas id="chartDia"></canvas>
+      <div id="cDia"><canvas id="chartDia"></canvas></div>
     </div>
 
     <div class="card" style="margin-top:14px">
       <div class="title">Totais por dia da semana (R$)</div>
-      <canvas id="chartWeek"></canvas>
+      <div id="cWeek"><canvas id="chartWeek"></canvas></div>
     </div>
 
     <div class="card" style="margin-top:14px">
@@ -109,28 +109,47 @@ const toNum = x => {
 const selPeriodo = el("#selPeriodo");
 const selUnidade = el("#selUnidade");
 const btnGo      = el("#btnGo");
-let loading = false;
+
+/* ====== Exec token (anti-concorrência) ====== */
+let execToken = 0;
 
 /* ====== Charts ====== */
-let chartDia, chartWeek;
-function drawLine(id, labels, data, labelTxt){
-  const ctx = el(id).getContext("2d");
-  if(id==="#chartDia" && chartDia){ chartDia.destroy(); }
-  if(id==="#chartWeek" && chartWeek){ chartWeek.destroy(); }
+let chartDia=null, chartWeek=null;
+function resetCanvas(wrapperId, canvasId){
+  // recria o <canvas> para impedir qualquer acúmulo visual
+  const wrap = el(wrapperId);
+  const old = el(canvasId);
+  if(old){ wrap.removeChild(old); }
+  const cv = document.createElement("canvas");
+  cv.id = canvasId.slice(1);
+  cv.style.width = "100%";
+  cv.style.height = "320px";
+  wrap.appendChild(cv);
+  return cv.getContext("2d");
+}
+function drawLine(which, labels, data, labelTxt){
+  if(which==="dia" && chartDia){ chartDia.destroy(); chartDia=null; }
+  if(which==="week" && chartWeek){ chartWeek.destroy(); chartWeek=null; }
+  const ctx = which==="dia"
+    ? resetCanvas("#cDia","#chartDia")
+    : resetCanvas("#cWeek","#chartWeek");
   const inst = new Chart(ctx,{
     type:"line",
     data:{ labels, datasets:[{ label:labelTxt, data, tension:.25 }] },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:true} }, scales:{ x:{ ticks:{maxRotation:0,autoSkip:true} } } }
   });
-  if(id==="#chartDia") chartDia = inst; else chartWeek = inst;
+  if(which==="dia") chartDia=inst; else chartWeek=inst;
 }
 
-/* ====== Unidades (distinct) ====== */
+/* ====== Unidades ====== */
 async function loadUnidades(){
-  log("[Boot] v13.7 — carregando unidades (distinct) …");
-  let q = supa.from(TABLE).select('unidade',{ distinct:true }).order('unidade',{ascending:true});
-  const r = await q;
-  if(r.error){ log("[ERRO] Unidades: "+r.error.message); selUnidade.innerHTML = `<option>Todas</option>`; return; }
+  log("[Boot] v13.8 — carregando unidades (distinct) …");
+  let r = await supa.from(TABLE).select('unidade',{ distinct:true }).order('unidade',{ascending:true});
+  if(r.error){
+    log("[ERRO] Unidades: "+r.error.message);
+    selUnidade.innerHTML = `<option>Todas</option>`;
+    return;
+  }
   const arr = (r.data||[]).map(x=>x.unidade).filter(Boolean);
   selUnidade.innerHTML = `<option>Todas</option>` + arr.map(u=>`<option>${u}</option>`).join("");
 }
@@ -143,27 +162,34 @@ function getWindow(days){
   return { start: toISO(start), end: toISO(end) };
 }
 
-/* ====== Paginação moderada (2k por página) ====== */
+/* ====== Paginação (2k) com salvaguarda ====== */
 async function fetchPagedRows({from,to,unidade}){
-  const page = 2000; let off=0, acc=[];
-  for(;;){
+  const page = 2000; let off=0, acc=[], safety=0;
+  while(true){
     let q = supa.from(TABLE)
       .select('data_venda,valor_total,desconto,entrega,unidade')
       .gte('data_venda', from).lte('data_venda', to)
       .range(off, off+page-1);
     if(unidade && unidade!=="Todas") q = q.eq('unidade', unidade);
+
     const r = await q;
     if(r.error) throw r.error;
+
     const arr = r.data||[];
     acc = acc.concat(arr);
     if(arr.length<page) break;
     off += page;
+    safety++;
+    if(safety>200){ // 200 * 2000 = 400k linhas (limite duro)
+      log("[Warn] Limite de páginas atingido (possível laço). Interrompendo em 400k linhas.");
+      break;
+    }
   }
   log(`[OK] Carregadas ${acc.length.toLocaleString("pt-BR")} linhas (paginado).`);
   return acc;
 }
 
-/* ====== KPIs & séries (no cliente) ====== */
+/* ====== KPIs & séries ====== */
 async function compute({from,to,unidade,modo}){
   const rows = await fetchPagedRows({from,to,unidade});
 
@@ -205,38 +231,36 @@ function setKPIs({pedidos,fat,des,fre}){
   el("#d_fre").textContent = "—";
 }
 
-/* ====== GO (com trava p/ evitar cliques múltiplos) ====== */
+/* ====== GO (token contra concorrência + reset de canvas) ====== */
 async function GO(){
-  if(loading) return;
-  loading = true;
+  const myToken = ++execToken; // invalida execuções anteriores
   try{
-    const days = Number(selPeriodo.value||30);
+    const days = Number(el("#selPeriodo").value||30);
     const { start, end } = getWindow(days);
-    const unidade = selUnidade.value||"Todas";
+    const unidade = el("#selUnidade").value||"Todas";
     const modo = (document.querySelector('input[name="modo"]:checked')||{}).value||'bruto';
 
     log(`[Query] ${TABLE} | janela ${days}d ${start} → ${end} | UNIDADE=${unidade} | modo=${modo}`);
     const res = await compute({from:start,to:end,unidade,modo});
+    if(myToken!==execToken){ log("[Info] Execução anterior descartada."); return; }
+
     setKPIs(res);
-    drawLine("#chartDia", res.days, res.series, "Faturamento diário (R$)");
-    drawLine("#chartWeek", ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"], res.weekAgg, "Totais por dia da semana (R$)");
+    drawLine("dia",  res.days,     res.series,  "Faturamento diário (R$)");
+    drawLine("week", ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"], res.weekAgg, "Totais por dia da semana (R$)");
     log("[OK] KPIs e gráficos atualizados.");
   }catch(e){
     console.error(e);
     log("[ERRO] "+(e.message||String(e)));
-  }finally{
-    loading = false;
   }
 }
 
 /* ====== Boot ====== */
 (async function(){
   await loadUnidades();
-  selPeriodo.value = "30";
-  btnGo.onclick = GO;
-  selPeriodo.onchange = GO;
-  selUnidade.onchange = GO;
-  document.querySelectorAll('input[name="modo"]').forEach(r=>r.onchange=GO);
+  el("#selPeriodo").addEventListener("change", GO);
+  el("#selUnidade").addEventListener("change", GO);
+  document.querySelectorAll('input[name="modo"]').forEach(r=>r.addEventListener("change", GO));
+  el("#btnGo").addEventListener("click", GO);
   GO();
 })();
 </script>
