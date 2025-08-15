@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — v15.2 (fallback fix, sem 500 no console)</title>
+  <title>Dashboard Vendas — v16 (filtros em cascata, sem regressão)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --line:#e5e7eb; }
@@ -27,6 +27,7 @@
     .btn.active{background:#111827;color:#fff;border-color:#111827}
     .col{display:flex;flex-direction:column;gap:6px}
     .badge{padding:2px 6px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:12px;color:#374151}
+    .filtersGrid{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:8px;margin-top:10px}
     @media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media (max-width:520px){.grid{grid-template-columns:1fr}}
   </style>
@@ -37,13 +38,13 @@
     <div class="row" style="justify-content:space-between">
       <div>
         <h1>Dashboard Vendas — Supabase</h1>
-        <div class="muted">Build v15.2 • <span class="badge">fonte fixa: public.vendas_kpi_daily</span></div>
+        <div class="muted">Build v16 • <span class="badge" id="modeBadge">detectando fonte…</span></div>
         <div class="muted">URL: <code>uahmcfzerofhzjvlzrqc.supabase.co</code></div>
       </div>
       <div class="muted" id="periodo">Período: —</div>
     </div>
 
-    <!-- Filtros -->
+    <!-- Filtros principais -->
     <div class="section card">
       <div class="row">
         <div class="col" style="min-width:200px;flex:1">
@@ -74,8 +75,33 @@
         </div>
       </div>
 
-      <!-- Filtros extras ficam ocultos no fallback -->
-      <div id="extraFilters" class="row" style="display:none"></div>
+      <!-- Filtros extras (aparecem só se a view *_dims* existir) -->
+      <div id="extraFilters" class="filtersGrid" style="display:none">
+        <div class="col">
+          <div class="title">Turno</div>
+          <select id="f_turno"><option value="Todos">Todos</option></select>
+        </div>
+        <div class="col">
+          <div class="title">Canal</div>
+          <select id="f_canal"><option value="Todos">Todos</option></select>
+        </div>
+        <div class="col">
+          <div class="title">Cupom</div>
+          <select id="f_cupom"><option value="Todos">Todos</option></select>
+        </div>
+        <div class="col">
+          <div class="title">Pagamento</div>
+          <select id="f_pagamento"><option value="Todos">Todos</option></select>
+        </div>
+        <div class="col">
+          <div class="title">Cancelado</div>
+          <select id="f_cancelado"><option value="Todos">Todos</option></select>
+        </div>
+        <div class="col">
+          <div class="title">Entregador</div>
+          <select id="f_entregador"><option value="Todos">Todos</option></select>
+        </div>
+      </div>
     </div>
 
     <!-- KPIs -->
@@ -104,21 +130,39 @@
 /* ===== CONFIG ===== */
 const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-const TABLE = "vendas_kpi_daily"; // fixa no fallback: sem 500 no console
+
+// preferir a view rica; se falhar, cair no fallback
+const TABLE_DIMS    = "vendas_kpi_daily_dims";
+const TABLE_FALLBACK= "vendas_kpi_daily";
 
 const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-const $ = (id)=>document.getElementById(id);
+const $ = id => document.getElementById(id);
 const logEl = $("log"); function log(m){ logEl.textContent += "\n" + m }
+const modeBadge = $("modeBadge");
+
 function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0) }
 function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)) }
 function addDays(d, delta){ const x=new Date(d); x.setDate(x.getDate()+delta); return x }
 function toISO(d){ return d.toISOString().slice(0,10) }
 function pct(cur, prev){ if(!prev) return "—"; const d=((cur-prev)/prev)*100; return ((d>=0?"+":"")+d.toFixed(1).replace(".",",")+"% vs ant.") }
 
-const f_unidade=$("f_unidade"), quickDiv=$("quick"), d_ini=$("d_ini"), d_fim=$("d_fim");
 let quickDays=30;
+const f_unidade=$("f_unidade"), quickDiv=$("quick"), d_ini=$("d_ini"), d_fim=$("d_fim");
+const f_turno=$("f_turno"), f_canal=$("f_canal"), f_cupom=$("f_cupom"), f_pagamento=$("f_pagamento"), f_cancelado=$("f_cancelado"), f_entregador=$("f_entregador");
+let USE_DIMS=false, TABLE=TABLE_FALLBACK;
 
-/* ===== CANVAS CHARTS ===== */
+function dateWindow(){
+  if(d_ini.value && d_fim.value){
+    const start = new Date(d_ini.value+"T00:00:00");
+    const end   = new Date(d_fim.value+"T23:59:59");
+    $("periodo").textContent = "Período: "+toISO(start)+" → "+toISO(end);
+    return {start,end};
+  }
+  const end=new Date(); const start=addDays(end, -(quickDays-1));
+  $("periodo").textContent = "Período: "+toISO(start)+" → "+toISO(end);
+  return {start,end};
+}
+
 function clearCanvas(cv){ const ctx=cv.getContext("2d"); ctx.clearRect(0,0,cv.width,cv.height) }
 function lineChart(cv, data){
   const dpi=window.devicePixelRatio||1, W=cv.clientWidth, H=cv.clientHeight;
@@ -161,43 +205,53 @@ function barChart(cv, data){
   });
 }
 
-/* ===== HELPERS ===== */
-function dateWindow(){
-  if(d_ini.value && d_fim.value){
-    const start = new Date(d_ini.value+"T00:00:00");
-    const end   = new Date(d_fim.value+"T23:59:59");
-    return {start, end, label:`${toISO(start)} → ${toISO(end)}`, used:'custom'};
-  }
-  const end=new Date(); const start=addDays(end, -(quickDays-1));
-  return {start,end,label:`${toISO(start)} → ${toISO(end)}`, used:'quick'};
-}
-function fillSelect(sel, values, withAll=true){
+function fillSelect(sel, values, withAll=true, allLabel="Todos"){
   const old = sel.value;
   sel.innerHTML = "";
-  if(withAll){ const o=document.createElement("option"); o.value="Todas"; o.textContent="Todas"; sel.appendChild(o); }
+  if(withAll){ const o=document.createElement("option"); o.value=allLabel; o.textContent=allLabel; sel.appendChild(o); }
   values.forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; sel.appendChild(o); });
   if([...sel.options].some(o=>o.value===old)) sel.value=old;
 }
 
-/* ===== DATA FETCH ===== */
+// baixa opções distintas de uma coluna (últimos 365d)
+async function distinctValues(table, col){
+  const end=new Date(), start=addDays(end,-365);
+  const r = await supa.from(table).select(col).gte("dia", toISO(start)).lte("dia", toISO(end)).range(0, 100000);
+  if(r.error) throw r.error;
+  const set = new Set();
+  (r.data||[]).forEach(x=>{
+    const v = x[col];
+    if(v!==null && v!==undefined && String(v).trim()!=="") set.add(String(v));
+  });
+  return Array.from(set).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+}
+
+// monta query de linhas diárias conforme filtros
 async function fetchDaily(filters){
   const {start,end} = filters;
-  $("periodo").textContent = "Período: "+toISO(start)+" → "+toISO(end);
-
   let q = supa.from(TABLE)
-    .select("dia,unidade,pedidos,fat,des,fre")
+    .select(USE_DIMS
+      ? "dia,unidade,turno,canal,cupom,pagamento,cancelado,entregador,pedidos,fat,des,fre"
+      : "dia,unidade,pedidos,fat,des,fre"
+    )
     .gte("dia", toISO(start)).lte("dia", toISO(end))
     .order("dia",{ascending:true})
-    .range(0, 100000);
+    .range(0, 200000);
 
   if(filters.unidade && filters.unidade!=="Todas") q = q.eq("unidade", filters.unidade);
-
+  if(USE_DIMS){
+    if(filters.turno      && filters.turno!=="Todos")       q = q.eq("turno", filters.turno);
+    if(filters.canal      && filters.canal!=="Todos")       q = q.eq("canal", filters.canal);
+    if(filters.cupom      && filters.cupom!=="Todos")       q = q.eq("cupom", filters.cupom);
+    if(filters.pagamento  && filters.pagamento!=="Todos")   q = q.eq("pagamento", filters.pagamento);
+    if(filters.cancelado  && filters.cancelado!=="Todos")   q = q.eq("cancelado", filters.cancelado);
+    if(filters.entregador && filters.entregador!=="Todos")  q = q.eq("entregador", filters.entregador);
+  }
   const r = await q;
   if(r.error){ log("[ERRO-Query] "+r.error.message); throw r.error }
   return r.data||[];
 }
 
-/* ===== AGG ===== */
 function aggKPIs(rows){
   let ped=0,fat=0,des=0,fre=0;
   for(const r of rows){ ped+=Number(r.pedidos)||0; fat+=Number(r.fat)||0; des+=Number(r.des)||0; fre+=Number(r.fre)||0; }
@@ -215,12 +269,20 @@ function seriesByDOW(rows){
   return nomes.map((n,i)=>({x:n,y:acc[i]}));
 }
 
-/* ===== GO ===== */
 async function go(){
   const {start,end} = dateWindow();
-  const filters = { start,end, unidade: f_unidade.value || "Todas" };
+  const filters = {
+    start,end,
+    unidade: f_unidade.value || "Todas",
+    turno: f_turno.value || "Todos",
+    canal: f_canal.value || "Todos",
+    cupom: f_cupom.value || "Todos",
+    pagamento: f_pagamento.value || "Todos",
+    cancelado: f_cancelado.value || "Todos",
+    entregador: f_entregador.value || "Todos"
+  };
 
-  log(`[Query] ${TABLE} | ${toISO(start)} → ${toISO(end)} | UNI=${filters.unidade}`);
+  log(`[Query] ${TABLE} | ${toISO(start)} → ${toISO(end)} | UNI=${filters.unidade}${USE_DIMS?` | turno=${filters.turno} | canal=${filters.canal} | cupom=${filters.cupom} | pagamento=${filters.pagamento} | cancelado=${filters.cancelado} | entregador=${filters.entregador}`:""}`);
 
   const cur = await fetchDaily(filters);
   const win = Math.round( (end - start) / (1000*60*60*24) ) + 1;
@@ -241,19 +303,45 @@ async function go(){
   log("[OK] KPIs e gráficos atualizados.");
 }
 
-/* ===== BOOT ===== */
 async function boot(){
-  log("[Boot] v15.2 — usando fonte fixa (fallback) para evitar 500 no console.");
+  log("[Boot] v16 — tentando view rica (dims) sem regressão…");
+  // detectar se a view *_dims* existe (1 chamada; se falhar, caímos no fallback)
+  try{
+    const test = await supa.from(TABLE_DIMS).select("dia").limit(1);
+    if(test.error) throw test.error;
+    USE_DIMS = true; TABLE = TABLE_DIMS;
+    modeBadge.textContent = "fonte: public.vendas_kpi_daily_dims (com filtros extras)";
+    $("extraFilters").style.display = "grid";
+  }catch(_){
+    USE_DIMS = false; TABLE = TABLE_FALLBACK;
+    modeBadge.textContent = "fonte: public.vendas_kpi_daily (fallback: só Unidade + Data)";
+    $("extraFilters").style.display = "none";
+  }
 
-  // Unidades (últimos 365d)
-  const end=new Date(), start=addDays(end,-365);
-  const r = await supa.from(TABLE).select("unidade").gte("dia", toISO(start)).lte("dia", toISO(end)).range(0,4999);
-  const set=new Set(); (r.data||[]).forEach(x=>{ if(x.unidade) set.add(x.unidade) });
-  const units = Array.from(set).sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  fillSelect(f_unidade, units, true);
+  // popular UNIDADE
+  const unidades = await distinctValues(TABLE, "unidade");
+  fillSelect(f_unidade, unidades, true, "Todas");
+
+  // se houver dims, popular os demais filtros (cada um isolado, leve)
+  if(USE_DIMS){
+    const [turnos, canais, cupons, pagamentos, cancelados, entregadores] = await Promise.all([
+      distinctValues(TABLE, "turno"),
+      distinctValues(TABLE, "canal"),
+      distinctValues(TABLE, "cupom"),
+      distinctValues(TABLE, "pagamento"),
+      distinctValues(TABLE, "cancelado"),
+      distinctValues(TABLE, "entregador"),
+    ]);
+    fillSelect(f_turno, turnos, true, "Todos");
+    fillSelect(f_canal, canais, true, "Todos");
+    fillSelect(f_cupom, cupons, true, "Todos");
+    fillSelect(f_pagamento, pagamentos, true, "Todos");
+    fillSelect(f_cancelado, cancelados, true, "Todos");
+    fillSelect(f_entregador, entregadores, true, "Todos");
+  }
 
   // listeners
-  document.getElementById("b_aplicar").onclick=()=>{ if(d_ini.value && d_fim.value){ quickDiv.querySelectorAll(".btn").forEach(b=>b.classList.remove("active")); go(); } };
+  $("b_aplicar").onclick=()=>{ if(d_ini.value && d_fim.value){ quickDiv.querySelectorAll(".btn").forEach(b=>b.classList.remove("active")); go(); } };
   quickDiv.querySelectorAll(".btn").forEach(btn=>{
     btn.onclick=()=>{
       quickDiv.querySelectorAll(".btn").forEach(b=>b.classList.remove("active"));
@@ -263,7 +351,10 @@ async function boot(){
       go();
     };
   });
-  f_unidade.onchange = ()=> go();
+  f_unidade.onchange = go;
+  [f_turno,f_canal,f_cupom,f_pagamento,f_cancelado,f_entregador].forEach(sel=>{
+    if(sel) sel.onchange = go;
+  });
 
   await go();
 
