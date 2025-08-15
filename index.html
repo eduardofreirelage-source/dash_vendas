@@ -2,47 +2,77 @@
 <html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
-    <title>Dashboard Vendas (Supabase) — v6</title>
+    <title>Dashboard Vendas (Supabase) — v7</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- evita cache do GitHub Pages -->
+    <!-- anticahe para GitHub Pages -->
     <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0"/>
     <meta http-equiv="Pragma" content="no-cache"/>
     <meta http-equiv="Expires" content="0"/>
     <style>
-      body{margin:0;background:#f6f7fb;color:#0f172a;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
-      .wrap{max-width:960px;margin:24px auto;padding:0 16px}
-      h1{font-size:22px;margin:0 0 4px}
-      .muted{color:#6b7280;font-size:12px}
+      :root{--bg:#f6f7fb;--card:#fff;--muted:#6b7280;--border:#e5e7eb;--ink:#0f172a}
+      body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
+      .wrap{max-width:980px;margin:24px auto;padding:0 16px}
+      h1{font-size:22px;margin:0 0 6px}
+      .muted{color:var(--muted);font-size:12px}
+      .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+      .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
       .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:12px}
-      .card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-      .title{font-size:12px;color:#6b7280}
+      .title{font-size:12px;color:var(--muted)}
       .val{font-size:22px;font-weight:700;margin-top:4px}
       pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
-      code{background:#eef2ff;padding:0 4px;border-radius:4px}
-      @media (max-width:820px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-      @media (max-width:480px){.grid{grid-template-columns:1fr}}
+      input,select,button{font:inherit}
+      .btn{border:1px solid var(--border);background:#fff;border-radius:8px;padding:8px 10px;cursor:pointer}
+      .btn:hover{background:#f9fafb}
+      .inp{border:1px solid var(--border);background:#fff;border-radius:8px;padding:8px 10px;min-width:220px}
+      .bad{color:#b91c1c}
+      .ok{color:#065f46}
+      @media (max-width:860px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+      @media (max-width:520px){.grid{grid-template-columns:1fr}}
     </style>
+    <!-- Supabase UMD -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   </head>
   <body>
     <div class="wrap">
-      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px">
+      <div class="row" style="justify-content:space-between;align-items:flex-end">
         <div>
           <h1>Dashboard Vendas — Supabase</h1>
-          <div class="muted">Fonte usada: <code id="fonte">detectando…</code></div>
-          <div class="muted">Build <b>v6</b> • sem <code>max(...)</code> • paginação</div>
+          <div class="muted">Build <b>v7</b> • detecção automática de tabela/coluna • sem <code>max(...)</code></div>
+          <div class="muted">Fonte: <code id="fonte">—</code></div>
         </div>
         <div class="muted" id="periodo">Período: —</div>
       </div>
 
-      <div class="grid" style="margin-top:16px">
+      <div class="card" style="margin-top:12px">
+        <div class="row" style="gap:8px">
+          <span class="muted">Tabela:</span>
+          <select id="tabela" class="inp">
+            <option value="">(detectar automaticamente)</option>
+            <option>vendas_import_csv</option>
+            <option>VENDAS_IMPORT_CSV</option>
+            <option>vendas</option>
+            <option>VENDAS</option>
+          </select>
+
+          <span class="muted">Coluna data:</span>
+          <input id="colData" class="inp" placeholder="auto (ex.: data_venda)" />
+
+          <button id="btnTestar" class="btn">Testar & Detectar</button>
+          <button id="btnCarregar" class="btn">Carregar últimos 30 dias</button>
+        </div>
+        <div class="muted" style="margin-top:8px">
+          Dica: se “auto” falhar, escolha a tabela manualmente e preencha a coluna de data (ex.: <code>data_venda</code>).
+        </div>
+      </div>
+
+      <div class="grid">
         <div class="card"><div class="title">Pedidos</div><div class="val" id="k_ped">—</div></div>
         <div class="card"><div class="title">Faturamento</div><div class="val" id="k_fat">—</div></div>
         <div class="card"><div class="title">Incentivos</div><div class="val" id="k_desc">—</div></div>
         <div class="card"><div class="title">Frete</div><div class="val" id="k_fre">—</div></div>
       </div>
 
-      <div class="card" style="margin-top:16px">
+      <div class="card" style="margin-top:12px">
         <div class="title">Status / Logs</div>
         <pre id="log">Iniciando…</pre>
       </div>
@@ -53,9 +83,21 @@
       var SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
       var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
 
-      // ====== UI helpers ======
-      var elLog   = document.getElementById("log");
-      var elFonte = document.getElementById("fonte");
+      // ====== UI ======
+      var elLog    = document.getElementById("log");
+      var elFonte  = document.getElementById("fonte");
+      var elPeriodo= document.getElementById("periodo");
+      var elTab    = document.getElementById("tabela");
+      var elCol    = document.getElementById("colData");
+      var btnTest  = document.getElementById("btnTestar");
+      var btnLoad  = document.getElementById("btnCarregar");
+      var KP = {
+        ped: document.getElementById("k_ped"),
+        fat: document.getElementById("k_fat"),
+        des: document.getElementById("k_desc"),
+        fre: document.getElementById("k_fre"),
+      };
+
       function log(msg){ elLog.textContent += "\n" + msg; }
       function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
       function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)); }
@@ -68,64 +110,65 @@
       }
       function toISO(d){ return d.toISOString().slice(0,10); }
 
-      // ====== Supabase client ======
+      // ====== Supabase ======
       var supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+      var CANDIDATAS_TABELA = ["vendas_import_csv","VENDAS_IMPORT_CSV","vendas","VENDAS"];
+      var estado = { tabela:null, colData:null, ultimaISO:null };
 
-      // Vamos usar as tabelas do import CSV
-      var TABELAS = ["vendas_import_csv","VENDAS_IMPORT_CSV"];
-
-      // 1) Detecta qual tabela existe e qual coluna é a de data (sem max())
-      async function detectarTabelaEColunaData(){
-        for(const tbl of TABELAS){
-          const r1 = await supa.from(tbl).select("*").limit(1);
-          if(r1.error){ log(`[Detect] ${tbl} erro: ${r1.error.message}`); continue; }
-          if(!r1.data || !r1.data.length){ log(`[Detect] ${tbl} vazia.`); continue; }
-
-          const row  = r1.data[0];
-          const cols = Object.keys(row);
-          log(`[Detect] ${tbl} colunas: ${cols.join(", ")}`);
-
-          // tenta achar a coluna de data por nomes comuns
-          const preferidas = ["data_venda","Data da venda","Data venda","data","Data"];
-          let colData = null;
-          for(const guess of preferidas){ if(cols.includes(guess)){ colData = guess; break; } }
-          if(!colData){
-            // fallback heurístico: primeira que "parece" aaaa-mm-dd
-            for(const c of cols){ const v=row[c]; if(typeof v==="string" && /^\d{4}-\d{2}-\d{2}/.test(v)){ colData=c; break; } }
-          }
-          if(!colData){ log(`[Detect] ${tbl}: nenhuma coluna de data identificada.`); continue; }
-
-          // tenta descobrir a última data por ordenação (se falhar, usa "hoje" como fallback)
-          let ultimaISO=null;
-          try{
-            const r2 = await supa.from(tbl).select(colData).not(colData,"is",null).order(colData,{ascending:false}).limit(1);
-            if(r2.error){ log(`[Detect] order por ${colData} falhou: ${r2.error.message}`); }
-            else{
-              const v = r2.data && r2.data[0] ? r2.data[0][colData] : null;
-              if(v) ultimaISO = String(v).slice(0,10);
-            }
-          }catch(e){
-            log(`[Detect] exceção no order: ${e.message||e}`);
-          }
-          if(!ultimaISO){
-            ultimaISO = toISO(new Date()); // fallback seguro
-            log(`[Detect] usando fallback de data final (hoje): ${ultimaISO}`);
-          }
-          return { tabela: tbl, colData, ultimaISO };
-        }
-        throw new Error("Nenhuma tabela válida encontrada (import CSV).");
+      async function existeETemLinha(tbl){
+        const r = await supa.from(tbl).select("*").limit(1);
+        if(r.error){ log(`[-] ${tbl}: ${r.error.message}`); return null; }
+        if(!r.data || !r.data.length){ log(`[-] ${tbl}: vazia`); return null; }
+        const cols = Object.keys(r.data[0]||{});
+        log(`[+] ${tbl}: ok | colunas: ${cols.join(", ")}`);
+        return { tbl, cols, sample: r.data[0] };
       }
 
-      // 2) Busca paginada no intervalo
+      function detectarColunaData(cols, sample){
+        // preferidas por nome
+        const preferidas = ["data_venda","Data da venda","Data venda","data","Data"];
+        for(const c of preferidas){ if(cols.includes(c)) return c; }
+        // heurística: valor com formato AAAA-MM-DD
+        for(const c of cols){
+          const v = sample[c];
+          if(typeof v==="string" && /^\d{4}-\d{2}-\d{2}/.test(v)) return c;
+        }
+        return null;
+      }
+
+      async function detectarAutomático(){
+        log("[Detect] Iniciando detecção automática…");
+        for(const t of (elTab.value? [elTab.value] : CANDIDATAS_TABELA)){
+          const info = await existeETemLinha(t);
+          if(!info) continue;
+          let col = elCol.value.trim() || detectarColunaData(info.cols, info.sample);
+          if(!col){ log(`   ${t}: não identifiquei a coluna de data. Preencha manualmente.`); continue; }
+
+          // tenta achar a última data por ordenação (se falhar, usa hoje)
+          let ultimaISO=null;
+          try{
+            const r = await supa.from(t).select(col).not(col,"is",null).order(col,{ascending:false}).limit(1);
+            if(r.error){ log(`   ${t}: order por ${col} falhou: ${r.error.message}`); }
+            else if(r.data && r.data[0] && r.data[0][col]) ultimaISO = String(r.data[0][col]).slice(0,10);
+          }catch(e){ log(`   ${t}: exceção no order: ${e.message||e}`); }
+          if(!ultimaISO){ ultimaISO = toISO(new Date()); log(`   ${t}: usando fallback de data final (hoje): ${ultimaISO}`); }
+
+          estado = { tabela:t, colData:col, ultimaISO };
+          elFonte.textContent = `${t} (data: ${col})`;
+          log(`[Detect] OK → tabela=${t} | colData=${col} | última=${ultimaISO}`);
+          return true;
+        }
+        return false;
+      }
+
       async function buscarIntervalo(tbl, colData, deISO, ateISO){
         const page=10000; let acc=[], off=0;
         const campos = [colData,"valor_total","desconto","entrega","unidade"];
+        log(`[Query] ${tbl} | campos=${campos.join(", ")} | ${deISO} → ${ateISO}`);
         for(;;){
           const sel = campos.join(",");
-          const qr = await supa.from(tbl)
-            .select(sel, { count: "estimated" })
-            .gte(colData, deISO)
-            .lte(colData, ateISO)
+          const qr = await supa.from(tbl).select(sel, { count: "estimated" })
+            .gte(colData, deISO).lte(colData, ateISO)
             .range(off, off+page-1);
           if(qr.error) throw qr.error;
           const arr = qr.data||[];
@@ -133,41 +176,77 @@
           if(arr.length<page) break;
           off += page;
         }
+        log(`[Query] Linhas retornadas: ${acc.length.toLocaleString("pt-BR")}`);
         return acc;
       }
 
-      (async function main(){
+      async function acaoTestar(){
         try{
-          log("[Boot] Iniciando… build v6 (sem max())");
+          KP.ped.textContent = KP.fat.textContent = KP.des.textContent = KP.fre.textContent = "—";
+          const ok = await detectarAutomático();
+          if(!ok){
+            log("[Detect] Falhou a detecção automática. Escolha a tabela e a coluna manualmente e clique em Carregar.");
+            alert("Não consegui detectar automaticamente. Escolha a tabela e a coluna de data e clique em Carregar.");
+          }else{
+            alert(`Detectado: ${estado.tabela} (data: ${estado.colData})`);
+          }
+        }catch(e){
+          log("[ERRO-Testar] "+(e.message||String(e)));
+          alert("Erro ao testar: "+(e.message||String(e)));
+        }
+      }
 
-          const pick = await detectarTabelaEColunaData();
-          const tbl = pick.tabela, colData = pick.colData, last = pick.ultimaISO;
-          document.getElementById("fonte").textContent = `${tbl} (data: ${colData})`;
-          log(`[Detect] Tabela: ${tbl} | Coluna-data: ${colData} | Última: ${last}`);
+      async function acaoCarregar(){
+        try{
+          // se usuário preencheu manualmente, usa o que ele marcou
+          const manualTbl = elTab.value || null;
+          const manualCol = elCol.value.trim() || null;
+          if(manualTbl && (!estado.tabela || estado.tabela!==manualTbl)){
+            // valida tabela manual
+            const info = await existeETemLinha(manualTbl);
+            if(!info) throw new Error("Tabela manual informada não existe ou está vazia.");
+            estado.tabela = manualTbl;
+            if(manualCol) estado.colData = manualCol; else estado.colData = detectarColunaData(info.cols, info.sample) || "data_venda";
+            // última data (best-effort)
+            try{
+              const r = await supa.from(manualTbl).select(estado.colData).not(estado.colData,"is",null).order(estado.colData,{ascending:false}).limit(1);
+              estado.ultimaISO = (r.data && r.data[0] && r.data[0][estado.colData]) ? String(r.data[0][estado.colData]).slice(0,10) : toISO(new Date());
+            }catch(_){ estado.ultimaISO = toISO(new Date()); }
+          }
 
-          // período: últimos 30 dias até "last" (ou hoje se fallback)
-          const end = new Date(last+"T23:59:59");
+          if(!estado.tabela){
+            const ok = await detectarAutomático();
+            if(!ok) throw new Error("Defina manualmente a tabela e a coluna de data.");
+          }
+
+          elFonte.textContent = `${estado.tabela} (data: ${estado.colData})`;
+          const end = new Date((estado.ultimaISO||toISO(new Date()))+"T23:59:59");
           const start = new Date(end); start.setDate(end.getDate()-29);
-          document.getElementById("periodo").textContent = `Período: ${toISO(start)} → ${toISO(end)}`;
-          log(`[Query] Intervalo: ${toISO(start)} → ${toISO(end)}`);
+          elPeriodo.textContent = `Período: ${toISO(start)} → ${toISO(end)}`;
 
-          const rows = await buscarIntervalo(tbl, colData, toISO(start), toISO(end));
-          log(`[Query] Linhas retornadas: ${rows.length.toLocaleString("pt-BR")}`);
+          const rows = await buscarIntervalo(estado.tabela, estado.colData, toISO(start), toISO(end));
 
           let pedidos=rows.length, fat=0, desc=0, fre=0;
           for(const r of rows){ fat+=toNum(r.valor_total); desc+=toNum(r.desconto); fre+=toNum(r.entrega); }
 
-          document.getElementById("k_ped").textContent = fmtInt(pedidos);
-          document.getElementById("k_fat").textContent = fmtBRL(fat);
-          document.getElementById("k_desc").textContent = fmtBRL(desc);
-          document.getElementById("k_fre").textContent = fmtBRL(fre);
+          KP.ped.textContent = fmtInt(pedidos);
+          KP.fat.textContent = fmtBRL(fat);
+          KP.des.textContent = fmtBRL(desc);
+          KP.fre.textContent = fmtBRL(fre);
 
           log("[OK] KPIs preenchidos.");
-          log("[Próximo] Confirmando aqui, adiciono filtro de UNIDADE e os gráficos.");
         }catch(e){
-          log("[ERRO] "+(e.message||String(e)));
+          log("[ERRO-Carregar] "+(e.message||String(e)));
+          alert("Erro ao carregar: "+(e.message||String(e)));
         }
-      })();
+      }
+
+      // eventos
+      btnTest.addEventListener("click", acaoTestar);
+      btnLoad.addEventListener("click", acaoCarregar);
+
+      // Arranque: tenta detectar (não bloqueia)
+      (async()=>{ try{ await detectarAutomático(); }catch(_){ /*ignora*/ } })();
     </script>
   </body>
 </html>
