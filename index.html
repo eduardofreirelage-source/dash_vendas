@@ -27,7 +27,7 @@
         <div>
           <h1>Dashboard Vendas — Supabase</h1>
           <div class="muted">Fonte usada: <code id="fonte">detectando…</code></div>
-          <div class="muted">Candidatas: <code>vendas_import_csv</code> → <code>VENDAS_IMPORT_CSV</code> → <code>vendas</code> → <code>VENDAS</code></div>
+          <div class="muted">Candidatas: <code>vendas_import_csv</code> → <code>VENDAS_IMPORT_CSV</code></div>
         </div>
         <div class="muted" id="periodo">Período: —</div>
       </div>
@@ -46,11 +46,11 @@
     </div>
 
     <script>
-      // ====== CREDENCIAIS ======
+      // ====== CREDENCIAIS (as que você me passou) ======
       var SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
       var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
 
-      // ====== Helpers UI ======
+      // ====== UI helpers ======
       var elLog = document.getElementById("log");
       var elFonte = document.getElementById("fonte");
       function log(msg){ elLog.textContent += "\n" + msg; }
@@ -70,35 +70,32 @@
       // ====== Supabase client ======
       var supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
+      // tenta max(data_venda) em uma tabela
       async function tryMaxDate(tbl){
-        try{
-          const r = await supa.from(tbl).select("max(data_venda)");
-          if(r.error){ log("[Detect] "+tbl+" falhou: "+r.error.message); return null; }
-          const v = r.data && r.data[0] && (r.data[0].max || r.data[0]["max"]);
-          if(!v){ log("[Detect] "+tbl+" sem data."); return null; }
-          const iso = String(v).slice(0,10);
-          log("[Detect] "+tbl+" ok (max="+iso+")");
-          return iso;
-        }catch(e){
-          log("[Detect] "+tbl+" exceção: "+(e.message||String(e)));
-          return null;
-        }
+        const r = await supa.from(tbl).select("max(data_venda)");
+        if(r.error){ log("[Detect] "+tbl+" falhou: "+r.error.message); return null; }
+        const v = r.data && r.data[0] && (r.data[0].max || r.data[0]["max"]);
+        if(!v){ log("[Detect] "+tbl+" sem data."); return null; }
+        return String(v).slice(0,10);
       }
 
-      // Escolhe a primeira tabela que responde rápido ao max(data_venda)
-      async function pickTableAndLast(){
-        const candidates = ["vendas_import_csv","VENDAS_IMPORT_CSV","vendas","VENDAS"];
-        for(let i=0;i<candidates.length;i++){
-          const t = candidates[i];
-          const last = await tryMaxDate(t);
-          if(last) return { table:t, last };
+      // escolhe entre vendas_import_csv e VENDAS_IMPORT_CSV
+      async function pickTable(){
+        const choices = ["vendas_import_csv","VENDAS_IMPORT_CSV"];
+        for(let t of choices){
+          try{
+            const last = await tryMaxDate(t);
+            if(last){ return { table:t, last }; }
+          }catch(e){
+            log("[Detect] exceção em "+t+": "+(e.message||String(e)));
+          }
         }
-        throw new Error("Nenhuma tabela respondeu sem timeout.");
+        throw new Error("Nenhuma tabela respondeu (import CSV).");
       }
 
-      // Busca páginas do intervalo (sem ORDER BY)
+      // busca intervalos paginados (sem ORDER BY)
       async function fetchRange(tbl, fromISO, toISO){
-        let page=10000, acc=[], off=0;
+        const page=10000; let acc=[], off=0;
         for(;;){
           const qr = await supa.from(tbl)
             .select("data_venda,valor_total,desconto,entrega",{count:"estimated"})
@@ -109,7 +106,7 @@
           const arr = qr.data||[];
           acc = acc.concat(arr);
           if(arr.length<page) break;
-          off+=page;
+          off += page;
         }
         return acc;
       }
@@ -118,23 +115,22 @@
         try{
           log("[Boot] Iniciando…");
 
-          const pick = await pickTableAndLast();
+          const pick = await pickTable();
           const tbl  = pick.table;
           const last = pick.last;
           elFonte.textContent = tbl;
+          log("[Info] Usando tabela: "+tbl+" (última data: "+last+")");
 
           const end = new Date(last+"T23:59:59");
           const start = new Date(end); start.setDate(end.getDate()-29);
           document.getElementById("periodo").textContent = "Período: "+toISO(start)+" → "+toISO(end);
-          log("[Info] Tabela: "+tbl+" | Último dia: "+last);
           log("[Query] Intervalo: "+toISO(start)+" → "+toISO(end));
 
           const rows = await fetchRange(tbl, toISO(start), toISO(end));
           log("[Query] Linhas retornadas: "+rows.length.toLocaleString("pt-BR"));
 
           let pedidos=rows.length, fat=0, desc=0, fre=0;
-          for(let i=0;i<rows.length;i++){
-            const r = rows[i];
+          for(let r of rows){
             fat  += toNum(r.valor_total);
             desc += toNum(r.desconto);
             fre  += toNum(r.entrega);
@@ -146,6 +142,7 @@
           document.getElementById("k_fre").textContent = fmtBRL(fre);
 
           log("[OK] KPIs calculados.");
+          log("[Próximo] Assim que confirmar, eu adiciono o filtro por UNIDADE mantendo esta mesma base.");
         }catch(e){
           log("[ERRO] "+(e.message||String(e)));
         }
