@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3+dropdowns+arrows)</title>
+  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3+dropdowns+arrows+inline)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --brd:#e5e7eb; --up:#16a34a; --down:#dc2626; }
@@ -13,7 +13,7 @@
     .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:12px}
     .card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
     .title{font-size:12px;color:var(--muted)}
-    .val{font-size:22px;font-weight:700;margin-top:4px}
+    .val{font-size:22px;font-weight:700;margin-top:4px; display:flex; align-items:baseline; gap:8px}
     .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     select,button,input{font:inherit;padding:8px 10px;border:1px solid var(--brd);border-radius:8px;background:#fff}
     button{cursor:pointer}
@@ -26,6 +26,9 @@
     .delta.up{color:var(--up)}
     .delta.down{color:var(--down)}
     .delta .pct{font-weight:600}
+    .miniDelta{font-size:12px;font-weight:700}
+    .miniDelta.up{color:var(--up)}
+    .miniDelta.down{color:var(--down)}
     @media (max-width:860px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media (max-width:520px){.grid{grid-template-columns:1fr} .row{flex-direction:column;align-items:stretch}}
     .hidden{display:none}
@@ -84,7 +87,7 @@
           </select>
         </div>
 
-        <!-- Dias da semana (dropdown simples, igual ao "Está cancelado") -->
+        <!-- Dia da semana (dropdown simples) -->
         <div class="seg">
           <span class="lbl">Dia da semana</span>
           <select id="dow" style="min-width:160px">
@@ -101,7 +104,7 @@
           </select>
         </div>
 
-        <!-- Turno / Canal / Pagamento / Cancelado (dropdowns iguais) -->
+        <!-- Turno / Canal / Pagamento / Cancelado (dropdowns iguais; aparecem só se existirem no schema) -->
         <div class="seg hidden" id="segTurno">
           <span class="lbl">Turno</span>
           <select id="turno" style="min-width:160px">
@@ -215,31 +218,9 @@
   function toISO(d){ return d.toISOString().slice(0,10); }
   function addDays(d, k){ var t=new Date(d); t.setUTCDate(t.getUTCDate()+k); return t; }
   function sum(arr, key){ var s=0; for(var i=0;i<arr.length;i++) s+=Number(arr[i][key]||0); return s; }
-  function debounce(fn, wait){
-    var t; return function(){ var args=arguments, ctx=this; clearTimeout(t); t=setTimeout(function(){ fn.apply(ctx,args); }, wait); };
-  }
-  function getDateFromInput(el){
-    if(!el.value) return null;
-    return new Date(el.value+"T00:00:00Z");
-  }
-  function setDateInput(el, iso){
-    el.value = iso || "";
-    if(dataMinISO) el.min = dataMinISO;
-    if(dataMaxISO) el.max = dataMaxISO;
-  }
-  function setOptionsWithTodos(sel, items){
-    var prev = sel.value || "todos";
-    sel.innerHTML = "";
-    var opt0 = document.createElement("option");
-    opt0.value="todos"; opt0.textContent="Todos"; sel.appendChild(opt0);
-    (items||[]).forEach(function(v){
-      var o=document.createElement("option"); o.value=String(v); o.textContent=String(v); sel.appendChild(o);
-    });
-    // preserva seleção se existir ainda
-    var found=false;
-    for(var i=0;i<sel.options.length;i++){ if(sel.options[i].value===prev){ sel.options[i].selected=true; found=true; break; } }
-    if(!found) sel.value="todos";
-  }
+  function debounce(fn, wait){ var t; return function(){ var a=arguments,c=this; clearTimeout(t); t=setTimeout(function(){ fn.apply(c,a); }, wait); }; }
+  function getDateFromInput(el){ if(!el.value) return null; return new Date(el.value+"T00:00:00Z"); }
+  function setDateInput(el, iso){ el.value = iso || ""; if(dataMinISO) el.min = dataMinISO; if(dataMaxISO) el.max = dataMaxISO; }
 
   // ===== Supabase client =====
   var supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:false } });
@@ -249,8 +230,6 @@
   var runId = 0;
   var drawing = false;
   var dataMinISO=null, dataMaxISO=null;
-
-  // mapeia possíveis nomes no schema
   var schema = { turno:null, canal:null, pagamento:null, cancelado:null, cancelType:null };
 
   // ===== Consultas (paginações) =====
@@ -277,7 +256,6 @@
   }
 
   function applyServerFilters(q){
-    // dropdowns: se "todos", não filtra
     if(schema.turno && selTurno.value!=="todos") q = q.eq(schema.turno, selTurno.value);
     if(schema.canal && selCanal.value!=="todos") q = q.eq(schema.canal, selCanal.value);
     if(schema.pagamento && selPagto.value!=="todos") q = q.eq(schema.pagamento, selPagto.value);
@@ -292,7 +270,7 @@
     return q;
   }
 
-  // Unidades (dedup)
+  // Unidades (dedup robusto)
   async function fetchUnidades(){
     var uniq={}, arr=["Todas"];
     function push(list){ (list||[]).forEach(function(row){ var u=(row.unidade||"").trim(); if(!u) return; if(!uniq[u]){ uniq[u]=1; arr.push(u); } }); }
@@ -354,14 +332,26 @@
       else if(v===0 || v===1) schema.cancelType="num";
       else if(typeof v==="string") schema.cancelType="str";
     }
-    segTurno.classList.toggle("hidden", !schema.turno);
-    segCanal.classList.toggle("hidden", !schema.canal);
-    segPagto.classList.toggle("hidden", !schema.pagamento);
-    segCanc.classList.toggle("hidden", !schema.cancelado);
+    document.getElementById("segTurno").classList.toggle("hidden", !schema.turno);
+    document.getElementById("segCanal").classList.toggle("hidden", !schema.canal);
+    document.getElementById("segPagto").classList.toggle("hidden", !schema.pagamento);
+    document.getElementById("segCanc").classList.toggle("hidden", !schema.cancelado);
     log("[Schema] turnos="+!!schema.turno+" canal="+!!schema.canal+" pagto="+!!schema.pagamento+" cancelado="+!!schema.cancelado);
   }
 
-  // Carrega opções distintas para os dropdowns (com "Todos")
+  // Carrega opções distintas (com "Todos")
+  function setOptionsWithTodos(sel, items){
+    var prev = sel.value || "todos";
+    sel.innerHTML = "";
+    var opt0 = document.createElement("option");
+    opt0.value="todos"; opt0.textContent="Todos"; sel.appendChild(opt0);
+    (items||[]).forEach(function(v){
+      var o=document.createElement("option"); o.value=String(v); o.textContent=String(v); sel.appendChild(o);
+    });
+    var found=false;
+    for(var i=0;i<sel.options.length;i++){ if(sel.options[i].value===prev){ sel.options[i].selected=true; found=true; break; } }
+    if(!found) sel.value="todos";
+  }
   async function loadDistinct(col, sel, startISO, endISO, unidade){
     var uniq={}, out=[], page=1000, off=0;
     for(;;){
@@ -390,6 +380,23 @@
   }
 
   // ===== KPI + Gráficos =====
+  function deltaCalc(cur, prev){
+    var pct = (prev>0)? ((cur-prev)/prev*100): 0;
+    var arrow = pct>0 ? "▲" : (pct<0 ? "▼" : "•");
+    var klass = pct>0 ? "up" : (pct<0 ? "down" : "");
+    return { pct:pct, arrow:arrow, klass:klass };
+  }
+  function deltaMiniHTML(cur, prev){
+    var d = deltaCalc(cur, prev);
+    return `<span class="miniDelta ${d.klass}">${d.arrow} ${d.pct.toFixed(1)}%</span>`;
+  }
+  function deltaDetailHTML(cur, prev, isMoney){
+    var d = deltaCalc(cur, prev);
+    var prevFmt = isMoney ? fmtBRL(prev) : fmtInt(prev);
+    var klass = d.klass ? `delta ${d.klass}` : "delta";
+    return `<span class="${klass}"><span class="pct">${d.arrow} ${d.pct.toFixed(1)}%</span> <span class="muted">vs ant. • ant: ${prevFmt}</span></span>`;
+  }
+
   function updateKPI(rows, rowsAnt){
     var ped = sum(rows,"pedidos");
     var fat = sum(rows,"fat");
@@ -405,22 +412,17 @@
     var fatExibe = (modoSel==="liq") ? (fat - fre) : fat;
     var fatAExibe = (modoSel==="liq") ? (fatA - freA) : fatA;
 
-    document.getElementById("k_ped").textContent = fmtInt(ped);
-    document.getElementById("k_fat").textContent = fmtBRL(fatExibe);
-    document.getElementById("k_des").textContent = fmtBRL(des);
-    document.getElementById("k_fre").textContent = fmtBRL(fre);
+    // Linha do valor + mini setinha
+    document.getElementById("k_ped").innerHTML = fmtInt(ped) + " " + deltaMiniHTML(ped, pedA);
+    document.getElementById("k_fat").innerHTML = fmtBRL(fatExibe) + " " + deltaMiniHTML(fatExibe, fatAExibe);
+    document.getElementById("k_des").innerHTML = fmtBRL(des) + " " + deltaMiniHTML(des, desA);
+    document.getElementById("k_fre").innerHTML = fmtBRL(fre) + " " + deltaMiniHTML(fre, freA);
 
-    function deltaHTML(cur, prev, isMoney){
-      var pct = (prev>0)? ((cur-prev)/prev*100): 0;
-      var arrow = pct>0 ? "▲" : (pct<0 ? "▼" : "•");
-      var klass = pct>0 ? "delta up" : (pct<0 ? "delta down" : "delta");
-      var prevFmt = isMoney ? fmtBRL(prev) : fmtInt(prev);
-      return `<span class="${klass}"><span class="pct">${arrow} ${pct.toFixed(1)}%</span> <span class="muted">vs ant. • ant: ${prevFmt}</span></span>`;
-    }
-    document.getElementById("k_ped_delta").innerHTML = deltaHTML(ped, pedA, false);
-    document.getElementById("k_fat_delta").innerHTML = deltaHTML(fatExibe, fatAExibe, true);
-    document.getElementById("k_des_delta").innerHTML = deltaHTML(des, desA, true);
-    document.getElementById("k_fre_delta").innerHTML = deltaHTML(fre, freA, true);
+    // Linha detalhada “vs ant.”
+    document.getElementById("k_ped_delta").innerHTML = deltaDetailHTML(ped, pedA, false);
+    document.getElementById("k_fat_delta").innerHTML = deltaDetailHTML(fatExibe, fatAExibe, true);
+    document.getElementById("k_des_delta").innerHTML = deltaDetailHTML(des, desA, true);
+    document.getElementById("k_fre_delta").innerHTML = deltaDetailHTML(fre, freA, true);
   }
 
   function groupByDia(rows){
@@ -475,13 +477,13 @@
     });
   }
 
-  // ===== Filtro de DOW (dropdown simples) =====
+  // ===== Filtro de DOW (cliente) =====
   function mapDOWSelectionToList(){
     var v = selDOW.value || "todos";
     if(v==="todos") return [0,1,2,3,4,5,6];
     if(v==="uteis") return [1,2,3,4,5];
     if(v==="fds")   return [6,0];
-    return [Number(v)]; // dia único
+    return [Number(v)];
   }
   function applyDOWFilter(rows){
     var keep = {}; mapDOWSelectionToList().forEach(function(d){ keep[d]=1; });
@@ -563,7 +565,6 @@
 
       var cur = await fetchPaged(startISO, endISO, uniVal==="Todas"? null: uniVal);
       if(myRun!==runId) return;
-
       var ant = await fetchPaged(prevStartISO, prevEndISO, uniVal==="Todas"? null: uniVal);
       if(myRun!==runId) return;
 
@@ -585,8 +586,7 @@
   var recarregarDebounced = debounce(recarregar, 120);
 
   async function boot(){
-    log("[Boot] v17.2-MV-paged-fix3 — dropdowns unificados + setas nos KPIs + calendário em datas");
-    // Unidades
+    log("[Boot] v17.2-MV-paged-fix3 — dropdowns + setas inline nos KPIs + calendário em datas");
     var opts = await fetchUnidades();
     selUni.innerHTML = "";
     opts.forEach(function(u){ var o=document.createElement("option"); o.value=u; o.textContent=u; selUni.appendChild(o); });
@@ -635,7 +635,7 @@
   selUni.addEventListener("change", async function(){
     await refreshBounds(selUni.value||"Todas");
     await inspectSchema(selUni.value||"Todas");
-    // reset datas para padrão desta unidade
+    // reset para padrão desta unidade
     if(dataMaxISO && dataMinISO){
       var e = new Date(dataMaxISO+"T00:00:00Z");
       var s = addDays(e,-29);
@@ -666,13 +666,11 @@
     selUni.value="Todas";
     await refreshBounds("Todas");
     await inspectSchema("Todas");
-    // limpa dropdowns
     selDOW.value = "todos";
     if(schema.turno) selTurno.value="todos";
     if(schema.canal) selCanal.value="todos";
     if(schema.pagamento) selPagto.value="todos";
     if(schema.cancelado) selCanc.value="todos";
-    // datas padrão
     if(dataMaxISO && dataMinISO){
       var e = new Date(dataMaxISO+"T00:00:00Z");
       var s = addDays(e,-29);
