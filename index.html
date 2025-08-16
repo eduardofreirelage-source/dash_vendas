@@ -109,4 +109,383 @@
 
     <!-- Logs -->
     <div class="card" style="margin-top:12px">
-      <div class="title">Status /
+      <div class="title">Status / Logs</div>
+      <pre id="log">Iniciando…</pre>
+    </div>
+  </div>
+
+<script>
+(function(){
+  // Evita boot duplicado
+  if (window.__DASH_BOOTED__) return;
+  window.__DASH_BOOTED__ = true;
+
+  // ===== Credenciais =====
+  var SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
+  var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+  var TABLE = "vendas_kpi_daily_v2";
+
+  // ===== UI helpers =====
+  var elLog=document.getElementById("log");
+  var elPeriodo=document.getElementById("periodo");
+  var elLimites=document.getElementById("limites");
+  function log(s){ elLog.textContent += "\n"+s; }
+  function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
+  function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)); }
+  function toISO(d){ return d.toISOString().slice(0,10); }
+  function parseBR(dstr){
+    var s=(dstr||"").trim(); if(!s) return null;
+    var m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if(!m) return null;
+    return new Date(Date.UTC(+m[3], +m[2]-1, +m[1]));
+  }
+  function isoToBR(iso){
+    if(!iso) return "";
+    var d = new Date(iso+"T00:00:00Z");
+    var dd=String(d.getUTCDate()).padStart(2,"0");
+    var mm=String(d.getUTCMonth()+1).padStart(2,"0");
+    var yy=d.getUTCFullYear();
+    return dd+"/"+mm+"/"+yy;
+  }
+  function addDays(d, k){ var t=new Date(d); t.setUTCDate(t.getUTCDate()+k); return t; }
+  function sum(arr, key){ var s=0; for(var i=0;i<arr.length;i++) s+=Number(arr[i][key]||0); return s; }
+  function debounce(fn, wait){
+    var t; return function(){ var args=arguments, ctx=this; clearTimeout(t); t=setTimeout(function(){ fn.apply(ctx,args); }, wait); };
+  }
+
+  // ===== Supabase client =====
+  var supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:false } });
+
+  // ===== Estado =====
+  var selUni=document.getElementById("uni");
+  var dini=document.getElementById("dini");
+  var dfim=document.getElementById("dfim");
+  var modo=document.getElementById("modo");
+  var chartLine=null, chartBar=null;
+  var runId = 0;         // token anti-concorrência
+  var drawing = false;   // trava extra enquanto desenha
+
+  // Limites de data por Unidade (ancora no último dia do banco)
+  var dataMinISO = null;
+  var dataMaxISO = null;
+
+  // ===== Data source: paginação =====
+  async function fetchPaged(startISO, endISO, unidade){
+    var page=1000, off=0, out=[];
+    for(;;){
+      var q = supa.from(TABLE)
+        .select("dia,unidade,pedidos,fat,des,fre")
+        .gte("dia", startISO)
+        .lte("dia", endISO)
+        .order("dia", {ascending:true})
+        .range(off, off+page-1);
+      if(unidade && unidade!=="Todas") q = q.eq("unidade", unidade);
+      var r = await q;
+      if(r.error){ throw r.error; }
+      var a=r.data||[];
+      out = out.concat(a);
+      if(a.length<page) break;
+      off += page;
+      if(off>500000){ log("[Warn] abortado por salvaguarda de paginação."); break; }
+    }
+    return out;
+  }
+
+  // ===== Unidades robusto (asc + desc, dedup) =====
+  async function fetchUnidades(){
+    var uniq={}, arr=["Todas"];
+    function push(list){
+      (list||[]).forEach(function(row){
+        var u=(row.unidade||"").trim(); if(!u) return;
+        if(!uniq[u]){ uniq[u]=1; arr.push(u); }
+      });
+    }
+    // Sem alterar a lógica existente (mantém range amplo)
+    var today = new Date(); 
+    var endISO = toISO(new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate())));
+    var startISO = "2020-01-01";
+    var r1 = await supa.from(TABLE).select("unidade").gte("dia", startISO).lte("dia", endISO).order("unidade",{ascending:true}).range(0,9999);
+    if(!r1.error) push(r1.data);
+    var r2 = await supa.from(TABLE).select("unidade").gte("dia", startISO).lte("dia", endISO).order("unidade",{ascending:false}).range(0,9999);
+    if(!r2.error) push(r2.data);
+    if(arr.length===1){ arr.push("Uni. Raja"); arr.push("Uni.Savassi"); }
+    return arr;
+  }
+
+  // ===== Bounds (min/max) por Unidade =====
+  async function getDateBounds(unidade){
+    var qMax = supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
+    var qMin = supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
+    if(unidade && unidade!=="Todas"){
+      qMax = qMax.eq("unidade", unidade);
+      qMin = qMin.eq("unidade", unidade);
+    }
+    var [rMax, rMin] = await Promise.all([qMax, qMin]);
+    if(rMax.error) throw rMax.error;
+    if(rMin.error) throw rMin.error;
+    var maxISO = (rMax.data && rMax.data[0]) ? rMax.data[0].dia : null;
+    var minISO = (rMin.data && rMin.data[0]) ? rMin.data[0].dia : null;
+    return { minISO, maxISO };
+  }
+
+  async function refreshBounds(unidade){
+    var b = await getDateBounds(unidade);
+    dataMinISO = b.minISO;
+    dataMaxISO = b.maxISO;
+    if(!dataMaxISO || !dataMinISO){
+      elLimites.textContent = "Limites no banco: — (sem dados)";
+      log("[Info] Sem dados para os limites de data.");
+      return;
+    }
+    elLimites.textContent = "Limites no banco: "+dataMinISO+" → "+dataMaxISO+(unidade && unidade!=="Todas" ? (" • Unidade: "+unidade) : " • Todas");
+    log("[Bounds] "+elLimites.textContent);
+  }
+
+  // ===== KPI + Gráficos =====
+  function updateKPI(rows, rowsAnt){
+    var ped = sum(rows,"pedidos");
+    var fat = sum(rows,"fat");
+    var des = sum(rows,"des");
+    var fre = sum(rows,"fre");
+
+    var pedA = sum(rowsAnt,"pedidos");
+    var fatA = sum(rowsAnt,"fat");
+    var desA = sum(rowsAnt,"des");
+    var freA = sum(rowsAnt,"fre");
+
+    var modoSel = modo.value;
+    var fatExibe = (modoSel==="liq") ? (fat - fre) : fat;
+    var fatAExibe = (modoSel==="liq") ? (fatA - freA) : fatA;
+
+    document.getElementById("k_ped").textContent = fmtInt(ped);
+    document.getElementById("k_fat").textContent = fmtBRL(fatExibe);
+    document.getElementById("k_des").textContent = fmtBRL(des);
+    document.getElementById("k_fre").textContent = fmtBRL(fre);
+
+    function deltaTxt(cur, prev, isMoney){
+      var pct = (prev>0)? ((cur-prev)/prev*100): 0;
+      var sgn = (pct>0? "+": (pct<0? "":""));
+      var prevFmt = isMoney ? fmtBRL(prev) : fmtInt(prev);
+      return sgn+pct.toFixed(1)+"% vs ant. • ant: "+prevFmt;
+    }
+    document.getElementById("k_ped_delta").textContent = deltaTxt(ped, pedA, false);
+    document.getElementById("k_fat_delta").textContent = deltaTxt(fatExibe, fatAExibe, true);
+    document.getElementById("k_des_delta").textContent = deltaTxt(des, desA, true);
+    document.getElementById("k_fre_delta").textContent = deltaTxt(fre, freA, true);
+  }
+
+  function groupByDia(rows){
+    var useLiq = (modo.value==="liq");
+    var m={}; rows.forEach(function(r){
+      var d=r.dia; if(!m[d]) m[d]=0;
+      var val = Number(r.fat||0) - (useLiq? Number(r.fre||0) : 0);
+      m[d] += val;
+    });
+    var days=Object.keys(m).sort();
+    return {labels:days, values:days.map(function(d){return m[d];})};
+  }
+  function groupByDOW(rows){
+    var useLiq = (modo.value==="liq");
+    var m=[0,0,0,0,0,0,0]; // dom..sab
+    rows.forEach(function(r){
+      var d=new Date(r.dia+"T00:00:00Z");
+      var dow=d.getUTCDay();
+      var val = Number(r.fat||0) - (useLiq? Number(r.fre||0) : 0);
+      m[dow]+=val;
+    });
+    var lbl=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+    return {labels:lbl, values:m};
+  }
+
+  function drawCharts(rows){
+    if (drawing) return; 
+    drawing = true;
+
+    var l = groupByDia(rows);
+    var b = groupByDOW(rows);
+
+    if(chartLine){ chartLine.destroy(); chartLine=null; }
+    if(chartBar){ chartBar.destroy(); chartBar=null; }
+
+    requestAnimationFrame(function(){
+      var ctxL=document.getElementById("cLine").getContext("2d");
+      chartLine = new window.Chart(ctxL, {
+        type:"line",
+        data:{ labels:l.labels, datasets:[{ label:"Receita diária", data:l.values }] },
+        options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true } }, plugins:{ legend:{display:false} } }
+      });
+
+      var ctxB=document.getElementById("cBar").getContext("2d");
+      chartBar = new window.Chart(ctxB, {
+        type:"bar",
+        data:{ labels:b.labels, datasets:[{ label:"Totais por dia da semana", data:b.values }] },
+        options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true } }, plugins:{ legend:{display:false} } }
+      });
+
+      drawing = false;
+    });
+  }
+
+  // ===== Validação/Clamp de datas =====
+  function clampDateWithinBounds(d){
+    if(!d) return null;
+    if(!dataMinISO || !dataMaxISO) return d;
+    var min = new Date(dataMinISO+"T00:00:00Z");
+    var max = new Date(dataMaxISO+"T00:00:00Z");
+    if(d < min) return min;
+    if(d > max) return max;
+    return d;
+  }
+
+  function validateInputsOrWarn(){
+    if(!dataMinISO || !dataMaxISO) return true; // sem dados: deixa seguir e erro aparece no fetch
+    var ps = parseBR(dini.value);
+    var pe = parseBR(dfim.value);
+    if(ps && pe){
+      var s = clampDateWithinBounds(ps);
+      var e = clampDateWithinBounds(pe);
+      if(s.getTime()!==ps.getTime()){ log("[Aviso] Data inicial fora do intervalo do banco. Ajustada para "+isoToBR(toISO(s))); }
+      if(e.getTime()!==pe.getTime()){ log("[Aviso] Data final fora do intervalo do banco. Ajustada para "+isoToBR(toISO(e))); }
+      if(s > e){
+        log("[Erro] Intervalo inválido: 'De' > 'Até'. Ajuste as datas.");
+        return false;
+      }
+      // escreve de volta (clamp visual)
+      dini.value = isoToBR(toISO(s));
+      dfim.value = isoToBR(toISO(e));
+    }
+    return true;
+  }
+
+  // ===== Fluxo principal (token + debounce) =====
+  async function recarregar(){
+    const myRun = ++runId;
+    try{
+      // Garante bounds carregados
+      if(!dataMaxISO || !dataMinISO){
+        await refreshBounds(selUni.value || "Todas");
+        if(!dataMaxISO || !dataMinISO){
+          elPeriodo.textContent = "Período: —";
+          log("[Info] Sem limites de data; abortando consulta.");
+          return;
+        }
+      }
+
+      // Validação de inputs contra o banco
+      if(!validateInputsOrWarn()){
+        return; // não aplica se inválido
+      }
+
+      // Datas efetivas
+      var ps = parseBR(dini.value);
+      var pe = parseBR(dfim.value);
+      var s,e;
+      if(ps && pe){
+        s = clampDateWithinBounds(ps);
+        e = clampDateWithinBounds(pe);
+      }else{
+        // Padrão: últimos 30 dias ancorados no último dia do banco
+        e = new Date(dataMaxISO+"T00:00:00Z");
+        s = addDays(e,-29);
+        var minDate = new Date(dataMinISO+"T00:00:00Z");
+        if(s < minDate) s = minDate;
+        // reflete no UI
+        dini.value = isoToBR(toISO(s));
+        dfim.value = isoToBR(toISO(e));
+      }
+
+      var startISO = toISO(s), endISO = toISO(e);
+      var daysLen = Math.max(1, Math.round((e - s)/(24*3600*1000)) + 1);
+      var prevEnd   = addDays(s,-1);
+      var prevStart = addDays(prevEnd, -(daysLen-1));
+      var prevStartISO = toISO(prevStart);
+      var prevEndISO   = toISO(prevEnd);
+
+      elPeriodo.textContent = "Período: "+startISO+" → "+endISO+" (âncora: último no banco = "+dataMaxISO+")";
+
+      var uniVal = selUni.value || "Todas";
+      log("[Query] "+TABLE+" | "+startISO+" → "+endISO+" | UNI="+uniVal);
+
+      var cur = await fetchPaged(startISO, endISO, uniVal==="Todas"? null: uniVal);
+      if(myRun!==runId) return;
+      log("[OK] Linhas (atual): "+cur.length.toLocaleString("pt-BR"));
+
+      var ant = await fetchPaged(prevStartISO, prevEndISO, uniVal==="Todas"? null: uniVal);
+      if(myRun!==runId) return;
+      log("[Query] anterior: "+prevStartISO+" → "+prevEndISO+" | Linhas: "+ant.length.toLocaleString("pt-BR"));
+
+      updateKPI(cur, ant);
+      drawCharts(cur);
+    }catch(e){
+      if(myRun!==runId) return;
+      console.error(e);
+      log("[ERRO] "+(e.message||String(e)));
+    }
+  }
+  var recarregarDebounced = debounce(recarregar, 120);
+
+  async function boot(){
+    log("[Boot] v17.2-MV-paged-fix3 — boot guard + debounce + contêiner fixo + âncora último dia");
+    var opts = await fetchUnidades();
+    selUni.innerHTML = "";
+    opts.forEach(function(u){
+      var o=document.createElement("option"); o.value=u; o.textContent=u; selUni.appendChild(o);
+    });
+    selUni.value = "Todas";
+
+    // Carrega limites e define datas padrão (30 dias até o último dia do banco)
+    await refreshBounds("Todas");
+    if(dataMaxISO && dataMinISO){
+      var e = new Date(dataMaxISO+"T00:00:00Z");
+      var s = addDays(e,-29);
+      var minDate = new Date(dataMinISO+"T00:00:00Z");
+      if(s < minDate) s = minDate;
+      dini.value = isoToBR(toISO(s));
+      dfim.value = isoToBR(toISO(e));
+    }
+
+    recarregar();
+  }
+
+  // Eventos (debounced)
+  Array.prototype.forEach.call(document.querySelectorAll(".pr"), function(btn){
+    btn.addEventListener("click", async function(){
+      if(!dataMaxISO || !dataMinISO) { await refreshBounds(selUni.value||"Todas"); }
+      if(!dataMaxISO){ log("[Info] Sem limites de data para aplicar período rápido."); return; }
+      var d = Number(btn.getAttribute("data-d"));
+      var e = new Date(dataMaxISO+"T00:00:00Z");
+      var s = addDays(e, -(d-1));
+      var minDate = new Date(dataMinISO+"T00:00:00Z");
+      if(s < minDate) s = minDate;
+      dini.value = isoToBR(toISO(s));
+      dfim.value = isoToBR(toISO(e));
+      recarregarDebounced();
+    });
+  });
+
+  document.getElementById("aplicar").addEventListener("click", recarregarDebounced);
+
+  document.getElementById("limpar").addEventListener("click", async function(){
+    selUni.value="Todas"; dini.value=""; dfim.value=""; modo.value="bruto";
+    await refreshBounds("Todas");
+    recarregarDebounced();
+  });
+
+  document.getElementById("reload").addEventListener("click", recarregarDebounced);
+
+  async function handleUniChange(){
+    // Ao trocar unidade, recalcula min/max e só então recarrega => evita “perda” de filtro
+    await refreshBounds(selUni.value||"Todas");
+    // limpa datas para o default ancorado ao último dia dessa unidade
+    dini.value=""; dfim.value="";
+    recarregarDebounced();
+  }
+  selUni.addEventListener("change", handleUniChange);
+
+  modo.addEventListener("change", recarregarDebounced);
+
+  // Start
+  boot();
+})();
+</script>
+</body>
+</html>
