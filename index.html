@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3)</title>
+  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix4)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --brd:#e5e7eb; }
@@ -21,21 +21,21 @@
     .seg{display:flex;gap:6px;align-items:center}
     .seg button{padding:6px 10px}
     .seg .lbl{font-size:12px;color:var(--muted)}
-    .chartbox{position:relative;height:280px;width:100%} /* altura fixa -> sem “infinito” */
+    .chartbox{position:relative;height:280px;width:100%} /* trava de altura: sem gráfico “infinito” */
     pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
     @media (max-width:860px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media (max-width:520px){.grid{grid-template-columns:1fr} .row{flex-direction:column;align-items:stretch}}
   </style>
   <!-- Supabase UMD -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <!-- Chart.js -->
+  <!-- Chart.js (gráficos estáveis) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <div class="wrap">
     <div class="row" style="justify-content:space-between;align-items:flex-end">
       <div>
-        <h1>Dashboard Vendas — Supabase <span class="muted">(v17.2-MV-paged-fix3)</span></h1>
+        <h1>Dashboard Vendas — Supabase <span class="muted">(v17.2-MV-paged-fix4)</span></h1>
         <div class="muted">Fonte: <code>public.vendas_kpi_daily_v2</code> (paginado)</div>
         <div class="muted" id="periodo">Período: —</div>
       </div>
@@ -75,7 +75,7 @@
           <span class="lbl">Modo</span>
           <select id="modo">
             <option value="bruto">Total (bruto)</option>
-            <option value="liq">Líquido (Total - Entrega)</option>
+            <option value="liq">Líquido (Total − Entrega)</option>
           </select>
         </div>
 
@@ -85,7 +85,7 @@
           <button id="reload" class="ghost">Recarregar</button>
         </div>
       </div>
-      <div class="muted" style="margin-top:6px">Se preencher as datas, o período rápido é ignorado.</div>
+      <div class="muted" style="margin-top:6px">Os botões usam a <b>última data com lançamentos</b> como referência. Se digitar datas manualmente, “Até” nunca passa da última data e, se não houver lançamentos no dia, ajusto para o dia válido mais recente.</div>
     </div>
 
     <!-- KPIs -->
@@ -115,7 +115,6 @@
 
 <script>
 (function(){
-  // Evita boot duplicado (caso o script seja incluído 2x por engano)
   if (window.__DASH_BOOTED__) return;
   window.__DASH_BOOTED__ = true;
 
@@ -135,13 +134,12 @@
     var m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if(!m) return null;
     return new Date(Date.UTC(+m[3], +m[2]-1, +m[1]));
   }
+  function toBR(d){ return String(d.getUTCDate()).padStart(2,"0")+"/"+String(d.getUTCMonth()+1).padStart(2,"0")+"/"+d.getUTCFullYear(); }
   function addDays(d, k){ var t=new Date(d); t.setUTCDate(t.getUTCDate()+k); return t; }
   function sum(arr, key){ var s=0; for(var i=0;i<arr.length;i++) s+=Number(arr[i][key]||0); return s; }
-  function debounce(fn, wait){
-    var t; return function(){ var args=arguments, ctx=this; clearTimeout(t); t=setTimeout(function(){ fn.apply(ctx,args); }, wait); };
-  }
+  function debounce(fn, wait){ var t; return function(){ var args=arguments, ctx=this; clearTimeout(t); t=setTimeout(function(){ fn.apply(ctx,args); }, wait); }; }
 
-  // ===== Supabase client =====
+  // ===== Supabase =====
   var supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:false } });
 
   // ===== Estado =====
@@ -151,10 +149,42 @@
   var modo=document.getElementById("modo");
   var periodoTxt=document.getElementById("periodo");
   var chartLine=null, chartBar=null;
-  var runId = 0;         // token anti-concorrência
-  var drawing = false;   // trava extra enquanto desenha
+  var runId = 0;       // anti-concorrência
+  var drawing = false; // trava de desenho
 
-  // ===== Data source: paginação =====
+  // Bounds globais (do banco, independentes de unidade)
+  var BOUNDS = { minISO:null, maxISO:null, ready:false };
+
+  async function ensureBounds(){
+    if(BOUNDS.ready) return BOUNDS;
+    // MAX(dia)
+    var rMax = await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
+    if(rMax.error) throw rMax.error;
+    var maxISO = (rMax.data && rMax.data[0]) ? rMax.data[0].dia : null;
+
+    // MIN(dia) (opcional, mas útil para logs)
+    var rMin = await supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
+    if(rMin.error) throw rMin.error;
+    var minISO = (rMin.data && rMin.data[0]) ? rMin.data[0].dia : null;
+
+    BOUNDS.minISO = minISO;
+    BOUNDS.maxISO = maxISO;
+    BOUNDS.ready = true;
+    log("[Bounds] min="+minISO+" | max="+maxISO);
+    return BOUNDS;
+  }
+
+  // Ajusta “Até” para uma data que tenha lançamentos (por unidade, se houver)
+  async function snapEndToExisting(endISO, unidade){
+    var q = supa.from(TABLE).select("dia").lte("dia", endISO).order("dia",{ascending:false}).limit(1);
+    if(unidade && unidade!=="Todas") q = q.eq("unidade", unidade);
+    var r = await q;
+    if(r.error) throw r.error;
+    if(r.data && r.data.length>0) return r.data[0].dia;
+    return null;
+  }
+
+  // Paginado
   async function fetchPaged(startISO, endISO, unidade){
     var page=1000, off=0, out=[];
     for(;;){
@@ -176,7 +206,7 @@
     return out;
   }
 
-  // ===== Unidades robusto (asc + desc, dedup) =====
+  // Unidades (asc + desc, dedup)
   async function fetchUnidades(){
     var uniq={}, arr=["Todas"];
     function push(list){
@@ -185,9 +215,9 @@
         if(!uniq[u]){ uniq[u]=1; arr.push(u); }
       });
     }
-    var today = new Date(); 
-    var endISO = toISO(new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate())));
-    var startISO = "2020-01-01";
+    await ensureBounds();
+    var startISO = BOUNDS.minISO || "2020-01-01";
+    var endISO   = BOUNDS.maxISO || "2100-01-01";
     var r1 = await supa.from(TABLE).select("unidade").gte("dia", startISO).lte("dia", endISO).order("unidade",{ascending:true}).range(0,9999);
     if(!r1.error) push(r1.data);
     var r2 = await supa.from(TABLE).select("unidade").gte("dia", startISO).lte("dia", endISO).order("unidade",{ascending:false}).range(0,9999);
@@ -196,7 +226,7 @@
     return arr;
   }
 
-  // ===== KPI + Gráficos =====
+  // KPIs
   function updateKPI(rows, rowsAnt){
     var ped = sum(rows,"pedidos");
     var fat = sum(rows,"fat");
@@ -229,6 +259,7 @@
     document.getElementById("k_fre_delta").textContent = deltaTxt(fre, freA, true);
   }
 
+  // Grupos para gráficos
   function groupByDia(rows){
     var useLiq = (modo.value==="liq");
     var m={}; rows.forEach(function(r){
@@ -253,7 +284,6 @@
   }
 
   function drawCharts(rows){
-    // trava reentrância de desenho
     if (drawing) return; 
     drawing = true;
 
@@ -263,7 +293,6 @@
     if(chartLine){ chartLine.destroy(); chartLine=null; }
     if(chartBar){ chartBar.destroy(); chartBar=null; }
 
-    // desenha no próximo frame, já com contêiner estável
     requestAnimationFrame(function(){
       var ctxL=document.getElementById("cLine").getContext("2d");
       chartLine = new window.Chart(ctxL, {
@@ -279,43 +308,59 @@
         options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true } }, plugins:{ legend:{display:false} } }
       });
 
-      drawing = false; // libera
+      drawing = false;
     });
   }
 
-  // ===== Fluxo principal (token + debounce) =====
+  // ===== Fluxo principal (com bounds + snap do “Até”) =====
   async function recarregar(){
     const myRun = ++runId;
     try{
-      var now = new Date();
+      await ensureBounds();
+      if(!BOUNDS.maxISO){ log("[ERRO] Base vazia (sem datas)."); return; }
+
+      // Datas digitadas
       var ps = parseBR(dini.value);
       var pe = parseBR(dfim.value);
-      var s,e;
-      if(ps && pe){ s=ps; e=pe; }
-      else{
-        e = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-        s = addDays(e,-29);
-      }
-      var startISO = toISO(s), endISO = toISO(e);
 
-      var daysLen = Math.max(1, Math.round((e - s)/(24*3600*1000)) + 1);
-      var prevEnd   = addDays(s,-1);
+      // “Até” não passa do maxISO e precisa ter lançamentos (snap)
+      var endDate = pe ? pe : new Date(BOUNDS.maxISO+"T00:00:00Z");
+      var maxDate = new Date(BOUNDS.maxISO+"T00:00:00Z");
+      if (endDate > maxDate) endDate = maxDate;
+
+      // Se o “Até” informado não tiver lançamentos na unidade, ajustar para último dia com dado
+      var uniVal = (document.getElementById("uni").value || "Todas");
+      var snappedISO = await snapEndToExisting(toISO(endDate), (uniVal==="Todas")? null : uniVal);
+      if(myRun!==runId) return;
+
+      if(!snappedISO){
+        log("[Info] Ajuste de 'Até' falhou: não há lançamentos <= data informada para UNI="+uniVal+".");
+        // segue com maxISO (pode resultar em 0 linhas se a unidade não tiver nada na base)
+        snappedISO = BOUNDS.maxISO;
+      }
+      endDate = new Date(snappedISO+"T00:00:00Z");
+
+      // “De”: se vazio, padrão 30 dias ancorado no ‘endDate’
+      var startDate = ps ? ps : addDays(endDate, -29);
+
+      var startISO = toISO(startDate), endISO = toISO(endDate);
+      document.getElementById("periodo").textContent = "Período: "+startISO+" → "+endISO;
+
+      // Período anterior: mesmo tamanho, imediatamente antes
+      var daysLen = Math.max(1, Math.round((endDate - startDate)/(24*3600*1000)) + 1);
+      var prevEnd   = addDays(startDate,-1);
       var prevStart = addDays(prevEnd, -(daysLen-1));
       var prevStartISO = toISO(prevStart);
       var prevEndISO   = toISO(prevEnd);
 
-      document.getElementById("periodo").textContent = "Período: "+startISO+" → "+endISO;
-
-      var uniVal = selUni.value || "Todas";
       log("[Query] "+TABLE+" | "+startISO+" → "+endISO+" | UNI="+uniVal);
-
       var cur = await fetchPaged(startISO, endISO, uniVal==="Todas"? null: uniVal);
       if(myRun!==runId) return;
       log("[OK] Linhas (atual): "+cur.length.toLocaleString("pt-BR"));
 
+      log("[Query] anterior: "+prevStartISO+" → "+prevEndISO);
       var ant = await fetchPaged(prevStartISO, prevEndISO, uniVal==="Todas"? null: uniVal);
       if(myRun!==runId) return;
-      log("[Query] anterior: "+prevStartISO+" → "+prevEndISO+" | Linhas: "+ant.length.toLocaleString("pt-BR"));
 
       updateKPI(cur, ant);
       drawCharts(cur);
@@ -327,35 +372,56 @@
   }
   var recarregarDebounced = debounce(recarregar, 120);
 
+  // ===== Boot =====
   async function boot(){
-    log("[Boot] v17.2-MV-paged-fix3 — boot guard + debounce + contêiner fixo");
+    log("[Boot] v17.2-MV-paged-fix4 — bounds+snap de data final + gráficos estáveis");
+    await ensureBounds();
+
+    // Unidades
     var opts = await fetchUnidades();
+    var selUni=document.getElementById("uni");
     selUni.innerHTML = "";
     opts.forEach(function(u){
       var o=document.createElement("option"); o.value=u; o.textContent=u; selUni.appendChild(o);
     });
-    selUni.value = "Todas";
+    selUni.value="Todas";
+
+    // Inicializa inputs com a âncora = última data do banco
+    var end = new Date(BOUNDS.maxISO+"T00:00:00Z");
+    var start = addDays(end,-29);
+    document.getElementById("dini").value = toBR(start);
+    document.getElementById("dfim").value = toBR(end);
+
     recarregar();
   }
 
-  // Eventos (todos debounced)
+  // ===== Eventos (com debounce) =====
   Array.prototype.forEach.call(document.querySelectorAll(".pr"), function(btn){
-    btn.addEventListener("click", function(){
+    btn.addEventListener("click", async function(){
+      await ensureBounds();
       var d = Number(btn.getAttribute("data-d"));
-      var today = new Date(); var e = new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate()));
+      var e = new Date(BOUNDS.maxISO+"T00:00:00Z");   // âncora = última data do banco
       var s = addDays(e, -(d-1));
-      dini.value = String(s.getUTCDate()).padStart(2,"0")+"/"+String(s.getUTCMonth()+1).padStart(2,"0")+"/"+s.getUTCFullYear();
-      dfim.value = String(e.getUTCDate()).padStart(2,"0")+"/"+String(e.getUTCMonth()+1).padStart(2,"0")+"/"+e.getUTCFullYear();
+      dini.value = toBR(s);
+      dfim.value = toBR(e);
       recarregarDebounced();
     });
   });
+
   document.getElementById("aplicar").addEventListener("click", recarregarDebounced);
-  document.getElementById("limpar").addEventListener("click", function(){
-    selUni.value="Todas"; dini.value=""; dfim.value=""; modo.value="bruto"; recarregarDebounced();
+  document.getElementById("limpar").addEventListener("click", async function(){
+    await ensureBounds();
+    document.getElementById("uni").value="Todas";
+    var e = new Date(BOUNDS.maxISO+"T00:00:00Z");
+    var s = addDays(e,-29);
+    dini.value = toBR(s);
+    dfim.value = toBR(e);
+    modo.value="bruto";
+    recarregarDebounced();
   });
   document.getElementById("reload").addEventListener("click", recarregarDebounced);
-  selUni.addEventListener("change", recarregarDebounced);
-  modo.addEventListener("change", recarregarDebounced);
+  document.getElementById("uni").addEventListener("change", recarregarDebounced);
+  document.getElementById("modo").addEventListener("change", recarregarDebounced);
 
   // Start
   boot();
