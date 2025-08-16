@@ -2,10 +2,10 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3+turno-canal-pag-canc)</title>
+  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3+dropdowns+arrows)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --brd:#e5e7eb; }
+    :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --brd:#e5e7eb; --up:#16a34a; --down:#dc2626; }
     body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
     .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
     h1{font-size:20px;margin:0 0 4px}
@@ -22,9 +22,13 @@
     .seg .lbl{font-size:12px;color:var(--muted)}
     .chartbox{position:relative;height:280px;width:100%} /* altura fixa -> sem “infinito” */
     pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
-    .hidden{display:none}
+    .delta{display:block;margin-top:4px}
+    .delta.up{color:var(--up)}
+    .delta.down{color:var(--down)}
+    .delta .pct{font-weight:600}
     @media (max-width:860px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media (max-width:520px){.grid{grid-template-columns:1fr} .row{flex-direction:column;align-items:stretch}}
+    .hidden{display:none}
   </style>
   <!-- Supabase UMD -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
@@ -61,6 +65,18 @@
         </div>
 
         <div class="seg">
+          <span class="lbl">Período rápido (dias)</span>
+          <div class="row" style="gap:6px">
+            <button class="ghost pr" data-d="7">7</button>
+            <button class="ghost pr" data-d="15">15</button>
+            <button class="ghost pr" data-d="30">30</button>
+            <button class="ghost pr" data-d="90">90</button>
+            <button class="ghost pr" data-d="180">180</button>
+            <button class="ghost pr" data-d="360">360</button>
+          </div>
+        </div>
+
+        <div class="seg">
           <span class="lbl">Modo</span>
           <select id="modo">
             <option value="bruto">Total (bruto)</option>
@@ -68,40 +84,49 @@
           </select>
         </div>
 
-        <!-- Dias da semana: dropdown multi -->
+        <!-- Dias da semana (dropdown simples, igual ao "Está cancelado") -->
         <div class="seg">
-          <span class="lbl">Dias da semana</span>
-          <select id="dow" multiple size="7" style="min-width:140px">
-            <option value="0">Dom</option>
+          <span class="lbl">Dia da semana</span>
+          <select id="dow" style="min-width:160px">
+            <option value="todos" selected>Todos</option>
+            <option value="uteis">Úteis (Seg–Sex)</option>
+            <option value="fds">Fins de semana (Sáb–Dom)</option>
             <option value="1">Seg</option>
             <option value="2">Ter</option>
             <option value="3">Qua</option>
             <option value="4">Qui</option>
             <option value="5">Sex</option>
             <option value="6">Sáb</option>
+            <option value="0">Dom</option>
           </select>
         </div>
 
-        <!-- Turno / Canal / Pagamento / Cancelado (auto-ativados se existirem no schema) -->
+        <!-- Turno / Canal / Pagamento / Cancelado (dropdowns iguais) -->
         <div class="seg hidden" id="segTurno">
           <span class="lbl">Turno</span>
-          <select id="turno" multiple size="4" style="min-width:140px"></select>
+          <select id="turno" style="min-width:160px">
+            <option value="todos" selected>Todos</option>
+          </select>
         </div>
 
         <div class="seg hidden" id="segCanal">
           <span class="lbl">Canal de venda</span>
-          <select id="canal" multiple size="4" style="min-width:160px"></select>
+          <select id="canal" style="min-width:180px">
+            <option value="todos" selected>Todos</option>
+          </select>
         </div>
 
         <div class="seg hidden" id="segPagto">
           <span class="lbl">Pagamento</span>
-          <select id="pagto" multiple size="4" style="min-width:160px"></select>
+          <select id="pagto" style="min-width:180px">
+            <option value="todos" selected>Todos</option>
+          </select>
         </div>
 
         <div class="seg hidden" id="segCanc">
           <span class="lbl">Está cancelado</span>
           <select id="canc" style="min-width:160px">
-            <option value="todos">Todos</option>
+            <option value="todos" selected>Todos</option>
             <option value="sim">Somente cancelados</option>
             <option value="nao">Somente não cancelados</option>
           </select>
@@ -111,15 +136,31 @@
           <button id="limpar" class="ghost">Limpar filtros</button>
         </div>
       </div>
-      <div class="muted" style="margin-top:6px">Datas são limitadas ao intervalo existente no banco (ancoradas no último dia disponível por Unidade).</div>
+      <div class="muted" style="margin-top:6px">Datas limitadas ao intervalo existente (ancoradas no último dia disponível por Unidade).</div>
     </div>
 
     <!-- KPIs -->
     <div class="grid" style="margin-top:12px">
-      <div class="card"><div class="title">Pedidos</div><div class="val" id="k_ped">…</div><div class="muted" id="k_ped_delta">—</div></div>
-      <div class="card"><div class="title">Faturamento</div><div class="val" id="k_fat">…</div><div class="muted" id="k_fat_delta">—</div></div>
-      <div class="card"><div class="title">Incentivos</div><div class="val" id="k_des">…</div><div class="muted" id="k_des_delta">—</div></div>
-      <div class="card"><div class="title">Frete</div><div class="val" id="k_fre">…</div><div class="muted" id="k_fre_delta">—</div></div>
+      <div class="card">
+        <div class="title">Pedidos</div>
+        <div class="val" id="k_ped">…</div>
+        <div class="muted" id="k_ped_delta">—</div>
+      </div>
+      <div class="card">
+        <div class="title">Faturamento</div>
+        <div class="val" id="k_fat">…</div>
+        <div class="muted" id="k_fat_delta">—</div>
+      </div>
+      <div class="card">
+        <div class="title">Incentivos</div>
+        <div class="val" id="k_des">…</div>
+        <div class="muted" id="k_des_delta">—</div>
+      </div>
+      <div class="card">
+        <div class="title">Frete</div>
+        <div class="val" id="k_fre">…</div>
+        <div class="muted" id="k_fre_delta">—</div>
+      </div>
     </div>
 
     <!-- Gráficos -->
@@ -186,27 +227,18 @@
     if(dataMinISO) el.min = dataMinISO;
     if(dataMaxISO) el.max = dataMaxISO;
   }
-  function getMultiValues(sel){
-    var out=[];
-    for(var i=0;i<sel.options.length;i++){
-      var o=sel.options[i];
-      if(o.selected) out.push(o.value);
-    }
-    return out;
-  }
-  function setOptions(sel, items){
-    var prev=getMultiValues(sel);
-    sel.innerHTML="";
-    items.forEach(function(v){
-      var opt=document.createElement("option");
-      opt.value=String(v);
-      opt.textContent=String(v);
-      sel.appendChild(opt);
+  function setOptionsWithTodos(sel, items){
+    var prev = sel.value || "todos";
+    sel.innerHTML = "";
+    var opt0 = document.createElement("option");
+    opt0.value="todos"; opt0.textContent="Todos"; sel.appendChild(opt0);
+    (items||[]).forEach(function(v){
+      var o=document.createElement("option"); o.value=String(v); o.textContent=String(v); sel.appendChild(o);
     });
-    // tenta preservar seleção
-    for(var i=0;i<sel.options.length;i++){
-      sel.options[i].selected = prev.indexOf(sel.options[i].value)>=0;
-    }
+    // preserva seleção se existir ainda
+    var found=false;
+    for(var i=0;i<sel.options.length;i++){ if(sel.options[i].value===prev){ sel.options[i].selected=true; found=true; break; } }
+    if(!found) sel.value="todos";
   }
 
   // ===== Supabase client =====
@@ -218,10 +250,8 @@
   var drawing = false;
   var dataMinISO=null, dataMaxISO=null;
 
-  // Mapeamento dinâmico de colunas (se existirem no schema)
-  var schema = {
-    turno:null, canal:null, pagamento:null, cancelado:null, cancelType:null
-  };
+  // mapeia possíveis nomes no schema
+  var schema = { turno:null, canal:null, pagamento:null, cancelado:null, cancelType:null };
 
   // ===== Consultas (paginações) =====
   async function fetchPaged(startISO, endISO, unidade){
@@ -234,10 +264,7 @@
         .order("dia", {ascending:true})
         .range(off, off+page-1);
       if(unidade && unidade!=="Todas") q = q.eq("unidade", unidade);
-
-      // aplica filtros de servidor se colunas existirem e houver seleção
       q = applyServerFilters(q);
-
       var r = await q;
       if(r.error){ throw r.error; }
       var a=r.data||[];
@@ -250,47 +277,25 @@
   }
 
   function applyServerFilters(q){
-    // Turno
-    if(schema.turno){
-      var v=getMultiValues(selTurno);
-      if(v.length>0) q = q.in(schema.turno, v);
-    }
-    // Canal
-    if(schema.canal){
-      var c=getMultiValues(selCanal);
-      if(c.length>0) q = q.in(schema.canal, c);
-    }
-    // Pagamento
-    if(schema.pagamento){
-      var p=getMultiValues(selPagto);
-      if(p.length>0) q = q.in(schema.pagamento, p);
-    }
-    // Cancelado
+    // dropdowns: se "todos", não filtra
+    if(schema.turno && selTurno.value!=="todos") q = q.eq(schema.turno, selTurno.value);
+    if(schema.canal && selCanal.value!=="todos") q = q.eq(schema.canal, selCanal.value);
+    if(schema.pagamento && selPagto.value!=="todos") q = q.eq(schema.pagamento, selPagto.value);
     if(schema.cancelado && selCanc.value!=="todos"){
       var val = selCanc.value==="sim";
-      if(schema.cancelType==="bool"){
-        q = q.eq(schema.cancelado, val);
-      }else if(schema.cancelType==="num"){
-        q = q.eq(schema.cancelado, val?1:0);
-      }else if(schema.cancelType==="str"){
-        // tenta padrões comuns
+      if(schema.cancelType==="bool"){ q = q.eq(schema.cancelado, val); }
+      else if(schema.cancelType==="num"){ q = q.eq(schema.cancelado, val?1:0); }
+      else if(schema.cancelType==="str"){
         q = q.in(schema.cancelado, val? ["Sim","sim","S","1","true","TRUE"] : ["Não","Nao","não","nao","N","0","false","FALSE"]);
-      }else{
-        q = q.eq(schema.cancelado, val); // fallback
-      }
+      }else{ q = q.eq(schema.cancelado, val); }
     }
     return q;
   }
 
-  // Unidades (dedup, robusto)
+  // Unidades (dedup)
   async function fetchUnidades(){
     var uniq={}, arr=["Todas"];
-    function push(list){
-      (list||[]).forEach(function(row){
-        var u=(row.unidade||"").trim(); if(!u) return;
-        if(!uniq[u]){ uniq[u]=1; arr.push(u); }
-      });
-    }
+    function push(list){ (list||[]).forEach(function(row){ var u=(row.unidade||"").trim(); if(!u) return; if(!uniq[u]){ uniq[u]=1; arr.push(u); } }); }
     var today = new Date();
     var endISO = toISO(new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate())));
     var startISO = "2020-01-01";
@@ -302,14 +307,11 @@
     return arr;
   }
 
-  // Limites (min/max) por Unidade (mesma lógica de antes)
+  // Limites (min/max) por Unidade
   async function getDateBounds(unidade){
     var qMax = supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
     var qMin = supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
-    if(unidade && unidade!=="Todas"){
-      qMax = qMax.eq("unidade", unidade);
-      qMin = qMin.eq("unidade", unidade);
-    }
+    if(unidade && unidade!=="Todas"){ qMax = qMax.eq("unidade", unidade); qMin = qMin.eq("unidade", unidade); }
     var [rMax, rMin] = await Promise.all([qMax, qMin]);
     if(rMax.error) throw rMax.error;
     if(rMin.error) throw rMin.error;
@@ -333,7 +335,7 @@
     log("[Bounds] "+elLimites.textContent);
   }
 
-  // Inspeção de schema (para ativar/desativar filtros opcionais)
+  // Inspeção de schema (liga/desliga filtros)
   async function inspectSchema(unidade){
     var q = supa.from(TABLE).select("*").limit(1);
     if(unidade && unidade!=="Todas") q = q.eq("unidade", unidade);
@@ -346,14 +348,12 @@
     schema.pagamento = pick(["pagamento","forma_pagamento","meio_pagamento","metodo_pagamento"]);
     schema.cancelado = pick(["cancelado","is_cancelado","cancel"]);
     schema.cancelType = null;
-
     if(schema.cancelado){
       var v = row[schema.cancelado];
       if(typeof v==="boolean") schema.cancelType="bool";
       else if(v===0 || v===1) schema.cancelType="num";
       else if(typeof v==="string") schema.cancelType="str";
     }
-
     segTurno.classList.toggle("hidden", !schema.turno);
     segCanal.classList.toggle("hidden", !schema.canal);
     segPagto.classList.toggle("hidden", !schema.pagamento);
@@ -361,7 +361,7 @@
     log("[Schema] turnos="+!!schema.turno+" canal="+!!schema.canal+" pagto="+!!schema.pagamento+" cancelado="+!!schema.cancelado);
   }
 
-  // Carrega opções distintas (dentro do período e unidade atuais)
+  // Carrega opções distintas para os dropdowns (com "Todos")
   async function loadDistinct(col, sel, startISO, endISO, unidade){
     var uniq={}, out=[], page=1000, off=0;
     for(;;){
@@ -379,9 +379,8 @@
       off+=page;
       if(off>200000){ log("[Warn] distinct "+col+" abortado por salvaguarda."); break; }
     }
-    setOptions(sel, out);
+    setOptionsWithTodos(sel, out);
   }
-
   async function refreshFilterOptions(startISO, endISO, unidade){
     var tasks=[];
     if(schema.turno)     tasks.push(loadDistinct(schema.turno, selTurno, startISO, endISO, unidade));
@@ -411,16 +410,17 @@
     document.getElementById("k_des").textContent = fmtBRL(des);
     document.getElementById("k_fre").textContent = fmtBRL(fre);
 
-    function deltaTxt(cur, prev, isMoney){
+    function deltaHTML(cur, prev, isMoney){
       var pct = (prev>0)? ((cur-prev)/prev*100): 0;
-      var sgn = (pct>0? "+": (pct<0? "":""));
+      var arrow = pct>0 ? "▲" : (pct<0 ? "▼" : "•");
+      var klass = pct>0 ? "delta up" : (pct<0 ? "delta down" : "delta");
       var prevFmt = isMoney ? fmtBRL(prev) : fmtInt(prev);
-      return sgn+pct.toFixed(1)+"% vs ant. • ant: "+prevFmt;
+      return `<span class="${klass}"><span class="pct">${arrow} ${pct.toFixed(1)}%</span> <span class="muted">vs ant. • ant: ${prevFmt}</span></span>`;
     }
-    document.getElementById("k_ped_delta").textContent = deltaTxt(ped, pedA, false);
-    document.getElementById("k_fat_delta").textContent = deltaTxt(fatExibe, fatAExibe, true);
-    document.getElementById("k_des_delta").textContent = deltaTxt(des, desA, true);
-    document.getElementById("k_fre_delta").textContent = deltaTxt(fre, freA, true);
+    document.getElementById("k_ped_delta").innerHTML = deltaHTML(ped, pedA, false);
+    document.getElementById("k_fat_delta").innerHTML = deltaHTML(fatExibe, fatAExibe, true);
+    document.getElementById("k_des_delta").innerHTML = deltaHTML(des, desA, true);
+    document.getElementById("k_fre_delta").innerHTML = deltaHTML(fre, freA, true);
   }
 
   function groupByDia(rows){
@@ -475,15 +475,16 @@
     });
   }
 
-  // ===== Filtros cliente (Dias da semana) =====
-  function getSelectedDOW(){
-    var sel = getMultiValues(selDOW);
-    if(sel.length===0) return [0,1,2,3,4,5,6]; // nenhum selecionado => todos
-    return sel.map(function(v){ return Number(v); });
+  // ===== Filtro de DOW (dropdown simples) =====
+  function mapDOWSelectionToList(){
+    var v = selDOW.value || "todos";
+    if(v==="todos") return [0,1,2,3,4,5,6];
+    if(v==="uteis") return [1,2,3,4,5];
+    if(v==="fds")   return [6,0];
+    return [Number(v)]; // dia único
   }
   function applyDOWFilter(rows){
-    var keep = {}, arr = getSelectedDOW();
-    for(var i=0;i<arr.length;i++) keep[arr[i]] = 1;
+    var keep = {}; mapDOWSelectionToList().forEach(function(d){ keep[d]=1; });
     var out=[];
     for(var j=0;j<rows.length;j++){
       var dow=new Date(rows[j].dia+"T00:00:00Z").getUTCDay();
@@ -502,7 +503,6 @@
     if(d > max) return max;
     return d;
   }
-
   function validateInputsOrWarn(){
     if(!dataMinISO || !dataMaxISO) return true;
     var ps = getDateFromInput(dini);
@@ -512,10 +512,7 @@
       var e = clampDateWithinBounds(pe);
       if(s.getTime()!==ps.getTime()){ log("[Aviso] Data inicial fora do intervalo do banco. Ajustada para "+toISO(s)); }
       if(e.getTime()!==pe.getTime()){ log("[Aviso] Data final fora do intervalo do banco. Ajustada para "+toISO(e)); }
-      if(s > e){
-        log("[Erro] Intervalo inválido: 'De' > 'Até'. Ajuste as datas.");
-        return false;
-      }
+      if(s > e){ log("[Erro] Intervalo inválido: 'De' > 'Até'."); return false; }
       setDateInput(dini, toISO(s));
       setDateInput(dfim, toISO(e));
     }
@@ -536,7 +533,7 @@
       }
       if(!validateInputsOrWarn()) return;
 
-      // Datas efetivas (default: últimos 30 dias ancorados no último dia do banco)
+      // Datas (default: últimos 30 dias ancorados no último dia do banco)
       var ps = getDateFromInput(dini);
       var pe = getDateFromInput(dfim);
       var s,e;
@@ -562,7 +559,7 @@
       elPeriodo.textContent = "Período: "+startISO+" → "+endISO+" (âncora: último no banco = "+dataMaxISO+")";
 
       var uniVal = selUni.value || "Todas";
-      log("[Query] "+TABLE+" | "+startISO+" → "+endISO+" | UNI="+uniVal+" | filtros servidor aplicados conforme schema.");
+      log("[Query] "+TABLE+" | "+startISO+" → "+endISO+" | UNI="+uniVal+" | filtros servidor conforme schema.");
 
       var cur = await fetchPaged(startISO, endISO, uniVal==="Todas"? null: uniVal);
       if(myRun!==runId) return;
@@ -570,7 +567,7 @@
       var ant = await fetchPaged(prevStartISO, prevEndISO, uniVal==="Todas"? null: uniVal);
       if(myRun!==runId) return;
 
-      // filtro de DOW é no cliente
+      // DOW no cliente
       var curF = applyDOWFilter(cur);
       var antF = applyDOWFilter(ant);
 
@@ -588,18 +585,17 @@
   var recarregarDebounced = debounce(recarregar, 120);
 
   async function boot(){
-    log("[Boot] v17.2-MV-paged-fix3 — novos filtros (turno/canal/pagto/cancelado) + DOW dropdown + calendário em datas");
+    log("[Boot] v17.2-MV-paged-fix3 — dropdowns unificados + setas nos KPIs + calendário em datas");
+    // Unidades
     var opts = await fetchUnidades();
     selUni.innerHTML = "";
-    opts.forEach(function(u){
-      var o=document.createElement("option"); o.value=u; o.textContent=u; selUni.appendChild(o);
-    });
+    opts.forEach(function(u){ var o=document.createElement("option"); o.value=u; o.textContent=u; selUni.appendChild(o); });
     selUni.value = "Todas";
 
     await refreshBounds("Todas");
     await inspectSchema("Todas");
 
-    // datas padrão (30 dias até o último dia do banco)
+    // datas padrão (30 dias até último dia do banco)
     if(dataMaxISO && dataMinISO){
       var e = new Date(dataMaxISO+"T00:00:00Z");
       var s = addDays(e,-29);
@@ -609,7 +605,7 @@
       setDateInput(dfim, toISO(e));
     }
 
-    // Carrega opções de filtros (se existirem colunas)
+    // opções de filtros do servidor
     if(dataMaxISO && dataMinISO){
       await refreshFilterOptions(dini.value, dfim.value, selUni.value);
     }
@@ -617,14 +613,29 @@
     recarregar();
   }
 
-  // Eventos (auto-aplica com debounce)
+  // Eventos
+  Array.prototype.forEach.call(document.querySelectorAll(".pr"), function(btn){
+    btn.addEventListener("click", async function(){
+      if(!dataMaxISO || !dataMinISO) { await refreshBounds(selUni.value||"Todas"); }
+      if(!dataMaxISO){ log("[Info] Sem limites de data para aplicar período rápido."); return; }
+      var d = Number(btn.getAttribute("data-d"));
+      var e = new Date(dataMaxISO+"T00:00:00Z");
+      var s = addDays(e, -(d-1));
+      var minDate = new Date(dataMinISO+"T00:00:00Z");
+      if(s < minDate) s = minDate;
+      setDateInput(dini, toISO(s));
+      setDateInput(dfim, toISO(e));
+      if(schema.turno || schema.canal || schema.pagamento){
+        await refreshFilterOptions(dini.value, dfim.value, selUni.value);
+      }
+      recarregarDebounced();
+    });
+  });
+
   selUni.addEventListener("change", async function(){
     await refreshBounds(selUni.value||"Todas");
     await inspectSchema(selUni.value||"Todas");
-    // reset datas para o padrão dessa unidade
-    setDateInput(dini, "");
-    setDateInput(dfim, "");
-    // atualiza opções dos filtros conforme nova unidade e datas padrão
+    // reset datas para padrão desta unidade
     if(dataMaxISO && dataMinISO){
       var e = new Date(dataMaxISO+"T00:00:00Z");
       var s = addDays(e,-29);
@@ -640,7 +651,6 @@
   [dini, dfim, modo, selDOW, selTurno, selCanal, selPagto, selCanc].forEach(function(el){
     if(!el) return;
     el.addEventListener("change", async function(ev){
-      // se alterou datas, atualiza opções dos selects dependentes do período
       if(ev.target===dini || ev.target===dfim){
         if(validateInputsOrWarn()){
           if(schema.turno || schema.canal || schema.pagamento){
@@ -656,15 +666,13 @@
     selUni.value="Todas";
     await refreshBounds("Todas");
     await inspectSchema("Todas");
-    // limpa seleções múltiplas (nenhum selecionado = todos)
-    function clearMulti(sel){ for(var i=0;i<sel.options.length;i++) sel.options[i].selected=false; }
-    clearMulti(selDOW);
-    if(schema.turno) clearMulti(selTurno);
-    if(schema.canal) clearMulti(selCanal);
-    if(schema.pagamento) clearMulti(selPagto);
+    // limpa dropdowns
+    selDOW.value = "todos";
+    if(schema.turno) selTurno.value="todos";
+    if(schema.canal) selCanal.value="todos";
+    if(schema.pagamento) selPagto.value="todos";
     if(schema.cancelado) selCanc.value="todos";
-
-    // datas padrão novamente
+    // datas padrão
     if(dataMaxISO && dataMinISO){
       var e = new Date(dataMaxISO+"T00:00:00Z");
       var s = addDays(e,-29);
