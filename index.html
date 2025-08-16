@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3+lastday-guard)</title>
+  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3+client-filters)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --brd:#e5e7eb; }
@@ -23,6 +23,7 @@
     .seg .lbl{font-size:12px;color:var(--muted)}
     .chartbox{position:relative;height:280px;width:100%} /* altura fixa -> sem “infinito” */
     pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
+    label.chk{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--brd);border-radius:8px;padding:6px 8px}
     @media (max-width:860px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media (max-width:520px){.grid{grid-template-columns:1fr} .row{flex-direction:column;align-items:stretch}}
   </style>
@@ -80,6 +81,34 @@
           </select>
         </div>
 
+        <!-- Filtros adicionais (derivados) -->
+        <div class="seg">
+          <span class="lbl">Dias</span>
+          <div class="row" style="gap:6px">
+            <label class="chk"><input type="checkbox" class="dow" data-d="0" checked /> Dom</label>
+            <label class="chk"><input type="checkbox" class="dow" data-d="1" checked /> Seg</label>
+            <label class="chk"><input type="checkbox" class="dow" data-d="2" checked /> Ter</label>
+            <label class="chk"><input type="checkbox" class="dow" data-d="3" checked /> Qua</label>
+            <label class="chk"><input type="checkbox" class="dow" data-d="4" checked /> Qui</label>
+            <label class="chk"><input type="checkbox" class="dow" data-d="5" checked /> Sex</label>
+            <label class="chk"><input type="checkbox" class="dow" data-d="6" checked /> Sáb</label>
+          </div>
+        </div>
+
+        <div class="seg">
+          <span class="lbl">Atalhos</span>
+          <div class="row" style="gap:6px">
+            <button class="ghost dowset" data-set="uteis">Úteis</button>
+            <button class="ghost dowset" data-set="fds">FDS</button>
+            <button class="ghost dowset" data-set="todos">Todos</button>
+          </div>
+        </div>
+
+        <div class="seg">
+          <label class="lbl" for="hideZero">Ocultar R$ 0</label>
+          <input id="hideZero" type="checkbox" />
+        </div>
+
         <div class="seg">
           <button id="aplicar">Aplicar</button>
           <button id="limpar" class="ghost">Limpar filtros</button>
@@ -116,7 +145,6 @@
 
 <script>
 (function(){
-  // Evita boot duplicado
   if (window.__DASH_BOOTED__) return;
   window.__DASH_BOOTED__ = true;
 
@@ -160,11 +188,13 @@
   var dini=document.getElementById("dini");
   var dfim=document.getElementById("dfim");
   var modo=document.getElementById("modo");
+  var hideZero=document.getElementById("hideZero");
+  var dowChecks = Array.prototype.slice.call(document.querySelectorAll(".dow"));
   var chartLine=null, chartBar=null;
   var runId = 0;         // token anti-concorrência
   var drawing = false;   // trava extra enquanto desenha
 
-  // Limites de data por Unidade (ancora no último dia do banco)
+  // Limites de data por Unidade
   var dataMinISO = null;
   var dataMaxISO = null;
 
@@ -190,7 +220,7 @@
     return out;
   }
 
-  // ===== Unidades robusto (asc + desc, dedup) =====
+  // ===== Unidades (dedup) =====
   async function fetchUnidades(){
     var uniq={}, arr=["Todas"];
     function push(list){
@@ -199,7 +229,6 @@
         if(!uniq[u]){ uniq[u]=1; arr.push(u); }
       });
     }
-    // Sem alterar a lógica existente (mantém range amplo)
     var today = new Date(); 
     var endISO = toISO(new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate())));
     var startISO = "2020-01-01";
@@ -325,6 +354,35 @@
     });
   }
 
+  // ===== Filtros derivados (cliente) =====
+  function getSelectedDOW(){
+    var sel=[], any=false;
+    for(var i=0;i<dowChecks.length;i++){
+      if(dowChecks[i].checked){ any=true; sel.push(Number(dowChecks[i].getAttribute("data-d"))); }
+    }
+    if(!any) return [0,1,2,3,4,5,6];
+    return sel;
+  }
+
+  function applyClientFilters(rows){
+    var sel = getSelectedDOW();
+    var selSet = {}; for(var i=0;i<sel.length;i++){ selSet[sel[i]]=1; }
+    var useLiq = (modo.value==="liq");
+    var hideZ = !!hideZero.checked;
+    var out=[];
+    for(var j=0;j<rows.length;j++){
+      var r=rows[j];
+      var dow=new Date(r.dia+"T00:00:00Z").getUTCDay();
+      if(!selSet[dow]) continue;
+      if(hideZ){
+        var val = Number(r.fat||0) - (useLiq? Number(r.fre||0) : 0);
+        if(val===0) continue;
+      }
+      out.push(r);
+    }
+    return out;
+  }
+
   // ===== Validação/Clamp de datas =====
   function clampDateWithinBounds(d){
     if(!d) return null;
@@ -337,7 +395,7 @@
   }
 
   function validateInputsOrWarn(){
-    if(!dataMinISO || !dataMaxISO) return true; // sem dados: deixa seguir e erro aparece no fetch
+    if(!dataMinISO || !dataMaxISO) return true;
     var ps = parseBR(dini.value);
     var pe = parseBR(dfim.value);
     if(ps && pe){
@@ -349,18 +407,16 @@
         log("[Erro] Intervalo inválido: 'De' > 'Até'. Ajuste as datas.");
         return false;
       }
-      // escreve de volta (clamp visual)
       dini.value = isoToBR(toISO(s));
       dfim.value = isoToBR(toISO(e));
     }
     return true;
   }
 
-  // ===== Fluxo principal (token + debounce) =====
+  // ===== Fluxo principal =====
   async function recarregar(){
     const myRun = ++runId;
     try{
-      // Garante bounds carregados
       if(!dataMaxISO || !dataMinISO){
         await refreshBounds(selUni.value || "Todas");
         if(!dataMaxISO || !dataMinISO){
@@ -370,12 +426,8 @@
         }
       }
 
-      // Validação de inputs contra o banco
-      if(!validateInputsOrWarn()){
-        return; // não aplica se inválido
-      }
+      if(!validateInputsOrWarn()) return;
 
-      // Datas efetivas
       var ps = parseBR(dini.value);
       var pe = parseBR(dfim.value);
       var s,e;
@@ -383,12 +435,10 @@
         s = clampDateWithinBounds(ps);
         e = clampDateWithinBounds(pe);
       }else{
-        // Padrão: últimos 30 dias ancorados no último dia do banco
         e = new Date(dataMaxISO+"T00:00:00Z");
         s = addDays(e,-29);
         var minDate = new Date(dataMinISO+"T00:00:00Z");
         if(s < minDate) s = minDate;
-        // reflete no UI
         dini.value = isoToBR(toISO(s));
         dfim.value = isoToBR(toISO(e));
       }
@@ -407,14 +457,16 @@
 
       var cur = await fetchPaged(startISO, endISO, uniVal==="Todas"? null: uniVal);
       if(myRun!==runId) return;
-      log("[OK] Linhas (atual): "+cur.length.toLocaleString("pt-BR"));
-
       var ant = await fetchPaged(prevStartISO, prevEndISO, uniVal==="Todas"? null: uniVal);
       if(myRun!==runId) return;
-      log("[Query] anterior: "+prevStartISO+" → "+prevEndISO+" | Linhas: "+ant.length.toLocaleString("pt-BR"));
 
-      updateKPI(cur, ant);
-      drawCharts(cur);
+      var curF = applyClientFilters(cur);
+      var antF = applyClientFilters(ant);
+      log("[OK] Linhas atual: "+cur.length.toLocaleString("pt-BR")+" → após filtros: "+curF.length.toLocaleString("pt-BR"));
+      log("[OK] Linhas anterior: "+ant.length.toLocaleString("pt-BR")+" → após filtros: "+antF.length.toLocaleString("pt-BR"));
+
+      updateKPI(curF, antF);
+      drawCharts(curF);
     }catch(e){
       if(myRun!==runId) return;
       console.error(e);
@@ -424,7 +476,7 @@
   var recarregarDebounced = debounce(recarregar, 120);
 
   async function boot(){
-    log("[Boot] v17.2-MV-paged-fix3 — boot guard + debounce + contêiner fixo + âncora último dia");
+    log("[Boot] v17.2-MV-paged-fix3 — filtros de dias + ocultar R$ 0 (cliente), âncora último dia");
     var opts = await fetchUnidades();
     selUni.innerHTML = "";
     opts.forEach(function(u){
@@ -432,7 +484,6 @@
     });
     selUni.value = "Todas";
 
-    // Carrega limites e define datas padrão (30 dias até o último dia do banco)
     await refreshBounds("Todas");
     if(dataMaxISO && dataMinISO){
       var e = new Date(dataMaxISO+"T00:00:00Z");
@@ -446,7 +497,7 @@
     recarregar();
   }
 
-  // Eventos (debounced)
+  // Eventos
   Array.prototype.forEach.call(document.querySelectorAll(".pr"), function(btn){
     btn.addEventListener("click", async function(){
       if(!dataMaxISO || !dataMinISO) { await refreshBounds(selUni.value||"Todas"); }
@@ -465,7 +516,8 @@
   document.getElementById("aplicar").addEventListener("click", recarregarDebounced);
 
   document.getElementById("limpar").addEventListener("click", async function(){
-    selUni.value="Todas"; dini.value=""; dfim.value=""; modo.value="bruto";
+    selUni.value="Todas"; dini.value=""; dfim.value=""; modo.value="bruto"; hideZero.checked=false;
+    for(var i=0;i<dowChecks.length;i++){ dowChecks[i].checked=true; }
     await refreshBounds("Todas");
     recarregarDebounced();
   });
@@ -473,15 +525,31 @@
   document.getElementById("reload").addEventListener("click", recarregarDebounced);
 
   async function handleUniChange(){
-    // Ao trocar unidade, recalcula min/max e só então recarrega => evita “perda” de filtro
     await refreshBounds(selUni.value||"Todas");
-    // limpa datas para o default ancorado ao último dia dessa unidade
     dini.value=""; dfim.value="";
     recarregarDebounced();
   }
   selUni.addEventListener("change", handleUniChange);
 
   modo.addEventListener("change", recarregarDebounced);
+  hideZero.addEventListener("change", recarregarDebounced);
+  for(var i=0;i<dowChecks.length;i++){
+    dowChecks[i].addEventListener("change", recarregarDebounced);
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll(".dowset"), function(btn){
+    btn.addEventListener("click", function(){
+      var set = btn.getAttribute("data-set");
+      var chosen = (set==="uteis") ? {1:1,2:1,3:1,4:1,5:1}
+                 : (set==="fds")   ? {0:1,6:1}
+                 : {0:1,1:1,2:1,3:1,4:1,5:1,6:1};
+      for(var i=0;i<dowChecks.length;i++){
+        var d = Number(dowChecks[i].getAttribute("data-d"));
+        dowChecks[i].checked = !!chosen[d];
+      }
+      recarregarDebounced();
+    });
+  });
 
   // Start
   boot();
