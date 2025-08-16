@@ -2,13 +2,10 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — Supabase (v18.0-ops)</title>
+  <title>Dashboard Vendas — Supabase (v18.1-auth)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root {
-      --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --brd:#e5e7eb;
-      --accent:#2563eb; --good:#16a34a; --bad:#dc2626; --chip:#eef2ff;
-    }
+    :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --brd:#e5e7eb; --accent:#2563eb; --good:#16a34a; --bad:#dc2626; --chip:#eef2ff; }
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
     .wrap{max-width:1200px;margin:24px auto;padding:0 16px}
@@ -32,7 +29,7 @@
     .seg{display:flex;gap:6px;align-items:center}
     .seg .lbl{font-size:12px;color:var(--muted);white-space:nowrap}
     .seg .grow{min-width:180px}
-    .chartbox{position:relative;height:300px;width:100%} /* altura fixa -> sem “infinito” */
+    .chartbox{position:relative;height:300px;width:100%}
     .toolbar{display:flex;gap:8px;align-items:center;justify-content:space-between}
     .pill{display:inline-flex;border:1px solid var(--brd);border-radius:999px;overflow:hidden}
     .pill button{border:0;padding:6px 10px;background:#fff}
@@ -41,11 +38,7 @@
     .chip{background:var(--chip);border:1px solid var(--brd);border-radius:999px;padding:6px 10px;cursor:pointer}
     .chip.active{background:#dbeafe;border-color:#bfdbfe}
     details.filterbox{border:1px solid var(--brd);border-radius:12px;background:#fff}
-    details.filterbox>summary{
-      padding:12px 14px; list-style:none; cursor:pointer; user-select:none; outline:none;
-      display:flex; align-items:center; justify-content:space-between;
-      font-weight:600;
-    }
+    details.filterbox>summary{padding:12px 14px;list-style:none;cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;font-weight:600}
     details.filterbox[open]>summary{border-bottom:1px solid var(--brd)}
     details.filterbox .body{padding:12px 14px}
     .filters-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}
@@ -53,12 +46,22 @@
     .right{margin-left:auto}
     .hint{font-size:12px;color:var(--muted);margin-top:6px}
     .shadow-note{font-size:11px;color:var(--muted);margin-top:4px}
-    .sep{height:1px;background:var(--brd);margin:8px 0}
     .admin{background:#fafafa;border:1px dashed var(--brd);border-radius:10px;padding:10px;margin-top:8px}
     progress{width:220px;height:10px}
     pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
     @media (max-width:940px){ .grid.cols-4{grid-template-columns:repeat(2,minmax(0,1fr))} .filters-grid{grid-template-columns:repeat(6,1fr)} }
     @media (max-width:560px){ .grid.cols-4,.grid.cols-3,.grid.cols-2{grid-template-columns:1fr} .filters-grid{grid-template-columns:repeat(4,1fr)} }
+
+    /* ===== AUTH (overlay) ===== */
+    .gate{position:fixed;inset:0;background:linear-gradient(180deg,#0b1020,#111827);display:flex;align-items:center;justify-content:center;z-index:9999}
+    .gate .box{width:360px;max-width:92vw;background:#fff;border-radius:14px;border:1px solid var(--brd);padding:18px}
+    .tabs{display:flex;border:1px solid var(--brd);border-radius:999px;overflow:hidden;margin-bottom:10px}
+    .tabs button{flex:1;border:0;background:#fff;padding:8px 10px}
+    .tabs button.active{background:var(--accent);color:#fff}
+    .field{display:flex;flex-direction:column;margin-top:8px}
+    .field label{font-size:12px;color:var(--muted);margin-bottom:4px}
+    .error{color:#b91c1c;font-size:12px;margin-top:6px;min-height:16px}
+    .topbar{display:flex;gap:8px;align-items:center;justify-content:flex-end}
   </style>
   <!-- Supabase UMD -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
@@ -68,15 +71,46 @@
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
 <body>
-  <div class="wrap">
+  <!-- AUTH OVERLAY -->
+  <div class="gate" id="gate" style="display:none">
+    <div class="box">
+      <h3 style="margin:0 0 8px">Acesso ao Dashboard</h3>
+      <div class="tabs">
+        <button id="tabLogin" class="active">Entrar</button>
+        <button id="tabSignup">Criar conta</button>
+      </div>
+      <div id="authForm">
+        <div class="field">
+          <label for="authEmail">E-mail</label>
+          <input id="authEmail" type="email" autocomplete="email" placeholder="voce@empresa.com" />
+        </div>
+        <div class="field">
+          <label for="authPass">Senha</label>
+          <input id="authPass" type="password" autocomplete="current-password" placeholder="••••••••" />
+        </div>
+        <div class="row" style="margin-top:10px;justify-content:flex-end">
+          <button id="btnSignup" style="display:none">Criar conta</button>
+          <button id="btnLogin">Entrar</button>
+        </div>
+        <div class="error" id="authErr"></div>
+        <div class="muted">Ao criar conta você concorda com o uso apenas autorizado. Admin pode excluir contas.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap" id="app" style="display:none">
     <div class="toolbar">
       <div>
-        <h1>Dashboard Vendas — Supabase <span class="muted">(v18.0-ops)</span></h1>
+        <h1>Dashboard Vendas — Supabase <span class="muted">(v18.1-auth)</span></h1>
         <div class="muted">Fonte: <code>public.vendas_kpi_daily_v2</code> (auto)</div>
         <div class="muted" id="periodo">Período: —</div>
         <div class="muted" id="limites">Limites no banco: —</div>
       </div>
-      <div class="muted">Projeto: <code>uahmcfzerofhzjvlzrqc</code></div>
+      <div class="topbar">
+        <span class="muted" id="who"></span>
+        <button id="btnAdmin" class="ghost" style="display:none">Admin (Usuários)</button>
+        <button id="btnLogout">Sair</button>
+      </div>
     </div>
 
     <!-- FILTROS -->
@@ -129,7 +163,7 @@
             <span class="lbl">Canal de venda</span>
             <select id="canal" class="grow" multiple></select>
           </div>
-            <div class="col-4 seg">
+          <div class="col-4 seg">
             <span class="lbl">Pagamento</span>
             <select id="pag" class="grow" multiple></select>
           </div>
@@ -156,7 +190,7 @@
       </div>
     </details>
 
-    <!-- KPIs -->
+    <!-- KPIs (mantidos) -->
     <div class="grid cols-4" style="margin-top:12px">
       <div class="card kpi"><div class="title">Pedidos</div><div class="val" id="k_ped">…</div><div class="delta" id="d_ped">—</div></div>
       <div class="card kpi"><div class="title">Ticket Médio</div><div class="val" id="k_tkm">…</div><div class="delta" id="d_tkm">—</div></div>
@@ -174,7 +208,7 @@
       <div class="card kpi"><div class="title">Faturamento Líquido %</div><div class="val" id="k_fatlp">…</div><div class="delta" id="d_fatlp">—</div></div>
     </div>
 
-    <!-- GRÁFICOS -->
+    <!-- GRÁFICOS (mantidos) -->
     <div class="card" style="margin-top:12px">
       <div class="toolbar">
         <div class="title">Receita diária (R$) — com sombra do período anterior</div>
@@ -243,6 +277,15 @@
       <div class="chartbox"><canvas id="cTop"></canvas></div>
     </div>
 
+    <!-- ADMIN: Usuários -->
+    <div class="card" id="adminPanel" style="margin-top:12px; display:none">
+      <div class="toolbar">
+        <div class="title">Admin — Usuários</div>
+        <div class="muted">Apenas administradores podem excluir contas.</div>
+      </div>
+      <div id="usersBox" class="muted">Carregando…</div>
+    </div>
+
     <!-- LOGS -->
     <div class="card" style="margin-top:12px">
       <div class="title">Status / Logs</div>
@@ -259,7 +302,9 @@
   var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
   var TABLE = "vendas_kpi_daily_v2";
   var STAGING = "vendas_kpi_daily_v2_data";
-  var FUNCTION_URL = ""; // opcional: ex. https://<project>.functions.supabase.co/import_csv
+
+  // >>>>> Configure quando publicar a function:
+  var ADMIN_FUNCTION_URL = ""; // ex.: https://uahmcfzerofhzjvlzrqc.functions.supabase.co/admin_users
 
   // ===== UI helpers =====
   var elLog=document.getElementById("log");
@@ -270,11 +315,11 @@
   function parseISO(s){ return new Date(s+"T00:00:00Z"); }
   function addDays(d, k){ var t=new Date(d); t.setUTCDate(t.getUTCDate()+k); return t; }
   function sum(arr, key){ var s=0; for(var i=0;i<arr.length;i++) s+=Number(arr[i][key]||0); return s; }
-  function avg(dividendo,divisor){ return (divisor>0)? (dividendo/divisor):0; }
+  function avg(a,b){ return b>0? a/b : 0; }
   function debounce(fn, wait){ var t; return function(){ var args=arguments, ctx=this; clearTimeout(t); t=setTimeout(function(){ fn.apply(ctx,args); }, wait); }; }
 
-  // ===== Supabase client =====
-  var supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:false } });
+  // ===== Supabase client (sessão persistida p/ Auth) =====
+  var supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:true, autoRefreshToken:true } });
 
   // ===== Estado =====
   var selUni=document.getElementById("uni");
@@ -293,10 +338,67 @@
   var chartLine=null, chartDowFat=null, chartDowPed=null, chartHour=null, chartMonth=null, chartTop=null;
   var lineMode="total", dowMode="total", dowPedMode="total", hourMode="total", monMode="total", topMode="total";
 
-  var diasDisponiveis = new Set(); // dias existentes no banco (para validação)
+  var diasDisponiveis = new Set();
   var maxDiaISO=null, minDiaISO=null;
 
-  // ===== Eventos UI =====
+  // ===== AUTH UI =====
+  var gate = document.getElementById("gate");
+  var app  = document.getElementById("app");
+  var who  = document.getElementById("who");
+  var btnLogout = document.getElementById("btnLogout");
+  var btnAdmin  = document.getElementById("btnAdmin");
+  var adminPanel= document.getElementById("adminPanel");
+  var usersBox  = document.getElementById("usersBox");
+  var tabLogin  = document.getElementById("tabLogin");
+  var tabSignup = document.getElementById("tabSignup");
+  var authEmail = document.getElementById("authEmail");
+  var authPass  = document.getElementById("authPass");
+  var btnLogin  = document.getElementById("btnLogin");
+  var btnSignup = document.getElementById("btnSignup");
+  var authErr   = document.getElementById("authErr");
+
+  function showGate(){ gate.style.display="flex"; app.style.display="none"; }
+  function hideGate(){ gate.style.display="none"; app.style.display="block"; }
+
+  tabLogin.addEventListener("click", ()=>{ tabLogin.classList.add("active"); tabSignup.classList.remove("active"); btnLogin.style.display="inline-block"; btnSignup.style.display="none"; authErr.textContent=""; });
+  tabSignup.addEventListener("click", ()=>{ tabSignup.classList.add("active"); tabLogin.classList.remove("active"); btnSignup.style.display="inline-block"; btnLogin.style.display="none"; authErr.textContent=""; });
+
+  btnLogin.addEventListener("click", async ()=>{
+    authErr.textContent="";
+    const email=(authEmail.value||"").trim(), pass=authPass.value||"";
+    if(!email||!pass){ authErr.textContent="Informe e-mail e senha."; return; }
+    const { data, error } = await supa.auth.signInWithPassword({ email, password: pass });
+    if(error){ authErr.textContent=error.message; return; }
+    hideGate(); afterLogin();
+  });
+
+  btnSignup.addEventListener("click", async ()=>{
+    authErr.textContent="";
+    const email=(authEmail.value||"").trim(), pass=authPass.value||"";
+    if(!email||!pass){ authErr.textContent="Informe e-mail e senha."; return; }
+    const { data, error } = await supa.auth.signUp({ email, password: pass });
+    if(error){ authErr.textContent=error.message; return; }
+    authErr.textContent="Conta criada. Se o projeto exigir confirmação, verifique seu e-mail.";
+  });
+
+  btnLogout.addEventListener("click", async ()=>{
+    await supa.auth.signOut(); showGate();
+  });
+
+  async function afterLogin(){
+    const { data:{ user } } = await supa.auth.getUser();
+    who.textContent = user?.email || "";
+    // Exibe botão Admin se houver Function configurada
+    btnAdmin.style.display = ADMIN_FUNCTION_URL ? "inline-block" : "none";
+    boot(); // carrega dashboard
+  }
+
+  supa.auth.onAuthStateChange((_e, session)=>{
+    if(session){ hideGate(); afterLogin(); } else { showGate(); }
+  });
+
+  // ===== Filtros base (o restante é igual ao que você já tinha, sem retroceder) =====
+
   document.getElementById("limpar").addEventListener("click", function(e){
     e.preventDefault();
     selUni.value="Todas"; dini.value=""; dfim.value=""; pr.value="30"; turno.value=""; canal.value=""; pag.value=""; canc.value="Todos";
@@ -304,27 +406,14 @@
     recarregarDebounced();
   });
 
-  // Toggle Total/Média por gráfico
-  function wirePills(){
-    Array.prototype.forEach.call(document.querySelectorAll(".pill"), function(pill){
-      pill.addEventListener("click", function(ev){
-        var btn = ev.target.closest("button"); if(!btn) return;
-        Array.prototype.forEach.call(pill.querySelectorAll("button"), b=>b.classList.remove("active"));
-        btn.classList.add("active");
-        var trg = pill.getAttribute("data-target");
-        var val = btn.getAttribute("data-val");
-        if(trg==="lineMode") lineMode=val;
-        if(trg==="dowMode") dowMode=val;
-        if(trg==="dowPedMode") dowPedMode=val;
-        if(trg==="hourMode") hourMode=val;
-        if(trg==="monMode") monMode=val;
-        if(trg==="topMode") topMode=val;
-        recarregarDebounced();
-      });
-    });
+  function setDelta(el, cur, prev){
+    var pct = (prev>0)? ((cur-prev)/prev*100): 0;
+    var cls = pct>=0 ? "up" : "down";
+    var arrow = pct>=0 ? "▲" : "▼";
+    el.className="delta "+cls;
+    el.textContent = (pct>=0?"+":"")+pct.toFixed(1)+"% "+arrow;
   }
 
-  // ===== Helpers de consulta =====
   async function fetchPaged(fields, startISO, endISO, unidade, lojas, filtros){
     var page=1000, off=0, out=[];
     for(;;){
@@ -337,26 +426,18 @@
       if(filtros.canc && filtros.canc!=="Todos"){
         q = q.eq("cancelado", filtros.canc==="Sim" ? "Sim":"Não");
       }
-      var r = await q;
-      if(r.error){ throw r.error; }
+      var r = await q; if(r.error){ throw r.error; }
       var a=r.data||[];
       out = out.concat(a);
       if(a.length<page) break;
-      off += page;
-      if(off>500000){ log("[Warn] paginação abortada por salvaguarda."); break; }
+      off += page; if(off>500000){ log("[Warn] paginação abortada por salvaguarda."); break; }
     }
     return out;
   }
 
   async function fetchUnidades(){
     var uniq={}, arr=["Todas"];
-    function push(list){
-      (list||[]).forEach(function(row){
-        var u=(row.unidade||"").trim(); if(!u) return;
-        if(!uniq[u]){ uniq[u]=1; arr.push(u); }
-      });
-    }
-    // usar todo o intervalo de datas do banco
+    function push(list){ (list||[]).forEach(function(row){ var u=(row.unidade||"").trim(); if(!u) return; if(!uniq[u]){ uniq[u]=1; arr.push(u); } }); }
     var r1 = await supa.from(TABLE).select("unidade").order("unidade",{ascending:true}).range(0,9999);
     if(!r1.error) push(r1.data);
     var r2 = await supa.from(TABLE).select("unidade").order("unidade",{ascending:false}).range(0,9999);
@@ -366,7 +447,6 @@
   }
 
   async function fetchLimites(){
-    // pega min e max de dia + listas para canal/pagamento
     var r = await supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
     var r2= await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
     if(r.error||r2.error) throw (r.error||r2.error);
@@ -374,7 +454,6 @@
     maxDiaISO = (r2.data&&r2.data[0]&&r2.data[0].dia)||null;
     limitesTxt.textContent = "Limites no banco: "+minDiaISO+" → "+maxDiaISO;
 
-    // popula set de dias disponíveis (para validar datas)
     diasDisponiveis = new Set();
     var page=1000, off=0;
     for(;;){
@@ -382,20 +461,14 @@
       if(rs.error) break;
       (rs.data||[]).forEach(x=>diasDisponiveis.add(x.dia));
       if((rs.data||[]).length<page) break;
-      off+=page;
-      if(off>500000) break;
+      off+=page; if(off>500000) break;
     }
-
-    // limitar inputs
     if(minDiaISO && maxDiaISO){
-      dini.min=minDiaISO; dfim.min=minDiaISO;
-      dini.max=maxDiaISO; dfim.max=maxDiaISO;
+      dini.min=minDiaISO; dfim.min=minDiaISO; dini.max=maxDiaISO; dfim.max=maxDiaISO;
     }
   }
-
   function snapToAvailable(iso){
     if(!iso || diasDisponiveis.has(iso)) return iso;
-    // encontra o dia válido mais próximo
     var d = parseISO(iso);
     for(var k=1;k<60;k++){
       var a=toISO(addDays(d, -k)), b=toISO(addDays(d, k));
@@ -405,174 +478,75 @@
     return null;
   }
 
-  function uniqPush(arr, val){ if(arr.indexOf(val)<0) arr.push(val); }
-
-  function calcDelta(cur, prev){
-    var pct = (prev>0)? ((cur-prev)/prev*100): 0;
-    var cls = pct>=0 ? "up" : "down";
-    var arrow = pct>=0 ? "▲" : "▼";
-    return { text: (pct>=0?"+":"")+pct.toFixed(1)+"% "+arrow, cls: cls };
-  }
-
-  function setDelta(el, delta){
-    el.className="delta "+(delta.cls||"");
-    el.textContent = delta.text;
-  }
-
-  function groupBy(arr, keyFn, valFn, agg){
-    var m=new Map();
-    arr.forEach(function(r){
-      var k=keyFn(r); var v=valFn(r);
-      m.set(k, (m.get(k)||0)+v);
-    });
-    var labels=Array.from(m.keys()).sort();
-    var values=labels.map(k=>m.get(k));
-    return {labels, values};
-  }
-
-  function groupByDow(arr, valFn){
-    var lbl=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
-    var m=[0,0,0,0,0,0,0], cnt=[0,0,0,0,0,0,0];
-    // cnt = nº de ocorrências de cada DOW no período (para média)
-    // calculo datas distintas para evitar contar dias repetidos
-    var diasSet=new Set();
-    arr.forEach(r=>diasSet.add(r.dia));
-    Array.from(diasSet).forEach(d=>{ cnt[parseISO(d).getUTCDay()]++; });
-    arr.forEach(function(r){
-      var dow=parseISO(r.dia).getUTCDay();
-      m[dow]+=valFn(r);
-    });
-    return {labels:lbl, totals:m, counts:cnt};
-  }
-
-  function groupByHour(arr, valFn){
-    var m=Array(24).fill(0), cnt=Array(24).fill(0), activeDays=Array(24).fill(0);
-    var daysByHour = Array(24).fill(0).map(()=>new Set());
-    arr.forEach(function(r){
-      if(r.hora===null||r.hora===undefined) return;
-      var h = Number(r.hora)||0; if(h<0||h>23) return;
-      m[h]+=valFn(r);
-      daysByHour[h].add(r.dia);
-    });
-    for(var h=0;h<24;h++){
-      activeDays[h] = daysByHour[h].size;
-      cnt[h] = activeDays[h]; // média = total / dias com aquela hora ativa
-    }
-    // ocultar horas pouco ativas (< 50% dos dias do período)
-    var totalDays = new Set(arr.map(r=>r.dia)).size || 1;
-    var labels=[], totals=[], counts=[];
-    for(var h=0;h<24;h++){
-      var keep = activeDays[h] >= Math.ceil(totalDays*0.5) && m[h]>0;
-      if(keep){ labels.push(String(h).padStart(2,"0")+":00"); totals.push(m[h]); counts.push(cnt[h]); }
-    }
-    return {labels, totals, counts};
-  }
-
-  function groupByMonth(arr, valFn){
-    var m=new Map(), cnt=new Map(); // yyyy-mm -> total / dias
-    var daysPerMonth=new Map();
-    arr.forEach(r=>{
-      var ym = r.dia.slice(0,7);
-      m.set(ym, (m.get(ym)||0)+valFn(r));
-      if(!daysPerMonth.has(ym)) daysPerMonth.set(ym, new Set());
-      daysPerMonth.get(ym).add(r.dia);
-    });
-    Array.from(daysPerMonth.keys()).forEach(ym=>{
-      cnt.set(ym, daysPerMonth.get(ym).size);
-    });
-    var labels=Array.from(m.keys()).sort();
-    var totals=labels.map(x=>m.get(x));
-    var counts=labels.map(x=>cnt.get(x)||1);
-    return {labels, totals, counts};
-  }
-
-  function movingAvg(arr, win){
-    var out=[], acc=0;
-    for(var i=0;i<arr.length;i++){
-      acc+=arr[i];
-      if(i>=win) acc-=arr[i-win];
-      out.push( acc / Math.min(i+1, win) );
-    }
-    return out;
-  }
-
+  function movingAvg(arr, win){ var out=[], acc=0; for(var i=0;i<arr.length;i++){ acc+=arr[i]; if(i>=win) acc-=arr[i-win]; out.push( acc / Math.min(i+1, win) ); } return out; }
   function destroyChart(c){ if(c){ try{c.destroy();}catch(e){} } return null; }
 
-  // ===== KPI =====
   function updateKPI(cur, ant){
-    var ped = sum(cur,"pedidos");
-    var fat = sum(cur,"fat");
-    var des = sum(cur,"des");
-    var fre = sum(cur,"fre");
-
-    var pedA = sum(ant,"pedidos");
-    var fatA = sum(ant,"fat");
-    var desA = sum(ant,"des");
-    var freA = sum(ant,"fre");
-
+    var ped = cur.reduce((s,r)=>s+Number(r.pedidos||0),0);
+    var fat = cur.reduce((s,r)=>s+Number(r.fat||0),0);
+    var des = cur.reduce((s,r)=>s+Number(r.des||0),0);
+    var fre = cur.reduce((s,r)=>s+Number(r.fre||0),0);
+    var pedA = ant.reduce((s,r)=>s+Number(r.pedidos||0),0);
+    var fatA = ant.reduce((s,r)=>s+Number(r.fat||0),0);
+    var desA = ant.reduce((s,r)=>s+Number(r.des||0),0);
+    var freA = ant.reduce((s,r)=>s+Number(r.fre||0),0);
     var diasDistinct = new Set(cur.map(r=>r.dia)).size || 1;
-
-    // KPIs
-    var tkm = ped>0 ? fat/ped : 0;
-    var fmd = fat / diasDistinct;
-    var fatLiq = fat - des - fre - (0.12*fat);
-    var fatLiqPct = fat>0 ? (fatLiq/fat*100) : 0;
-    var desPct = fat>0 ? (des/fat*100) : 0;
-    var freMed = ped>0 ? fre/ped : 0;
-
-    // anteriores
     var diasDistinctA = new Set(ant.map(r=>r.dia)).size || 1;
-    var tkmA = pedA>0 ? fatA/pedA : 0;
-    var fmdA = fatA / diasDistinctA;
-    var fatLiqA = fatA - desA - freA - (0.12*fatA);
-    var fatLiqPctA = fatA>0 ? (fatLiqA/fatA*100) : 0;
-    var desPctA = fatA>0 ? (desA/fatA*100) : 0;
-    var freMedA = pedA>0 ? freA/pedA : 0;
 
-    // escreve
+    var tkm = ped>0 ? fat/ped : 0;
+    var tkmA= pedA>0 ? fatA/pedA : 0;
+
+    var fmd = fat/diasDistinct;
+    var fmdA= fatA/diasDistinctA;
+
+    var fatLiq = fat - des - fre - (0.12*fat);
+    var fatLiqA= fatA - desA - freA - (0.12*fatA);
+
+    var desPct = fat>0 ? (des/fat*100) : 0;
+    var desPctA= fatA>0 ? (desA/fatA*100) : 0;
+
+    var freMed = ped>0 ? fre/ped : 0;
+    var freMedA= pedA>0 ? freA/pedA : 0;
+
+    var fatLiqPct = fat>0 ? (fatLiq/fat*100) : 0;
+    var fatLiqPctA= fatA>0 ? (fatLiqA/fatA*100) : 0;
+
     document.getElementById("k_ped").textContent = fmtInt(ped);
     document.getElementById("k_tkm").textContent = fmtBRL(tkm);
     document.getElementById("k_fat").textContent = fmtBRL(fat);
     document.getElementById("k_fmd").textContent = fmtBRL(fmd);
     document.getElementById("k_des").textContent = fmtBRL(des);
-    document.getElementById("k_desp").textContent = (desPct).toFixed(1)+"%";
+    document.getElementById("k_desp").textContent = desPct.toFixed(1)+"%";
     document.getElementById("k_fre").textContent = fmtBRL(fre);
     document.getElementById("k_frem").textContent = fmtBRL(freMed);
     document.getElementById("k_fatl").textContent = fmtBRL(fatLiq);
-    document.getElementById("k_fatlp").textContent = (fatLiqPct).toFixed(1)+"%";
+    document.getElementById("k_fatlp").textContent = fatLiqPct.toFixed(1)+"%";
 
-    setDelta(document.getElementById("d_ped"),  calcDelta(ped, pedA));
-    setDelta(document.getElementById("d_tkm"),  calcDelta(tkm, tkmA));
-    setDelta(document.getElementById("d_fat"),  calcDelta(fat, fatA));
-    setDelta(document.getElementById("d_fmd"),  calcDelta(fmd, fmdA));
-    setDelta(document.getElementById("d_des"),  calcDelta(des, desA));
-    setDelta(document.getElementById("d_desp"), calcDelta(desPct, desPctA));
-    setDelta(document.getElementById("d_fre"),  calcDelta(fre, freA));
-    setDelta(document.getElementById("d_frem"), calcDelta(freMed, freMedA));
-    setDelta(document.getElementById("d_fatl"), calcDelta(fatLiq, fatLiqA));
-    setDelta(document.getElementById("d_fatlp"),calcDelta(fatLiqPct, fatLiqPctA));
+    setDelta(document.getElementById("d_ped"), ped, pedA);
+    setDelta(document.getElementById("d_tkm"), tkm, tkmA);
+    setDelta(document.getElementById("d_fat"), fat, fatA);
+    setDelta(document.getElementById("d_fmd"), fmd, fmdA);
+    setDelta(document.getElementById("d_des"), des, desA);
+    setDelta(document.getElementById("d_desp"), desPct, desPctA);
+    setDelta(document.getElementById("d_fre"), fre, freA);
+    setDelta(document.getElementById("d_frem"), freMed, freMedA);
+    setDelta(document.getElementById("d_fatl"), fatLiq, fatLiqA);
+    setDelta(document.getElementById("d_fatlp"), fatLiqPct, fatLiqPctA);
   }
 
-  // ===== Charts =====
-  function drawLine(days, vals, prevVals){
+  function drawLine(days, vals, prevVals, mode){
     chartLine = destroyChart(chartLine);
     var ctx=document.getElementById("cLine").getContext("2d");
     var dataCur = vals.slice();
     var dataMed = movingAvg(vals, 7);
-    var showMed = (lineMode==="media");
+    var showMed = (mode==="media");
     var mainData = showMed? dataMed : dataCur;
-
     chartLine = new window.Chart(ctx, {
       type:"line",
-      data:{
-        labels: days,
-        datasets:[
-          // sombra do período anterior (área sem borda)
-          { data: prevVals, fill:true, borderWidth:0, backgroundColor:"rgba(2, 132, 199, 0.12)", pointRadius:0, tension:0.2 },
-          // série principal
-          { label: showMed? "Média (7d)" : "Total", data: mainData, borderWidth:2, pointRadius:0, tension:0.2 }
-        ]
-      },
+      data:{ labels: days, datasets:[
+        { data: prevVals, fill:true, borderWidth:0, backgroundColor:"rgba(2, 132, 199, 0.12)", pointRadius:0, tension:0.2 },
+        { label: showMed? "Média (7d)" : "Total", data: mainData, borderWidth:2, pointRadius:0, tension:0.2 }
+      ]},
       options:{ responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true } } }
     });
   }
@@ -589,23 +563,55 @@
     return inst;
   }
 
-  function drawTop(labels, totals, counts, mode){
-    var showMed = (mode==="media");
-    var vals = showMed ? totals.map((v,i)=> avg(v, counts[i]||1)) : totals.slice();
-    var ctx=document.getElementById("cTop").getContext("2d");
-    chartTop = destroyChart(chartTop);
-    chartTop = new window.Chart(ctx, {
-      type:"bar",
-      data:{ labels:labels, datasets:[{ data:vals }] },
-      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{display:false} }, scales:{ x:{ beginAtZero:true } } }
+  function groupBy(arr, keyFn, valFn){
+    var m=new Map();
+    arr.forEach(function(r){ var k=keyFn(r); var v=valFn(r); m.set(k,(m.get(k)||0)+v); });
+    var labels=Array.from(m.keys()).sort();
+    var values=labels.map(k=>m.get(k));
+    return {labels, values};
+  }
+  function groupByDow(arr, valFn){
+    var lbl=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+    var m=[0,0,0,0,0,0,0], cnt=[0,0,0,0,0,0,0];
+    var diasSet=new Set(arr.map(r=>r.dia));
+    Array.from(diasSet).forEach(d=>{ cnt[parseISO(d).getUTCDay()]++; });
+    arr.forEach(function(r){ var dow=parseISO(r.dia).getUTCDay(); m[dow]+=valFn(r); });
+    return {labels:lbl, totals:m, counts:cnt};
+  }
+  function groupByHour(arr, valFn){
+    var m=Array(24).fill(0), cnt=Array(24).fill(0), activeDays=Array(24).fill(0);
+    var daysByHour = Array(24).fill(0).map(()=>new Set());
+    arr.forEach(function(r){
+      if(r.hora===null||r.hora===undefined) return;
+      var h = Number(r.hora)||0; if(h<0||h>23) return;
+      m[h]+=valFn(r); daysByHour[h].add(r.dia);
     });
+    var totalDays = new Set(arr.map(r=>r.dia)).size || 1;
+    var labels=[], totals=[], counts=[];
+    for(var h=0;h<24;h++){
+      activeDays[h] = daysByHour[h].size; cnt[h]=activeDays[h];
+      var keep = activeDays[h] >= Math.ceil(totalDays*0.5) && m[h]>0;
+      if(keep){ labels.push(String(h).padStart(2,"0")+":00"); totals.push(m[h]); counts.push(cnt[h]); }
+    }
+    return {labels, totals, counts};
+  }
+  function groupByMonth(arr, valFn){
+    var m=new Map(), cnt=new Map(), daysPerMonth=new Map();
+    arr.forEach(r=>{
+      var ym = r.dia.slice(0,7);
+      m.set(ym, (m.get(ym)||0)+valFn(r));
+      if(!daysPerMonth.has(ym)) daysPerMonth.set(ym, new Set());
+      daysPerMonth.get(ym).add(r.dia);
+    });
+    Array.from(daysPerMonth.keys()).forEach(ym=> cnt.set(ym, daysPerMonth.get(ym).size));
+    var labels=Array.from(m.keys()).sort();
+    var totals=labels.map(x=>m.get(x)), counts=labels.map(x=>cnt.get(x)||1);
+    return {labels, totals, counts};
   }
 
-  // ===== Fluxo principal =====
   async function recarregar(){
     const myRun = ++runId;
     try{
-      // define janela baseada no último dia do banco
       if(!maxDiaISO) await fetchLimites();
       if(!maxDiaISO) throw new Error("Sem limites de data no banco.");
 
@@ -617,17 +623,14 @@
         if(e0!==peISO){ log("[Ajuste] 'Até' ajustado para "+e0+" (dia válido)."); dfim.value=e0; }
         s = parseISO(dini.value); e = parseISO(dfim.value);
       }else{
-        // período rápido ancorado no maxDia do banco
         var end = parseISO(maxDiaISO);
         var days = Number(pr.value)||30;
         var start = addDays(end, -(days-1));
-        s=start; e=end;
-        dini.value = toISO(s); dfim.value = toISO(e);
+        s=start; e=end; dini.value = toISO(s); dfim.value = toISO(e);
       }
       var startISO = toISO(s), endISO = toISO(e);
       periodoTxt.textContent = "Período: "+startISO+" → "+endISO;
 
-      // filtros
       var lojas = Array.prototype.filter.call(chipLojas.children, c=>c.classList.contains("active")).map(c=>c.getAttribute("data-v"));
       var filtros = {
         turno: Array.from(turno.selectedOptions).map(o=>o.value),
@@ -638,13 +641,11 @@
       var uniVal = selUni.value || "Todas";
       log("[Query] "+TABLE+" | "+startISO+" → "+endISO+" | UNI="+uniVal+" | lojas="+(lojas.join(",")||"Todas"));
 
-      // coleta atual
       var fields = "dia,unidade,pedidos,fat,des,fre,\"Nome da Loja\",turno,\"Canal de venda\",pagamento,cancelado,hora";
       var cur = await fetchPaged(fields, startISO, endISO, uniVal==="Todas"? null: uniVal, lojas, filtros);
       if(myRun!==runId) return;
       log("[OK] Linhas (atual): "+cur.length.toLocaleString("pt-BR"));
 
-      // janela anterior
       var daysLen = Math.max(1, Math.round((parseISO(endISO)-parseISO(startISO))/(24*3600*1000))+1);
       var prevEnd   = addDays(parseISO(startISO), -1);
       var prevStart = addDays(prevEnd, -(daysLen-1));
@@ -653,7 +654,6 @@
       if(myRun!==runId) return;
       log("[Query ant] "+prevStartISO+" → "+prevEndISO+" | Linhas: "+ant.length.toLocaleString("pt-BR"));
 
-      // popula select dinâmicos (canal/pagamento) na 1ª carga do período
       if(canal.options.length===0 || pag.options.length===0){
         var all = await fetchPaged("dia,\"Canal de venda\",pagamento", minDiaISO, maxDiaISO, null, null, { });
         var canals = Array.from(new Set((all||[]).map(r=>r["Canal de venda"]).filter(Boolean))).sort();
@@ -662,56 +662,138 @@
         pags.forEach(v=>{ var o=document.createElement("option"); o.value=v; o.textContent=v; pag.appendChild(o); });
       }
 
-      // ==== KPIs
-      updateKPI(cur, ant);
-
-      // ==== LINE: receita diária
-      var byDay = groupBy(cur, r=>r.dia, r=>Number(r.fat||0));
-      var byDayPrev = groupBy(ant, r=>r.dia, r=>Number(r.fat||0));
-      drawLine(byDay.labels, byDay.values, byDayPrev.values);
-
-      // ==== DOW FAT / PED
-      var useLiq = false; // KPIs já mostram líquido; aqui usamos fat bruto para leitura comparativa
-      var dowFat = groupByDow(cur, r=> Number(r.fat||0) - (useLiq? Number(r.fre||0): 0) );
-      chartDowFat = destroyChart(chartDowFat);
-      chartDowFat = drawBar("cDowFat", dowFat.labels, dowFat.totals, dowFat.counts, dowMode);
-
-      var dowPed = groupByDow(cur, r=> Number(r.pedidos||0));
-      chartDowPed = destroyChart(chartDowPed);
-      chartDowPed = drawBar("cDowPed", dowPed.labels, dowPed.totals, dowPed.counts, dowPedMode);
-
-      // ==== HORA (oculta horas pouco ativas)
-      var hour = groupByHour(cur, r=> Number(r.fat||0));
-      chartHour = destroyChart(chartHour);
+      // KPIs
       (function(){
-        var ctx=document.getElementById("cHour").getContext("2d");
-        var showMed = (hourMode==="media");
-        var vals = showMed ? hour.totals.map((v,i)=>avg(v, hour.counts[i]||1)) : hour.totals.slice();
-        chartHour = new window.Chart(ctx, {
-          type:"bar",
-          data:{ labels:hour.labels, datasets:[{ data:vals }] },
-          options:{ responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true } } }
-        });
+        var ped = cur.reduce((s,r)=>s+Number(r.pedidos||0),0);
+        var fat = cur.reduce((s,r)=>s+Number(r.fat||0),0);
+        var des = cur.reduce((s,r)=>s+Number(r.des||0),0);
+        var fre = cur.reduce((s,r)=>s+Number(r.fre||0),0);
+        var pedA = ant.reduce((s,r)=>s+Number(r.pedidos||0),0);
+        var fatA = ant.reduce((s,r)=>s+Number(r.fat||0),0);
+        var desA = ant.reduce((s,r)=>s+Number(r.des||0),0);
+        var freA = ant.reduce((s,r)=>s+Number(r.fre||0),0);
+        var diasDistinct = new Set(cur.map(r=>r.dia)).size || 1;
+        var diasDistinctA = new Set(ant.map(r=>r.dia)).size || 1;
+
+        var tkm = ped>0 ? fat/ped : 0;
+        var tkmA= pedA>0 ? fatA/pedA : 0;
+
+        var fmd = fat/diasDistinct;
+        var fmdA= fatA/diasDistinctA;
+
+        var fatLiq = fat - des - fre - (0.12*fat);
+        var fatLiqA= fatA - desA - freA - (0.12*fatA);
+
+        var desPct = fat>0 ? (des/fat*100) : 0;
+        var desPctA= fatA>0 ? (desA/fatA*100) : 0;
+
+        var freMed = ped>0 ? fre/ped : 0;
+        var freMedA= pedA>0 ? freA/pedA : 0;
+
+        var fatLiqPct = fat>0 ? (fatLiq/fat*100) : 0;
+        var fatLiqPctA= fatA>0 ? (fatLiqA/fatA*100) : 0;
+
+        document.getElementById("k_ped").textContent = fmtInt(ped);
+        document.getElementById("k_tkm").textContent = fmtBRL(tkm);
+        document.getElementById("k_fat").textContent = fmtBRL(fat);
+        document.getElementById("k_fmd").textContent = fmtBRL(fmd);
+        document.getElementById("k_des").textContent = fmtBRL(des);
+        document.getElementById("k_desp").textContent = desPct.toFixed(1)+"%";
+        document.getElementById("k_fre").textContent = fmtBRL(fre);
+        document.getElementById("k_frem").textContent = fmtBRL(freMed);
+        document.getElementById("k_fatl").textContent = fmtBRL(fatLiq);
+        document.getElementById("k_fatlp").textContent = fatLiqPct.toFixed(1)+"%";
+
+        setDelta(document.getElementById("d_ped"), ped, pedA);
+        setDelta(document.getElementById("d_tkm"), tkm, tkmA);
+        setDelta(document.getElementById("d_fat"), fat, fatA);
+        setDelta(document.getElementById("d_fmd"), fmd, fmdA);
+        setDelta(document.getElementById("d_des"), des, desA);
+        setDelta(document.getElementById("d_desp"), desPct, desPctA);
+        setDelta(document.getElementById("d_fre"), fre, freA);
+        setDelta(document.getElementById("d_frem"), freMed, freMedA);
+        setDelta(document.getElementById("d_fatl"), fatLiq, fatLiqA);
+        setDelta(document.getElementById("d_fatlp"), fatLiqPct, fatLiqPctA);
       })();
 
-      // ==== MÊS
-      var month = groupByMonth(cur, r=> Number(r.fat||0));
+      // LINE (com sombra)
+      var byDay = groupBy(cur, r=>r.dia, r=>Number(r.fat||0));
+      var byDayPrev = groupBy(ant, r=>r.dia, r=>Number(r.fat||0));
+      drawLine(byDay.labels, byDay.values, byDayPrev.values, (lineMode));
+
+      // DOW — fat/ped
+      var dowFat = (function(){
+        var lbl=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+        var m=[0,0,0,0,0,0,0], cnt=[0,0,0,0,0,0,0];
+        var diasSet=new Set(cur.map(r=>r.dia));
+        Array.from(diasSet).forEach(d=>{ cnt[parseISO(d).getUTCDay()]++; });
+        cur.forEach(function(r){ var d=parseISO(r.dia).getUTCDay(); m[d]+=Number(r.fat||0); });
+        return {labels:lbl, totals:m, counts:cnt};
+      })();
+      chartDowFat = destroyChart(chartDowFat);
+      chartDowFat = drawBar("cDowFat", dowFat.labels, dowFat.totals, dowFat.counts, (dowMode));
+
+      var dowPed = (function(){
+        var lbl=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+        var m=[0,0,0,0,0,0,0], cnt=[0,0,0,0,0,0,0];
+        var diasSet=new Set(cur.map(r=>r.dia));
+        Array.from(diasSet).forEach(d=>{ cnt[parseISO(d).getUTCDay()]++; });
+        cur.forEach(function(r){ var d=parseISO(r.dia).getUTCDay(); m[d]+=Number(r.pedidos||0); });
+        return {labels:lbl, totals:m, counts:cnt};
+      })();
+      chartDowPed = destroyChart(chartDowPed);
+      chartDowPed = drawBar("cDowPed", dowPed.labels, dowPed.totals, dowPed.counts, (dowPedMode));
+
+      // HORA
+      var hour = (function(){
+        var m=Array(24).fill(0), cnt=Array(24).fill(0), activeDays=Array(24).fill(0);
+        var daysByHour = Array(24).fill(0).map(()=>new Set());
+        cur.forEach(function(r){
+          if(r.hora===null||r.hora===undefined) return;
+          var h = Number(r.hora)||0; if(h<0||h>23) return;
+          m[h]+=Number(r.fat||0); daysByHour[h].add(r.dia);
+        });
+        var totalDays = new Set(cur.map(r=>r.dia)).size || 1;
+        var labels=[], totals=[], counts=[];
+        for(var h=0;h<24;h++){
+          activeDays[h] = daysByHour[h].size; cnt[h]=activeDays[h];
+          var keep = activeDays[h] >= Math.ceil(totalDays*0.5) && m[h]>0;
+          if(keep){ labels.push(String(h).padStart(2,"0")+":00"); totals.push(m[h]); counts.push(cnt[h]); }
+        }
+        return {labels, totals, counts};
+      })();
+      chartHour = destroyChart(chartHour);
+      chartHour = drawBar("cHour", hour.labels, hour.totals, hour.counts, (hourMode));
+
+      // MÊS
+      var month = (function(){
+        var m=new Map(), cnt=new Map(), daysPerMonth=new Map();
+        cur.forEach(r=>{
+          var ym = r.dia.slice(0,7);
+          m.set(ym,(m.get(ym)||0)+Number(r.fat||0));
+          if(!daysPerMonth.has(ym)) daysPerMonth.set(ym,new Set());
+          daysPerMonth.get(ym).add(r.dia);
+        });
+        Array.from(daysPerMonth.keys()).forEach(ym=> cnt.set(ym, daysPerMonth.get(ym).size));
+        var labels=Array.from(m.keys()).sort();
+        var totals=labels.map(x=>m.get(x)), counts=labels.map(x=>cnt.get(x)||1);
+        return {labels, totals, counts};
+      })();
       chartMonth = destroyChart(chartMonth);
-      chartMonth = drawBar("cMonth", month.labels, month.totals, month.counts, monMode);
+      chartMonth = drawBar("cMonth", month.labels, month.totals, month.counts, (monMode));
 
-      // ==== TOP 10 LOJAS (e chips)
-      var byLoja = {};
-      cur.forEach(r=>{
-        var n=r["Nome da Loja"]; if(!n) return;
-        byLoja[n]=(byLoja[n]||0)+Number(r.fat||0);
-      });
+      // TOP 10 + chips
+      var byLoja = {}; cur.forEach(r=>{ var n=r["Nome da Loja"]; if(!n) return; byLoja[n]=(byLoja[n]||0)+Number(r.fat||0); });
       var top = Object.entries(byLoja).sort((a,b)=>b[1]-a[1]).slice(0,10);
-      var topLabels = top.map(x=>x[0]);
-      var topTotals = top.map(x=>x[1]);
-      var topCounts = top.map(_=> (new Set(cur.map(r=>r.dia)).size) ); // média por dia do período
-      drawTop(topLabels, topTotals, topCounts, topMode);
+      var topLabels = top.map(x=>x[0]); var topTotals = top.map(x=>x[1]); var topCounts = top.map(_=> (new Set(cur.map(r=>r.dia)).size) );
+      chartTop = destroyChart(chartTop);
+      chartTop = (function(){
+        var ctx=document.getElementById("cTop").getContext("2d");
+        var showMed = (topMode==="media");
+        var vals = showMed ? topTotals.map((v,i)=> avg(v, topCounts[i]||1)) : topTotals.slice();
+        return new window.Chart(ctx, { type:"bar", data:{ labels:topLabels, datasets:[{ data:vals }] }, options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{display:false} }, scales:{ x:{ beginAtZero:true } } } });
+      })();
 
-      // chips (só monta na 1ª vez ou se vazio)
       if(chipLojas.children.length===0){
         chipLojas.innerHTML="";
         topLabels.forEach(lbl=>{
@@ -722,187 +804,153 @@
         });
       }
 
-    }catch(e){
-      console.error(e);
-      log("[ERRO] "+(e.message||String(e)));
-    }
+    }catch(e){ console.error(e); log("[ERRO] "+(e.message||String(e))); }
   }
   var recarregarDebounced = debounce(recarregar, 120);
 
   async function boot(){
-    log("[Boot] v18.0-ops — filtros alinhados, sombra, médias corretas e import CSV");
-
+    log("[Boot] v18.1-auth — login/cadastro + admin via Edge Function");
     await fetchLimites();
-    // ancorar período rápido no max dia do banco
-    var end = parseISO(maxDiaISO);
-    var start = addDays(end, -29);
-    dini.value = toISO(start); dfim.value = toISO(end);
+    var end = parseISO(maxDiaISO), start = addDays(end, -29);
+    document.getElementById("dini").value = toISO(start); document.getElementById("dfim").value = toISO(end);
 
     var opts = await fetchUnidades();
     selUni.innerHTML=""; opts.forEach(function(u){ var o=document.createElement("option"); o.value=u; o.textContent=u; selUni.appendChild(o); });
     selUni.value="Todas";
 
-    // eventos que disparam recarga
     [selUni, dini, dfim, pr, turno, canal, pag, canc].forEach(el=>{
-      el.addEventListener("change", function(){
-        // ao aplicar (qualquer mudança), recolhe box
-        document.getElementById("fx").open=false;
-        recarregarDebounced();
-      });
+      el.addEventListener("change", function(){ document.getElementById("fx").open=false; recarregarDebounced(); });
     });
 
-    wirePills();
-    await recarregar();
-  }
-
-  // ===== Importação (Admin) =====
-  async function importDirectCSV(rows){
-    // IMPORTAÇÃO DIRETA (fallback) — em lotes
-    log("[Import] Iniciando import direto (fallback). Linhas: "+rows.length.toLocaleString("pt-BR"));
-    var prog=document.getElementById("prog"); prog.style.display="inline-block"; prog.value=0;
-
-    // 1) cria/limpa staging
-    try{
-      await supa.rpc('void'); // no-op se existir; ignora
-    }catch(_){}
-    // vamos truncar via delete (anon não executa TRUNCATE)
-    await supa.from(STAGING).delete().neq('dia', null);
-
-    // 2) insere em lotes
-    var chunk=2000, total=rows.length, done=0;
-    for(var i=0;i<rows.length;i+=chunk){
-      var slice = rows.slice(i, i+chunk).map(r=>({
-        dia: r.dia, unidade: r.unidade, pedidos: Number(r.pedidos)||0, fat: Number(r.fat)||0, des: Number(r.des)||0, fre: Number(r.fre)||0,
-        "Nome da Loja": r["Nome da Loja"], turno: r.turno, "Canal de venda": r["Canal de venda"], pagamento: r.pagamento, cancelado: r.cancelado, hora: r.hora!==""? Number(r.hora): null
-      }));
-      var ins = await supa.from(STAGING).insert(slice);
-      if(ins.error){ throw ins.error; }
-      done += slice.length; prog.value = Math.round(done/total*100);
-    }
-
-    // 3) pedir para a Edge Function promover staging -> final (MV refresh ou copy p/ tabela)
-    if(FUNCTION_URL){
-      log("[Import] Pedindo promoção via Function…");
+    // Admin UI wire
+    btnAdmin.addEventListener("click", async ()=>{
+      if(!ADMIN_FUNCTION_URL){ alert("Function de admin não configurada."); return; }
+      const { data:{ session } } = await supa.auth.getSession();
+      if(!session){ alert("Faça login."); return; }
+      adminPanel.style.display = "block"; usersBox.textContent = "Carregando…";
       try{
-        var resp = await fetch(FUNCTION_URL, { method:"POST", headers:{"Content-Type":"application/json","Authorization":"Bearer "+SUPABASE_ANON}, body: JSON.stringify({ action:"promote" }) });
-        var txt = await resp.text();
-        log("[Function] "+txt);
-      }catch(err){
-        log("[Function ERRO] "+(err.message||err));
-      }
-    }else{
-      log("[Aviso] FUNCTION_URL não configurada — atualize manualmente sua MV/Tabela no backend.");
-    }
+        const r = await fetch(ADMIN_FUNCTION_URL, { headers:{ "Authorization":"Bearer "+session.access_token } });
+        if(!r.ok){ usersBox.textContent = "Sem permissão (ou erro no backend)."; return; }
+        const js = await r.json();
+        // render
+        if(!Array.isArray(js) || js.length===0){ usersBox.textContent="Sem usuários."; return; }
+        const table = document.createElement("table");
+        table.style.width="100%"; table.style.borderCollapse="collapse";
+        table.innerHTML = `<thead><tr><th style="text-align:left;padding:6px;border-bottom:1px solid var(--brd)">E-mail</th><th style="text-align:left;padding:6px;border-bottom:1px solid var(--brd)">Criado</th><th style="padding:6px;border-bottom:1px solid var(--brd)">Ação</th></tr></thead><tbody></tbody>`;
+        js.forEach(u=>{
+          const tr=document.createElement("tr");
+          tr.innerHTML = `<td style="padding:6px;border-bottom:1px solid var(--brd)">${u.email}</td>
+                          <td style="padding:6px;border-bottom:1px solid var(--brd)">${(u.created_at||"").replace("T"," ").replace("Z","")}</td>
+                          <td style="padding:6px;border-bottom:1px solid var(--brd);text-align:center"><button data-id="${u.id}">Excluir</button></td>`;
+          table.tBodies[0].appendChild(tr);
+        });
+        usersBox.innerHTML=""; usersBox.appendChild(table);
+        usersBox.querySelectorAll("button[data-id]").forEach(btn=>{
+          btn.addEventListener("click", async ()=>{
+            if(!confirm("Excluir este usuário?")) return;
+            const id=btn.getAttribute("data-id");
+            const del = await fetch(ADMIN_FUNCTION_URL+"?id="+encodeURIComponent(id), { method:"DELETE", headers:{ "Authorization":"Bearer "+session.access_token } });
+            if(del.ok){ btn.closest("tr").remove(); } else { alert("Falha ao excluir (backend)."); }
+          });
+        });
+      }catch(err){ usersBox.textContent="Erro: "+(err.message||err); }
+    });
 
-    prog.style.display="none";
-    await fetchLimites(); // limites podem mudar
     await recarregar();
-    log("[Import] Concluído.");
   }
 
+  // === Import CSV (fallback no navegador) — igual versão anterior ===
   document.getElementById("btnImport").addEventListener("click", async function(){
     var f = document.getElementById("csvfile").files[0];
     if(!f){ alert("Selecione o arquivo CSV (Pasta2.csv)"); return; }
+    const prog=document.getElementById("prog"); prog.style.display="inline-block"; prog.value=0;
 
-    // Preferência: mandar para Edge Function (rápida e segura)
-    if(FUNCTION_URL){
-      log("[Import] Enviando arquivo para Edge Function…");
-      var fd = new FormData(); fd.append("file", f);
-      try{
-        var resp = await fetch(FUNCTION_URL, { method:"POST", headers:{ "Authorization":"Bearer "+SUPABASE_ANON }, body: fd });
-        var txt = await resp.text();
-        log("[Function] "+txt);
-        await fetchLimites(); await recarregar();
-        return;
-      }catch(e){ log("[Function ERRO] "+(e.message||e)); /* cai pro fallback */ }
-    }
+    // Limpa staging via delete (anon)
+    await supa.from(STAGING).delete().neq('dia', null);
 
-    // Fallback: parse local com PapaParse e insere em lotes
-    log("[Import] Function não configurada. Usando import local (pode ser lento para 58MB).");
     Papa.parse(f, {
       header:true, skipEmptyLines:true, dynamicTyping:false,
-      complete: function(res){
-        importDirectCSV(res.data);
+      complete: async function(res){
+        const rows=res.data||[]; log("[Import] Linhas: "+rows.length.toLocaleString("pt-BR"));
+        const chunk=2000; let done=0;
+        for(let i=0;i<rows.length;i+=chunk){
+          const slice = rows.slice(i,i+chunk).map(r=>({
+            dia: r.dia, unidade: r.unidade, pedidos: Number(r.pedidos)||0, fat: Number(r.fat)||0, des: Number(r.des)||0, fre: Number(r.fre)||0,
+            "Nome da Loja": r["Nome da Loja"], turno: r.turno, "Canal de venda": r["Canal de venda"], pagamento: r.pagamento, cancelado: r.cancelado, hora: r.hora!==""? Number(r.hora): null
+          }));
+          const ins = await supa.from(STAGING).insert(slice);
+          if(ins.error){ log("[Import ERRO] "+ins.error.message); break; }
+          done+=slice.length; prog.value = Math.round(done/rows.length*100);
+        }
+        prog.style.display="none";
+        log("[Import] Finalizado. Atualize MV/Tabela no backend para promover staging.");
+        await fetchLimites(); await recarregar();
       },
-      error: function(err){ log("[CSV ERRO] "+(err.message||err)); }
+      error: function(err){ log("[CSV ERRO] "+(err.message||err)); prog.style.display="none"; }
     });
   });
 
-  // Boot
-  boot();
+  // Início: checa sessão e decide exibir gate
+  (async function initAuth(){
+    const { data:{ session } } = await supa.auth.getSession();
+    if(session){ hideGate(); afterLogin(); } else { showGate(); }
+  })();
+
 })();
 </script>
 
-<!-- =============== NOTAS PARA O BACKEND (OPCIONAL, RECOMENDADO) =================
-Edge Function (import_csv) — Deno
+<!-- ================= Edge Function (admin_users) — Deno =================
+Crie e publique quando estiver no Mac:
 
-// supabase functions new import_csv
-// supabase functions deploy import_csv
-// No Dashboard (Project Settings -> Functions), defina a env SUPABASE_SERVICE_ROLE_KEY
+supabase functions new admin_users
+# Abra o arquivo gerado e substitua pelo conteúdo abaixo
+# Configure envs no Studio:
+#  - SUPABASE_SERVICE_ROLE_KEY (service role do projeto)
+#  - ADMIN_EMAILS (lista separada por vírgula com e-mails dos admins, ex: "edu@empresa.com,owner@empresa.com")
+# Deploy:
+supabase functions deploy admin_users
 
+----- admin_users/index.ts -----
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 serve(async (req) => {
-  const url = new URL(req.url);
-  const supa = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const tableStaging = "vendas_kpi_daily_v2_data";
-  const tableFinal = "vendas_kpi_daily_v2"; // MV ou Tabela
-
-  // CORS simples
   const headers = { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type" };
   if (req.method === "OPTIONS") return new Response("ok", { headers });
 
-  if (req.method === "POST" && req.headers.get("content-type")?.includes("multipart/form-data")) {
-    // Upload CSV -> Storage (temporário) -> COPY via SQL (rápido)
-    const form = await req.formData();
-    const file = form.get("file");
-    if (!(file instanceof File)) return new Response("Arquivo ausente", { status:400, headers });
+  const supaUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const adminEmails = (Deno.env.get("ADMIN_EMAILS") || "").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean);
 
-    // Salva no Storage opcionalmente, ou usa streaming direto (dependendo do seu plano)
-    // Aqui, por simplicidade, faremos parse parcial (cuidado com 58MB: prefira COPY na prática)
+  const authHdr = req.headers.get("authorization") || "";
+  const token = authHdr.startsWith("Bearer ") ? authHdr.slice(7) : "";
+  const svc = createClient(supaUrl, serviceKey);
+  const { data: userData } = await svc.auth.getUser(token);
+  const email = userData?.user?.email?.toLowerCase() || "";
 
-    // TRUNCATE staging
-    await supa.rpc('exec_sql', { sql: `TRUNCATE ${tableStaging};` }).catch(()=>{});
-
-    // *** SUGESTÃO real: suba para Storage e rode um SQL: COPY staging FROM 'gs://...' com extensão/privado. ***
-
-    return new Response("Recebido. Agora rode a ação 'promote'.", { headers });
+  if (!email || !adminEmails.includes(email)) {
+    return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers });
   }
 
-  if (req.method === "POST" && url.pathname.endsWith("/import_csv")) {
-    return new Response("Use POST multipart/form-data com campo 'file'", { status:400, headers });
+  const url = new URL(req.url);
+  if (req.method === "GET") {
+    // lista usuários (máx 200)
+    const { data, error } = await svc.auth.admin.listUsers({ page:1, perPage:200 });
+    if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers });
+    const out = data.users.map(u => ({ id: u.id, email: u.email, created_at: u.created_at }));
+    return new Response(JSON.stringify(out), { headers });
   }
 
-  if (req.method === "POST") {
-    // promote: se final for MV -> REFRESH; se for tabela -> TRUNCATE + INSERT
-    const q = await supa.from("pg_class").select("relkind").eq("relname", tableFinal).single();
-    const kind = (q.data && q.data.relkind) || null;
-
-    if (kind === "m") {
-      await supa.rpc('exec_sql', { sql: `REFRESH MATERIALIZED VIEW ${tableFinal};` });
-      return new Response("MV atualizada (refresh).", { headers });
-    } else if (kind === "r") {
-      await supa.rpc('exec_sql', { sql: `
-        TRUNCATE ${tableFinal};
-        INSERT INTO ${tableFinal}
-        (dia,unidade,pedidos,fat,des,fre,"Nome da Loja",turno,"Canal de venda",pagamento,cancelado,hora)
-        SELECT dia,unidade,pedidos,fat,des,fre,"Nome da Loja",turno,"Canal de venda",pagamento,cancelado,hora
-        FROM ${tableStaging};
-      `});
-      return new Response("Tabela final atualizada a partir do staging.", { headers });
-    } else {
-      return new Response("Objeto final não encontrado.", { status:404, headers });
-    }
+  if (req.method === "DELETE") {
+    const id = url.searchParams.get("id");
+    if (!id) return new Response(JSON.stringify({ error: "missing id" }), { status: 400, headers });
+    const { error } = await svc.auth.admin.deleteUser(id);
+    if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers });
+    return new Response(JSON.stringify({ ok: true }), { headers });
   }
 
-  return new Response("OK", { headers });
+  return new Response(JSON.stringify({ error: "method not allowed" }), { status: 405, headers });
 });
 
-// SQL helper (RPC) para executar comandos administrativos com role da Function
--- no SQL Editor do Studio, crie:
--- CREATE OR REPLACE FUNCTION public.exec_sql(sql text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
--- BEGIN EXECUTE sql; END; $$;
--- GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO anon;
-============================================================================= -->
+===================================================================== -->
 </html>
