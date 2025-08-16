@@ -440,4 +440,219 @@
   function groupDaily(rows){ var d=buildDailyTotals(rows,"fat"); return {labels:d.days, totals:d.totals}; }
   function groupDailyMetric(rows,key){ var d=buildDailyTotals(rows,key); return {labels:d.days, totals:d.totals}; }
 
-  functio
+  function groupDOW(rows){ var d=buildDailyTotals(rows,"fat"), totals=[0,0,0,0,0,0,0], counts=[0,0,0,0,0,0,0]; d.days.forEach((day,i)=>{ var dow=new Date(day+"T00:00:00Z").getUTCDay(); totals[dow]+=d.totals[i]; counts[dow]+=1; }); return {labels:["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"], totals, counts}; }
+  function groupDOWMetric(rows,key){ var d=buildDailyTotals(rows,key), totals=[0,0,0,0,0,0,0], counts=[0,0,0,0,0,0,0]; d.days.forEach((day,i)=>{ var dow=new Date(day+"T00:00:00Z").getUTCDay(); totals[dow]+=d.totals[i]; counts[dow]+=1; }); return {labels:["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"], totals, counts}; }
+  function groupMonth(rows){ var d=buildDailyTotals(rows,"fat"), map={}; d.days.forEach((day,i)=>{ var k=day.slice(0,7); if(!map[k]) map[k]={t:0,c:0}; map[k].t+=d.totals[i]; map[k].c+=1; }); var labels=Object.keys(map).sort(); return {labels, totals:labels.map(k=>map[k].t), counts:labels.map(k=>map[k].c)}; }
+  function groupMonthLiq(rows){
+    var dFat=buildDailyTotals(rows,"fat"), dDes=buildDailyTotals(rows,"des"), dFre=buildDailyTotals(rows,"fre");
+    var mapDays={}; dFat.days.forEach((day,i)=>{ mapDays[day]={fat:dFat.totals[i], des:0, fre:0}; });
+    dDes.days.forEach((day,i)=>{ if(!mapDays[day]) mapDays[day]={fat:0,des:0,fre:0}; mapDays[day].des=dDes.totals[i]; });
+    dFre.days.forEach((day,i)=>{ if(!mapDays[day]) mapDays[day]={fat:0,des:0,fre:0}; mapDays[day].fre=dFre.totals[i]; });
+    var m={}; Object.keys(mapDays).sort().forEach(day=>{ var v=mapDays[day], taxa=0.12*v.fat, liq=v.fat-v.des-v.fre-taxa; var k=day.slice(0,7); if(!m[k]) m[k]={t:0,c:0}; m[k].t+=liq; m[k].c+=1; });
+    var labels=Object.keys(m).sort(); return {labels, totals:labels.map(k=>m[k].t), counts:labels.map(k=>m[k].c)};
+  }
+  function groupHour(rows){
+    if(!schema.hora) return {labels:[], totals:[], counts:[], labelsPrev:[]};
+    var byDayHour={}, totals=new Array(24).fill(0), daysByHour=[...Array(24)].map(()=>new Set());
+    rows.forEach(r=>{ var h=Number(r[schema.hora]); if(isNaN(h)||h<0||h>23) return; var key=r.dia+"|"+h; byDayHour[key]=(byDayHour[key]||0)+Number(r.fat||0); });
+    Object.keys(byDayHour).forEach(k=>{ var [d,h]=k.split("|"); h=Number(h); totals[h]+=byDayHour[k]; daysByHour[h].add(d); });
+    var counts=daysByHour.map(s=>s.size), labels=totals.map((_,i)=>String(i).padStart(2,"0")+":00");
+    var totalDays = new Set(Object.keys(byDayHour).map(k=>k.split("|")[0])).size || 1;
+    var keep = totals.map((_,i)=> counts[i]/totalDays > 0.5 ); // aproxima “>30 min sem venda”
+    var fL=[], fT=[], fC=[]; for(var i=0;i<24;i++){ if(keep[i]){ fL.push(labels[i]); fT.push(totals[i]); fC.push(counts[i]); } }
+    return {labels:fL, totals:fT, counts:fC};
+  }
+
+  /* render: sombra do período anterior por trás (line com fill) */
+  function makePrevSeries(curLabels, curTotals, prevObj, mode, countsCur){
+    if(!prevObj) return null;
+    var prevTotals = prevObj.totals.slice();
+    if(mode==="avg"){
+      if(prevObj.counts) prevTotals = prevTotals.map((v,i)=> (prevObj.counts[i]>0? v/prevObj.counts[i] : 0));
+      else { var s=prevTotals.reduce((a,b)=>a+b,0), n=curLabels.length||1; prevTotals = curLabels.map(()=> s/(n||1) ); }
+    }
+    return {labels:(prevObj.labels||curLabels), totals:prevTotals, counts:prevObj.counts||null};
+  }
+  function renderChart(canvasId,baseType,labels,totals,mode,countsOpt,prevPack){
+    var ctx=document.getElementById(canvasId).getContext("2d");
+    var refs={gDaily:"chartDaily",gDOW:"chartDOW",gMonth:"chartMonth",gHour:"chartHour",gDOWPed:"chartDOWPed",gTopLojas:"chartTopLojas",gLiqMes:"chartLiqMes"};
+    if(window[refs[canvasId]]){ window[refs[canvasId]].destroy(); window[refs[canvasId]]=null; }
+
+    var dataVals;
+    if(mode==="avg"){
+      if(canvasId==="gDaily"){
+        var sumT=totals.reduce((a,b)=>a+b,0), n=labels.length||1, avg=sumT/(n||1);
+        dataVals = labels.map(()=>avg);
+      }else if(countsOpt){ dataVals = totals.map((v,i)=> (countsOpt[i]>0? v/countsOpt[i] : 0)); }
+      else dataVals = totals.slice();
+    }else dataVals = totals.slice();
+
+    var datasets=[];
+    if(prevPack){
+      var prevData = makePrevSeries(labels, dataVals, prevPack, mode, countsOpt);
+      if(prevData){
+        datasets.push({
+          type:"line", label:"Período anterior", data:prevData.totals,
+          borderColor:"rgba(0,0,0,0.30)", backgroundColor:"rgba(0,0,0,0.08)",
+          pointRadius:0, tension:0.25, fill:true, order:0
+        });
+      }
+    }
+    datasets.push({type:baseType, label:(mode==="avg"?"Média":"Total"), data:dataVals, order:1});
+
+    var c=new window.Chart(ctx,{type:baseType,data:{labels:labels,datasets:datasets},
+      options:{responsive:true,maintainAspectRatio:false,animation:false,scales:{y:{beginAtZero:true}},plugins:{legend:{display:false}}}});
+    window[refs[canvasId]]=c;
+  }
+
+  /* toggles */
+  document.querySelectorAll(".segSwitch").forEach(sw=>{
+    sw.addEventListener("click",(e)=>{
+      if(e.target.tagName!=="BUTTON") return;
+      sw.querySelectorAll("button").forEach(b=>b.classList.remove("active"));
+      e.target.classList.add("active");
+      drawOne(sw.getAttribute("data-target"), e.target.getAttribute("data-mode"));
+    });
+  });
+
+  var _lastRows=[], _lastRowsPrev=[], _lastTop10=[];
+  function alignTo(labels, pack){ if(!pack||!pack.labels) return {totals:new Array(labels.length).fill(0), counts:null}; var map={}; pack.labels.forEach((lb,i)=> map[lb]=i); var out=labels.map(lb=> pack.totals[ map[lb] ] ?? 0); var cts=pack.counts? labels.map(lb=> pack.counts[ map[lb] ] ?? 0):null; return {totals:out, counts:cts}; }
+  function distinctDays(rows){ var s=new Set(); rows.forEach(r=>s.add(r.dia)); return Array.from(s); }
+
+  function drawOne(target, mode){
+    if(target==="gDaily"){
+      var d=groupDaily(_lastRows), p=groupDaily(_lastRowsPrev);
+      renderChart("gDaily","line", d.labels, d.totals, mode, null, {labels:d.labels, totals:alignTo(d.labels,p).totals});
+    }
+    if(target==="gDOW"){
+      var w=groupDOW(_lastRows), pw=groupDOW(_lastRowsPrev);
+      renderChart("gDOW","bar", w.labels, w.totals, mode, w.counts, {labels:w.labels, totals:pw.totals, counts:pw.counts});
+    }
+    if(target==="gMonth"){
+      var m=groupMonth(_lastRows), pm=groupMonth(_lastRowsPrev);
+      renderChart("gMonth","bar", m.labels, m.totals, mode, m.counts, {labels:m.labels, totals:pm.totals, counts:pm.counts});
+    }
+    if(target==="gHour" && schema.hora){
+      var h=groupHour(_lastRows), ph=groupHour(_lastRowsPrev);
+      renderChart("gHour","bar", h.labels, h.totals, mode, h.counts, {labels:h.labels, totals:alignTo(h.labels,ph).totals, counts:alignTo(h.labels,ph).counts});
+    }
+    if(target==="gDOWPed"){
+      var wP=groupDOWMetric(_lastRows,"pedidos"), pwP=groupDOWMetric(_lastRowsPrev,"pedidos");
+      renderChart("gDOWPed","bar", wP.labels, wP.totals, mode, wP.counts, {labels:wP.labels, totals:pwP.totals, counts:pwP.counts});
+    }
+    if(target==="gTopLojas"){
+      var col=keyLoja(), labels=_lastTop10.slice();
+      var curTotals=labels.map(lj=> sum(_lastRows.filter(r=>String(r[col]||"")===lj),"fat"));
+      var prevTotals=labels.map(lj=> sum(_lastRowsPrev.filter(r=>String(r[col]||"")===lj),"fat"));
+      var dcur=distinctDays(_lastRows).length||1, dprev=distinctDays(_lastRowsPrev).length||1;
+      renderChart("gTopLojas","bar", labels, curTotals, mode, labels.map(()=>dcur), {labels:labels, totals:prevTotals, counts:labels.map(()=>dprev)});
+    }
+    if(target==="gLiqMes"){
+      var lm=groupMonthLiq(_lastRows), plm=groupMonthLiq(_lastRowsPrev);
+      renderChart("gLiqMes","line", lm.labels, lm.totals, mode, lm.counts, {labels:lm.labels, totals:plm.totals, counts:plm.counts});
+    }
+  }
+  function drawAll(){ ["gDaily","gDOW","gMonth","gHour","gDOWPed","gTopLojas","gLiqMes"].forEach(id=>{ var sw=document.querySelector('.segSwitch[data-target="'+id+'"]'); var mode=sw&&sw.querySelector(".active")?sw.querySelector(".active").dataset.mode:"total"; drawOne(id,mode); }); }
+
+  /* bounds + recarga */
+  function validateInputsOrWarn(){
+    if(!dataMinISO||!dataMaxISO) return true;
+    var ps=getDateFromInput(dini), pe=getDateFromInput(dfim); if(ps&&pe){ var min=new Date(dataMinISO+"T00:00:00Z"), max=new Date(dataMaxISO+"T00:00:00Z"); if(ps<min) ps=min; if(pe>max) pe=max; if(ps>pe){ log("[Erro] 'De' > 'Até'"); return false; } setDateInput(dini,toISO(ps)); setDateInput(dfim,toISO(pe)); }
+    return true;
+  }
+  function updateSummaryHint(){ var pr=prapido.value?prapido.value+"d":"—"; var uni=selUni.value||"Todas"; var nj=lojaSelSet.size; sumHint.textContent="Unidade: "+uni+" • PR: "+pr+" • Lojas: "+(nj>0?nj:"todas"); }
+
+  async function recarregar(){
+    const myRun=++runId;
+    try{
+      if(!dataMaxISO||!dataMinISO){ await refreshBounds(selUni.value||"Todas"); if(!dataMaxISO||!dataMinISO){ elPeriodo.textContent="Período: —"; return; } }
+      if(!validateInputsOrWarn()) return;
+
+      var ps=getDateFromInput(dini), pe=getDateFromInput(dfim), s,e;
+      if(ps&&pe){ s=ps; e=pe; }
+      else{ e=new Date(dataMaxISO+"T00:00:00Z"); s=addDays(e,-29); var minDate=new Date(dataMinISO+"T00:00:00Z"); if(s<minDate) s=minDate; setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e)); }
+      var startISO=toISO(s), endISO=toISO(e);
+
+      var daysLen=Math.max(1,Math.round((e-s)/(24*3600*1000))+1);
+      var prevEnd=addDays(s,-1), prevStart=addDays(prevEnd,-(daysLen-1));
+      var prevStartISO=toISO(prevStart), prevEndISO=toISO(prevEnd); var prevDaysLen=daysLen;
+
+      elPeriodo.textContent="Período: "+startISO+" → "+endISO+" (âncora: "+dataMaxISO+")";
+      var uniVal=selUni.value||"Todas";
+
+      // base atual sem filtro de loja (para Top10)
+      var baseCur=await fetchPaged(startISO,endISO,uniVal==="Todas"?null:uniVal,{skipLoja:true}); if(myRun!==runId) return;
+      var curDOW=applyDOWClient(baseCur);
+
+      // Top10 lojas reais
+      var top10=top10LojasByFat(curDOW); renderLojaChips(top10); _lastTop10=top10.slice();
+
+      // aplica loja no cliente se alias; se coluna real, filtraremos agora no cliente com base na seleção
+      var curRows = lojaAliasUnidade? applyLojaClientIfAlias(curDOW) : (getSelectedLojas().length? curDOW.filter(r=> getSelectedLojas().includes(String(r[schema.loja]||"")) ): curDOW);
+
+      // período anterior
+      var basePrev=await fetchPaged(prevStartISO,prevEndISO,uniVal==="Todas"?null:uniVal,{skipLoja:false}); if(myRun!==runId) return;
+      var prevDOW=applyDOWClient(basePrev);
+      var prevRows = lojaAliasUnidade? applyLojaClientIfAlias(prevDOW) : (getSelectedLojas().length? prevDOW.filter(r=> getSelectedLojas().includes(String(r[schema.loja]||"")) ): prevDOW);
+
+      _lastRows=curRows.slice(); _lastRowsPrev=prevRows.slice();
+
+      updateKPIs(curRows, prevRows, daysLen, prevDaysLen);
+      drawAll();
+      updateSummaryHint();
+    }catch(e){ if(myRun!==runId) return; console.error(e); log("[ERRO] "+(e.message||String(e))); }
+  }
+  var recarregarDebounced=debounce(recarregar,120);
+
+  async function refreshFilterOptions(startISO,endISO,unidade){
+    var tasks=[]; if(schema.turno) tasks.push(loadDistinct(schema.turno,document.getElementById("turno"),startISO,endISO,unidade));
+    if(schema.canal) tasks.push(loadDistinct(schema.canal,document.getElementById("canal"),startISO,endISO,unidade));
+    if(schema.pagamento) tasks.push(loadDistinct(schema.pagamento,document.getElementById("pagto"),startISO,endISO,unidade));
+    await Promise.all(tasks);
+  }
+  function updateSummaryOnChange(){ touchFilters(); recarregarDebounced(); }
+
+  /* Boot */
+  async function boot(){
+    log("[Boot] v17.2-MV-paged-fix3 — loja='Nome da Loja', sombra e KPI suaves");
+    var opts=await fetchUnidades(); selUni.innerHTML=""; opts.forEach(u=>{ var o=document.createElement("option"); o.value=u; o.textContent=u; selUni.appendChild(o); }); selUni.value="Todas";
+    await refreshBounds("Todas"); await inspectSchema("Todas");
+    if(dataMaxISO&&dataMinISO){ var e=new Date(dataMaxISO+"T00:00:00Z"), s=addDays(e,-29); var minDate=new Date(dataMinISO+"T00:00:00Z"); if(s<minDate) s=minDate; setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e)); }
+    if(dataMaxISO&&dataMinISO){ await refreshFilterOptions(dini.value,dfim.value,selUni.value); }
+    updateSummaryHint(); recarregar();
+  }
+
+  /* Eventos */
+  prapido.addEventListener("change",async function(){
+    if(!prapido.value) return;
+    if(!dataMaxISO||!dataMinISO){ await refreshBounds(selUni.value||"Todas"); if(!dataMaxISO) return; }
+    var d=Number(prapido.value), e=new Date(dataMaxISO+"T00:00:00Z"), s=addDays(e,-(d-1));
+    var minDate=new Date(dataMinISO+"T00:00:00Z"); if(s<minDate) s=minDate;
+    setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e));
+    await refreshFilterOptions(dini.value, dfim.value, selUni.value);
+    updateSummaryOnChange();
+  });
+  [dini,dfim].forEach(el=>el.addEventListener("change",async function(){
+    prapido.value=""; await refreshFilterOptions(dini.value, dfim.value, selUni.value); updateSummaryOnChange();
+  }));
+  selUni.addEventListener("change",async function(){
+    await refreshBounds(selUni.value||"Todas"); await inspectSchema(selUni.value||"Todas");
+    var d=Number(prapido.value||30);
+    if(dataMaxISO&&dataMinISO){ var e=new Date(dataMaxISO+"T00:00:00Z"), s=addDays(e,-(d-1)); var minDate=new Date(dataMinISO+"T00:00:00Z"); if(s<minDate) s=minDate; setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e)); await refreshFilterOptions(dini.value, dfim.value, selUni.value); }
+    updateSummaryOnChange();
+  });
+  [selDOW,selTurno,selCanal,selPagto,selCanc].forEach(function(el){ if(!el) return; el.addEventListener("change",updateSummaryOnChange); });
+  document.getElementById("limpar").addEventListener("click",async function(){
+    fltBox.open=true; selUni.value="Todas"; prapido.value="30"; selDOW.value="todos";
+    if(selTurno) selTurno.value="todos"; if(selCanal) selCanal.value="todos"; if(selPagto) selPagto.value="todos"; if(selCanc) selCanc.value="todos";
+    lojaSelSet.clear();
+    await refreshBounds("Todas");
+    if(dataMaxISO&&dataMinISO){ var e=new Date(dataMaxISO+"T00:00:00Z"), s=addDays(e,-29); var minDate=new Date(dataMinISO+"T00:00:00Z"); if(s<minDate) s=minDate; setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e)); await refreshFilterOptions(dini.value, dfim.value, selUni.value); }
+    updateSummaryHint(); recarregarDebounced();
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>
