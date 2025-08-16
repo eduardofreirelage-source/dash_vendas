@@ -1,395 +1,340 @@
 <!doctype html>
 <html lang="pt-BR">
-  <head>
-    <meta charset="utf-8" />
-    <title>Dashboard Vendas — v17.2.3 (KPIs corretos + sem infinito)</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      :root{--bg:#f6f7fb;--ink:#0f172a;--muted:#6b7280;--card:#fff;--line:#e5e7eb}
-      *{box-sizing:border-box}
-      body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
-      .wrap{max-width:1080px;margin:24px auto;padding:0 16px}
-      h1{font-size:22px;margin:0 0 4px}
-      .muted{color:var(--muted);font-size:12px}
-      .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
-      .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:12px}
-      .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-      .title{font-size:12px;color:var(--muted)}
-      .val{font-size:22px;font-weight:700;margin-top:4px}
-      .delta{font-size:12px;margin-top:2px}
-      .delta.up{color:#059669}.delta.down{color:#dc2626}
-      .controls label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
-      select,input,button{height:34px;border:1px solid var(--line);border-radius:8px;padding:0 10px;background:#fff}
-      button{cursor:pointer}
-      .btn{background:#111827;color:#fff;border:none}
-      .badge{display:inline-block;padding:4px 8px;border:1px solid var(--line);border-radius:999px;font-size:12px;cursor:pointer;background:#fff}
-      .badge.active{background:#111827;color:#fff;border-color:#111827}
-      pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
-      canvas{width:100%;height:320px}
-      @media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-      @media (max-width:520px){.grid{grid-template-columns:1fr}}
-    </style>
-    <!-- Supabase UMD -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-    <!-- Chart.js (estável e sem CORS) -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  </head>
-  <body>
-    <div class="wrap">
-      <div class="row" style="justify-content:space-between;align-items:flex-end">
-        <div>
-          <h1>Dashboard Vendas — Supabase</h1>
-          <div class="muted" id="src">Fonte: public.vendas_kpi_daily_v2</div>
-          <div class="muted" id="periodo">Período: —</div>
-        </div>
-        <div class="muted" id="diag">—</div>
+<head>
+  <meta charset="utf-8" />
+  <title>Dashboard Vendas — v17.2.4-fix (KPIs corretos + gráfico estável)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{--bg:#f6f7fb;--ink:#0f172a;--muted:#6b7280;--card:#fff;--line:#e5e7eb}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
+    .wrap{max-width:1080px;margin:24px auto;padding:0 16px}
+    h1{font-size:22px;margin:0 0 4px}
+    .muted{color:var(--muted);font-size:12px}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:12px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+    .title{font-size:12px;color:var(--muted)}
+    .val{font-size:22px;font-weight:700;margin-top:4px}
+    .delta{font-size:12px;margin-top:2px}
+    .delta.up{color:#059669}.delta.down{color:#dc2626}
+    .controls label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+    select,input,button{height:34px;border:1px solid var(--line);border-radius:8px;padding:0 10px;background:#fff}
+    button{cursor:pointer}
+    .btn{background:#111827;color:#fff;border:none}
+    .badge{display:inline-block;padding:4px 8px;border:1px solid var(--line);border-radius:999px;font-size:12px;cursor:pointer;background:#fff}
+    .badge.active{background:#111827;color:#fff;border-color:#111827}
+    pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
+    /* segura a altura dos gráficos para não “crescer” */
+    .chart-box{height:320px}
+    .chart-box canvas{width:100%;height:100%}
+    @media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media (max-width:520px){.grid{grid-template-columns:1fr}}
+  </style>
+  <!-- Supabase UMD -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <!-- Chart.js (estável) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="row" style="justify-content:space-between;align-items:flex-end">
+      <div>
+        <h1>Dashboard Vendas — Supabase</h1>
+        <div class="muted" id="src">Fonte: public.vendas_kpi_daily_v2</div>
+        <div class="muted" id="periodo">Período: —</div>
       </div>
-
-      <!-- Filtros essenciais (sem regressão) -->
-      <div class="card controls" style="margin-top:12px">
-        <div class="row">
-          <div>
-            <label>Unidade</label>
-            <select id="f_unidade"></select>
-          </div>
-          <div>
-            <label>Período rápido (dias)</label>
-            <div class="row" id="quick">
-              <span class="badge" data-d="7">7</span>
-              <span class="badge" data-d="15">15</span>
-              <span class="badge" data-d="30">30</span>
-              <span class="badge" data-d="90">90</span>
-              <span class="badge" data-d="180">180</span>
-              <span class="badge" data-d="360">360</span>
-            </div>
-          </div>
-          <div>
-            <label>De (dd/mm/aaaa)</label>
-            <input id="f_de" placeholder="dd/mm/aaaa" />
-          </div>
-          <div>
-            <label>Até (dd/mm/aaaa)</label>
-            <input id="f_ate" placeholder="dd/mm/aaaa" />
-          </div>
-          <div>
-            <label>Modo de Faturamento</label>
-            <select id="f_modo">
-              <option value="bruto">Total (bruto)</option>
-              <option value="liquido">Líquido (Total − Entrega)</option>
-            </select>
-          </div>
-          <div class="row" style="gap:8px">
-            <button class="btn" id="btn_aplicar">Aplicar</button>
-            <button id="btn_limpar">Limpar filtros</button>
-            <button id="btn_reload">Recarregar</button>
-          </div>
-        </div>
-        <div class="muted" style="margin-top:6px">Se preencher as datas, o período rápido é ignorado.</div>
-      </div>
-
-      <!-- KPIs -->
-      <div class="grid">
-        <div class="card"><div class="title">Pedidos</div><div class="val" id="k_ped">—</div><div class="delta" id="d_ped">—</div></div>
-        <div class="card"><div class="title">Faturamento</div><div class="val" id="k_fat">—</div><div class="delta" id="d_fat">—</div></div>
-        <div class="card"><div class="title">Incentivos</div><div class="val" id="k_des">—</div><div class="delta" id="d_des">—</div></div>
-        <div class="card"><div class="title">Frete</div><div class="val" id="k_fre">—</div><div class="delta" id="d_fre">—</div></div>
-      </div>
-
-      <!-- Gráficos -->
-      <div class="card" style="margin-top:12px">
-        <div class="title">Receita diária (R$)</div>
-        <canvas id="c_line"></canvas>
-      </div>
-      <div class="card" style="margin-top:12px">
-        <div class="title">Totais por dia da semana (R$)</div>
-        <canvas id="c_bar"></canvas>
-      </div>
-
-      <!-- Logs -->
-      <div class="card" style="margin-top:12px">
-        <div class="title">Status / Logs</div>
-        <pre id="log">Iniciando…</pre>
-      </div>
+      <div class="muted" id="diag">—</div>
     </div>
 
-    <script>
-      // ====== CREDENCIAIS ======
-      const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-      const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-      const TABLE = "vendas_kpi_daily_v2";
+    <!-- Filtros (sem retrocesso) -->
+    <div class="card controls" style="margin-top:12px">
+      <div class="row">
+        <div>
+          <label>Unidade</label>
+          <select id="f_unidade"></select>
+        </div>
+        <div>
+          <label>Período rápido (dias)</label>
+          <div class="row" id="quick">
+            <span class="badge" data-d="7">7</span>
+            <span class="badge" data-d="15">15</span>
+            <span class="badge" data-d="30">30</span>
+            <span class="badge" data-d="90">90</span>
+            <span class="badge" data-d="180">180</span>
+            <span class="badge" data-d="360">360</span>
+          </div>
+        </div>
+        <div>
+          <label>De (dd/mm/aaaa)</label>
+          <input id="f_de" placeholder="dd/mm/aaaa" />
+        </div>
+        <div>
+          <label>Até (dd/mm/aaaa)</label>
+          <input id="f_ate" placeholder="dd/mm/aaaa" />
+        </div>
+        <div>
+          <label>Modo de Faturamento</label>
+          <select id="f_modo">
+            <option value="bruto">Total (bruto)</option>
+            <option value="liquido">Líquido (Total − Entrega)</option>
+          </select>
+        </div>
+        <div class="row" style="gap:8px">
+          <button class="btn" id="btn_aplicar">Aplicar</button>
+          <button id="btn_limpar">Limpar filtros</button>
+          <button id="btn_reload">Recarregar</button>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:6px">Se preencher as datas, o período rápido é ignorado.</div>
+    </div>
 
-      // ====== UI helpers ======
-      const $ = (id)=>document.getElementById(id);
-      const elLog = $("log");
-      function log(m){ elLog.textContent += "\\n"+m; }
-      const nfBRL = new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"});
-      const nfInt = new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0});
-      const nfPct = new Intl.NumberFormat("pt-BR",{style:"percent",maximumFractionDigits:1});
+    <!-- KPIs -->
+    <div class="grid">
+      <div class="card"><div class="title">Pedidos</div><div class="val" id="k_ped">—</div><div class="delta" id="d_ped">—</div></div>
+      <div class="card"><div class="title">Faturamento</div><div class="val" id="k_fat">—</div><div class="delta" id="d_fat">—</div></div>
+      <div class="card"><div class="title">Incentivos</div><div class="val" id="k_des">—</div><div class="delta" id="d_des">—</div></div>
+      <div class="card"><div class="title">Frete</div><div class="val" id="k_fre">—</div><div class="delta" id="d_fre">—</div></div>
+    </div>
 
-      function fmtBRL(n){ return nfBRL.format(Number(n)||0); }
-      function fmtInt(n){ return nfInt.format(Math.round(Number(n)||0)); }
-      function pct(a,b){
-        if(b===0||b===null||b===undefined) return 0;
-        return (a-b)/b;
-      }
-      function toISO(d){ return d.toISOString().slice(0,10); }
-      function parseBRDate(s){ // dd/mm/aaaa -> yyyy-mm-dd
-        const m = String(s||"").trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-        if(!m) return null;
-        return `${m[3]}-${m[2]}-${m[1]}`;
-      }
-      function formatBR(iso){ // yyyy-mm-dd -> dd/mm/aaaa
-        return `${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(0,4)}`;
-      }
-      function addDays(iso, delta){
-        const d = new Date(iso+"T00:00:00");
-        d.setDate(d.getDate()+delta);
-        return toISO(d);
-      }
-      function sameDaySpan(fromISO,toISO){
-        const ms = (new Date(toISO+"T00:00:00")-new Date(fromISO+"T00:00:00"));
-        return Math.floor(ms/86400000)+1;
-      }
-      function prevWindow(fromISO,toISO){
-        const span = sameDaySpan(fromISO,toISO);
-        const prevTo = addDays(fromISO,-1);
-        const prevFrom = addDays(prevTo,-(span-1));
-        return {prevFrom, prevTo, span};
-      }
+    <!-- Gráficos -->
+    <div class="card chart-box" style="margin-top:12px">
+      <div class="title">Receita diária (R$)</div>
+      <canvas id="c_line"></canvas>
+    </div>
+    <div class="card chart-box" style="margin-top:12px">
+      <div class="title">Totais por dia da semana (R$)</div>
+      <canvas id="c_bar"></canvas>
+    </div>
 
-      // ====== Supabase ======
-      const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+    <!-- Logs -->
+    <div class="card" style="margin-top:12px">
+      <div class="title">Status / Logs</div>
+      <pre id="log">Iniciando…</pre>
+    </div>
+  </div>
 
-      async function getLastDia(){
-        // ORDER by dia desc limit 1 (há índice em dia)
-        const r = await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
-        if(r.error) throw r.error;
-        const v = r.data && r.data[0] && r.data[0].dia;
-        if(!v) throw new Error("Sem 'dia' na view.");
-        return String(v).slice(0,10);
+  <script>
+    // ===== CREDENCIAIS =====
+    const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+    const TABLE = "vendas_kpi_daily_v2";
+
+    // ===== UI helpers =====
+    const $ = (id)=>document.getElementById(id);
+    const elLog = $("log");
+    function log(m){ elLog.textContent += "\\n"+m; }
+    const nfBRL = new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"});
+    const nfInt = new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0});
+    const nfPct = new Intl.NumberFormat("pt-BR",{style:"percent",maximumFractionDigits:1});
+    const fmtBRL = n => nfBRL.format(Number(n)||0);
+    const fmtInt = n => nfInt.format(Math.round(Number(n)||0));
+    const toISO = d => d.toISOString().slice(0,10);
+    const parseBR = s => { const m=(s||"").trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m?`${m[3]}-${m[2]}-${m[1]}`:null; }
+    const addDays = (iso,dx)=>{ const d=new Date(iso+"T00:00:00"); d.setDate(d.getDate()+dx); return toISO(d); }
+    const spanDays = (a,b)=> Math.floor((new Date(b)-new Date(a))/86400000)+1;
+    const prevWin = (a,b)=>{ const s=spanDays(a,b); const t=addDays(a,-1); return {from:addDays(t,-(s-1)), to:t, span:s}; }
+    const pct = (a,b)=> (b? (a-b)/b : 0);
+
+    // ===== Supabase =====
+    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+    async function getLastDia(){
+      const {data,error} = await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
+      if(error) throw error;
+      if(!data?.length) throw new Error("Sem dados em "+TABLE);
+      return String(data[0].dia).slice(0,10);
+    }
+
+    async function getUnidades(){
+      const {data,error} = await supa.from(TABLE).select("unidade").limit(5000);
+      if(error) throw error;
+      const set = new Set((data||[]).map(r=>r.unidade).filter(Boolean));
+      return ["Todas", ...Array.from(set).sort()];
+    }
+
+    async function fetchWindow(fromISO,toISO, unidade){
+      const page=2000; let off=0, out=[];
+      for(;;){
+        let q = supa.from(TABLE)
+          .select("dia,unidade,pedidos,fat,des,fre")
+          .gte("dia", fromISO).lte("dia", toISO)
+          .order("dia",{ascending:true})
+          .range(off, off+page-1);
+        if(unidade && unidade!=="Todas") q = q.eq("unidade", unidade);
+        const {data,error} = await q;
+        if(error) throw error;
+        out = out.concat(data||[]);
+        if(!data || data.length<page) break;
+        off += page;
       }
+      return out;
+    }
 
-      async function getUnidades(){
-        // carrega algumas linhas e extrai únicas no cliente (rápido)
-        const r = await supa.from(TABLE).select("unidade").limit(5000);
-        if(r.error) throw r.error;
-        const set = new Set((r.data||[]).map(x=>x.unidade).filter(Boolean));
-        return Array.from(set).sort();
+    function sumKPIs(rows, modo){
+      // Somatório direto das linhas (uma por combinação de dimensões) — sem duplicar
+      let ped=0,fat=0,des=0,fre=0;
+      for(const r of rows){
+        ped += Number(r.pedidos)||0;
+        fat += Number(r.fat)||0;
+        des += Number(r.des)||0;
+        fre += Number(r.fre)||0;
       }
+      return { ped, fat: (modo==="liquido" ? fat - fre : fat), des, fre };
+    }
 
-      async function fetchWindow(fromISO,toISO, unidade){
-        // paginação defensiva (2k por página)
-        const page = 2000;
-        let off = 0, acc = [];
-        for(;;){
-          let q = supa.from(TABLE)
-            .select("dia,unidade,pedidos,fat,des,fre")
-            .gte("dia", fromISO)
-            .lte("dia", toISO)
-            .order("dia",{ascending:true})
-            .range(off, off+page-1);
-          if(unidade && unidade!=="Todas") q = q.eq("unidade", unidade);
-
-          const r = await q;
-          if(r.error) throw r.error;
-          const arr = r.data||[];
-          acc = acc.concat(arr);
-          if(arr.length<page) break;
-          off += page;
-        }
-        return acc;
-      }
-
-      function sumKPIs(rows, modo){
-        let ped=0, fat=0, des=0, fre=0;
-        for(const r of rows){
-          ped += Number(r.pedidos)||0;
-          fat += Number(r.fat)||0;
-          des += Number(r.des)||0;
-          fre += Number(r.fre)||0;
-        }
-        return {
-          ped,
-          fat: (modo==="liquido"? (fat - fre) : fat),
-          des, fre
-        };
-      }
-
-      // ====== Charts (sem infinito) ======
-      let chartLine=null, chartBar=null;
-      function drawCharts(rows, modo){
-        const byDay = {};
-        for(const r of rows){
-          const k = String(r.dia).slice(0,10);
-          if(!byDay[k]) byDay[k]={fat:0, fre:0};
-          byDay[k].fat += Number(r.fat)||0;
-          byDay[k].fre += Number(r.fre)||0;
-        }
-        const labels = Object.keys(byDay).sort();
-        const vals = labels.map(d => modo==="liquido" ? (byDay[d].fat - byDay[d].fre) : byDay[d].fat);
-
-        const ctx1 = $("c_line").getContext("2d");
-        if(chartLine){ chartLine.destroy(); chartLine=null; }
-        chartLine = new Chart(ctx1, {
+    // ===== Charts: criar 1x e apenas atualizar =====
+    let chartLine=null, chartBar=null;
+    function ensureCharts(){
+      if(!chartLine){
+        chartLine = new Chart($("c_line").getContext("2d"), {
           type:"line",
-          data:{ labels, datasets:[{ label:"Receita diária (R$)", data: vals }] },
+          data:{ labels:[], datasets:[{label:"Receita diária (R$)", data:[]}] },
           options:{ responsive:true, maintainAspectRatio:false, animation:false,
-            interaction:{ mode:"index", intersect:false },
+            interaction:{mode:"index",intersect:false},
             scales:{ y:{ ticks:{ callback:v=>nfBRL.format(v) } } }
           }
         });
-
-        // semana
-        const dow = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
-        const week = [0,0,0,0,0,0,0];
-        for(const d of labels){
-          const day = new Date(d+"T00:00:00").getDay();
-          week[day] += vals[labels.indexOf(d)] || 0;
-        }
-        const ctx2 = $("c_bar").getContext("2d");
-        if(chartBar){ chartBar.destroy(); chartBar=null; }
-        chartBar = new Chart(ctx2, {
+      }
+      if(!chartBar){
+        chartBar = new Chart($("c_bar").getContext("2d"), {
           type:"bar",
-          data:{ labels:dow, datasets:[{ label:"Total por dia da semana (R$)", data:week }] },
+          data:{ labels:["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"], datasets:[{label:"Total por dia da semana (R$)", data:[0,0,0,0,0,0,0]}] },
           options:{ responsive:true, maintainAspectRatio:false, animation:false,
             scales:{ y:{ ticks:{ callback:v=>nfBRL.format(v) } } }
           }
         });
       }
-
-      // ====== Estado filtros ======
-      const state = {
-        unidade:"Todas",
-        modo:"bruto",
-        lastDia:null,
-        quick:30,
-        de:null, ate:null
-      };
-
-      function applyQuick(nDias){
-        state.quick = nDias;
-        state.de = null; state.ate = null;
-        for(const b of document.querySelectorAll("#quick .badge")) b.classList.toggle("active", Number(b.dataset.d)===nDias);
+    }
+    function updateCharts(rows, modo){
+      // Série diária
+      const byDay = new Map();
+      for(const r of rows){
+        const d = String(r.dia).slice(0,10);
+        const fat = Number(r.fat)||0, fre = Number(r.fre)||0;
+        byDay.set(d, (byDay.get(d)||0) + (modo==="liquido" ? (fat - fre) : fat));
       }
-      function readDateInputs(){
-        const de = parseBRDate($("f_de").value);
-        const ate = parseBRDate($("f_ate").value);
-        return {de, ate};
-      }
-      function setPeriodLabels(fromISO,toISO){
-        $("periodo").textContent = `Período: ${fromISO} → ${toISO}`;
-      }
-      function setKPIs(now, prev){
-        $("k_ped").textContent = fmtInt(now.ped);
-        $("k_fat").textContent = fmtBRL(now.fat);
-        $("k_des").textContent = fmtBRL(now.des);
-        $("k_fre").textContent = fmtBRL(now.fre);
+      const labels = Array.from(byDay.keys()).sort();
+      const values = labels.map(d=>byDay.get(d));
 
-        const deltas = [
-          ["d_ped", now.ped, prev.ped, v=>fmtInt(v)],
-          ["d_fat", now.fat, prev.fat, v=>fmtBRL(v)],
-          ["d_des", now.des, prev.des, v=>fmtBRL(v)],
-          ["d_fre", now.fre, prev.fre, v=>fmtBRL(v)],
-        ];
-        for(const [id,a,b,fmt] of deltas){
-          const p = pct(a,b);
-          const el = $(id);
-          if(b===0 || b==null){ el.textContent = "—"; el.className="delta"; continue; }
-          el.textContent = `${(p>=0?"+":"")}${nfPct.format(p)} • ant: ${fmt(b)}`;
-          el.className = "delta " + (p>=0? "up":"down");
+      ensureCharts();
+      chartLine.data.labels = labels;
+      chartLine.data.datasets[0].data = values;
+      chartLine.update();
+
+      // Semana
+      const week = [0,0,0,0,0,0,0];
+      for(let i=0;i<labels.length;i++){
+        const d = labels[i];
+        const v = values[i];
+        const dow = new Date(d+"T00:00:00").getDay();
+        week[dow] += v;
+      }
+      chartBar.data.datasets[0].data = week;
+      chartBar.update();
+    }
+
+    // ===== Estado / fluxo =====
+    const state = { lastDia:null, unidade:"Todas", modo:"bruto", quick:30, de:null, ate:null };
+    let currentReq = 0; // single-flight
+
+    function setPeriodText(a,b){ $("periodo").textContent = `Período: ${a} → ${b}`; }
+    function setKPIs(now, prev){
+      $("k_ped").textContent = fmtInt(now.ped);
+      $("k_fat").textContent = fmtBRL(now.fat);
+      $("k_des").textContent = fmtBRL(now.des);
+      $("k_fre").textContent = fmtBRL(now.fre);
+
+      const deltas = [
+        ["d_ped", now.ped, prev.ped, v=>fmtInt(v)],
+        ["d_fat", now.fat, prev.fat, v=>fmtBRL(v)],
+        ["d_des", now.des, prev.des, v=>fmtBRL(v)],
+        ["d_fre", now.fre, prev.fre, v=>fmtBRL(v)]
+      ];
+      for(const [id,a,b,fmt] of deltas){
+        const el=$(id);
+        if(!b){ el.textContent="—"; el.className="delta"; continue; }
+        const p=pct(a,b);
+        el.textContent = `${p>=0?"+":""}${(p*100).toFixed(1)}% • ant: ${fmt(b)}`;
+        el.className = "delta "+(p>=0?"up":"down");
+      }
+    }
+
+    function readDates(){
+      const d = parseBR($("f_de").value);
+      const a = parseBR($("f_ate").value);
+      return {de:d, ate:a};
+    }
+
+    async function recarregar(){
+      const rid = ++currentReq;
+      try{
+        let fromISO, toISO;
+        const {de,ate} = readDates();
+        if(de && ate){ fromISO=de; toISO=ate; }
+        else{ toISO=state.lastDia; fromISO=addDays(toISO, -(state.quick-1)); }
+        setPeriodText(fromISO,toISO);
+
+        log(`[Query] ${TABLE} | ${fromISO} → ${toISO} | UNI=${state.unidade} | modo=${state.modo}`);
+        const rowsNow = await fetchWindow(fromISO,toISO,state.unidade);
+        if(rid!==currentReq) return; // ignora resposta antiga
+
+        const {from:pf,to:pt} = prevWin(fromISO,toISO);
+        log(`[Query] anterior: ${pf} → ${pt}`);
+        const rowsPrev = await fetchWindow(pf,pt,state.unidade);
+        if(rid!==currentReq) return;
+
+        const now = sumKPIs(rowsNow, state.modo);
+        const prev = sumKPIs(rowsPrev, state.modo);
+        setKPIs(now, prev);
+        updateCharts(rowsNow, state.modo);
+
+        $("diag").textContent = "OK";
+      }catch(e){
+        $("diag").textContent="Erro";
+        log("[ERRO] "+(e.message||String(e)));
+      }
+    }
+
+    // ===== Boot =====
+    (async function boot(){
+      log("[Boot] v17.2.4-fix — KPIs sem duplicar • gráfico estável • última data como âncora");
+      try{
+        // popular unidades
+        const unidades = await getUnidades();
+        const sel = $("f_unidade");
+        sel.innerHTML = "";
+        for(const u of unidades){
+          const o=document.createElement("option"); o.value=u; o.textContent=u; sel.appendChild(o);
         }
-      }
+        sel.onchange = ()=>{ state.unidade = sel.value; recarregar(); };
 
-      let busy=false;
-      async function recarregar(){
-        if(busy) return;
-        busy=true;
-        try{
-          // Determina janela
-          let fromISO, toISO;
-          const {de, ate} = readDateInputs();
-          if(de && ate){
-            fromISO = de; toISO = ate;
-          }else{
-            const last = state.lastDia;
-            const span = state.quick || 30;
-            toISO = last;
-            fromISO = addDays(last, -(span-1));
-          }
-          setPeriodLabels(fromISO,toISO);
+        // modo
+        $("f_modo").onchange = (e)=>{ state.modo = e.target.value; recarregar(); };
 
-          // Carrega atual e anterior (sem misturar arrays!)
-          log(`[Query] ${TABLE} | ${fromISO} → ${toISO} | UNI=${state.unidade} | modo=${state.modo}`);
-          const [rowsNow] = await Promise.all([ fetchWindow(fromISO,toISO,state.unidade) ]);
-          const {prevFrom, prevTo} = prevWindow(fromISO,toISO);
-          log(`[Query] anterior: ${prevFrom} → ${prevTo}`);
-          const rowsPrev = await fetchWindow(prevFrom, prevTo, state.unidade);
-
-          // Somas
-          const now = sumKPIs(rowsNow, state.modo);
-          const prev = sumKPIs(rowsPrev, state.modo);
-          setKPIs(now, prev);
-
-          // Gráficos somente do período atual (evita “duplicar dias”)
-          drawCharts(rowsNow, state.modo);
-
-          $("diag").textContent = "OK";
-        }catch(e){
-          log("[ERRO] "+(e.message||String(e)));
-          $("diag").textContent = "Erro";
-        }finally{
-          busy=false;
+        // quick range
+        for(const b of document.querySelectorAll("#quick .badge")){
+          b.onclick = ()=>{ for(const x of b.parentElement.children) x.classList.remove("active"); b.classList.add("active"); state.quick=Number(b.dataset.d); $("f_de").value=""; $("f_ate").value=""; recarregar(); };
         }
+        // padrão 30d
+        document.querySelector('#quick .badge[data-d="30"]').classList.add("active");
+        state.quick = 30;
+
+        // aplicar / limpar / recarregar
+        $("btn_aplicar").onclick = ()=>{ state.de = parseBR($("f_de").value); state.ate = parseBR($("f_ate").value); recarregar(); };
+        $("btn_limpar").onclick = ()=>{ $("f_de").value=""; $("f_ate").value=""; state.de=null; state.ate=null; document.querySelector('#quick .badge[data-d="30"]').click(); };
+        $("btn_reload").onclick = ()=>recarregar();
+
+        // última data da base
+        state.lastDia = await getLastDia();
+        log("[Info] Última data: "+state.lastDia);
+
+        // primeira carga
+        await recarregar();
+      }catch(e){
+        log("[ERRO] "+(e.message||String(e)));
       }
-
-      // ====== Boot ======
-      (async function boot(){
-        log("[Boot] v17.2.3 — KPIs corrigidos; gráficos estáveis; última data como âncora");
-        try{
-          // popular unidades
-          const unidades = await getUnidades();
-          const sel = $("f_unidade");
-          sel.innerHTML = "";
-          const optAll = document.createElement("option");
-          optAll.value = "Todas"; optAll.textContent = "Todas";
-          sel.appendChild(optAll);
-          for(const u of unidades){
-            const o = document.createElement("option");
-            o.value = u; o.textContent = u;
-            sel.appendChild(o);
-          }
-          // última data disponível do banco
-          state.lastDia = await getLastDia();
-          log("[Info] Última data na base: "+state.lastDia);
-
-          // período rápido padrão = 30 dias
-          applyQuick(30);
-
-          // listeners (uma única vez)
-          sel.onchange = ()=>{ state.unidade = sel.value; recarregar(); };
-          $("f_modo").onchange = (e)=>{ state.modo = e.target.value; recarregar(); };
-          $("btn_aplicar").onclick = ()=>{
-            const {de, ate} = readDateInputs();
-            if(de && ate){ state.de = de; state.ate = ate; } else { state.de = state.ate = null; }
-            recarregar();
-          };
-          $("btn_limpar").onclick = ()=>{
-            $("f_de").value = ""; $("f_ate").value = "";
-            state.de = state.ate = null;
-            applyQuick(30);
-            recarregar();
-          };
-          $("btn_reload").onclick = ()=>recarregar();
-          for(const b of document.querySelectorAll("#quick .badge")){
-            b.onclick = ()=>{ applyQuick(Number(b.dataset.d)); recarregar(); };
-          }
-
-          // primeira carga
-          await recarregar();
-        }catch(e){
-          log("[ERRO] "+(e.message||String(e)));
-        }
-      })();
-    </script>
-  </body>
+    })();
+  </script>
+</body>
 </html>
