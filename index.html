@@ -2,10 +2,9 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3+kpi-order+charts-cfo)</title>
+  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3+media-real+loja-top10)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    /* ===== Base ===== */
     *,*::before,*::after{box-sizing:border-box}
     :root{--bg:#f6f7fb;--fg:#0f172a;--muted:#6b7280;--card:#fff;--brd:#e5e7eb;--up:#16a34a;--down:#dc2626}
     body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
@@ -15,7 +14,7 @@
     .card{background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
     pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
 
-    /* ===== Filtros: dropdown com grid fixo, sem encavalamento ===== */
+    /* Filtros dropdown */
     details.filtros{border:1px solid var(--brd);border-radius:12px;background:var(--card);overflow:hidden}
     details.filtros>summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;font-weight:600}
     details.filtros>summary::-webkit-details-marker{display:none}
@@ -26,19 +25,16 @@
     .seg{display:flex;flex-direction:column;gap:6px;min-width:0}
     .seg .lbl{font-size:12px;color:var(--muted)}
     select,input[type="date"]{font:inherit;padding:10px 12px;border:1px solid var(--brd);border-radius:10px;background:#fff;width:100%;min-height:40px}
+    /* multiselect loja fica mais alto por ser multiple */
+    #loja{min-height:120px}
     .rightBar{display:flex;gap:8px;align-items:center}
     .subtle{background:#fff;border:1px solid var(--brd);border-radius:10px;padding:8px 12px;cursor:pointer;opacity:.95}
     .subtle:hover{opacity:1}
-
-    /* Col spans (desktop fixo) */
-    .col-12{grid-column:span 12}.col-6{grid-column:span 6}.col-4{grid-column:span 4}
-    .col-3{grid-column:span 3}.col-2{grid-column:span 2}
-
-    /* Responsivo – sem sobreposição */
+    .col-12{grid-column:span 12}.col-6{grid-column:span 6}.col-4{grid-column:span 4}.col-3{grid-column:span 3}.col-2{grid-column:span 2}
     @media (max-width:980px){.grid12{grid-template-columns:repeat(6,minmax(0,1fr))}}
     @media (max-width:560px){.grid12{grid-template-columns:repeat(1,minmax(0,1fr))}.col-12,.col-6,.col-4,.col-3,.col-2{grid-column:span 1}}
 
-    /* ===== KPIs ===== */
+    /* KPIs */
     .krow{display:grid;gap:12px;margin-top:12px}
     .krow.two{grid-template-columns:repeat(2,minmax(0,1fr))}
     .krow.four{grid-template-columns:repeat(4,minmax(0,1fr))}
@@ -51,7 +47,7 @@
     .badge{font-size:12px;font-weight:700;white-space:nowrap}
     .badge.up{color:var(--up)} .badge.down{color:var(--down)} .badge.flat{color:var(--muted)}
 
-    /* ===== Charts ===== */
+    /* Charts */
     .chartbox{position:relative;height:280px;width:100%}
     .ctop{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
     .segSwitch{display:inline-flex;border:1px solid var(--brd);border-radius:10px;overflow:hidden}
@@ -86,11 +82,15 @@
         </div>
       </summary>
       <div class="fbody">
-        <!-- Linha 1: Unidade -->
+        <!-- Linha 1: Unidade (6) + Nome da loja (6, múltipla escolha, top 10) -->
         <div class="grid12">
-          <div class="seg col-12">
+          <div class="seg col-6">
             <span class="lbl">Unidade</span>
             <select id="uni"></select>
+          </div>
+          <div class="seg col-6 hidden" id="segLoja">
+            <span class="lbl">Nome da loja (Top 10 por faturamento)</span>
+            <select id="loja" multiple></select>
           </div>
         </div>
 
@@ -125,26 +125,21 @@
           </div>
         </div>
 
-        <div class="muted" style="margin-top:8px">Datas limitadas ao intervalo existente (ancoradas no último dia disponível por Unidade).</div>
+        <div class="muted" style="margin-top:8px">Datas limitadas ao intervalo existente (âncora: último dia disponível).</div>
       </div>
     </details>
 
-    <!-- ===== KPIs ===== -->
-    <!-- 1) Pedidos + Ticket (metade/metade) -->
+    <!-- ===== KPIs (mesma ordem aprovada) ===== -->
     <div class="krow two">
       <div class="card kcard"><div class="khead"><div class="title">Pedidos</div><div class="badge" id="k_ped_badge">—</div></div><div class="val" id="k_ped_val">…</div><div class="muted sub" id="k_ped_sub">—</div></div>
       <div class="card kcard"><div class="khead"><div class="title">Ticket médio</div><div class="badge" id="k_ticket_badge">—</div></div><div class="val" id="k_ticket_val">…</div><div class="muted sub" id="k_ticket_sub">—</div></div>
     </div>
-
-    <!-- 2) Faturamento, Faturamento médio, Faturamento líquido, Faturamento líquido % -->
     <div class="krow four">
       <div class="card kcard"><div class="khead"><div class="title">Faturamento</div><div class="badge" id="k_fat_badge">—</div></div><div class="val" id="k_fat_val">…</div><div class="muted sub" id="k_fat_sub">—</div></div>
       <div class="card kcard"><div class="khead"><div class="title">Faturamento médio (por dia)</div><div class="badge" id="k_fat_med_badge">—</div></div><div class="val" id="k_fat_med_val">…</div><div class="muted sub" id="k_fat_med_sub">—</div></div>
       <div class="card kcard"><div class="khead"><div class="title">Faturamento líquido</div><div class="badge" id="k_fatliq_badge">—</div></div><div class="val" id="k_fatliq_val">…</div><div class="muted sub" id="k_fatliq_sub">—</div></div>
       <div class="card kcard"><div class="khead"><div class="title">Faturamento líquido %</div><div class="badge" id="k_fatliq_pct_badge">—</div></div><div class="val" id="k_fatliq_pct_val">…</div><div class="muted sub" id="k_fatliq_pct_sub">—</div></div>
     </div>
-
-    <!-- 3) Incentivos, Incentivos %, Frete, Frete médio -->
     <div class="krow four">
       <div class="card kcard"><div class="khead"><div class="title">Incentivos</div><div class="badge" id="k_des_badge">—</div></div><div class="val" id="k_des_val">…</div><div class="muted sub" id="k_des_sub">—</div></div>
       <div class="card kcard"><div class="khead"><div class="title">Incentivos %</div><div class="badge" id="k_des_pct_badge">—</div></div><div class="val" id="k_des_pct_val">…</div><div class="muted sub" id="k_des_pct_sub">—</div></div>
@@ -152,13 +147,13 @@
       <div class="card kcard"><div class="khead"><div class="title">Frete médio</div><div class="badge" id="k_fre_med_badge">—</div></div><div class="val" id="k_fre_med_val">…</div><div class="muted sub" id="k_fre_med_sub">—</div></div>
     </div>
 
-    <!-- ===== Gráficos (CFO) ===== -->
+    <!-- ===== Gráficos (com Total ⇄ Média) ===== -->
     <div class="card" style="margin-top:12px">
       <div class="ctop">
         <div class="title">Receita diária</div>
         <div class="segSwitch" data-target="gDaily">
           <button data-mode="total" class="active">Total</button>
-          <button data-mode="avg">Média (7d)</button>
+          <button data-mode="avg">Média (período)</button>
         </div>
       </div>
       <div class="chartbox"><canvas id="gDaily"></canvas></div>
@@ -207,20 +202,19 @@
 <script>
 (function(){
   if (window.__DASH_BOOTED__) return; window.__DASH_BOOTED__ = true;
-  /* ===== Credenciais ===== */
+
   var SUPABASE_URL="https://uahmcfzerofhzjvlzrqc.supabase.co";
   var SUPABASE_ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
   var TABLE="vendas_kpi_daily_v2";
 
-  /* ===== UI refs ===== */
   var elLog=document.getElementById("log"), elPeriodo=document.getElementById("periodo"), elLimites=document.getElementById("limites"), sumHint=document.getElementById("sumHint");
   var fltBox=document.getElementById("fltBox");
   var selUni=document.getElementById("uni"), dini=document.getElementById("dini"), dfim=document.getElementById("dfim"), prapido=document.getElementById("prapido"), selDOW=document.getElementById("dow");
   var segTurno=document.getElementById("segTurno"), segCanal=document.getElementById("segCanal"), segPagto=document.getElementById("segPagto"), segCanc=document.getElementById("segCanc");
   var selTurno=document.getElementById("turno"), selCanal=document.getElementById("canal"), selPagto=document.getElementById("pagto"), selCanc=document.getElementById("canc");
+  var segLoja=document.getElementById("segLoja"), selLoja=document.getElementById("loja");
   var hourCard=document.getElementById("hourCard");
 
-  /* ===== Helpers ===== */
   function log(s){ elLog.textContent+="\n"+s; }
   function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
   function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)); }
@@ -235,34 +229,27 @@
   var collapse=debounce(function(){ fltBox.open=false; },800);
   function touchFilters(){ updateSummaryHint(); collapse(); }
 
-  /* ===== Supabase ===== */
   var supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON,{auth:{persistSession:false}});
 
-  /* ===== Estado ===== */
-  var chartDaily=null, chartDOW=null, chartMonth=null, chartHour=null, runId=0, drawing=false, dataMinISO=null, dataMaxISO=null;
-  var schema={ turno:null, canal:null, pagamento:null, cancelado:null, cancelType:null, hora:null };
-  var lastRows=[]; // mantém última amostra para re-render de charts (Total/Média)
+  var chartDaily=null, chartDOW=null, chartMonth=null, chartHour=null, runId=0, dataMinISO=null, dataMaxISO=null;
+  var schema={ turno:null, canal:null, pagamento:null, cancelado:null, cancelType:null, hora:null, loja:null };
 
-  /* ===== Query paginada ===== */
-  function buildSelect(){ // seleciona somente colunas existentes
+  // ===== build select dinâmico =====
+  function buildSelect(){
     var base="dia,unidade,pedidos,fat,des,fre";
-    if(schema.hora) base += ","+schema.hora;
+    if(schema.hora) base+=","+schema.hora;
+    if(schema.loja) base+=","+schema.loja;
     return base;
   }
-  async function fetchPaged(startISO,endISO,unidade){
-    var page=1000,off=0,out=[];
-    for(;;){
-      var q=supa.from(TABLE).select(buildSelect()).gte("dia",startISO).lte("dia",endISO).order("dia",{ascending:true}).range(off,off+page-1);
-      if(unidade && unidade!=="Todas") q=q.eq("unidade",unidade);
-      q=applyServerFilters(q);
-      var r=await q; if(r.error) throw r.error;
-      var a=r.data||[]; out=out.concat(a);
-      if(a.length<page) break; off+=page;
-      if(off>500000){ log("[Warn] abortado por salvaguarda de paginação."); break; }
-    }
-    return out;
+
+  // ===== filtros server-side (com opção de pular loja p/ montar Top10) =====
+  function getSelectedLojas(){
+    if(!schema.loja) return [];
+    var vals=[...selLoja.options].filter(o=>o.selected).map(o=>o.value).filter(Boolean);
+    return vals;
   }
-  function applyServerFilters(q){
+  function applyServerFilters(q, opts){
+    opts=opts||{};
     if(schema.turno && selTurno.value!=="todos") q=q.eq(schema.turno,selTurno.value);
     if(schema.canal && selCanal.value!=="todos") q=q.eq(schema.canal,selCanal.value);
     if(schema.pagamento && selPagto.value!=="todos") q=q.eq(schema.pagamento,selPagto.value);
@@ -271,20 +258,36 @@
       if(schema.cancelType==="bool"){ q=q.eq(schema.cancelado,val); }
       else if(schema.cancelType==="num"){ q=q.eq(schema.cancelado,val?1:0); }
       else if(schema.cancelType==="str"){ q=q.in(schema.cancelado,val?["Sim","sim","S","1","true","TRUE"]:["Não","Nao","não","nao","N","0","false","FALSE"]); }
-      else{ q=q.eq(schema.cancelado,val); }
+      else { q=q.eq(schema.cancelado,val); }
+    }
+    if(schema.loja && !opts.skipLoja){
+      var lojas=getSelectedLojas();
+      if(lojas.length>0){ q=q.in(schema.loja, lojas); }
     }
     return q;
   }
 
-  /* ===== Unidades / limites ===== */
+  async function fetchPaged(startISO,endISO,unidade,opts){
+    var page=1000,off=0,out=[];
+    for(;;){
+      var q=supa.from(TABLE).select(buildSelect()).gte("dia",startISO).lte("dia",endISO).order("dia",{ascending:true}).range(off,off+page-1);
+      if(unidade && unidade!=="Todas") q=q.eq("unidade",unidade);
+      q=applyServerFilters(q,opts);
+      var r=await q; if(r.error) throw r.error;
+      var a=r.data||[]; out=out.concat(a);
+      if(a.length<page) break; off+=page;
+      if(off>500000){ log("[Warn] abort paginado."); break; }
+    }
+    return out;
+  }
+
+  // ===== unidades e limites =====
   async function fetchUnidades(){
     var uniq={}, arr=["Todas"];
-    function push(list){ (list||[]).forEach(function(r){ var u=(r.unidade||"").trim(); if(!u) return; if(!uniq[u]){ uniq[u]=1; arr.push(u);} }); }
+    function push(list){ (list||[]).forEach(r=>{ var u=(r.unidade||"").trim(); if(!u) return; if(!uniq[u]){ uniq[u]=1; arr.push(u);} }); }
     var today=new Date(), endISO=toISO(new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate()))), startISO="2020-01-01";
-    var r1=await supa.from(TABLE).select("unidade").gte("dia",startISO).lte("dia",endISO).order("unidade",{ascending:true}).range(0,9999);
-    if(!r1.error) push(r1.data);
-    var r2=await supa.from(TABLE).select("unidade").gte("dia",startISO).lte("dia",endISO).order("unidade",{ascending:false}).range(0,9999);
-    if(!r2.error) push(r2.data);
+    var r1=await supa.from(TABLE).select("unidade").gte("dia",startISO).lte("dia",endISO).order("unidade",{ascending:true}).range(0,9999); if(!r1.error) push(r1.data);
+    var r2=await supa.from(TABLE).select("unidade").gte("dia",startISO).lte("dia",endISO).order("unidade",{ascending:false}).range(0,9999); if(!r2.error) push(r2.data);
     if(arr.length===1){ arr.push("Uni. Raja","Uni.Savassi"); }
     return arr;
   }
@@ -297,12 +300,12 @@
   }
   async function refreshBounds(unidade){
     var b=await getDateBounds(unidade); dataMinISO=b.minISO; dataMaxISO=b.maxISO;
-    if(!dataMaxISO||!dataMinISO){ elLimites.textContent="Limites no banco: — (sem dados)"; log("[Info] Sem dados p/ limites."); return; }
+    if(!dataMaxISO||!dataMinISO){ elLimites.textContent="Limites no banco: — (sem dados)"; return; }
     elLimites.textContent="Limites no banco: "+dataMinISO+" → "+dataMaxISO+(unidade&&unidade!=="Todas"?" • Unidade: "+unidade:" • Todas");
     setDateInput(dini,dataMinISO); setDateInput(dfim,dataMaxISO);
   }
 
-  /* ===== Schema detection (inclui hora) ===== */
+  // ===== schema (inclui hora + loja) =====
   async function inspectSchema(unidade){
     var q=supa.from(TABLE).select("*").limit(1); if(unidade && unidade!=="Todas") q=q.eq("unidade",unidade);
     var r=await q; if(r.error){ log("[Schema] falhou: "+r.error.message); return; }
@@ -313,202 +316,178 @@
     schema.pagamento=pick(["pagamento","forma_pagamento","meio_pagamento","metodo_pagamento"]);
     schema.cancelado=pick(["cancelado","is_cancelado","cancel"]);
     schema.hora=pick(["hora","hr","hora_pedido","hour"]);
+    schema.loja=pick(["nome_loja","loja","loja_nome","estabelecimento","nome_da_loja"]);
     schema.cancelType=null; if(schema.cancelado){ var v=row[schema.cancelado]; if(typeof v==="boolean") schema.cancelType="bool"; else if(v===0||v===1) schema.cancelType="num"; else if(typeof v==="string") schema.cancelType="str"; }
-    segTurno.classList.toggle("hidden",!schema.turno); segCanal.classList.toggle("hidden",!schema.canal);
-    segPagto.classList.toggle("hidden",!schema.pagamento); segCanc.classList.toggle("hidden",!schema.cancelado);
-    hourCard.classList.toggle("hidden",!schema.hora);
+    segTurno.classList.toggle("hidden",!schema.turno);
+    segCanal.classList.toggle("hidden",!schema.canal);
+    segPagto.classList.toggle("hidden",!schema.pagamento);
+    segCanc.classList.toggle("hidden",!schema.cancelado);
+    segLoja.classList.toggle("hidden",!schema.loja);
   }
 
-  /* ===== Distincts ===== */
-  function setOptionsWithTodos(sel,items){ var prev=sel.value||"todos"; sel.innerHTML=""; var o0=document.createElement("option"); o0.value="todos"; o0.textContent="Todos"; sel.appendChild(o0); (items||[]).forEach(v=>{ var o=document.createElement("option"); o.value=String(v); o.textContent=String(v); sel.appendChild(o); }); sel.value=[...sel.options].some(o=>o.value===prev)?prev:"todos"; }
-  async function loadDistinct(col,sel,startISO,endISO,unidade){
-    var uniq={}, out=[], page=1000, off=0;
-    for(;;){
-      var q=supa.from(TABLE).select(col).gte("dia",startISO).lte("dia",endISO).order(col,{ascending:true}).range(off,off+page-1); if(unidade&&unidade!=="Todas") q=q.eq("unidade",unidade);
-      var r=await q; if(r.error){ log("[Warn] distinct "+col+": "+r.error.message); break; }
-      var a=r.data||[]; for(var i=0;i<a.length;i++){ var v=a[i][col]; if(v==null||v==="") continue; if(!uniq[v]){ uniq[v]=1; out.push(v);} }
-      if(a.length<page) break; off+=page; if(off>200000){ log("[Warn] distinct "+col+" abortado."); break; }
-    }
-    setOptionsWithTodos(sel,out);
+  // ===== loja top10 =====
+  function setLojaOptionsTop10(list){
+    var currentSel = new Set(getSelectedLojas());
+    selLoja.innerHTML="";
+    list.forEach(v=>{
+      var o=document.createElement("option");
+      o.value=String(v); o.textContent=String(v);
+      if(currentSel.has(String(v))) o.selected=true;
+      selLoja.appendChild(o);
+    });
   }
-  async function refreshFilterOptions(startISO,endISO,unidade){
-    var tasks=[]; if(schema.turno) tasks.push(loadDistinct(schema.turno,selTurno,startISO,endISO,unidade));
-    if(schema.canal) tasks.push(loadDistinct(schema.canal,selCanal,startISO,endISO,unidade));
-    if(schema.pagamento) tasks.push(loadDistinct(schema.pagamento,selPagto,startISO,endISO,unidade));
-    await Promise.all(tasks);
+  function top10LojasByFat(rows){
+    if(!schema.loja) return [];
+    var map={}; rows.forEach(r=>{
+      var lj=String(r[schema.loja]||"").trim(); if(!lj) return;
+      map[lj]=(map[lj]||0)+Number(r.fat||0);
+    });
+    var arr=Object.keys(map).map(k=>({k,v:map[k]}));
+    arr.sort((a,b)=>b.v-a.v);
+    return arr.slice(0,10).map(x=>x.k);
   }
 
-  /* ===== DOW / Datas ===== */
+  // ===== DOW/datas =====
   function mapDOWSelectionToList(){ var v=selDOW.value||"todos"; if(v==="todos") return [0,1,2,3,4,5,6]; if(v==="uteis") return [1,2,3,4,5]; if(v==="fds") return [6,0]; return [Number(v)]; }
-  function applyDOWFilter(rows){ var keep={}; mapDOWSelectionToList().forEach(d=>keep[d]=1); var out=[]; for(var j=0;j<rows.length;j++){ var dow=new Date(rows[j].dia+"T00:00:00Z").getUTCDay(); if(keep[dow]) out.push(rows[j]); } return out; }
   function clampDateWithinBounds(d){ if(!d) return null; if(!dataMinISO||!dataMaxISO) return d; var min=new Date(dataMinISO+"T00:00:00Z"), max=new Date(dataMaxISO+"T00:00:00Z"); if(d<min) return min; if(d>max) return max; return d; }
   function validateInputsOrWarn(){
     if(!dataMinISO||!dataMaxISO) return true;
     var ps=getDateFromInput(dini), pe=getDateFromInput(dfim);
-    if(ps&&pe){
-      var s=clampDateWithinBounds(ps), e=clampDateWithinBounds(pe);
-      if(s>e){ log("[Erro] Intervalo inválido: 'De' > 'Até'."); return false; }
-      setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e));
-    }
+    if(ps&&pe){ var s=clampDateWithinBounds(ps), e=clampDateWithinBounds(pe); if(s>e){ log("[Erro] 'De' > 'Até'"); return false; } setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e)); }
     return true;
   }
 
-  /* ===== KPIs ===== */
+  // ===== KPIs =====
+  function badgePctChange(cur,prev){ return (prev>0)?((cur-prev)/prev*100):0; }
   function updateKPIs(rows,rowsAnt,daysCur,daysAnt){
     var ped=sum(rows,"pedidos"), fat=sum(rows,"fat"), des=sum(rows,"des"), fre=sum(rows,"fre");
     var pedA=sum(rowsAnt,"pedidos"), fatA=sum(rowsAnt,"fat"), desA=sum(rowsAnt,"des"), freA=sum(rowsAnt,"fre");
-
     var taxa=0.12*fat, taxaA=0.12*fatA;
     var fatliq=fat-des-fre-taxa, fatliqA=fatA-desA-freA-taxaA;
-
     var desPct = fat>0 ? (des/fat*100):0, desPctA=fatA>0?(desA/fatA*100):0;
     var ticket = ped>0? (fat/ped):0, ticketA=pedA>0?(fatA/pedA):0;
     var freMed = ped>0? (fre/ped):0, freMedA=pedA>0?(freA/pedA):0;
     var fatMed = daysCur>0? (fat/daysCur):0, fatMedA=daysAnt>0?(fatA/daysAnt):0;
     var fatliqPct = fat>0? (fatliq/fat*100):0, fatliqPctA=fatA>0?(fatliqA/fatA*100):0;
 
-    function pctChange(cur,prev){ return (prev>0)?((cur-prev)/prev*100):0; }
-
-    // linha 1
-    document.getElementById("k_ped_val").textContent=fmtInt(ped);
-    document.getElementById("k_ped_sub").textContent="ant: "+fmtInt(pedA);
-    badge(document.getElementById("k_ped_badge"), pctChange(ped,pedA));
-
-    document.getElementById("k_ticket_val").textContent=fmtBRL(ticket);
-    document.getElementById("k_ticket_sub").textContent="ant: "+fmtBRL(ticketA);
-    badge(document.getElementById("k_ticket_badge"), pctChange(ticket,ticketA));
-
-    // linha 2
-    document.getElementById("k_fat_val").textContent=fmtBRL(fat);
-    document.getElementById("k_fat_sub").textContent="ant: "+fmtBRL(fatA);
-    badge(document.getElementById("k_fat_badge"), pctChange(fat,fatA));
-
-    document.getElementById("k_fat_med_val").textContent=fmtBRL(fatMed);
-    document.getElementById("k_fat_med_sub").textContent="ant: "+fmtBRL(fatMedA);
-    badge(document.getElementById("k_fat_med_badge"), pctChange(fatMed,fatMedA));
-
-    document.getElementById("k_fatliq_val").textContent=fmtBRL(fatliq);
-    document.getElementById("k_fatliq_sub").textContent="ant: "+fmtBRL(fatliqA);
-    badge(document.getElementById("k_fatliq_badge"), pctChange(fatliq,fatliqA));
-
-    document.getElementById("k_fatliq_pct_val").textContent=fmtPct(fatliqPct);
-    document.getElementById("k_fatliq_pct_sub").textContent="ant: "+fmtPct(fatliqPctA);
-    badge(document.getElementById("k_fatliq_pct_badge"), pctChange(fatliqPct,fatliqPctA));
-
-    // linha 3
-    document.getElementById("k_des_val").textContent=fmtBRL(des);
-    document.getElementById("k_des_sub").textContent="ant: "+fmtBRL(desA);
-    badge(document.getElementById("k_des_badge"), pctChange(des,desA));
-
-    document.getElementById("k_des_pct_val").textContent=fmtPct(desPct);
-    document.getElementById("k_des_pct_sub").textContent="ant: "+fmtPct(desPctA);
-    badge(document.getElementById("k_des_pct_badge"), pctChange(desPct,desPctA));
-
-    document.getElementById("k_fre_val").textContent=fmtBRL(fre);
-    document.getElementById("k_fre_sub").textContent="ant: "+fmtBRL(freA);
-    badge(document.getElementById("k_fre_badge"), pctChange(fre,freA));
-
-    document.getElementById("k_fre_med_val").textContent=fmtBRL(freMed);
-    document.getElementById("k_fre_med_sub").textContent="ant: "+fmtBRL(freMedA);
-    badge(document.getElementById("k_fre_med_badge"), pctChange(freMed,freMedA));
-  }
-
-  /* ===== Charts helpers ===== */
-  function movingAvg(values,win){ var out=[], acc=0, q=[]; for(var i=0;i<values.length;i++){ acc+=values[i]; q.push(values[i]); if(q.length>win){ acc-=q.shift(); } out.push(acc/q.length); } return out; }
-  function groupDaily(rows){ // returns {labels, totals}
-    var m={}; rows.forEach(r=>{ var d=r.dia; if(!m[d]) m[d]=0; m[d]+=Number(r.fat||0); });
-    var days=Object.keys(m).sort(); return {labels:days, totals:days.map(d=>m[d])};
-  }
-  function groupDOW(rows){ // {labels, totals, counts}
-    var totals=[0,0,0,0,0,0,0], counts=[0,0,0,0,0,0,0];
-    rows.forEach(r=>{ var dow=new Date(r.dia+"T00:00:00Z").getUTCDay(); totals[dow]+=Number(r.fat||0); counts[dow]+=1; });
-    return {labels:["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"], totals:totals, counts:counts};
-  }
-  function groupMonth(rows){ // {labels(YYYY-MM), totals, countsDays}
-    var m={}; rows.forEach(r=>{ var k=r.dia.slice(0,7); if(!m[k]) m[k]={t:0,c:0}; m[k].t+=Number(r.fat||0); m[k].c+=1; });
-    var keys=Object.keys(m).sort(); return {labels:keys, totals:keys.map(k=>m[k].t), counts:keys.map(k=>m[k].c)};
-  }
-  function groupHour(rows){ // only if schema.hora
-    var totals=new Array(24).fill(0), counts=new Array(24).fill(0);
-    rows.forEach(r=>{ var h=Number(r[schema.hora]); if(isNaN(h)) return; if(h<0||h>23) return; totals[h]+=Number(r.fat||0); counts[h]+=1; });
-    return {labels:totals.map((_,i)=>String(i).padStart(2,"0")+":00"), totals:totals, counts:counts};
-  }
-
-  function drawAllCharts(rows){
-    // guarda para re-render via toggles
-    lastRows = rows.slice();
-
-    // Daily
-    var d=groupDaily(rows);
-    renderChart("gDaily","line",d.labels,d.totals,"total");
-
-    // DOW
-    var w=groupDOW(rows);
-    renderChart("gDOW","bar",w.labels,w.totals,"total",w.counts);
-
-    // Month
-    var m=groupMonth(rows);
-    renderChart("gMonth","bar",m.labels,m.totals,"total",m.counts);
-
-    // Hour (se existir)
-    if(schema.hora){
-      var h=groupHour(rows);
-      renderChart("gHour","bar",h.labels,h.totals,"total",h.counts);
+    function setK(idVal,idSub,idBadge,cur,prev,fmt,asPct){
+      document.getElementById(idVal).textContent = asPct? fmtPct(cur) : fmt(cur);
+      document.getElementById(idSub).textContent = "ant: " + (asPct? fmtPct(prev) : fmt(prev));
+      badge(document.getElementById(idBadge), badgePctChange(cur,prev));
     }
+    setK("k_ped_val","k_ped_sub","k_ped_badge",ped,pedA,fmtInt,false);
+    setK("k_ticket_val","k_ticket_sub","k_ticket_badge",ticket,ticketA,fmtBRL,false);
+    setK("k_fat_val","k_fat_sub","k_fat_badge",fat,fatA,fmtBRL,false);
+    setK("k_fat_med_val","k_fat_med_sub","k_fat_med_badge",fatMed,fatMedA,fmtBRL,false);
+    setK("k_fatliq_val","k_fatliq_sub","k_fatliq_badge",fatliq,fatliqA,fmtBRL,false);
+    setK("k_fatliq_pct_val","k_fatliq_pct_sub","k_fatliq_pct_badge",fatliqPct,fatliqPctA,fmtPct,true);
+    setK("k_des_val","k_des_sub","k_des_badge",des,desA,fmtBRL,false);
+    setK("k_des_pct_val","k_des_pct_sub","k_des_pct_badge",desPct,desPctA,fmtPct,true);
+    setK("k_fre_val","k_fre_sub","k_fre_badge",fre,freA,fmtBRL,false);
+    setK("k_fre_med_val","k_fre_med_sub","k_fre_med_badge",freMed,freMedA,fmtBRL,false);
   }
 
-  // Render/Update chart with mode
+  // ===== Agregações para gráficos (média REAL) =====
+  function buildDailyTotals(rows){ // soma por dia
+    var m={}; rows.forEach(r=>{ var d=r.dia; m[d]=(m[d]||0)+Number(r.fat||0); });
+    var days=Object.keys(m).sort(); return {days, totals:days.map(d=>m[d])};
+  }
+  function groupDaily(rows){ var d=buildDailyTotals(rows); return {labels:d.days, totals:d.totals}; }
+  function groupDOW(rows){
+    var d=buildDailyTotals(rows); // usa dias únicos
+    var totals=[0,0,0,0,0,0,0], counts=[0,0,0,0,0,0,0];
+    d.days.forEach((day,i)=>{ var dow=new Date(day+"T00:00:00Z").getUTCDay(); totals[dow]+=d.totals[i]; counts[dow]+=1; });
+    return {labels:["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"], totals, counts};
+  }
+  function groupMonth(rows){
+    var d=buildDailyTotals(rows), map={};
+    d.days.forEach((day,i)=>{ var key=day.slice(0,7); if(!map[key]) map[key]={t:0,c:0}; map[key].t+=d.totals[i]; map[key].c+=1; });
+    var labels=Object.keys(map).sort(); return {labels, totals:labels.map(k=>map[k].t), counts:labels.map(k=>map[k].c)};
+  }
+  function groupHour(rows){
+    if(!schema.hora) return {labels:[], totals:[], counts:[]};
+    // agrega por (data,hora) -> soma, depois soma por hora e conta dias distintos
+    var byDayHour={};
+    rows.forEach(r=>{
+      var h=Number(r[schema.hora]); if(isNaN(h)||h<0||h>23) return;
+      var key=r.dia+"|"+h; byDayHour[key]=(byDayHour[key]||0)+Number(r.fat||0);
+    });
+    var totals=new Array(24).fill(0), counts=new Array(24).fill(0), daysByHour=[...Array(24)].map(()=>new Set());
+    Object.keys(byDayHour).forEach(k=>{
+      var parts=k.split("|"); var d=parts[0], h=Number(parts[1]);
+      totals[h]+=byDayHour[k]; daysByHour[h].add(d);
+    });
+    for(var i=0;i<24;i++) counts[i]=daysByHour[i].size;
+    var labels=totals.map((_,i)=>String(i).padStart(2,"0")+":00");
+    return {labels, totals, counts};
+  }
+
   function renderChart(canvasId,type,labels,totals,mode,countsOpt){
     var ctx=document.getElementById(canvasId).getContext("2d");
-    var chartRef=canvasId==="gDaily"?chartDaily:(canvasId==="gDOW"?chartDOW:(canvasId==="gMonth"?chartMonth:chartHour));
-    if(chartRef){ chartRef.destroy(); chartRef=null; }
-
+    var ref = canvasId==="gDaily"?chartDaily:canvasId==="gDOW"?chartDOW:canvasId==="gMonth"?chartMonth:chartHour;
+    if(ref){ ref.destroy(); ref=null; }
     var dataVals;
-    if(canvasId==="gDaily"){
-      dataVals = (mode==="avg") ? movingAvg(totals,7) : totals;
-    }else if(mode==="avg" && countsOpt){
-      dataVals = totals.map((v,i)=> (countsOpt[i]>0? v/countsOpt[i] : 0));
+    if(mode==="avg"){
+      if(canvasId==="gDaily"){
+        // média diária do período = total ÷ nº de dias -> linha plana
+        var sumT=totals.reduce((a,b)=>a+b,0), n=labels.length||1, avg=sumT/(n||1);
+        dataVals = labels.map(()=>avg);
+      }else if(countsOpt){
+        dataVals = totals.map((v,i)=> (countsOpt[i]>0? v/countsOpt[i] : 0));
+      }else{
+        dataVals = totals.slice();
+      }
     }else{
-      dataVals = totals;
+      dataVals = totals.slice();
     }
-
-    var c = new window.Chart(ctx,{
-      type:type,
-      data:{ labels:labels, datasets:[{ label:(mode==="avg"?"Média":"Total"), data:dataVals }]},
-      options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true } }, plugins:{ legend:{display:false} } }
-    });
-
+    var c=new window.Chart(ctx,{type:type,data:{labels:labels,datasets:[{label:(mode==="avg"?"Média":"Total"),data:dataVals}]},options:{responsive:true,maintainAspectRatio:false,animation:false,scales:{y:{beginAtZero:true}},plugins:{legend:{display:false}}}});
     if(canvasId==="gDaily") chartDaily=c; else if(canvasId==="gDOW") chartDOW=c; else if(canvasId==="gMonth") chartMonth=c; else chartHour=c;
   }
 
-  // Segmented switch events
-  document.querySelectorAll(".segSwitch").forEach(function(sw){
+  function drawAllCharts(rows){
+    var d=groupDaily(rows);        renderChart("gDaily","line", d.labels, d.totals, "total");
+    var w=groupDOW(rows);          renderChart("gDOW","bar",   w.labels, w.totals, "total", w.counts);
+    var m=groupMonth(rows);        renderChart("gMonth","bar", m.labels, m.totals, "total", m.counts);
+    if(schema.hora){
+      var h=groupHour(rows);       renderChart("gHour","bar",  h.labels, h.totals, "total", h.counts);
+      hourCard.classList.remove("hidden");
+    }else{
+      hourCard.classList.add("hidden");
+    }
+  }
+
+  document.querySelectorAll(".segSwitch").forEach(sw=>{
     sw.addEventListener("click",function(e){
       if(e.target.tagName!=="BUTTON") return;
-      var mode=e.target.getAttribute("data-mode");
       sw.querySelectorAll("button").forEach(b=>b.classList.remove("active"));
       e.target.classList.add("active");
-      var target=sw.getAttribute("data-target");
-      // recomputa a partir de lastRows
-      if(!lastRows.length) return;
-      if(target==="gDaily"){ var d=groupDaily(lastRows); renderChart("gDaily","line",d.labels,d.totals,mode); }
-      if(target==="gDOW"){ var w=groupDOW(lastRows); renderChart("gDOW","bar",w.labels,w.totals,mode,w.counts); }
-      if(target==="gMonth"){ var m=groupMonth(lastRows); renderChart("gMonth","bar",m.labels,m.totals,mode,m.counts); }
-      if(target==="gHour" && schema.hora){ var h=groupHour(lastRows); renderChart("gHour","bar",h.labels,h.totals,mode,h.counts); }
+      var mode=e.target.getAttribute("data-mode"), target=sw.getAttribute("data-target");
+      // recomputa a partir do último render armazenado? Reusa as funções com os dados atuais (guardados em _lastRows)
+      if(!_lastRows.length) return;
+      if(target==="gDaily"){ var d=groupDaily(_lastRows); renderChart("gDaily","line", d.labels, d.totals, mode); }
+      if(target==="gDOW"){   var w=groupDOW(_lastRows);   renderChart("gDOW","bar",   w.labels, w.totals, mode, w.counts); }
+      if(target==="gMonth"){ var m=groupMonth(_lastRows); renderChart("gMonth","bar", m.labels, m.totals, mode, m.counts); }
+      if(target==="gHour" && schema.hora){ var h=groupHour(_lastRows); renderChart("gHour","bar", h.labels, h.totals, mode, h.counts); }
     });
   });
 
-  /* ===== Sumário dos filtros ===== */
-  function updateSummaryHint(){
-    var pr=prapido.value?prapido.value+"d":"—"; var uni=selUni.value||"Todas";
-    sumHint.textContent="Unidade: "+uni+" • PR: "+pr;
+  var _lastRows=[]; // mantém amostra atual p/ switches
+  function applyDOWClient(rows){
+    var keep={}; mapDOWSelectionToList().forEach(d=>keep[d]=1);
+    // filtra por DOW no nível de linha -> depois as agregações cuidam de datas
+    return rows.filter(r=> keep[new Date(r.dia+"T00:00:00Z").getUTCDay()]);
   }
 
-  /* ===== Fluxo principal ===== */
+  function updateSummaryHint(){
+    var pr=prapido.value?prapido.value+"d":"—"; var uni=selUni.value||"Todas";
+    var nj=schema.loja? getSelectedLojas().length : 0;
+    sumHint.textContent="Unidade: "+uni+" • PR: "+pr+(schema.loja?(" • Lojas: "+(nj>0?nj:"todas")):"");
+  }
+
   async function recarregar(){
     const myRun=++runId;
     try{
-      if(!dataMaxISO||!dataMinISO){ await refreshBounds(selUni.value||"Todas"); if(!dataMaxISO||!dataMinISO){ elPeriodo.textContent="Período: —"; log("[Info] Sem limites de data."); return; } }
+      if(!dataMaxISO||!dataMinISO){ await refreshBounds(selUni.value||"Todas"); if(!dataMaxISO||!dataMinISO){ elPeriodo.textContent="Período: —"; return; } }
       if(!validateInputsOrWarn()) return;
 
       var ps=getDateFromInput(dini), pe=getDateFromInput(dfim), s,e;
@@ -524,10 +503,28 @@
       elPeriodo.textContent="Período: "+startISO+" → "+endISO+" (âncora: "+dataMaxISO+")";
       var uniVal=selUni.value||"Todas";
 
-      var cur=await fetchPaged(startISO,endISO,uniVal==="Todas"?null:uniVal); if(myRun!==runId) return;
-      var ant=await fetchPaged(prevStartISO,prevEndISO,uniVal==="Todas"?null:uniVal); if(myRun!==runId) return;
+      // 1) Busca base SEM loja para montar top10
+      var baseCur=await fetchPaged(startISO,endISO,uniVal==="Todas"?null:uniVal,{skipLoja:true}); if(myRun!==runId) return;
+      // aplica DOW no cliente
+      var baseCurDOW = applyDOWClient(baseCur);
 
-      var curF=applyDOWFilter(cur), antF=applyDOWFilter(ant);
+      // calcula top10 lojas e atualiza dropdown
+      if(schema.loja){
+        var top10 = top10LojasByFat(baseCurDOW);
+        setLojaOptionsTop10(top10);
+      }
+
+      // 2) Aplica filtro de loja no cliente sobre a base já carregada
+      var lojasSel = getSelectedLojas();
+      var curF = (!schema.loja || lojasSel.length===0) ? baseCurDOW
+                 : baseCurDOW.filter(r => lojasSel.includes(String(r[schema.loja])));
+
+      // 3) Período anterior (com loja selecionada no servidor)
+      var ant = await fetchPaged(prevStartISO,prevEndISO,uniVal==="Todas"?null:uniVal,{skipLoja:false}); if(myRun!==runId) return;
+      var antF = applyDOWClient(ant);
+
+      _lastRows = curF.slice(); // guarda p/ switches
+
       updateKPIs(curF,antF,daysLen,prevDaysLen);
       drawAllCharts(curF);
       updateSummaryHint();
@@ -535,45 +532,68 @@
   }
   var recarregarDebounced=debounce(recarregar,120);
 
-  /* ===== Boot ===== */
+  async function refreshFilterOptions(startISO,endISO,unidade){
+    var tasks=[];
+    if(schema.turno) tasks.push(loadDistinct(schema.turno,document.getElementById("turno"),startISO,endISO,unidade));
+    if(schema.canal) tasks.push(loadDistinct(schema.canal,document.getElementById("canal"),startISO,endISO,unidade));
+    if(schema.pagamento) tasks.push(loadDistinct(schema.pagamento,document.getElementById("pagto"),startISO,endISO,unidade));
+    await Promise.all(tasks);
+  }
+  function setOptionsWithTodos(sel,items){ var prev=sel.value||"todos"; sel.innerHTML=""; var o0=document.createElement("option"); o0.value="todos"; o0.textContent="Todos"; sel.appendChild(o0); (items||[]).forEach(v=>{ var o=document.createElement("option"); o.value=String(v); o.textContent=String(v); sel.appendChild(o); }); sel.value=[...sel.options].some(o=>o.value===prev)?prev:"todos"; }
+  async function loadDistinct(col,sel,startISO,endISO,unidade){
+    var uniq={}, out=[], page=1000, off=0;
+    for(;;){
+      var q=supa.from(TABLE).select(col).gte("dia",startISO).lte("dia",endISO).order(col,{ascending:true}).range(off,off+page-1);
+      if(unidade&&unidade!=="Todas") q=q.eq("unidade",unidade);
+      var r=await q; if(r.error) break; var a=r.data||[];
+      for(var i=0;i<a.length;i++){ var v=a[i][col]; if(v==null||v==="") continue; if(!uniq[v]){ uniq[v]=1; out.push(v);} }
+      if(a.length<page) break; off+=page; if(off>200000) break;
+    }
+    setOptionsWithTodos(sel,out);
+  }
+
+  function updateSummaryOnChange(){ touchFilters(); recarregarDebounced(); }
+
+  // ===== Boot =====
   async function boot(){
-    log("[Boot] v17.2-MV-paged-fix3 — filtros fixos + KPIs ordenados + gráficos CFO");
+    log("[Boot] v17.2-MV-paged-fix3 — média real + filtro loja top10");
     var opts=await fetchUnidades(); selUni.innerHTML=""; opts.forEach(u=>{ var o=document.createElement("option"); o.value=u; o.textContent=u; selUni.appendChild(o); }); selUni.value="Todas";
     await refreshBounds("Todas"); await inspectSchema("Todas");
-
     if(dataMaxISO&&dataMinISO){ var e=new Date(dataMaxISO+"T00:00:00Z"), s=addDays(e,-29); var minDate=new Date(dataMinISO+"T00:00:00Z"); if(s<minDate) s=minDate; setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e)); }
     if(dataMaxISO&&dataMinISO){ await refreshFilterOptions(dini.value,dfim.value,selUni.value); }
     updateSummaryHint();
     recarregar();
   }
 
-  /* ===== Eventos ===== */
+  // ===== Eventos =====
   prapido.addEventListener("change",async function(){
     if(!prapido.value) return;
     if(!dataMaxISO||!dataMinISO){ await refreshBounds(selUni.value||"Todas"); if(!dataMaxISO) return; }
     var d=Number(prapido.value), e=new Date(dataMaxISO+"T00:00:00Z"), s=addDays(e,-(d-1));
     var minDate=new Date(dataMinISO+"T00:00:00Z"); if(s<minDate) s=minDate;
     setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e));
-    if(schema.turno||schema.canal||schema.pagamento){ await refreshFilterOptions(dini.value,dfim.value,selUni.value); }
-    touchFilters(); recarregarDebounced();
+    await refreshFilterOptions(dini.value, dfim.value, selUni.value);
+    updateSummaryOnChange();
   });
   [dini,dfim].forEach(el=>el.addEventListener("change",async function(){
     if(!validateInputsOrWarn()) return; prapido.value="";
-    if(schema.turno||schema.canal||schema.pagamento){ await refreshFilterOptions(dini.value,dfim.value,selUni.value); }
-    touchFilters(); recarregarDebounced();
+    await refreshFilterOptions(dini.value, dfim.value, selUni.value);
+    updateSummaryOnChange();
   }));
   selUni.addEventListener("change",async function(){
     await refreshBounds(selUni.value||"Todas"); await inspectSchema(selUni.value||"Todas");
     var d=Number(prapido.value||30);
-    if(dataMaxISO&&dataMinISO){ var e=new Date(dataMaxISO+"T00:00:00Z"), s=addDays(e,-(d-1)); var minDate=new Date(dataMinISO+"T00:00:00Z"); if(s<minDate) s=minDate; setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e)); await refreshFilterOptions(dini.value,dfim.value,selUni.value); }
-    touchFilters(); recarregarDebounced();
+    if(dataMaxISO&&dataMinISO){ var e=new Date(dataMaxISO+"T00:00:00Z"), s=addDays(e,-(d-1)); var minDate=new Date(dataMinISO+"T00:00:00Z"); if(s<minDate) s=minDate; setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e)); await refreshFilterOptions(dini.value, dfim.value, selUni.value); }
+    updateSummaryOnChange();
   });
-  [selDOW,selTurno,selCanal,selPagto,selCanc].forEach(function(el){ if(!el) return; el.addEventListener("change",function(){ touchFilters(); recarregarDebounced(); }); });
+  [selDOW,selTurno,selCanal,selPagto,selCanc].forEach(function(el){ if(!el) return; el.addEventListener("change",updateSummaryOnChange); });
+  selLoja.addEventListener("change", updateSummaryOnChange);
   document.getElementById("limpar").addEventListener("click",async function(){
     fltBox.open=true; selUni.value="Todas"; prapido.value="30"; selDOW.value="todos";
     if(schema.turno) selTurno.value="todos"; if(schema.canal) selCanal.value="todos"; if(schema.pagamento) selPagto.value="todos"; if(schema.cancelado) selCanc.value="todos";
+    if(schema.loja){ [...selLoja.options].forEach(o=>o.selected=false); }
     await refreshBounds("Todas");
-    if(dataMaxISO&&dataMinISO){ var e=new Date(dataMaxISO+"T00:00:00Z"), s=addDays(e,-29); var minDate=new Date(dataMinISO+"T00:00:00Z"); if(s<minDate) s=minDate; setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e)); await refreshFilterOptions(dini.value,dfim.value,selUni.value); }
+    if(dataMaxISO&&dataMinISO){ var e=new Date(dataMaxISO+"T00:00:00Z"), s=addDays(e,-29); var minDate=new Date(dataMinISO+"T00:00:00Z"); if(s<minDate) s=minDate; setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e)); await refreshFilterOptions(dini.value, dfim.value, selUni.value); }
     updateSummaryHint(); recarregarDebounced();
   });
 
