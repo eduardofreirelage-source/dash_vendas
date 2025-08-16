@@ -2,360 +2,399 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — v17.4 (auto-fallback confiável)</title>
+  <title>Dashboard Vendas — Supabase • v17.2</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root{--bg:#f6f7fb;--fg:#0f172a;--muted:#6b7280;--card:#fff;--bd:#e5e7eb;--chip:#eef2ff}
-    *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
+    :root{
+      --bg:#f6f7fb; --text:#0f172a; --muted:#6b7280; --card:#ffffff;
+      --bd:#e5e7eb; --shadow:0 1px 2px rgba(0,0,0,.05); --accent:#0ea5e9;
+    }
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);
+      font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif}
     .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
     h1{font-size:22px;margin:0 0 4px}
     .muted{color:var(--muted);font-size:12px}
-    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;justify-content:space-between}
-    .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+    .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;box-shadow:var(--shadow)}
+    .kpi{flex:1 1 240px}
     .title{font-size:12px;color:var(--muted)}
-    .val{font-size:20px;font-weight:700;margin-top:4px}
-    .kpi{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:12px}
-    .grid2{display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px}
-    .pill{display:inline-block;background:var(--chip);border-radius:999px;padding:2px 8px;margin-right:6px}
-    .btn{background:#111827;color:#fff;border:0;border-radius:8px;padding:8px 12px;cursor:pointer}
-    .btn.alt{background:#374151}
-    .btn.ghost{background:#fff;color:#111827;border:1px solid var(--bd)}
-    .btn.small{padding:6px 8px;font-size:12px}
-    select,input{border:1px solid var(--bd);border-radius:8px;padding:8px 10px;background:#fff}
-    label{font-size:12px;color:var(--muted)}
-    .controls{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
-    .controls .col{display:flex;flex-direction:column;gap:6px}
-    .stack{display:flex;gap:8px;flex-wrap:wrap}
-    .inline{display:flex;align-items:center;gap:8px}
-    .chart-card{padding:16px}
-    canvas{max-width:100%;height:300px}
+    .val{font-size:24px;font-weight:700;margin-top:4px}
+    .sub{font-size:12px;color:var(--muted);margin-top:2px}
+    label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
+    select,input[type="date"]{width:100%;padding:8px 10px;border:1px solid var(--bd);border-radius:8px;background:#fff}
+    .btn{padding:8px 12px;border:1px solid var(--bd);background:#fff;border-radius:8px;cursor:pointer}
+    .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+    .btn.ghost{background:#fff}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .quick{display:flex;gap:8px;flex-wrap:wrap}
+    .quick .btn{padding:6px 10px}
+    canvas{background:#fff;border:1px solid var(--bd);border-radius:10px;padding:10px}
     pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
-    .disabled{opacity:.5;pointer-events:none}
-    @media (max-width:980px){.controls{grid-template-columns:repeat(3,minmax(0,1fr))}}
-    @media (max-width:600px){.kpi{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media (max-width:900px){.row{flex-direction:column;align-items:stretch}}
   </style>
+  <!-- Libs -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <div class="wrap">
-    <div class="row">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px">
       <div>
         <h1>Dashboard Vendas — Supabase</h1>
-        <div class="muted">
-          Build <span class="pill">v17.4</span> · Fonte ativa: <code id="fonte">detectando…</code>
-          <span class="muted" id="fonteNote"></span>
-        </div>
-        <div class="muted">URL: <code id="urlShow">—</code></div>
+        <div class="muted">Build <b>v17.2</b> • Fonte preferida: <code>public.vendas_kpi_daily</code></div>
+        <div class="muted">URL: <span id="u"></span></div>
       </div>
-      <div class="muted" id="periodoShow">Período: —</div>
+      <div class="muted" id="periodo">Período: —</div>
     </div>
 
-    <div class="card" style="margin-top:12px">
-      <div class="title">Diagnóstico</div>
-      <div id="diag" class="muted">—</div>
-    </div>
-
-    <div class="card" style="margin-top:12px">
-      <div class="title">Filtros (em cascata)</div>
-      <div class="controls" style="margin-top:10px" id="filters">
-        <div class="col"><label>Unidade</label><select id="f_unidade"><option>Todas</option></select></div>
-        <div class="col"><label>Turno</label><select id="f_turno"><option>Todos</option></select></div>
-        <div class="col"><label>Canal</label><select id="f_canal"><option>Todos</option></select></div>
-        <div class="col">
-          <label>Cupom</label>
-          <select id="f_cupom"><option>Todos</option><option value="S">S</option><option value="N">N</option></select>
+    <!-- Filtros -->
+    <div class="card" style="margin-top:14px">
+      <div class="row">
+        <div style="min-width:180px">
+          <label>Unidade</label>
+          <select id="f_unidade"></select>
         </div>
-        <div class="col"><label>Pagamento</label><select id="f_pagamento"><option>Todos</option></select></div>
-        <div class="col">
-          <label>Cancelado</label>
-          <select id="f_cancelado"><option>Todos</option><option value="S">S</option><option value="N">N</option></select>
-        </div>
-        <div class="col"><label>Entregador</label><select id="f_entregador"><option>Todos</option></select></div>
 
-        <div class="col">
+        <div style="min-width:240px">
           <label>Período rápido (dias)</label>
-          <div class="stack">
-            <button class="btn small ghost" data-days="7">7</button>
-            <button class="btn small ghost" data-days="15">15</button>
-            <button class="btn small ghost" data-days="30">30</button>
-            <button class="btn small ghost" data-days="90">90</button>
-            <button class="btn small ghost" data-days="180">180</button>
-            <button class="btn small ghost" data-days="360">360</button>
+          <div class="quick">
+            <button class="btn" data-days="7">7</button>
+            <button class="btn" data-days="15">15</button>
+            <button class="btn" data-days="30">30</button>
+            <button class="btn" data-days="90">90</button>
+            <button class="btn" data-days="180">180</button>
+            <button class="btn" data-days="360">360</button>
           </div>
         </div>
-        <div class="col"><label>De (dd/mm/aaaa)</label><input id="dtDe" placeholder="dd/mm/aaaa" /></div>
-        <div class="col"><label>Até (dd/mm/aaaa)</label><input id="dtAte" placeholder="dd/mm/aaaa" /></div>
-        <div class="col">
+
+        <div>
+          <label>De (dd/mm/aaaa)</label>
+          <input id="f_de" placeholder="dd/mm/aaaa" />
+        </div>
+        <div>
+          <label>Até (dd/mm/aaaa)</label>
+          <input id="f_ate" placeholder="dd/mm/aaaa" />
+        </div>
+
+        <div>
           <label>Modo de Faturamento</label>
-          <div class="inline">
-            <label class="inline"><input type="radio" name="modo" value="bruto" checked /> Total (bruto)</label>
-            <label class="inline"><input type="radio" name="modo" value="liquido" /> Líquido (Total - Entrega)</label>
+          <div>
+            <label><input type="radio" name="modo" value="bruto" checked> Total (bruto)</label>
+            <label style="margin-left:8px"><input type="radio" name="modo" value="liquido"> Líquido (Total − Entrega)</label>
           </div>
         </div>
-        <div class="col">
-          <label>Ações</label>
-          <div class="stack">
-            <button id="btnAplicar" class="btn">Aplicar</button>
-            <button id="btnLimpar" class="btn alt">Limpar filtros</button>
-            <button id="btnReload" class="btn ghost">Recarregar</button>
-          </div>
+
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button id="btn_apply" class="btn primary">Aplicar</button>
+          <button id="btn_clear" class="btn ghost">Limpar filtros</button>
+          <button id="btn_reload" class="btn">Recarregar</button>
         </div>
       </div>
-      <div class="muted" style="margin-top:8px">Se preencher as datas acima, o período rápido é ignorado.</div>
+      <div class="muted" style="margin-top:6px">Se preencher as datas acima, o período rápido é ignorado.</div>
     </div>
 
-    <div class="kpi">
-      <div class="card"><div class="title">Pedidos</div><div class="val" id="k_ped">…</div><div class="muted" id="k_ped_prev">—</div></div>
-      <div class="card"><div class="title">Faturamento</div><div class="val" id="k_fat">…</div><div class="muted" id="k_fat_prev">—</div></div>
-      <div class="card"><div class="title">Incentivos</div><div class="val" id="k_des">…</div><div class="muted" id="k_des_prev">—</div></div>
-      <div class="card"><div class="title">Frete</div><div class="val" id="k_fre">…</div><div class="muted" id="k_fre_prev">—</div></div>
+    <!-- KPIs -->
+    <div class="row" style="margin-top:14px">
+      <div class="card kpi">
+        <div class="title">Pedidos</div>
+        <div class="val" id="k_ped">…</div>
+        <div class="sub" id="k_ped_sub">—</div>
+      </div>
+      <div class="card kpi">
+        <div class="title">Faturamento</div>
+        <div class="val" id="k_fat">…</div>
+        <div class="sub" id="k_fat_sub">—</div>
+      </div>
+      <div class="card kpi">
+        <div class="title">Incentivos</div>
+        <div class="val" id="k_des">…</div>
+        <div class="sub" id="k_des_sub">—</div>
+      </div>
+      <div class="card kpi">
+        <div class="title">Frete</div>
+        <div class="val" id="k_fre">…</div>
+        <div class="sub" id="k_fre_sub">—</div>
+      </div>
     </div>
 
-    <div class="grid2">
-      <div class="card chart-card"><div class="title">Receita diária (R$)</div><canvas id="chartLine"></canvas></div>
-      <div class="card chart-card"><div class="title">Totais por dia da semana (R$)</div><canvas id="chartBars"></canvas></div>
+    <!-- Gráficos -->
+    <div class="card" style="margin-top:14px">
+      <div class="title">Receita diária (R$)</div>
+      <canvas id="chart_daily" height="160"></canvas>
     </div>
 
-    <div class="card" style="margin:12px 0 24px">
+    <div class="card" style="margin-top:14px">
+      <div class="title">Totais por dia da semana (R$)</div>
+      <canvas id="chart_wd" height="160"></canvas>
+    </div>
+
+    <!-- Logs -->
+    <div class="card" style="margin-top:14px">
       <div class="title">Status / Logs</div>
       <pre id="log">Iniciando…</pre>
     </div>
   </div>
 
-  <script>
-    // ===== Credenciais =====
-    const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+<script>
+(function(){
+  // ====== CREDENCIAIS (as que você me passou) ======
+  const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
+  const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
 
-    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  document.getElementById("u").textContent = SUPABASE_URL.replace(/^https?:\/\//,'');
 
-    // ===== Estado/UI =====
-    const elLog = document.getElementById("log"), elDiag = document.getElementById("diag"),
-          elPeriodo = document.getElementById("periodoShow"), elUrlShow = document.getElementById("urlShow"),
-          elFonte = document.getElementById("fonte"), elFonteNote = document.getElementById("fonteNote"),
-          filtersBox = document.getElementById("filters");
-    const fmtBRL = n => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0);
-    const fmtInt = n => new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0));
-    const log = m => { elLog.textContent += "\n" + m; elLog.scrollTop = elLog.scrollHeight; };
-    const toISO = d => d.toISOString().slice(0,10);
-    const parseDMY = (s)=>{const m=String(s||"").trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if(!m) return null; const dd=+m[1],mm=+m[2],yy=+m[3]; const dt=new Date(Date.UTC(yy,mm-1,dd,12)); return isNaN(dt)?null:dt;};
-    const addDays = (date,n)=>{const d=new Date(date); d.setUTCDate(d.getUTCDate()+n); return d;};
+  // ====== helpers ======
+  const elLog = document.getElementById("log");
+  function log(x){ elLog.textContent += "\n" + x; }
+  const BRL = new Intl.NumberFormat("pt-BR",{ style:"currency", currency:"BRL"});
+  const INT = new Intl.NumberFormat("pt-BR",{ maximumFractionDigits:0});
+  const WD  = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+  function ymd(d){ return d.toISOString().slice(0,10); }
+  function dmyStr(d){ const s=ymd(d).split("-"); return `${s[2]}/${s[1]}/${s[0]}`; }
+  function parseDMY(s){
+    if(!s) return null;
+    const m = String(s).trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if(!m) return null;
+    return new Date(`${m[3]}-${m[2]}-${m[1]}T00:00:00`);
+  }
+  function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+  function pct(curr, prev){
+    if(!prev) return {txt:"—", sign:0};
+    const p = ((curr - prev) / prev) * 100;
+    const t = (p>=0?"+":"") + p.toFixed(1).replace(".",",") + "% vs ant.";
+    return {txt:t, sign:p};
+  }
+  function sum(arr,fn){ let s=0; for(const x of arr) s += fn(x)||0; return s; }
 
-    const f_unidade = document.getElementById("f_unidade"),
-          f_turno = document.getElementById("f_turno"),
-          f_canal = document.getElementById("f_canal"),
-          f_cupom = document.getElementById("f_cupom"),
-          f_pagamento = document.getElementById("f_pagamento"),
-          f_cancelado = document.getElementById("f_cancelado"),
-          f_entregador = document.getElementById("f_entregador");
+  // ====== Supabase ======
+  const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  const TABLE = "vendas_kpi_daily"; // dia, unidade, pedidos, fat, des, fre
 
-    const dtDe = document.getElementById("dtDe"), dtAte = document.getElementById("dtAte");
-    const btnsQuick = Array.from(document.querySelectorAll("[data-days]"));
-    const btnAplicar = document.getElementById("btnAplicar"),
-          btnLimpar = document.getElementById("btnLimpar"),
-          btnReload = document.getElementById("btnReload");
+  // ====== estado ======
+  const state = {
+    unidade: "Todas",
+    dias: 30,
+    de: null, ate: null,
+    modo: "bruto"
+  };
 
-    const k_ped=document.getElementById("k_ped"), k_fat=document.getElementById("k_fat"), k_des=document.getElementById("k_des"), k_fre=document.getElementById("k_fre");
-    const k_ped_prev=document.getElementById("k_ped_prev"), k_fat_prev=document.getElementById("k_fat_prev"), k_des_prev=document.getElementById("k_des_prev"), k_fre_prev=document.getElementById("k_fre_prev");
+  // ====== UI refs ======
+  const selUni   = document.getElementById("f_unidade");
+  const inDe     = document.getElementById("f_de");
+  const inAte    = document.getElementById("f_ate");
+  const btnsQuick= Array.from(document.querySelectorAll(".quick .btn"));
+  const radios   = Array.from(document.querySelectorAll('input[name="modo"]'));
+  const periodEl = document.getElementById("periodo");
 
-    let quickDays = 30, chartLine, chartBars, TABLE = "vendas_kpi_daily", USE_DIMS = false;
+  const k_ped = document.getElementById("k_ped");
+  const k_ped_sub = document.getElementById("k_ped_sub");
+  const k_fat = document.getElementById("k_fat");
+  const k_fat_sub = document.getElementById("k_fat_sub");
+  const k_des = document.getElementById("k_des");
+  const k_des_sub = document.getElementById("k_des_sub");
+  const k_fre = document.getElementById("k_fre");
+  const k_fre_sub = document.getElementById("k_fre_sub");
 
-    function destroyCharts(){ if(chartLine){chartLine.destroy();} if(chartBars){chartBars.destroy();} }
-    function drawLine(data){
-      destroyCharts();
-      const ctx=document.getElementById("chartLine").getContext("2d");
-      chartLine=new Chart(ctx,{type:"line",data:{labels:data.map(d=>d.dia),datasets:[{label:"Receita diária (R$)",data:data.map(d=>d.valor),tension:.25}]},options:{responsive:true,animation:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true},x:{ticks:{maxRotation:0,autoSkip:true}}}}});
-    }
-    function drawBars(byWeek){
-      const ctx=document.getElementById("chartBars").getContext("2d");
-      const ordem=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"]; const vals=ordem.map(k=>byWeek[k]||0);
-      chartBars=new Chart(ctx,{type:"bar",data:{labels:ordem,datasets:[{label:"Total (R$)",data:vals}]},options:{responsive:true,animation:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
-    }
-    function weekDayIndex(iso){ return new Date(iso+"T00:00:00Z").getUTCDay(); }
-    function labelWeek(i){ return ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][i]; }
-    function byWeekSum(daily){ const acc={}; for(const d of daily){ const wd=labelWeek(weekDayIndex(d.dia)); acc[wd]=(acc[wd]||0)+d.valor; } return acc; }
-
-    function resolveJanela(){
-      const iDe=parseDMY(dtDe.value), iAte=parseDMY(dtAte.value);
-      let end=new Date(); end=new Date(Date.UTC(end.getUTCFullYear(),end.getUTCMonth(),end.getUTCDate(),12));
-      let start=addDays(end,-(quickDays-1));
-      if(iDe && iAte && iDe<=iAte){ start=iDe; end=iAte; }
-      return {startISO:toISO(start), endISO:toISO(end)};
-    }
-    function janelaAnterior({startISO,endISO}){
-      const s=new Date(startISO+"T12:00:00Z"), e=new Date(endISO+"T12:00:00Z");
-      const dias=Math.round((e-s)/(24*3600*1000))+1, ePrev=addDays(s,-1), sPrev=addDays(ePrev,-(dias-1));
-      return {startISO:toISO(sPrev), endISO:toISO(ePrev)};
-    }
-
-    function sum(arr, f){ return arr.reduce((a,x)=>a+Number(x[f]||0),0); }
-    function setKPIs(cur,prev){
-      const ped = sum(cur,"pedidos"), fat=sum(cur,"fat"), des=sum(cur,"des"), fre=sum(cur,"fre");
-      const pedP= sum(prev,"pedidos"), fatP=sum(prev,"fat"), desP=sum(prev,"des"), freP=sum(prev,"fre");
-      const varPct=(c,p)=>p?((c-p)/p*100):0;
-      const delta=(pct,prev,fmt)=>`${pct>=0?"+":""}${pct.toFixed(1)}% vs ant. • ant: ${fmt(prev)}`;
-
-      k_ped.textContent=fmtInt(ped);   k_ped_prev.textContent=delta(varPct(ped,pedP),pedP,fmtInt);
-      k_fat.textContent=fmtBRL(fat);   k_fat_prev.textContent=delta(varPct(fat,fatP),fatP,fmtBRL);
-      k_des.textContent=fmtBRL(des);   k_des_prev.textContent=delta(varPct(des,desP),desP,fmtBRL);
-      k_fre.textContent=fmtBRL(fre);   k_fre_prev.textContent=delta(varPct(fre,freP),freP,fmtBRL);
-    }
-    function groupDaily(rows, modo){
-      const map=new Map();
-      for(const r of rows){
-        const k=r.dia;
-        if(!map.has(k)) map.set(k,{pedidos:0,fat:0,des:0,fre:0});
-        const o=map.get(k);
-        o.pedidos += Number(r.pedidos||0);
-        o.fat     += Number(r.fat||0);
-        o.des     += Number(r.des||0);
-        o.fre     += Number(r.fre||0);
+  // ====== charts ======
+  let chartDaily = null, chartWD = null;
+  function drawDaily(labels, values){
+    if(chartDaily) chartDaily.destroy();
+    const ctx = document.getElementById("chart_daily").getContext("2d");
+    chartDaily = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{ label:"Receita diária (R$)", data: values, tension:.2 }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: { y: { ticks: { callback:v=>BRL.format(v) } } }
       }
-      const out=[]; for(const [d,v] of map.entries()){ out.push({dia:d, valor: (modo==="liquido")?(v.fat - v.fre):v.fat}); }
-      out.sort((a,b)=>a.dia.localeCompare(b.dia));
-      return out;
-    }
-
-    function setOptions(selectEl, values, keepLabel){
-      const keep = keepLabel || (selectEl.id==="f_unidade" ? "Todas" : "Todos");
-      const cur = selectEl.value || keep;
-      selectEl.innerHTML="";
-      const all=document.createElement("option"); all.textContent=keep; all.value=keep; selectEl.appendChild(all);
-      Array.from(new Set((values||[]).filter(v=>v && v!=="(sem)"))).sort().forEach(v=>{
-        const o=document.createElement("option"); o.textContent=v; o.value=v; if(v===cur) o.selected=true; selectEl.appendChild(o);
-      });
-    }
-
-    async function fetchPaged(table, fromISO,toISO,filters, useDims){
-      const page=2000; let off=0, acc=[], pageNo=0;
-      for(;;){
-        let sel = useDims
-          ? "dia,unidade,turno,canal,cupom,pagamento,cancelado,entregador,pedidos,fat,des,fre"
-          : "dia,unidade,pedidos,fat,des,fre";
-        let q = supa.from(table).select(sel).gte("dia",fromISO).lte("dia",toISO).range(off, off+page-1);
-        if(filters.unidade && filters.unidade!=="Todas"){ q=q.eq("unidade",filters.unidade); }
-        if(useDims){
-          if(filters.turno && filters.turno!=="Todos") q=q.eq("turno",filters.turno);
-          if(filters.canal && filters.canal!=="Todos") q=q.eq("canal",filters.canal);
-          if(filters.cupom && filters.cupom!=="Todos") q=q.eq("cupom",filters.cupom);
-          if(filters.pagamento && filters.pagamento!=="Todos") q=q.eq("pagamento",filters.pagamento);
-          if(filters.cancelado && filters.cancelado!=="Todos") q=q.eq("cancelado",filters.cancelado);
-          if(filters.entregador && filters.entregador!=="Todos") q=q.eq("entregador",filters.entregador);
-        }
-        const r=await q;
-        if(r.error) throw r.error;
-        const arr=r.data||[];
-        pageNo++; log(`[Page ${pageNo}] ${table} → ${arr.length} linhas`);
-        acc=acc.concat(arr);
-        if(arr.length<page) break;
-        off+=arr.length;
+    });
+  }
+  function drawWeekday(labels, values){
+    if(chartWD) chartWD.destroy();
+    const ctx = document.getElementById("chart_wd").getContext("2d");
+    chartWD = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{ label:"Por dia da semana (R$)", data: values }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: { y: { ticks: { callback:v=>BRL.format(v) } } }
       }
-      return acc;
+    });
+  }
+
+  // ====== data ======
+  async function listUnidades(){
+    // unidades distintas (leve; tabela já é diária)
+    const r = await supa.from(TABLE).select("unidade",{distinct:true}).order("unidade",{ascending:true});
+    if(r.error){ log("[Warn] unidades: "+r.error.message); return ["Todas"]; }
+    const u = Array.from(new Set((r.data||[]).map(x=>x.unidade).filter(Boolean)));
+    return ["Todas", ...u];
+  }
+
+  function windowNow(){
+    const today = new Date(); // usa hoje — evita max()/ORDER
+    const ate = state.ate ? state.ate : new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const dias = state.de && state.ate ? Math.max(1, Math.round((state.ate - state.de)/86400000)+1) : state.dias;
+    const de = state.de ? state.de : addDays(ate, -(dias-1));
+    return { de, ate, dias };
+  }
+  function prevWindow(w){ // imediatamente anterior
+    const dias = Math.round((w.ate - w.de)/86400000)+1;
+    const ate  = addDays(w.de, -1);
+    const de   = addDays(ate, -(dias-1));
+    return { de, ate, dias };
+  }
+
+  async function fetchPaged(filters, deIso, ateIso){
+    // paginação defensiva (5k)
+    const page = 5000;
+    let from = 0, acc=[];
+    for(;;){
+      let q = supa.from(TABLE)
+        .select("dia,unidade,pedidos,fat,des,fre")
+        .gte("dia", deIso).lte("dia", ateIso)
+        .range(from, from+page-1);
+      if(filters.unidade && filters.unidade!=="Todas") q = q.eq("unidade", filters.unidade);
+      const r = await q;
+      if(r.error) throw r.error;
+      const arr = r.data||[];
+      acc = acc.concat(arr);
+      if(arr.length<page) break;
+      from += page;
+    }
+    return acc;
+  }
+
+  function aggregate(rows, modo){
+    const pedidos = sum(rows, r=>r.pedidos);
+    const fat     = sum(rows, r=>r.fat);
+    const des     = sum(rows, r=>r.des);
+    const fre     = sum(rows, r=>r.fre);
+    const fatShow = (modo==="liquido") ? (fat - fre) : fat;
+
+    // série diária (preencher dias ausentes com 0)
+    const byDate = new Map();
+    for(const r of rows){
+      const key = r.dia.slice(0,10);
+      const v = (modo==="liquido") ? (r.fat - r.fre) : r.fat;
+      byDate.set(key, (byDate.get(key)||0) + v);
+    }
+    const w = windowNow(); // usa janela atual para eixo completo
+    let labels=[], values=[];
+    for(let d=new Date(w.de); d<=w.ate; d=addDays(d,1)){
+      const k = ymd(d);
+      labels.push(dmyStr(d));
+      values.push(byDate.get(k)||0);
     }
 
-    function fillFilterOptions(rows){
-      setOptions(f_unidade, rows.map(r=>r.unidade), "Todas");
-      if(!USE_DIMS){
-        setOptions(f_turno, [], "Todos");
-        setOptions(f_canal, [], "Todos");
-        setOptions(f_pagamento, [], "Todos");
-        setOptions(f_entregador, [], "Todos");
-        filtersBox.classList.add("disabled");
-        elFonteNote.textContent=" (filtros avançados desativados no fallback)";
-        return;
-      }
-      filtersBox.classList.remove("disabled");
-      elFonteNote.textContent="";
-      setOptions(f_turno,      rows.map(r=>r.turno), "Todos");
-      setOptions(f_canal,      rows.map(r=>r.canal), "Todos");
-      setOptions(f_pagamento,  rows.map(r=>r.pagamento), "Todos");
-      setOptions(f_entregador, rows.map(r=>r.entregador), "Todos");
+    // por dia da semana
+    const wd = [0,0,0,0,0,0,0];
+    for(const [k,v] of byDate){ // k = YYYY-MM-DD
+      const dt = new Date(k+"T00:00:00");
+      wd[dt.getDay()] += v;
     }
 
-    async function sanityPickSource(){
-      // tenta dims; se faltar, vai para base
-      const tDims="vendas_kpi_daily_dims", tBase="vendas_kpi_daily";
-      const testDims = await supa.from(tDims).select("dia").limit(1);
-      if(testDims.error){ TABLE=tBase; USE_DIMS=false; elDiag.textContent="✓ usando fallback (sem dims)."; elFonte.textContent="public."+TABLE; return; }
-      // compara janela curta (últimos 30 dias) sem filtros
-      let end=new Date(); end=new Date(Date.UTC(end.getUTCFullYear(),end.getUTCMonth(),end.getUTCDate(),12));
-      let start=addDays(end,-29); const fromISO=toISO(start), toISO=toISO(end);
-      const filters={}; // sem filtros
-      const rowsDims = await fetchPaged(tDims, fromISO,toISO, filters, true);
-      const rowsBase = await fetchPaged(tBase, fromISO,toISO, filters, false);
-      const pedD=rowsDims.reduce((a,x)=>a+Number(x.pedidos||0),0);
-      const fatD=rowsDims.reduce((a,x)=>a+Number(x.fat||0),0);
-      const pedB=rowsBase.reduce((a,x)=>a+Number(x.pedidos||0),0);
-      const fatB=rowsBase.reduce((a,x)=>a+Number(x.fat||0),0);
-      const diff = (a,b)=> b ? Math.abs(a-b)/b*100 : 0;
-      const dPed=diff(pedD,pedB), dFat=diff(fatD,fatB);
-      if(dPed>1 || dFat>1 || rowsDims.length<rowsBase.length){
-        TABLE=tBase; USE_DIMS=false;
-        elDiag.textContent=`⚠️ dims divergente (ped ${dPed.toFixed(1)}% • fat ${dFat.toFixed(1)}%). Usando fallback confiável.`;
-      }else{
-        TABLE=tDims; USE_DIMS=true;
-        elDiag.textContent="✓ usando view rica (dims) (sanity OK).";
-      }
-      elFonte.textContent="public."+TABLE;
+    return { pedidos, fat, des, fre, fatShow, labels, values, wd };
+  }
+
+  function setKPIs(curr, prev){
+    k_ped.textContent = INT.format(curr.pedidos);
+    const p1 = pct(curr.pedidos, prev.pedidos);
+    k_ped_sub.textContent = `${p1.txt} • ant: ${INT.format(prev.pedidos)}`;
+
+    k_fat.textContent = BRL.format(curr.fatShow);
+    const p2 = pct(curr.fatShow, prev.fatShow);
+    k_fat_sub.textContent = `${p2.txt} • ant: ${BRL.format(prev.fatShow)}`;
+
+    k_des.textContent = BRL.format(curr.des);
+    const p3 = pct(curr.des, prev.des);
+    k_des_sub.textContent = `${p3.txt} • ant: ${BRL.format(prev.des)}`;
+
+    k_fre.textContent = BRL.format(curr.fre);
+    const p4 = pct(curr.fre, prev.fre);
+    k_fre_sub.textContent = `${p4.txt} • ant: ${BRL.format(prev.fre)}`;
+  }
+
+  async function recarregar(){
+    try{
+      const w = windowNow();
+      const deIso = ymd(w.de), ateIso = ymd(w.ate);
+      periodEl.textContent = `Período: ${deIso} → ${ateIso}`;
+
+      log(`[Query] ${TABLE} | janela ${w.dias}d ${deIso} → ${ateIso} | UNI=${state.unidade} | modo=${state.modo}`);
+      const rowsNow  = await fetchPaged(state, deIso, ateIso);
+      log(`[OK] Linhas (atual): ${rowsNow.length}`);
+
+      const prev = prevWindow(w);
+      const deIsoP = ymd(prev.de), ateIsoP = ymd(prev.ate);
+      log(`[Query] anterior: ${deIsoP} → ${ateIsoP}`);
+      const rowsPrev = await fetchPaged(state, deIsoP, ateIsoP);
+
+      const aggNow  = aggregate(rowsNow,  state.modo);
+      const aggPrev = aggregate(rowsPrev, state.modo);
+
+      setKPIs(aggNow, aggPrev);
+      drawDaily(aggNow.labels, aggNow.values);
+      drawWeekday(WD, aggNow.wd);
+      log("[OK] KPIs e gráficos atualizados.");
+    }catch(e){
+      log("[ERRO] "+(e.message||String(e)));
+      console.error(e);
     }
+  }
 
-    async function recarregar(){
-      try{
-        const modo=(document.querySelector('input[name="modo"]:checked')||{}).value||"bruto";
-        const jan=resolveJanela(); elPeriodo.textContent=`Período: ${jan.startISO} -> ${jan.endISO}`;
-        const filters={
-          unidade:   f_unidade.value||"Todas",
-          turno:     f_turno.value||"Todos",
-          canal:     f_canal.value||"Todos",
-          cupom:     f_cupom.value||"Todos",
-          pagamento: f_pagamento.value||"Todos",
-          cancelado: f_cancelado.value||"Todos",
-          entregador:f_entregador.value||"Todos"
-        };
-        log(`[Query] ${TABLE} | ${jan.startISO} -> ${jan.endISO} | filtros=${JSON.stringify(filters)} | modo=${modo}`);
+  // ====== boot ======
+  async function boot(){
+    log("[Boot] v17.2 — diagnóstico + gráficos estáveis (Chart.js) • sem ORDER/max • paginação 5k");
 
-        const rows = await fetchPaged(TABLE, jan.startISO, jan.endISO, filters, USE_DIMS);
-        log(`[OK] Linhas (atual): ${rows.length.toLocaleString("pt-BR")}`);
-        fillFilterOptions(rows);
+    // unidades
+    const opts = await listUnidades();
+    selUni.innerHTML = opts.map(u=>`<option>${u}</option>`).join("");
+    selUni.value = "Todas";
 
-        const janPrev=janelaAnterior(jan);
-        log(`[Query] anterior: ${janPrev.startISO} -> ${janPrev.endISO}`);
-        const rowsPrev = await fetchPaged(TABLE, janPrev.startISO, janPrev.endISO, filters, USE_DIMS);
+    // quick
+    btnsQuick.forEach(btn=>{
+      btn.onclick = ()=>{ state.dias = parseInt(btn.dataset.days,10); state.de=null; state.ate=null; inDe.value=""; inAte.value=""; recarregar(); };
+    });
 
-        setKPIs(rows, rowsPrev);
-        const daily=groupDaily(rows, modo);
-        const weekly=byWeekSum(daily);
-        drawLine(daily);
-        drawBars(weekly);
+    // modo
+    radios.forEach(r=> r.onchange = ()=>{ state.modo = r.value; recarregar(); });
 
-        log("[OK] KPIs e gráficos atualizados.");
-      }catch(e){
-        console.error(e); log("[ERRO] "+(e.message||String(e)));
-      }
-    }
+    // unidade
+    selUni.onchange = ()=>{ state.unidade = selUni.value; recarregar(); };
 
-    // Eventos
-    document.querySelectorAll('[data-days]').forEach(b=> b.addEventListener('click', ()=>{ quickDays=+b.dataset.days; dtDe.value=""; dtAte.value=""; recarregar(); }));
-    btnAplicar.onclick = ()=> recarregar();
-    btnReload.onclick  = ()=> recarregar();
-    btnLimpar.onclick  = ()=>{
-      f_unidade.value="Todas"; f_turno.value="Todos"; f_canal.value="Todos"; f_cupom.value="Todos"; f_pagamento.value="Todos"; f_cancelado.value="Todos"; f_entregador.value="Todos";
-      quickDays=30; dtDe.value=""; dtAte.value="";
-      document.querySelector('input[name="modo"][value="bruto"]').checked=true;
+    // aplicar datas
+    document.getElementById("btn_apply").onclick = ()=>{
+      const d1 = parseDMY(inDe.value), d2 = parseDMY(inAte.value);
+      if(d1 && d2 && d1<=d2){ state.de=d1; state.ate=d2; recarregar(); }
+      else { alert("Datas inválidas. Use dd/mm/aaaa."); }
+    };
+
+    // limpar
+    document.getElementById("btn_clear").onclick = ()=>{
+      state.unidade="Todas"; selUni.value="Todas";
+      state.modo="bruto"; radios.find(r=>r.value==="bruto").checked=true;
+      state.de=null; state.ate=null; state.dias=30; inDe.value=""; inAte.value="";
       recarregar();
     };
-    [f_unidade,f_turno,f_canal,f_cupom,f_pagamento,f_cancelado,f_entregador].forEach(el=> el.onchange=()=>recarregar());
-    document.querySelectorAll('input[name="modo"]').forEach(r=> r.onchange=()=>recarregar());
 
-    // Boot
-    (async function boot(){
-      elUrlShow.textContent = SUPABASE_URL.replace(/^https?:\/\//,"");
-      log("[Boot] v17.4 — auto-validação dims × base com fallback confiável…");
-      await sanityPickSource();
-      recarregar();
-    })();
-  </script>
+    // recarregar
+    document.getElementById("btn_reload").onclick = recarregar;
+
+    // primeira carga
+    recarregar();
+  }
+
+  boot();
+})();
+</script>
 </body>
 </html>
