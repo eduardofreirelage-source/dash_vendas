@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8"/>
-<title>Dashboard Vendas — v17 (filtros em cascata)</title>
+<title>Dashboard Vendas — v17.1 (fallback robusto)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <style>
   :root{--bg:#f6f7fb;--card:#fff;--muted:#64748b;--ink:#0f172a;--line:#e5e7eb}
@@ -20,15 +20,17 @@
   .muted{color:var(--muted)}
   @media(max-width:860px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
-<!-- Supabase + Recharts (CORS ok) -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<!-- Ordem CORRETA: React -> ReactDOM -> Recharts -> Supabase -->
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/recharts@2.10.4/umd/Recharts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 </head>
 <body>
 <div class="wrap">
   <div class="row" style="justify-content:space-between">
     <div><h2 style="margin:0 0 4px">Dashboard Vendas — Supabase</h2>
-      <div class="muted" id="build">Build v17 • fonte: auto</div></div>
+      <div class="muted" id="build">Build v17.1 • fonte: detectando…</div></div>
     <div class="muted" id="periodo">Período: —</div>
   </div>
 
@@ -39,31 +41,31 @@
         <label>Unidade</label>
         <select id="f_unidade"><option>Todas</option></select>
       </div>
-      <div>
+      <div class="__rica">
         <label>Turno</label>
         <select id="f_turno"><option>Todas</option></select>
       </div>
-      <div>
+      <div class="__rica">
         <label>Canal</label>
         <select id="f_canal"><option>Todas</option></select>
       </div>
-      <div>
+      <div class="__rica">
         <label>Cupom</label>
         <select id="f_cupom">
           <option>Todas</option><option value="S">S</option><option value="N">N</option>
         </select>
       </div>
-      <div>
+      <div class="__rica">
         <label>Pagamento</label>
         <select id="f_pag"><option>Todas</option></select>
       </div>
-      <div>
+      <div class="__rica">
         <label>Cancelado</label>
         <select id="f_canc">
           <option>Todas</option><option value="S">S</option><option value="N">N</option>
         </select>
       </div>
-      <div style="min-width:220px">
+      <div class="__rica" style="min-width:220px">
         <label>Entregador</label>
         <select id="f_ent"><option>Todas</option></select>
       </div>
@@ -136,26 +138,22 @@ const DD = {
 };
 
 // fonte preferida e fallback
-let TABLE_RICA = 'vendas_kpi_daily_rica';
-let TABLE_FALL = 'vendas_kpi_daily';
-let TABLE = TABLE_FALL; // detectaremos abaixo
+const TABLE_RICA = 'vendas_kpi_daily_rica';   // com dimensões
+const TABLE_FALL = 'vendas_kpi_daily';        // só unidade + dia
+let TABLE = TABLE_FALL;
+let HAS_RICA = false;
 
-// estado de período
-let dEnd   = new Date(); dEnd.setDate(dEnd.getDate()-1); // ontem para evitar dia parcial
-let dStart = new Date(dEnd); dStart.setDate(dEnd.getDate()-29); // 30 dias
-let lastData = []; // cache do período atual (para gráficos)
-let lastDataPrev = []; // comparativo
+// período default (30d até ontem)
+let dEnd   = new Date(); dEnd.setDate(dEnd.getDate()-1);
+let dStart = new Date(dEnd); dStart.setDate(dEnd.getDate()-29);
 
-function setPeriodoLabel(a,b){
-  E('periodo').textContent = `Período: ${a} → ${b}`;
-}
+function setPeriodoLabel(a,b){ E('periodo').textContent = `Período: ${a} → ${b}`; }
 
-// limpa e desenha um gráfico (evita “infinito”)
+// Desenho seguro (evita “gráfico infinito”)
 function drawLine(containerId, rows){
   const root = document.getElementById(containerId);
-  root.innerHTML = ""; // zera
+  root.innerHTML = "";
   const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } = window.Recharts;
-
   const data = rows.map(r => ({ x: r.dia, y: +r.fat }));
   const el = React.createElement(ResponsiveContainer, {width:"100%",height:"100%"},
     React.createElement(LineChart,{data, margin:{top:10,right:20,left:0,bottom:0}},
@@ -173,8 +171,6 @@ function drawBar(containerId, rows){
   const root = document.getElementById(containerId);
   root.innerHTML = "";
   const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } = window.Recharts;
-
-  // agrega por dia da semana
   const wk = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
   const acc = {};
   rows.forEach(r=>{
@@ -183,7 +179,6 @@ function drawBar(containerId, rows){
     acc[k]=(acc[k]||0)+(+r.fat||0);
   });
   const data = wk.map(k=>({x:k,y:acc[k]||0}));
-
   const el = React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},
     React.createElement(BarChart,{data, margin:{top:10,right:20,left:0,bottom:0}},
       React.createElement(CartesianGrid,{strokeDasharray:"3 3"}),
@@ -198,90 +193,99 @@ function drawBar(containerId, rows){
 }
 
 function sum(arr, key){ return arr.reduce((a,b)=>a+(+b[key]||0),0); }
-
-function params(){
+function compare(now, prev){
+  const pct = (n,p)=> p>0 ? ((n/p-1)*100) : 0;
   return {
-    unidade: DD.unidade.value === 'Todas' ? null : DD.unidade.value,
-    turno:   DD.turno.value   === 'Todas' ? null : DD.turno.value,
-    canal:   DD.canal.value   === 'Todas' ? null : DD.canal.value,
-    cupom:   DD.cupom.value   === 'Todas' ? null : DD.cupom.value,
-    pagamento: DD.pag.value   === 'Todas' ? null : DD.pag.value,
-    cancelado: DD.canc.value  === 'Todas' ? null : DD.canc.value,
-    entregador:DD.ent.value   === 'Todas' ? null : DD.ent.value,
+    p:{ now:sum(now,'pedidos'), prev:sum(prev,'pedidos'), pc:pct(sum(now,'pedidos'),sum(prev,'pedidos')) },
+    f:{ now:sum(now,'fat'),     prev:sum(prev,'fat'),     pc:pct(sum(now,'fat'),    sum(prev,'fat')) },
+    d:{ now:sum(now,'des'),     prev:sum(prev,'des'),     pc:pct(sum(now,'des'),    sum(prev,'des')) },
+    r:{ now:sum(now,'fre'),     prev:sum(prev,'fre'),     pc:pct(sum(now,'fre'),    sum(prev,'fre')) },
   };
 }
-
-// aplica filtros no builder Supabase
-function applyFilters(q){
-  const P = params();
-  if(P.unidade)    q = q.eq('unidade', P.unidade);
-  if(P.turno)      q = q.eq('turno', P.turno);
-  if(P.canal)      q = q.eq('canal', P.canal);
-  if(P.cupom)      q = q.eq('cupom', P.cupom);
-  if(P.pagamento)  q = q.eq('pagamento', P.pagamento);
-  if(P.cancelado)  q = q.eq('cancelado', P.cancelado);
-  if(P.entregador) q = q.eq('entregador', P.entregador);
-  return q;
-}
-
-// carregar opções de filtros (em cascata, filtradas pelo período atual + seleções já feitas)
-async function loadFilterOptions(){
-  const a = toISO(dStart), b = toISO(dEnd);
-  const dims = [
-    ['unidade', DD.unidade],
-    ['turno',   DD.turno],
-    ['canal',   DD.canal],
-    ['pagamento', DD.pag],
-    ['entregador', DD.ent],
-  ];
-  for(const [col, sel] of dims){
-    let q = supa.from(TABLE).select(col,{ distinct:true }).gte('dia', a).lte('dia', b).limit(5000);
-    // aplica filtros já escolhidos nas outras dimensões (menos a atual)
-    const P = params();
-    const remap = {pagamento:'pagamento'};
-    for(const k of ['unidade','turno','canal','cupom','pagamento','cancelado','entregador']){
-      if(k===col) continue;
-      const val = P[k];
-      if(val) q = q.eq(k, val);
-    }
-    const r = await q;
-    if(r.error){ addLog(`[Warn] opções ${col}: ${r.error.message}`); continue; }
-    const opts = ['Todas', ...Array.from(new Set((r.data||[]).map(x=>x[col]).filter(Boolean))).sort()];
-    sel.innerHTML = opts.map(v => `<option${(params()[col]===v?' selected':'')}>${v}</option>`).join('');
-  }
-}
-
-async function fetchWindow(a,b){
-  // carrega tudo do servidor já agregado por dia (e dimensões)
-  let q = supa.from(TABLE)
-    .select('dia,unidade,turno,canal,cupom,pagamento,cancelado,entregador,pedidos,fat,des,fre')
-    .gte('dia', a).lte('dia', b).limit(100000);
-  q = applyFilters(q);
-  const r = await q.order('dia',{ascending:true});
-  if(r.error) throw r.error;
-  return r.data || [];
-}
-
-function compare(prevNow, prevPrev){
-  const pct = (now, prev) => prev>0 ? ((now/prev-1)*100) : 0;
-  return {
-    p: { now: sum(prevNow,'pedidos'), prev: sum(prevPrev,'pedidos'), pc: pct(sum(prevNow,'pedidos'), sum(prevPrev,'pedidos')) },
-    f: { now: sum(prevNow,'fat'),     prev: sum(prevPrev,'fat'),     pc: pct(sum(prevNow,'fat'),     sum(prevPrev,'fat')) },
-    d: { now: sum(prevNow,'des'),     prev: sum(prevPrev,'des'),     pc: pct(sum(prevNow,'des'),     sum(prevPrev,'des')) },
-    r: { now: sum(prevNow,'fre'),     prev: sum(prevPrev,'fre'),     pc: pct(sum(prevNow,'fre'),     sum(prevPrev,'fre')) },
-  };
-}
-
 function showKPI(K){
   E('k_p').textContent = fmtInt(K.p.now);
   E('k_f').textContent = fmtBRL(K.f.now);
   E('k_d').textContent = fmtBRL(K.d.now);
   E('k_r').textContent = fmtBRL(K.r.now);
-
   E('k_p_cmp').textContent = `${K.p.pc.toFixed(1)}% vs ant. • ant: ${fmtInt(K.p.prev)}`;
   E('k_f_cmp').textContent = `${K.f.pc.toFixed(1)}% vs ant. • ant: ${fmtBRL(K.f.prev)}`;
   E('k_d_cmp').textContent = `${K.d.pc.toFixed(1)}% vs ant. • ant: ${fmtBRL(K.d.prev)}`;
   E('k_r_cmp').textContent = `${K.r.pc.toFixed(1)}% vs ant. • ant: ${fmtBRL(K.r.prev)}`;
+}
+
+// aplica filtros apenas se a coluna existir na tabela ativa
+function applyFilters(q){
+  const unidade = DD.unidade.value==='Todas'?null:DD.unidade.value;
+  if(unidade) q = q.eq('unidade', unidade);
+
+  if(HAS_RICA){
+    const turno   = DD.turno.value==='Todas'?null:DD.turno.value;
+    const canal   = DD.canal.value==='Todas'?null:DD.canal.value;
+    const cupom   = DD.cupom.value==='Todas'?null:DD.cupom.value;
+    const pag     = DD.pag.value==='Todas'?null:DD.pag.value;
+    const canc    = DD.canc.value==='Todas'?null:DD.canc.value;
+    const ent     = DD.ent.value==='Todas'?null:DD.ent.value;
+    if(turno) q = q.eq('turno', turno);
+    if(canal) q = q.eq('canal', canal);
+    if(cupom) q = q.eq('cupom', cupom);
+    if(pag)   q = q.eq('pagamento', pag);
+    if(canc)  q = q.eq('cancelado', canc);
+    if(ent)   q = q.eq('entregador', ent);
+  }
+  return q;
+}
+
+// opções de filtros (em cascata)
+async function loadFilterOptions(){
+  const a = toISO(dStart), b = toISO(dEnd);
+
+  // Unidade existe em ambas as tabelas
+  let qUni = supa.from(TABLE).select('unidade',{ distinct:true }).gte('dia',a).lte('dia',b).limit(5000);
+  qUni = applyFilters(qUni); // respeita seleção atual (em geral só unidade mesma)
+  const rU = await qUni;
+  if(!rU.error){
+    const opts = ['Todas', ...Array.from(new Set((rU.data||[]).map(x=>x.unidade).filter(Boolean))).sort()];
+    DD.unidade.innerHTML = opts.map(v=>`<option${DD.unidade.value===v?' selected':''}>${v}</option>`).join('');
+  }else{
+    addLog(`[Warn] opções unidade: ${rU.error.message}`);
+  }
+
+  // Demais filtros só quando HAS_RICA
+  const blocks = document.querySelectorAll('.__rica');
+  if(!HAS_RICA){
+    blocks.forEach(b=>b.style.display='none');
+    return;
+  } else {
+    blocks.forEach(b=>b.style.display='block');
+  }
+
+  const dims = [
+    ['turno', DD.turno],
+    ['canal', DD.canal],
+    ['pagamento', DD.pag],
+    ['entregador', DD.ent],
+  ];
+  for(const [col, sel] of dims){
+    let q = supa.from(TABLE).select(col,{ distinct:true }).gte('dia',a).lte('dia',b).limit(5000);
+    q = applyFilters(q);
+    const r = await q;
+    if(r.error){ addLog(`[Warn] opções ${col}: ${r.error.message}`); continue; }
+    const opts = ['Todas', ...Array.from(new Set((r.data||[]).map(x=>x[col]).filter(Boolean))).sort()];
+    sel.innerHTML = opts.map(v=>`<option${sel.value===v?' selected':''}>${v}</option>`).join('');
+  }
+}
+
+// busca janela (select adequado por tabela)
+async function fetchWindow(a,b){
+  let sel = 'dia,unidade,pedidos,fat,des,fre';
+  if(HAS_RICA){
+    sel = 'dia,unidade,turno,canal,cupom,pagamento,cancelado,entregador,pedidos,fat,des,fre';
+  }
+  let q = supa.from(TABLE).select(sel).gte('dia',a).lte('dia',b).limit(100000);
+  q = applyFilters(q);
+  const r = await q.order('dia',{ascending:true});
+  if(r.error) throw r.error;
+  return r.data || [];
 }
 
 async function recarregar(){
@@ -290,60 +294,54 @@ async function recarregar(){
     setPeriodoLabel(a,b);
     addLog(`[Query] ${TABLE} | ${a} → ${b}`);
 
-    // opções de filtro (cascata)
     await loadFilterOptions();
 
-    // período atual
-    lastData = await fetchWindow(a,b);
-
-    // período imediatamente anterior (mesma duração)
+    const now = await fetchWindow(a,b);
     const days = Math.max(1, Math.ceil((dEnd - dStart)/86400000));
     const prevEnd = new Date(dStart); prevEnd.setDate(prevEnd.getDate()-1);
-    const prevStart = new Date(prevEnd); prevStart.setDate(prevEnd.getDate()-days+1);
-    lastDataPrev = await fetchWindow(toISO(prevStart), toISO(prevEnd));
+    const prevStart = new Date(prevEnd); prevStart.setDate(prevStart.getDate()-days+1);
+    const prev = await fetchWindow(toISO(prevStart), toISO(prevEnd));
 
-    // agrega por dia (somatório sobre demais dimensões)
+    // agrega por dia para gráficos
     const byDay = {};
-    lastData.forEach(r => { byDay[r.dia] = (byDay[r.dia]||0) + (+r.fat||0); });
-    const ser = Object.keys(byDay).sort().map(d => ({dia:d, fat: byDay[d]}));
+    now.forEach(r=>{ byDay[r.dia]=(byDay[r.dia]||0)+(+r.fat||0); });
+    const serie = Object.keys(byDay).sort().map(d=>({dia:d,fat:byDay[d]}));
 
-    // KPIs + gráficos
-    const K = compare(lastData, lastDataPrev);
+    const K = compare(now, prev);
     showKPI(K);
-    drawLine('g1', ser);
-    drawBar('g2', ser);
-    addLog(`[OK] KPIs/Gráficos atualizados.`);
+    drawLine('g1', serie);
+    drawBar('g2', serie);
+    addLog('[OK] KPIs/Gráficos atualizados.');
   }catch(e){
     console.error(e); addLog(`[ERRO] ${e.message||e}`);
   }
 }
 
 async function detectTable(){
-  // tenta a “rica”, cai para a antiga
-  let t = TABLE_RICA;
-  let ping = await supa.from(t).select('dia').limit(1);
+  // tenta a rica; se 404/erro, cai pro fallback e desliga filtros extras
+  const ping = await supa.from(TABLE_RICA).select('dia').limit(1);
   if(ping.error){
-    TABLE = TABLE_FALL;
-    E('build').textContent = `Build v17 • fonte: ${TABLE_FALL} (fallback)`;
-    // esconde filtros extras se estiver no fallback
-    ['turno','canal','cupom','pag','canc','ent'].forEach(k=>DD[k].closest('div').style.display='none');
+    HAS_RICA = false; TABLE = TABLE_FALL;
+    E('build').textContent = `Build v17.1 • fonte: ${TABLE_FALL} (fallback)`;
   }else{
-    TABLE = TABLE_RICA;
-    E('build').textContent = `Build v17 • fonte: ${TABLE_RICA}`;
+    HAS_RICA = true; TABLE = TABLE_RICA;
+    E('build').textContent = `Build v17.1 • fonte: ${TABLE_RICA}`;
   }
 }
 
 function bindUI(){
-  // período rápido
   document.querySelectorAll('[data-d]').forEach(btn=>{
-    btn.onclick = ()=>{ const n=+btn.getAttribute('data-d'); dEnd=new Date(); dEnd.setDate(dEnd.getDate()-1); dStart=new Date(dEnd); dStart.setDate(dEnd.getDate()-(n-1)); recarregar(); };
+    btn.onclick = ()=>{
+      const n=+btn.getAttribute('data-d');
+      dEnd=new Date(); dEnd.setDate(dEnd.getDate()-1);
+      dStart=new Date(dEnd); dStart.setDate(dEnd.getDate()-(n-1));
+      recarregar();
+    };
   });
-  // aplicar datas
   E('aplicar').onclick = ()=>{
     const a=E('dt_i').value, b=E('dt_f').value;
     if(a && b){ dStart=new Date(a); dEnd=new Date(b); recarregar(); }
   };
-  // limpar
   E('limpar').onclick = ()=>{
     E('dt_i').value=""; E('dt_f').value="";
     Object.values(DD).forEach(s=>{ if(s) s.value='Todas'; });
@@ -351,25 +349,16 @@ function bindUI(){
     dStart=new Date(dEnd); dStart.setDate(dEnd.getDate()-29);
     recarregar();
   };
-  // recarregar
   E('recarregar').onclick = recarregar;
-
-  // mudar filtros → cascata
-  Object.values(DD).forEach(s=>{
-    s.onchange = recarregar;
-  });
+  Object.values(DD).forEach(s=>{ s.onchange = recarregar; });
 }
 
 (async function boot(){
-  addLog('[Boot] v17 — filtros completos em cascata; fallback automático.');
+  addLog('[Boot] v17.1 — fallback robusto, sem regressão');
   await detectTable();
   bindUI();
   recarregar();
 })();
 </script>
-
-<!-- React para Recharts UMD -->
-<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
 </body>
 </html>
