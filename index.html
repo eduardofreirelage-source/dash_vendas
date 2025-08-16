@@ -1,434 +1,353 @@
 <!doctype html>
 <html lang="pt-BR">
-  <head>
-    <meta charset="utf-8" />
-    <title>Dashboard Vendas — Supabase (v17.2-MV-paged)</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      :root{--ink:#0f172a;--muted:#6b7280;--bg:#f6f7fb;--card:#fff;--brd:#e5e7eb}
-      *{box-sizing:border-box}
-      body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
-      .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
-      h1{font-size:22px;margin:0 0 4px}
-      .muted{color:var(--muted);font-size:12px}
-      .row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
-      .card{background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
-      .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-      .title{font-size:12px;color:var(--muted)}
-      .val{font-size:22px;font-weight:700;margin-top:4px}
-      .pill{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--brd);border-radius:999px;padding:6px 10px;background:#fff}
-      .btn{cursor:pointer;border:1px solid var(--brd);background:#fff;border-radius:8px;padding:8px 10px}
-      .btn:disabled{opacity:.6;cursor:not-allowed}
-      select,input{border:1px solid var(--brd);border-radius:8px;padding:8px;background:#fff}
-      pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
-      canvas{width:100%;height:280px}
-      @media (max-width:920px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-      @media (max-width:520px){.grid{grid-template-columns:1fr}}
-      code.k{background:#eef2ff;padding:0 4px;border-radius:4px}
-    </style>
-
-    <!-- Supabase UMD -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-    <!-- Chart.js UMD -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  </head>
-  <body>
-    <div class="wrap">
-      <div class="row" style="justify-content:space-between;align-items:flex-start">
-        <div>
-          <h1>Dashboard Vendas — Supabase</h1>
-          <div class="muted">Build <code class="k">v17.2-MV-paged</code> • fonte preferida: <code class="k">public.vendas_kpi_daily_v2</code></div>
-          <div class="muted">URL: <code class="k" id="sb_url">—</code></div>
-          <div class="muted">Período: <code class="k" id="periodo">—</code></div>
-        </div>
-        <div class="pill">
-          <span class="muted">Modo</span>
-          <label><input type="radio" name="modo" value="bruto" checked> Total (bruto)</label>
-          <label><input type="radio" name="modo" value="liquido"> Líquido (Total − Entrega)</label>
-        </div>
+<head>
+  <meta charset="utf-8" />
+  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --brd:#e5e7eb; }
+    body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
+    .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
+    h1{font-size:20px;margin:0 0 4px}
+    .muted{color:var(--muted);font-size:12px}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:12px}
+    .card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+    .title{font-size:12px;color:var(--muted)}
+    .val{font-size:22px;font-weight:700;margin-top:4px}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    select,button,input{font:inherit;padding:8px 10px;border:1px solid var(--brd);border-radius:8px;background:#fff}
+    button{cursor:pointer}
+    button.ghost{background:#fff}
+    .seg{display:flex;gap:6px;align-items:center}
+    .seg button{padding:6px 10px}
+    .seg .lbl{font-size:12px;color:var(--muted)}
+    canvas{width:100%;height:280px}
+    pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
+    @media (max-width:860px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media (max-width:520px){.grid{grid-template-columns:1fr} .row{flex-direction:column;align-items:stretch}}
+  </style>
+  <!-- Supabase UMD -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <!-- Chart.js (estável e sem CORS chato) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="row" style="justify-content:space-between;align-items:flex-end">
+      <div>
+        <h1>Dashboard Vendas — Supabase <span class="muted">(v17.2-MV-paged-fix)</span></h1>
+        <div class="muted">Fonte: <code>public.vendas_kpi_daily_v2</code> (paginado)</div>
+        <div class="muted" id="periodo">Período: —</div>
       </div>
-
-      <!-- Filtros principais -->
-      <div class="card" style="margin-top:12px">
-        <div class="row">
-          <div>
-            <div class="title">Unidade</div>
-            <select id="f_unidade">
-              <option>Todas</option>
-            </select>
-          </div>
-
-          <div>
-            <div class="title">Período rápido (dias)</div>
-            <div class="row">
-              <button class="btn" data-quick="7">7</button>
-              <button class="btn" data-quick="15">15</button>
-              <button class="btn" data-quick="30">30</button>
-              <button class="btn" data-quick="90">90</button>
-              <button class="btn" data-quick="180">180</button>
-              <button class="btn" data-quick="360">360</button>
-            </div>
-          </div>
-
-          <div>
-            <div class="title">De (dd/mm/aaaa)</div>
-            <input id="f_de" placeholder="dd/mm/aaaa" />
-          </div>
-          <div>
-            <div class="title">Até (dd/mm/aaaa)</div>
-            <input id="f_ate" placeholder="dd/mm/aaaa" />
-          </div>
-
-          <div style="margin-left:auto;display:flex;gap:8px">
-            <button id="btn_aplicar" class="btn">Aplicar</button>
-            <button id="btn_limpar" class="btn">Limpar filtros</button>
-            <button id="btn_recarregar" class="btn">Recarregar</button>
-          </div>
-        </div>
-        <div class="muted" style="margin-top:6px">Se preencher as datas acima, o período rápido é ignorado.</div>
-      </div>
-
-      <!-- KPIs -->
-      <div class="grid" style="margin-top:12px">
-        <div class="card">
-          <div class="title">Pedidos</div>
-          <div class="val" id="k_ped">…</div>
-          <div class="muted" id="k_ped_sub">—</div>
-        </div>
-        <div class="card">
-          <div class="title">Faturamento</div>
-          <div class="val" id="k_fat">…</div>
-          <div class="muted" id="k_fat_sub">—</div>
-        </div>
-        <div class="card">
-          <div class="title">Incentivos</div>
-          <div class="val" id="k_des">…</div>
-          <div class="muted" id="k_des_sub">—</div>
-        </div>
-        <div class="card">
-          <div class="title">Frete</div>
-          <div class="val" id="k_fre">…</div>
-          <div class="muted" id="k_fre_sub">—</div>
-        </div>
-      </div>
-
-      <!-- Gráficos -->
-      <div class="card" style="margin-top:12px">
-        <div class="title">Receita diária (R$)</div>
-        <div style="position:relative"><canvas id="chart_line"></canvas></div>
-      </div>
-
-      <div class="card" style="margin-top:12px">
-        <div class="title">Totais por dia da semana (R$)</div>
-        <div style="position:relative"><canvas id="chart_bar"></canvas></div>
-      </div>
-
-      <!-- Logs -->
-      <div class="card" style="margin-top:12px">
-        <div class="title">Status / Logs</div>
-        <pre id="log">Iniciando…</pre>
-      </div>
+      <div class="muted">URL: <code>uahmcfzerofhzjvlzrqc.supabase.co</code></div>
     </div>
 
-    <script>
-      // ========= CREDENCIAIS (as mesmas já usadas no seu projeto congelado) =========
-      const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-      const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+    <!-- Filtros essenciais (sem regressão) -->
+    <div class="card" style="margin-top:12px">
+      <div class="row">
+        <div class="seg">
+          <span class="lbl">Unidade</span>
+          <select id="uni"></select>
+        </div>
 
-      // ========= HELPERS =========
-      const elLog = document.getElementById("log");
-      const elPeriodo = document.getElementById("periodo");
-      const elUrl = document.getElementById("sb_url");
-      function log(m){ elLog.textContent += "\\n" + m; elLog.scrollTop = elLog.scrollHeight; }
+        <div class="seg">
+          <span class="lbl">Período rápido (dias)</span>
+          <div class="row" style="gap:6px">
+            <button class="ghost pr" data-d="7">7</button>
+            <button class="ghost pr" data-d="15">15</button>
+            <button class="ghost pr" data-d="30">30</button>
+            <button class="ghost pr" data-d="90">90</button>
+            <button class="ghost pr" data-d="180">180</button>
+            <button class="ghost pr" data-d="360">360</button>
+          </div>
+        </div>
 
-      function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
-      function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)); }
-      function pct(a,b){
-        if(!isFinite(a)||!isFinite(b)||b===0) return {txt:"—",sign:0};
-        const p=((a-b)/Math.abs(b))*100;
-        const s=p>0?"+":(p<0?"":"");
-        return {txt:`${s}${p.toFixed(1)}%`,sign:Math.sign(p)};
+        <div class="seg">
+          <span class="lbl">De</span>
+          <input id="dini" placeholder="dd/mm/aaaa" style="width:130px" />
+        </div>
+        <div class="seg">
+          <span class="lbl">Até</span>
+          <input id="dfim" placeholder="dd/mm/aaaa" style="width:130px" />
+        </div>
+
+        <div class="seg">
+          <span class="lbl">Modo</span>
+          <select id="modo">
+            <option value="bruto">Total (bruto)</option>
+            <option value="liq">Líquido (Total - Entrega)</option>
+          </select>
+        </div>
+
+        <div class="seg">
+          <button id="aplicar">Aplicar</button>
+          <button id="limpar" class="ghost">Limpar filtros</button>
+          <button id="reload" class="ghost">Recarregar</button>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:6px">Se preencher as datas, o período rápido é ignorado.</div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="grid" style="margin-top:12px">
+      <div class="card"><div class="title">Pedidos</div><div class="val" id="k_ped">…</div><div class="muted" id="k_ped_delta">—</div></div>
+      <div class="card"><div class="title">Faturamento</div><div class="val" id="k_fat">…</div><div class="muted" id="k_fat_delta">—</div></div>
+      <div class="card"><div class="title">Incentivos</div><div class="val" id="k_des">…</div><div class="muted" id="k_des_delta">—</div></div>
+      <div class="card"><div class="title">Frete</div><div class="val" id="k_fre">…</div><div class="muted" id="k_fre_delta">—</div></div>
+    </div>
+
+    <!-- Gráficos -->
+    <div class="card" style="margin-top:12px">
+      <div class="title">Receita diária (R$)</div>
+      <canvas id="cLine"></canvas>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="title">Totais por dia da semana (R$)</div>
+      <canvas id="cBar"></canvas>
+    </div>
+
+    <!-- Logs -->
+    <div class="card" style="margin-top:12px">
+      <div class="title">Status / Logs</div>
+      <pre id="log">Iniciando…</pre>
+    </div>
+  </div>
+
+<script>
+(function(){
+  // ===== Credenciais (fixas, sem .env) =====
+  var SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
+  var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+  var TABLE = "vendas_kpi_daily_v2";
+
+  // ===== Helpers UI =====
+  var elLog=document.getElementById("log");
+  function log(s){ elLog.textContent += "\n"+s; }
+  function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
+  function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)); }
+  function toISO(d){ return d.toISOString().slice(0,10); }
+  function parseBR(dstr){
+    var s=(dstr||"").trim(); if(!s) return null;
+    var m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if(!m) return null;
+    var dd=+m[1], mm=+m[2], yy=+m[3];
+    var dt=new Date(Date.UTC(yy,mm-1,dd)); // UTC pra não bagunçar
+    return dt;
+  }
+  function addDays(d, k){ var t=new Date(d); t.setUTCDate(t.getUTCDate()+k); return t; }
+
+  function sum(arr, key){ var s=0; for(var i=0;i<arr.length;i++) s+=Number(arr[i][key]||0); return s; }
+
+  // ===== Supabase client =====
+  var supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:false } });
+
+  // ===== Estado =====
+  var selUni=document.getElementById("uni");
+  var dini=document.getElementById("dini");
+  var dfim=document.getElementById("dfim");
+  var modo=document.getElementById("modo");
+  var periodoTxt=document.getElementById("periodo");
+
+  var chartLine=null, chartBar=null;
+
+  // ===== Data source: paginação segura =====
+  async function fetchPaged(startISO, endISO, unidade){
+    var page=1000, off=0, out=[];
+    for(;;){
+      var q = supa.from(TABLE)
+        .select("dia,unidade,pedidos,fat,des,fre")
+        .gte("dia", startISO)
+        .lte("dia", endISO)
+        .order("dia", {ascending:true})
+        .range(off, off+page-1);
+      if(unidade && unidade!=="Todas") q = q.eq("unidade", unidade);
+      var r = await q;
+      if(r.error){ throw r.error; }
+      var a=r.data||[];
+      out = out.concat(a);
+      if(a.length<page) break;
+      off += page;
+      if(off>500000){ // guarda
+        log("[Warn] abortado por salvaguarda de paginação.");
+        break;
       }
-      function arrow(sign){ return sign>0?"↑":(sign<0?"↓":"—"); }
+    }
+    return out;
+  }
 
-      function toISO(d){ return d.toISOString().slice(0,10); }
-      function parseBRDate(s){ // dd/mm/aaaa
-        const m = /^\\s*(\\d{2})\\/(\\d{2})\\/(\\d{4})\\s*$/.exec(s||"");
-        if(!m) return null;
-        const [_,dd,mm,yyyy]=m;
-        const d = new Date(Number(yyyy), Number(mm)-1, Number(dd));
-        return isNaN(d.getTime())?null:d;
-      }
+  async function fetchUnidades(){
+    // Puxa só nomes e deduplica no cliente
+    var r = await supa.from(TABLE).select("unidade").not("unidade","is",null).limit(5000);
+    if(r.error){ log("[Warn] unidades: "+r.error.message); return ["Todas"]; }
+    var set={}, arr=["Todas"];
+    (r.data||[]).forEach(function(row){
+      var u=(row.unidade||"").trim(); if(!u) return;
+      if(!set[u]){ set[u]=1; arr.push(u); }
+    });
+    return arr;
+  }
 
-      function addDays(d, n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
-      function daysBetween(a,b){ const MS=86400000; return Math.floor((b-a)/MS)+1; }
+  // ===== KPI + Gráficos =====
+  function updateKPI(rows, rowsAnt){
+    // KPIs do bloco atual
+    var ped = sum(rows,"pedidos");
+    var fat = sum(rows,"fat");
+    var des = sum(rows,"des");
+    var fre = sum(rows,"fre");
 
-      // ========= SUPABASE CLIENT =========
-      const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-      elUrl.textContent = SUPABASE_URL.replace(/^https:\\/\\//,'');
+    // KPIs do período anterior (para comparação)
+    var pedA = sum(rowsAnt,"pedidos");
+    var fatA = sum(rowsAnt,"fat");
+    var desA = sum(rowsAnt,"des");
+    var freA = sum(rowsAnt,"fre");
 
-      // ========= ESTADO =========
-      const st = {
-        unidade: "Todas",
-        modo: "bruto",
-        start: addDays(new Date(), -30),
-        end: addDays(new Date(), -1),
-        rowsNow: [],
-        rowsPrev: [],
-      };
+    var modoSel = modo.value; // bruto ou liq
+    var fatExibe = (modoSel==="liq") ? (fat - fre) : fat;
+    var fatAExibe = (modoSel==="liq") ? (fatA - freA) : fatA;
 
-      // ========= PAGINAÇÃO ROBUSTA (CORREÇÃO) =========
-      // Lote real de 1000 (limite típico do PostgREST). Continua até não vir mais linhas.
-      async function fetchPaged(buildQuery){
-        const PAGE = 1000;
-        let off = 0, all = [];
-        for(;;){
-          const { data, error } = await buildQuery().range(off, off + PAGE - 1);
-          if(error) throw error;
-          const rows = data || [];
-          if(rows.length === 0) break;
-          all.push(...rows);
-          off += rows.length; // avança exatamente o que chegou
-        }
-        return all;
-      }
+    document.getElementById("k_ped").textContent = fmtInt(ped);
+    document.getElementById("k_fat").textContent = fmtBRL(fatExibe);
+    document.getElementById("k_des").textContent = fmtBRL(des);
+    document.getElementById("k_fre").textContent = fmtBRL(fre);
 
-      // ========= CONSULTAS =========
-      function baseQuery(d1ISO, d2ISO, unidade){
-        let q = supa.from("vendas_kpi_daily_v2")
-          .select("dia,unidade,pedidos,fat,des,fre")
-          .gte("dia", d1ISO).lte("dia", d2ISO);
-        if(unidade && unidade !== "Todas"){
-          q = q.eq("unidade", unidade);
-        }
-        return q;
-      }
+    function deltaTxt(cur, prev){
+      var pct = (prev>0)? ((cur-prev)/prev*100): 0;
+      var sgn = (pct>0? "+": (pct<0? "":""));
+      return sgn+pct.toFixed(1)+"% vs ant. • ant: "+(typeof prev==="number"? fmtBRL(prev): fmtInt(prev));
+    }
 
-      async function loadUnits(){
-        // Carrega unidades do período atual (suficiente) e de-duplca no cliente
-        const d1 = toISO(st.start), d2 = toISO(st.end);
-        const rows = await fetchPaged(()=> supa.from("vendas_kpi_daily_v2")
-          .select("unidade")
-          .gte("dia", d1).lte("dia", d2)
-        );
-        const set = new Set();
-        rows.forEach(r=>{ if(r && r.unidade) set.add(r.unidade); });
-        return ["Todas", ...Array.from(set).sort()];
-      }
+    document.getElementById("k_ped_delta").textContent = deltaTxt(ped, pedA).replace("R$",""); // pedidos: mostra número
+    document.getElementById("k_fat_delta").textContent = deltaTxt(fatExibe, fatAExibe);
+    document.getElementById("k_des_delta").textContent = deltaTxt(des, desA);
+    document.getElementById("k_fre_delta").textContent = deltaTxt(fre, freA);
+  }
 
-      async function loadWindow(d1, d2, unidade){
-        const d1ISO = toISO(d1), d2ISO = toISO(d2);
-        log(`[Query] vendas_kpi_daily_v2 | ${d1ISO} → ${d2ISO} | UNI=${unidade} | modo=${st.modo}`);
-        const rows = await fetchPaged(()=> baseQuery(d1ISO, d2ISO, unidade));
-        log(`[OK] Linhas (atual): ${rows.length.toLocaleString("pt-BR")}`);
-        return rows;
-      }
+  function groupByDia(rows){
+    var m={}; rows.forEach(function(r){
+      var d=r.dia; if(!m[d]) m[d]={fat:0};
+      m[d].fat += Number(r.fat||0);
+    });
+    var days=Object.keys(m).sort();
+    return {labels:days, values:days.map(function(d){return m[d].fat;})};
+  }
+  function groupByDOW(rows){
+    var m=[0,0,0,0,0,0,0]; // dom..sab
+    rows.forEach(function(r){
+      // garantir data legível
+      var d=new Date(r.dia+"T00:00:00Z");
+      var dow=d.getUTCDay(); // 0..6
+      m[dow]+=Number(r.fat||0);
+    });
+    var lbl=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+    return {labels:lbl, values:m};
+  }
 
-      async function loadPrevWindow(){
-        const days = daysBetween(st.start, st.end);
-        const endPrev = addDays(st.start, -1);
-        const startPrev = addDays(endPrev, -(days-1));
-        const rows = await loadWindow(startPrev, endPrev, st.unidade);
-        log(`[Query] anterior: ${toISO(startPrev)} → ${toISO(endPrev)}`);
-        return { rows, startPrev, endPrev };
-      }
+  function drawCharts(rows){
+    var l = groupByDia(rows);
+    var b = groupByDOW(rows);
 
-      // ========= KPIs & GRÁFICOS =========
-      function sumAgg(rows){
-        let ped=0,fat=0,des=0,fre=0;
-        for(const r of rows){ ped += Number(r.pedidos)||0; fat += Number(r.fat)||0; des += Number(r.des)||0; fre += Number(r.fre)||0; }
-        return {ped, fat, des, fre};
-      }
+    if(chartLine){ chartLine.destroy(); chartLine=null; }
+    if(chartBar){ chartBar.destroy(); chartBar=null; }
 
-      function applyModeFat(valFat, valFre){
-        return st.modo==="liquido" ? (valFat - valFre) : valFat;
-      }
+    var ctxL=document.getElementById("cLine").getContext("2d");
+    chartLine = new window.Chart(ctxL, {
+      type:"line",
+      data:{ labels:l.labels, datasets:[{ label:"Receita diária (fat)", data:l.values }] },
+      options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true } } }
+    });
 
-      function setKPI(nowAgg, prevAgg){
-        // pedidos
-        const pNow = nowAgg.ped, pPrev = prevAgg.ped;
-        const pp = pct(pNow, pPrev);
-        document.getElementById("k_ped").textContent = fmtInt(pNow);
-        document.getElementById("k_ped_sub").textContent = `${pp.txt} vs ant. • ant: ${fmtInt(pPrev)} ${arrow(pp.sign)}`;
+    var ctxB=document.getElementById("cBar").getContext("2d");
+    chartBar = new window.Chart(ctxB, {
+      type:"bar",
+      data:{ labels:b.labels, datasets:[{ label:"Totais por dia da semana (fat)", data:b.values }] },
+      options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true } } }
+    });
+  }
 
-        // faturamento (modo)
-        const fNow = applyModeFat(nowAgg.fat, nowAgg.fre);
-        const fPrev = applyModeFat(prevAgg.fat, prevAgg.fre);
-        const pf = pct(fNow, fPrev);
-        document.getElementById("k_fat").textContent = fmtBRL(fNow);
-        document.getElementById("k_fat_sub").textContent = `${pf.txt} vs ant. • ant: ${fmtBRL(fPrev)} ${arrow(pf.sign)}`;
+  // ===== Fluxo principal =====
+  async function recarregar(){
+    try{
+      // Determina janelas
+      var now = new Date();
+      var s=null, e=null;
 
-        // incentivos
-        const dNow = nowAgg.des, dPrev = prevAgg.des;
-        const pd = pct(dNow, dPrev);
-        document.getElementById("k_des").textContent = fmtBRL(dNow);
-        document.getElementById("k_des_sub").textContent = `${pd.txt} vs ant. • ant: ${fmtBRL(dPrev)} ${arrow(pd.sign)}`;
-
-        // frete
-        const rNow = nowAgg.fre, rPrev = prevAgg.fre;
-        const pr = pct(rNow, rPrev);
-        document.getElementById("k_fre").textContent = fmtBRL(rNow);
-        document.getElementById("k_fre_sub").textContent = `${pr.txt} vs ant. • ant: ${fmtBRL(rPrev)} ${arrow(pr.sign)}`;
-      }
-
-      let chartLine = null, chartBar = null;
-
-      function destroyCharts(){
-        try{ if(chartLine){ chartLine.destroy(); chartLine=null; } }catch(_){}
-        try{ if(chartBar){ chartBar.destroy(); chartBar=null; } }catch(_){}
-      }
-
-      function drawCharts(rows){
-        destroyCharts();
-
-        // Agrupar por dia
-        const mapByDay = new Map(); // diaISO -> {fat, fre}
-        for(const r of rows){
-          const k = r.dia;
-          if(!mapByDay.has(k)) mapByDay.set(k,{fat:0, fre:0});
-          const acc = mapByDay.get(k);
-          acc.fat += Number(r.fat)||0;
-          acc.fre += Number(r.fre)||0;
-        }
-        const days = Array.from(mapByDay.keys()).sort();
-        const serie = days.map(d=>{
-          const v = mapByDay.get(d);
-          return applyModeFat(v.fat, v.fre);
-        });
-
-        // Linha
-        const ctx1 = document.getElementById("chart_line");
-        chartLine = new Chart(ctx1, {
-          type: "line",
-          data: {
-            labels: days,
-            datasets: [{ label: "Receita diária", data: serie, tension:.25 }]
-          },
-          options: {
-            responsive:true,
-            maintainAspectRatio:false,
-            interaction:{mode:"index",intersect:false},
-            scales:{ y:{ ticks:{ callback:(v)=>fmtBRL(v) } } },
-            plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:(ctx)=>fmtBRL(ctx.parsed.y) } } }
-          }
-        });
-
-        // Por dia da semana
-        const week = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
-        const sumWeek = [0,0,0,0,0,0,0];
-        for(const [d,v] of mapByDay){
-          const w = (new Date(d+"T00:00:00")).getDay();
-          sumWeek[w] += applyModeFat(v.fat, v.fre);
-        }
-        const ctx2 = document.getElementById("chart_bar");
-        chartBar = new Chart(ctx2, {
-          type: "bar",
-          data: { labels: week, datasets: [{ label:"Total por dia da semana", data: sumWeek }] },
-          options: {
-            responsive:true,
-            maintainAspectRatio:false,
-            plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:(ctx)=>fmtBRL(ctx.parsed.y) } } },
-            scales:{ y:{ ticks:{ callback:(v)=>fmtBRL(v) } } }
-          }
-        });
-      }
-
-      // ========= UI WIRES =========
-      const elUni = document.getElementById("f_unidade");
-      const elDe  = document.getElementById("f_de");
-      const elAte = document.getElementById("f_ate");
-      const btnAplicar = document.getElementById("btn_aplicar");
-      const btnLimpar  = document.getElementById("btn_limpar");
-      const btnRec     = document.getElementById("btn_recarregar");
-
-      // Período inicial (últimos 30 dias)
-      function setPeriodLabel(){ elPeriodo.textContent = `${toISO(st.start)} → ${toISO(st.end)}`; }
-
-      // Botões rápidos
-      document.querySelectorAll("button[data-quick]").forEach(b=>{
-        b.onclick = async ()=>{
-          const dd = Number(b.getAttribute("data-quick"));
-          st.start = addDays(new Date(), -dd);
-          st.end   = addDays(new Date(), -1);
-          elDe.value = elAte.value = "";
-          await go();
-        };
-      });
-
-      // Modo (bruto/liquido)
-      document.querySelectorAll("input[name=modo]").forEach(r=>{
-        r.onchange = async ()=>{
-          st.modo = r.value;
-          // não recarrega do servidor: recalcula KPIs/gráficos com os dados já baixados
-          drawCharts(st.rowsNow);
-          const nowAgg = sumAgg(st.rowsNow);
-          const prevAgg = sumAgg(st.rowsPrev);
-          setKPI(nowAgg, prevAgg);
-        };
-      });
-
-      btnAplicar.onclick = async ()=>{
-        const d1 = parseBRDate(elDe.value);
-        const d2 = parseBRDate(elAte.value);
-        if(d1 && d2 && d1<=d2){
-          st.start = d1; st.end = d2;
-        }
-        st.unidade = elUni.value || "Todas";
-        await go();
-      };
-
-      btnLimpar.onclick = async ()=>{
-        elUni.value = "Todas";
-        elDe.value = elAte.value = "";
-        st.unidade = "Todas";
-        st.start = addDays(new Date(), -30);
-        st.end   = addDays(new Date(), -1);
-        await go();
-      };
-
-      btnRec.onclick = async ()=>{ await go(); };
-
-      // ========= CICLO PRINCIPAL =========
-      async function go(){
-        try{
-          setPeriodLabel();
-          // carregar unidades para o período atual
-          const units = await loadUnits();
-          // repopula select sem duplicar
-          const cur = st.unidade;
-          elUni.innerHTML = "";
-          for(const u of units){
-            const opt = document.createElement("option");
-            opt.textContent = u; opt.value = u;
-            elUni.appendChild(opt);
-          }
-          elUni.value = units.includes(cur) ? cur : "Todas";
-
-          // janela atual
-          st.rowsNow = await loadWindow(st.start, st.end, elUni.value);
-          // anterior
-          const prev = await loadPrevWindow();
-          st.rowsPrev = prev.rows;
-
-          // KPIs & Charts
-          const nowAgg = sumAgg(st.rowsNow);
-          const prevAgg = sumAgg(st.rowsPrev);
-          setKPI(nowAgg, prevAgg);
-          drawCharts(st.rowsNow);
-          log("[OK] KPIs e gráficos atualizados.");
-        }catch(e){
-          console.error(e);
-          log("[ERRO] "+(e.message||String(e)));
-        }
+      var ps = parseBR(dini.value);
+      var pe = parseBR(dfim.value);
+      if(ps && pe){ s=ps; e=pe; }
+      else{
+        // default 30 dias
+        e = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        s = addDays(e,-29);
       }
 
-      // ========= BOOT =========
-      (async function boot(){
-        log("[Boot] v17.2-MV-paged — sem ORDER/max; paginação 1000; gráficos estáveis.");
-        // período default já setado (30 dias anteriores)
-        setPeriodLabel();
-        await go();
-      })();
-    </script>
-  </body>
+      var startISO = toISO(s);
+      var endISO   = toISO(e);
+
+      var daysLen = Math.max(1, Math.round((e - s)/(24*3600*1000)) + 1);
+      var prevEnd   = addDays(s,-1);
+      var prevStart = addDays(prevEnd, -(daysLen-1));
+      var prevStartISO = toISO(prevStart);
+      var prevEndISO   = toISO(prevEnd);
+
+      periodoTxt.textContent = "Período: "+startISO+" → "+endISO;
+
+      var uniVal = selUni.value || "Todas";
+      log("[Query] "+TABLE+" | "+startISO+" → "+endISO+" | UNI="+uniVal);
+
+      var cur = await fetchPaged(startISO, endISO, uniVal==="Todas"? null: uniVal);
+      log("[OK] Linhas (atual): "+cur.length.toLocaleString("pt-BR"));
+
+      var ant = await fetchPaged(prevStartISO, prevEndISO, uniVal==="Todas"? null: uniVal);
+      log("[Query] anterior: "+prevStartISO+" → "+prevEndISO+" | Linhas: "+ant.length.toLocaleString("pt-BR"));
+
+      updateKPI(cur, ant);
+      drawCharts(cur);
+    }catch(e){
+      console.error(e);
+      log("[ERRO] "+(e.message||String(e)));
+    }
+  }
+
+  async function boot(){
+    log("[Boot] v17.2-MV-paged-fix - sem ORDER/MAX - Chart.js estável - paginação 1000");
+    // Unidades
+    var opts = await fetchUnidades();
+    selUni.innerHTML = "";
+    opts.forEach(function(u){
+      var o=document.createElement("option"); o.value=u; o.textContent=u; selUni.appendChild(o);
+    });
+    // Default: Todas
+    selUni.value = "Todas";
+
+    // período default: 30d (deixa inputs vazios)
+    recarregar();
+  }
+
+  // Eventos
+  Array.prototype.forEach.call(document.querySelectorAll(".pr"), function(btn){
+    btn.addEventListener("click", function(){
+      var d = Number(btn.getAttribute("data-d"));
+      var today = new Date(); var e = new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate()));
+      var s = addDays(e, -(d-1));
+      dini.value = ""; dfim.value = ""; // limpar custom
+      // Apenas recarrega com janela padrão (internamente usa 30d se campos vazios).
+      // Para usar o rápido de verdade, vamos setar nos inputs e aplicar:
+      dini.value = String(s.getUTCDate()).padStart(2,"0")+"/"+String(s.getUTCMonth()+1).padStart(2,"0")+"/"+s.getUTCFullYear();
+      dfim.value = String(e.getUTCDate()).padStart(2,"0")+"/"+String(e.getUTCMonth()+1).padStart(2,"0")+"/"+e.getUTCFullYear();
+      recarregar();
+    });
+  });
+
+  document.getElementById("aplicar").addEventListener("click", function(){ recarregar(); });
+  document.getElementById("limpar").addEventListener("click", function(){
+    selUni.value="Todas"; dini.value=""; dfim.value=""; modo.value="bruto"; recarregar();
+  });
+  document.getElementById("reload").addEventListener("click", function(){ recarregar(); });
+  selUni.addEventListener("change", function(){ recarregar(); });
+  modo.addEventListener("change", function(){ recarregar(); });
+
+  // Start
+  boot();
+})();
+</script>
+</body>
 </html>
