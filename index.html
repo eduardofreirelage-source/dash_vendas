@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — Supabase • v17.2</title>
+  <title>Dashboard Vendas — Supabase • v17.2-fix1</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
@@ -28,7 +28,9 @@
     .btn:disabled{opacity:.5;cursor:not-allowed}
     .quick{display:flex;gap:8px;flex-wrap:wrap}
     .quick .btn{padding:6px 10px}
-    canvas{background:#fff;border:1px solid var(--bd);border-radius:10px;padding:10px}
+    /* Alturas fixas para impedir crescimento infinito */
+    .chart-wrap{height:260px}
+    canvas{background:#fff;border:1px solid var(--bd);border-radius:10px;padding:10px;width:100%;height:100%}
     pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
     @media (max-width:900px){.row{flex-direction:column;align-items:stretch}}
   </style>
@@ -41,7 +43,7 @@
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px">
       <div>
         <h1>Dashboard Vendas — Supabase</h1>
-        <div class="muted">Build <b>v17.2</b> • Fonte preferida: <code>public.vendas_kpi_daily</code></div>
+        <div class="muted">Build <b>v17.2-fix1</b> • Fonte preferida: <code>public.vendas_kpi_daily</code></div>
         <div class="muted">URL: <span id="u"></span></div>
       </div>
       <div class="muted" id="periodo">Período: —</div>
@@ -120,12 +122,12 @@
     <!-- Gráficos -->
     <div class="card" style="margin-top:14px">
       <div class="title">Receita diária (R$)</div>
-      <canvas id="chart_daily" height="160"></canvas>
+      <div class="chart-wrap"><canvas id="chart_daily"></canvas></div>
     </div>
 
     <div class="card" style="margin-top:14px">
       <div class="title">Totais por dia da semana (R$)</div>
-      <canvas id="chart_wd" height="160"></canvas>
+      <div class="chart-wrap"><canvas id="chart_wd"></canvas></div>
     </div>
 
     <!-- Logs -->
@@ -137,10 +139,9 @@
 
 <script>
 (function(){
-  // ====== CREDENCIAIS (as que você me passou) ======
+  // ====== CREDENCIAIS ======
   const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
   const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-
   document.getElementById("u").textContent = SUPABASE_URL.replace(/^https?:\/\//,'');
 
   // ====== helpers ======
@@ -175,7 +176,8 @@
     unidade: "Todas",
     dias: 30,
     de: null, ate: null,
-    modo: "bruto"
+    modo: "bruto",
+    loading: false   // single-flight
   };
 
   // ====== UI refs ======
@@ -185,6 +187,9 @@
   const btnsQuick= Array.from(document.querySelectorAll(".quick .btn"));
   const radios   = Array.from(document.querySelectorAll('input[name="modo"]'));
   const periodEl = document.getElementById("periodo");
+  const btnReload= document.getElementById("btn_reload");
+  const btnApply = document.getElementById("btn_apply");
+  const btnClear = document.getElementById("btn_clear");
 
   const k_ped = document.getElementById("k_ped");
   const k_ped_sub = document.getElementById("k_ped_sub");
@@ -197,34 +202,37 @@
 
   // ====== charts ======
   let chartDaily = null, chartWD = null;
+
+  // substitui o canvas por um clone “limpo”
+  function resetCanvas(id){
+    const old = document.getElementById(id);
+    const clone = old.cloneNode(false); // mantém id/atributos
+    old.replaceWith(clone);
+    return clone.getContext("2d");
+  }
+
   function drawDaily(labels, values){
-    if(chartDaily) chartDaily.destroy();
-    const ctx = document.getElementById("chart_daily").getContext("2d");
+    if(chartDaily){ chartDaily.destroy(); chartDaily=null; }
+    const ctx = resetCanvas("chart_daily");
     chartDaily = new Chart(ctx, {
       type: "line",
-      data: {
-        labels,
-        datasets: [{ label:"Receita diária (R$)", data: values, tension:.2 }]
-      },
+      data: { labels, datasets: [{ label:"Receita diária (R$)", data: values, tension:.2 }] },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 200 },
         scales: { y: { ticks: { callback:v=>BRL.format(v) } } }
       }
     });
   }
   function drawWeekday(labels, values){
-    if(chartWD) chartWD.destroy();
-    const ctx = document.getElementById("chart_wd").getContext("2d");
+    if(chartWD){ chartWD.destroy(); chartWD=null; }
+    const ctx = resetCanvas("chart_wd");
     chartWD = new Chart(ctx, {
       type: "bar",
-      data: {
-        labels,
-        datasets: [{ label:"Por dia da semana (R$)", data: values }]
-      },
+      data: { labels, datasets: [{ label:"Por dia da semana (R$)", data: values }] },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 200 },
         scales: { y: { ticks: { callback:v=>BRL.format(v) } } }
       }
     });
@@ -232,7 +240,6 @@
 
   // ====== data ======
   async function listUnidades(){
-    // unidades distintas (leve; tabela já é diária)
     const r = await supa.from(TABLE).select("unidade",{distinct:true}).order("unidade",{ascending:true});
     if(r.error){ log("[Warn] unidades: "+r.error.message); return ["Todas"]; }
     const u = Array.from(new Set((r.data||[]).map(x=>x.unidade).filter(Boolean)));
@@ -240,13 +247,13 @@
   }
 
   function windowNow(){
-    const today = new Date(); // usa hoje — evita max()/ORDER
+    const today = new Date();
     const ate = state.ate ? state.ate : new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const dias = state.de && state.ate ? Math.max(1, Math.round((state.ate - state.de)/86400000)+1) : state.dias;
     const de = state.de ? state.de : addDays(ate, -(dias-1));
     return { de, ate, dias };
   }
-  function prevWindow(w){ // imediatamente anterior
+  function prevWindow(w){
     const dias = Math.round((w.ate - w.de)/86400000)+1;
     const ate  = addDays(w.de, -1);
     const de   = addDays(ate, -(dias-1));
@@ -254,7 +261,6 @@
   }
 
   async function fetchPaged(filters, deIso, ateIso){
-    // paginação defensiva (5k)
     const page = 5000;
     let from = 0, acc=[];
     for(;;){
@@ -280,14 +286,13 @@
     const fre     = sum(rows, r=>r.fre);
     const fatShow = (modo==="liquido") ? (fat - fre) : fat;
 
-    // série diária (preencher dias ausentes com 0)
     const byDate = new Map();
     for(const r of rows){
       const key = r.dia.slice(0,10);
       const v = (modo==="liquido") ? (r.fat - r.fre) : r.fat;
       byDate.set(key, (byDate.get(key)||0) + v);
     }
-    const w = windowNow(); // usa janela atual para eixo completo
+    const w = windowNow();
     let labels=[], values=[];
     for(let d=new Date(w.de); d<=w.ate; d=addDays(d,1)){
       const k = ymd(d);
@@ -295,9 +300,8 @@
       values.push(byDate.get(k)||0);
     }
 
-    // por dia da semana
     const wd = [0,0,0,0,0,0,0];
-    for(const [k,v] of byDate){ // k = YYYY-MM-DD
+    for(const [k,v] of byDate){
       const dt = new Date(k+"T00:00:00");
       wd[dt.getDay()] += v;
     }
@@ -324,6 +328,10 @@
   }
 
   async function recarregar(){
+    if(state.loading) { log("[Skip] atualização em andamento."); return; }
+    state.loading = true;
+    btnReload.disabled = true; btnApply.disabled = true; btnClear.disabled = true;
+
     try{
       const w = windowNow();
       const deIso = ymd(w.de), ateIso = ymd(w.ate);
@@ -348,32 +356,37 @@
     }catch(e){
       log("[ERRO] "+(e.message||String(e)));
       console.error(e);
+    } finally {
+      state.loading = false;
+      btnReload.disabled = false; btnApply.disabled = false; btnClear.disabled = false;
     }
   }
 
   // ====== boot ======
   async function boot(){
-    log("[Boot] v17.2 — diagnóstico + gráficos estáveis (Chart.js) • sem ORDER/max • paginação 5k");
+    log("[Boot] v17.2-fix1 — gráficos estabilizados (reset canvas) • sem ORDER/max • paginação 5k");
 
-    // unidades
     const opts = await listUnidades();
     selUni.innerHTML = opts.map(u=>`<option>${u}</option>`).join("");
     selUni.value = "Todas";
 
     // quick
-    btnsQuick.forEach(btn=>{
-      btn.onclick = ()=>{ state.dias = parseInt(btn.dataset.days,10); state.de=null; state.ate=null; inDe.value=""; inAte.value=""; recarregar(); };
+    Array.from(document.querySelectorAll(".quick .btn")).forEach(btn=>{
+      btn.onclick = ()=>{ state.dias = parseInt(btn.dataset.days,10); state.de=null; state.ate=null;
+        document.getElementById("f_de").value=""; document.getElementById("f_ate").value="";
+        recarregar(); };
     });
 
     // modo
-    radios.forEach(r=> r.onchange = ()=>{ state.modo = r.value; recarregar(); });
+    Array.from(document.querySelectorAll('input[name="modo"]')).forEach(r=> r.onchange = ()=>{ state.modo = r.value; recarregar(); });
 
     // unidade
     selUni.onchange = ()=>{ state.unidade = selUni.value; recarregar(); };
 
     // aplicar datas
     document.getElementById("btn_apply").onclick = ()=>{
-      const d1 = parseDMY(inDe.value), d2 = parseDMY(inAte.value);
+      const d1 = parseDMY(document.getElementById("f_de").value),
+            d2 = parseDMY(document.getElementById("f_ate").value);
       if(d1 && d2 && d1<=d2){ state.de=d1; state.ate=d2; recarregar(); }
       else { alert("Datas inválidas. Use dd/mm/aaaa."); }
     };
@@ -381,8 +394,9 @@
     // limpar
     document.getElementById("btn_clear").onclick = ()=>{
       state.unidade="Todas"; selUni.value="Todas";
-      state.modo="bruto"; radios.find(r=>r.value==="bruto").checked=true;
-      state.de=null; state.ate=null; state.dias=30; inDe.value=""; inAte.value="";
+      state.modo="bruto"; document.querySelector('input[name="modo"][value="bruto"]').checked=true;
+      state.de=null; state.ate=null; state.dias=30;
+      document.getElementById("f_de").value=""; document.getElementById("f_ate").value="";
       recarregar();
     };
 
