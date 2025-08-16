@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — v17.3-fix (filtros completos + fallback)</title>
+  <title>Dashboard Vendas — v17.4 (auto-fallback confiável)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{--bg:#f6f7fb;--fg:#0f172a;--muted:#6b7280;--card:#fff;--bd:#e5e7eb;--chip:#eef2ff}
@@ -11,7 +11,7 @@
     .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
     h1{font-size:22px;margin:0 0 4px}
     .muted{color:var(--muted);font-size:12px}
-    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;justify-content:space-between}
     .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
     .title{font-size:12px;color:var(--muted)}
     .val{font-size:20px;font-weight:700;margin-top:4px}
@@ -31,6 +31,7 @@
     .chart-card{padding:16px}
     canvas{max-width:100%;height:300px}
     pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
+    .disabled{opacity:.5;pointer-events:none}
     @media (max-width:980px){.controls{grid-template-columns:repeat(3,minmax(0,1fr))}}
     @media (max-width:600px){.kpi{grid-template-columns:repeat(2,minmax(0,1fr))}}
   </style>
@@ -39,12 +40,12 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="row" style="justify-content:space-between;align-items:flex-end">
+    <div class="row">
       <div>
         <h1>Dashboard Vendas — Supabase</h1>
         <div class="muted">
-          Build <span class="pill">v17.3-fix</span>
-          Fonte ativa: <code id="fonte">detectando…</code> (fallback automático)
+          Build <span class="pill">v17.4</span> · Fonte ativa: <code id="fonte">detectando…</code>
+          <span class="muted" id="fonteNote"></span>
         </div>
         <div class="muted">URL: <code id="urlShow">—</code></div>
       </div>
@@ -58,7 +59,7 @@
 
     <div class="card" style="margin-top:12px">
       <div class="title">Filtros (em cascata)</div>
-      <div class="controls" style="margin-top:10px">
+      <div class="controls" style="margin-top:10px" id="filters">
         <div class="col"><label>Unidade</label><select id="f_unidade"><option>Todas</option></select></div>
         <div class="col"><label>Turno</label><select id="f_turno"><option>Todos</option></select></div>
         <div class="col"><label>Canal</label><select id="f_canal"><option>Todos</option></select></div>
@@ -133,7 +134,8 @@
     // ===== Estado/UI =====
     const elLog = document.getElementById("log"), elDiag = document.getElementById("diag"),
           elPeriodo = document.getElementById("periodoShow"), elUrlShow = document.getElementById("urlShow"),
-          elFonte = document.getElementById("fonte");
+          elFonte = document.getElementById("fonte"), elFonteNote = document.getElementById("fonteNote"),
+          filtersBox = document.getElementById("filters");
     const fmtBRL = n => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0);
     const fmtInt = n => new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0));
     const log = m => { elLog.textContent += "\n" + m; elLog.scrollTop = elLog.scrollHeight; };
@@ -216,14 +218,6 @@
       return out;
     }
 
-    async function tryDims(){
-      const test = await supa.from("vendas_kpi_daily_dims").select("dia,unidade,turno,canal,cupom,pagamento,cancelado,entregador,pedidos,fat,des,fre").limit(1);
-      if(!test.error){ TABLE="vendas_kpi_daily_dims"; USE_DIMS=true; elFonte.textContent="public."+TABLE; elDiag.textContent="✓ usando view rica (dims)."; return true; }
-      const test2 = await supa.from("vendas_kpi_daily").select("dia,unidade,pedidos,fat,des,fre").limit(1);
-      if(!test2.error){ TABLE="vendas_kpi_daily"; USE_DIMS=false; elFonte.textContent="public."+TABLE; elDiag.textContent="✓ usando fallback (sem dims)."; return true; }
-      elDiag.textContent="✗ nenhuma view disponível."; return false;
-    }
-
     function setOptions(selectEl, values, keepLabel){
       const keep = keepLabel || (selectEl.id==="f_unidade" ? "Todas" : "Todos");
       const cur = selectEl.value || keep;
@@ -234,15 +228,15 @@
       });
     }
 
-    async function fetchPaged(fromISO,toISO,filters){
-      const page=5000; let off=0, acc=[];
+    async function fetchPaged(table, fromISO,toISO,filters, useDims){
+      const page=2000; let off=0, acc=[], pageNo=0;
       for(;;){
-        let sel = USE_DIMS
+        let sel = useDims
           ? "dia,unidade,turno,canal,cupom,pagamento,cancelado,entregador,pedidos,fat,des,fre"
           : "dia,unidade,pedidos,fat,des,fre";
-        let q = supa.from(TABLE).select(sel).gte("dia",fromISO).lte("dia",toISO).range(off, off+page-1);
+        let q = supa.from(table).select(sel).gte("dia",fromISO).lte("dia",toISO).range(off, off+page-1);
         if(filters.unidade && filters.unidade!=="Todas"){ q=q.eq("unidade",filters.unidade); }
-        if(USE_DIMS){
+        if(useDims){
           if(filters.turno && filters.turno!=="Todos") q=q.eq("turno",filters.turno);
           if(filters.canal && filters.canal!=="Todos") q=q.eq("canal",filters.canal);
           if(filters.cupom && filters.cupom!=="Todos") q=q.eq("cupom",filters.cupom);
@@ -253,9 +247,10 @@
         const r=await q;
         if(r.error) throw r.error;
         const arr=r.data||[];
+        pageNo++; log(`[Page ${pageNo}] ${table} → ${arr.length} linhas`);
         acc=acc.concat(arr);
         if(arr.length<page) break;
-        off+=page;
+        off+=arr.length;
       }
       return acc;
     }
@@ -267,12 +262,43 @@
         setOptions(f_canal, [], "Todos");
         setOptions(f_pagamento, [], "Todos");
         setOptions(f_entregador, [], "Todos");
+        filtersBox.classList.add("disabled");
+        elFonteNote.textContent=" (filtros avançados desativados no fallback)";
         return;
       }
+      filtersBox.classList.remove("disabled");
+      elFonteNote.textContent="";
       setOptions(f_turno,      rows.map(r=>r.turno), "Todos");
       setOptions(f_canal,      rows.map(r=>r.canal), "Todos");
       setOptions(f_pagamento,  rows.map(r=>r.pagamento), "Todos");
       setOptions(f_entregador, rows.map(r=>r.entregador), "Todos");
+    }
+
+    async function sanityPickSource(){
+      // tenta dims; se faltar, vai para base
+      const tDims="vendas_kpi_daily_dims", tBase="vendas_kpi_daily";
+      const testDims = await supa.from(tDims).select("dia").limit(1);
+      if(testDims.error){ TABLE=tBase; USE_DIMS=false; elDiag.textContent="✓ usando fallback (sem dims)."; elFonte.textContent="public."+TABLE; return; }
+      // compara janela curta (últimos 30 dias) sem filtros
+      let end=new Date(); end=new Date(Date.UTC(end.getUTCFullYear(),end.getUTCMonth(),end.getUTCDate(),12));
+      let start=addDays(end,-29); const fromISO=toISO(start), toISO=toISO(end);
+      const filters={}; // sem filtros
+      const rowsDims = await fetchPaged(tDims, fromISO,toISO, filters, true);
+      const rowsBase = await fetchPaged(tBase, fromISO,toISO, filters, false);
+      const pedD=rowsDims.reduce((a,x)=>a+Number(x.pedidos||0),0);
+      const fatD=rowsDims.reduce((a,x)=>a+Number(x.fat||0),0);
+      const pedB=rowsBase.reduce((a,x)=>a+Number(x.pedidos||0),0);
+      const fatB=rowsBase.reduce((a,x)=>a+Number(x.fat||0),0);
+      const diff = (a,b)=> b ? Math.abs(a-b)/b*100 : 0;
+      const dPed=diff(pedD,pedB), dFat=diff(fatD,fatB);
+      if(dPed>1 || dFat>1 || rowsDims.length<rowsBase.length){
+        TABLE=tBase; USE_DIMS=false;
+        elDiag.textContent=`⚠️ dims divergente (ped ${dPed.toFixed(1)}% • fat ${dFat.toFixed(1)}%). Usando fallback confiável.`;
+      }else{
+        TABLE=tDims; USE_DIMS=true;
+        elDiag.textContent="✓ usando view rica (dims) (sanity OK).";
+      }
+      elFonte.textContent="public."+TABLE;
     }
 
     async function recarregar(){
@@ -290,18 +316,19 @@
         };
         log(`[Query] ${TABLE} | ${jan.startISO} -> ${jan.endISO} | filtros=${JSON.stringify(filters)} | modo=${modo}`);
 
-        const rows = await fetchPaged(jan.startISO, jan.endISO, filters);
+        const rows = await fetchPaged(TABLE, jan.startISO, jan.endISO, filters, USE_DIMS);
         log(`[OK] Linhas (atual): ${rows.length.toLocaleString("pt-BR")}`);
         fillFilterOptions(rows);
 
         const janPrev=janelaAnterior(jan);
         log(`[Query] anterior: ${janPrev.startISO} -> ${janPrev.endISO}`);
-        const rowsPrev = await fetchPaged(janPrev.startISO, janPrev.endISO, filters);
+        const rowsPrev = await fetchPaged(TABLE, janPrev.startISO, janPrev.endISO, filters, USE_DIMS);
 
         setKPIs(rows, rowsPrev);
         const daily=groupDaily(rows, modo);
+        const weekly=byWeekSum(daily);
         drawLine(daily);
-        drawBars(byWeekSum(daily));
+        drawBars(weekly);
 
         log("[OK] KPIs e gráficos atualizados.");
       }catch(e){
@@ -325,9 +352,8 @@
     // Boot
     (async function boot(){
       elUrlShow.textContent = SUPABASE_URL.replace(/^https?:\/\//,"");
-      log("[Boot] v17.3-fix — tentando view rica (dims) com fallback…");
-      const ok = await tryDims();
-      if(!ok){ log("[ERRO] não consegui detectar uma view válida."); return; }
+      log("[Boot] v17.4 — auto-validação dims × base com fallback confiável…");
+      await sanityPickSource();
       recarregar();
     })();
   </script>
