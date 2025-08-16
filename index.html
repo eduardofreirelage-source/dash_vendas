@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3+media-real+loja-top10)</title>
+  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3+chips-loja)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     *,*::before,*::after{box-sizing:border-box}
@@ -25,12 +25,20 @@
     .seg{display:flex;flex-direction:column;gap:6px;min-width:0}
     .seg .lbl{font-size:12px;color:var(--muted)}
     select,input[type="date"]{font:inherit;padding:10px 12px;border:1px solid var(--brd);border-radius:10px;background:#fff;width:100%;min-height:40px}
-    /* multiselect loja fica mais alto por ser multiple */
-    #loja{min-height:120px}
     .rightBar{display:flex;gap:8px;align-items:center}
     .subtle{background:#fff;border:1px solid var(--brd);border-radius:10px;padding:8px 12px;cursor:pointer;opacity:.95}
     .subtle:hover{opacity:1}
+
+    /* Chips (lojas) */
+    .chips{display:flex;flex-wrap:wrap;gap:8px}
+    .chip{border:1px solid var(--brd);border-radius:999px;padding:6px 10px;background:#fff;cursor:pointer;user-select:none;font-size:13px}
+    .chip[aria-checked="true"]{background:#f1f5f9;border-color:#cbd5e1}
+    .chip:focus{outline:2px solid #cbd5e1;outline-offset:2px}
+
+    /* Col spans */
     .col-12{grid-column:span 12}.col-6{grid-column:span 6}.col-4{grid-column:span 4}.col-3{grid-column:span 3}.col-2{grid-column:span 2}
+
+    /* Responsivo */
     @media (max-width:980px){.grid12{grid-template-columns:repeat(6,minmax(0,1fr))}}
     @media (max-width:560px){.grid12{grid-template-columns:repeat(1,minmax(0,1fr))}.col-12,.col-6,.col-4,.col-3,.col-2{grid-column:span 1}}
 
@@ -82,7 +90,7 @@
         </div>
       </summary>
       <div class="fbody">
-        <!-- Linha 1: Unidade (6) + Nome da loja (6, múltipla escolha, top 10) -->
+        <!-- Linha 1: Unidade (6) + Nome da loja (6, chips) -->
         <div class="grid12">
           <div class="seg col-6">
             <span class="lbl">Unidade</span>
@@ -90,7 +98,7 @@
           </div>
           <div class="seg col-6 hidden" id="segLoja">
             <span class="lbl">Nome da loja (Top 10 por faturamento)</span>
-            <select id="loja" multiple></select>
+            <div id="lojaChips" class="chips"></div>
           </div>
         </div>
 
@@ -129,7 +137,7 @@
       </div>
     </details>
 
-    <!-- ===== KPIs (mesma ordem aprovada) ===== -->
+    <!-- ===== KPIs (ordem aprovada) ===== -->
     <div class="krow two">
       <div class="card kcard"><div class="khead"><div class="title">Pedidos</div><div class="badge" id="k_ped_badge">—</div></div><div class="val" id="k_ped_val">…</div><div class="muted sub" id="k_ped_sub">—</div></div>
       <div class="card kcard"><div class="khead"><div class="title">Ticket médio</div><div class="badge" id="k_ticket_badge">—</div></div><div class="val" id="k_ticket_val">…</div><div class="muted sub" id="k_ticket_sub">—</div></div>
@@ -147,7 +155,7 @@
       <div class="card kcard"><div class="khead"><div class="title">Frete médio</div><div class="badge" id="k_fre_med_badge">—</div></div><div class="val" id="k_fre_med_val">…</div><div class="muted sub" id="k_fre_med_sub">—</div></div>
     </div>
 
-    <!-- ===== Gráficos (com Total ⇄ Média) ===== -->
+    <!-- ===== Gráficos (Total ⇄ Média) ===== -->
     <div class="card" style="margin-top:12px">
       <div class="ctop">
         <div class="title">Receita diária</div>
@@ -212,7 +220,7 @@
   var selUni=document.getElementById("uni"), dini=document.getElementById("dini"), dfim=document.getElementById("dfim"), prapido=document.getElementById("prapido"), selDOW=document.getElementById("dow");
   var segTurno=document.getElementById("segTurno"), segCanal=document.getElementById("segCanal"), segPagto=document.getElementById("segPagto"), segCanc=document.getElementById("segCanc");
   var selTurno=document.getElementById("turno"), selCanal=document.getElementById("canal"), selPagto=document.getElementById("pagto"), selCanc=document.getElementById("canc");
-  var segLoja=document.getElementById("segLoja"), selLoja=document.getElementById("loja");
+  var segLoja=document.getElementById("segLoja"), lojaChips=document.getElementById("lojaChips");
   var hourCard=document.getElementById("hourCard");
 
   function log(s){ elLog.textContent+="\n"+s; }
@@ -234,6 +242,9 @@
   var chartDaily=null, chartDOW=null, chartMonth=null, chartHour=null, runId=0, dataMinISO=null, dataMaxISO=null;
   var schema={ turno:null, canal:null, pagamento:null, cancelado:null, cancelType:null, hora:null, loja:null };
 
+  // ===== estado de seleção das lojas (chips) =====
+  var lojaSelSet = new Set();
+
   // ===== build select dinâmico =====
   function buildSelect(){
     var base="dia,unidade,pedidos,fat,des,fre";
@@ -244,9 +255,7 @@
 
   // ===== filtros server-side (com opção de pular loja p/ montar Top10) =====
   function getSelectedLojas(){
-    if(!schema.loja) return [];
-    var vals=[...selLoja.options].filter(o=>o.selected).map(o=>o.value).filter(Boolean);
-    return vals;
+    return Array.from(lojaSelSet);
   }
   function applyServerFilters(q, opts){
     opts=opts||{};
@@ -325,16 +334,30 @@
     segLoja.classList.toggle("hidden",!schema.loja);
   }
 
-  // ===== loja top10 =====
-  function setLojaOptionsTop10(list){
-    var currentSel = new Set(getSelectedLojas());
-    selLoja.innerHTML="";
-    list.forEach(v=>{
-      var o=document.createElement("option");
-      o.value=String(v); o.textContent=String(v);
-      if(currentSel.has(String(v))) o.selected=true;
-      selLoja.appendChild(o);
+  // ===== chips de loja (Top 10) =====
+  function renderLojaChips(list){
+    // preserva seleção anterior
+    var prevSel = new Set(lojaSelSet);
+    lojaChips.innerHTML="";
+    (list||[]).forEach(nome=>{
+      var b=document.createElement("button");
+      b.type="button";
+      b.className="chip";
+      b.setAttribute("role","checkbox");
+      b.setAttribute("aria-checked", prevSel.has(String(nome)) ? "true" : "false");
+      b.dataset.value=String(nome);
+      b.textContent=String(nome);
+      b.addEventListener("click", function(){
+        var val=this.dataset.value;
+        var isOn = this.getAttribute("aria-checked")==="true";
+        if(isOn){ lojaSelSet.delete(val); this.setAttribute("aria-checked","false"); }
+        else{ lojaSelSet.add(val); this.setAttribute("aria-checked","true"); }
+        updateSummaryOnChange();
+      });
+      lojaChips.appendChild(b);
     });
+    // remove marcas que não existem mais
+    Array.from(prevSel).forEach(v=>{ if(!(list||[]).includes(v)) lojaSelSet.delete(v); });
   }
   function top10LojasByFat(rows){
     if(!schema.loja) return [];
@@ -387,39 +410,18 @@
     setK("k_fre_med_val","k_fre_med_sub","k_fre_med_badge",freMed,freMedA,fmtBRL,false);
   }
 
-  // ===== Agregações para gráficos (média REAL) =====
-  function buildDailyTotals(rows){ // soma por dia
-    var m={}; rows.forEach(r=>{ var d=r.dia; m[d]=(m[d]||0)+Number(r.fat||0); });
-    var days=Object.keys(m).sort(); return {days, totals:days.map(d=>m[d])};
-  }
+  // ===== Agregações p/ gráficos (média REAL) =====
+  function buildDailyTotals(rows){ var m={}; rows.forEach(r=>{ var d=r.dia; m[d]=(m[d]||0)+Number(r.fat||0); }); var days=Object.keys(m).sort(); return {days, totals:days.map(d=>m[d])}; }
   function groupDaily(rows){ var d=buildDailyTotals(rows); return {labels:d.days, totals:d.totals}; }
-  function groupDOW(rows){
-    var d=buildDailyTotals(rows); // usa dias únicos
-    var totals=[0,0,0,0,0,0,0], counts=[0,0,0,0,0,0,0];
-    d.days.forEach((day,i)=>{ var dow=new Date(day+"T00:00:00Z").getUTCDay(); totals[dow]+=d.totals[i]; counts[dow]+=1; });
-    return {labels:["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"], totals, counts};
-  }
-  function groupMonth(rows){
-    var d=buildDailyTotals(rows), map={};
-    d.days.forEach((day,i)=>{ var key=day.slice(0,7); if(!map[key]) map[key]={t:0,c:0}; map[key].t+=d.totals[i]; map[key].c+=1; });
-    var labels=Object.keys(map).sort(); return {labels, totals:labels.map(k=>map[k].t), counts:labels.map(k=>map[k].c)};
-  }
+  function groupDOW(rows){ var d=buildDailyTotals(rows), totals=[0,0,0,0,0,0,0], counts=[0,0,0,0,0,0,0]; d.days.forEach((day,i)=>{ var dow=new Date(day+"T00:00:00Z").getUTCDay(); totals[dow]+=d.totals[i]; counts[dow]+=1; }); return {labels:["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"], totals, counts}; }
+  function groupMonth(rows){ var d=buildDailyTotals(rows), map={}; d.days.forEach((day,i)=>{ var key=day.slice(0,7); if(!map[key]) map[key]={t:0,c:0}; map[key].t+=d.totals[i]; map[key].c+=1; }); var labels=Object.keys(map).sort(); return {labels, totals:labels.map(k=>map[k].t), counts:labels.map(k=>map[k].c)}; }
   function groupHour(rows){
     if(!schema.hora) return {labels:[], totals:[], counts:[]};
-    // agrega por (data,hora) -> soma, depois soma por hora e conta dias distintos
-    var byDayHour={};
-    rows.forEach(r=>{
-      var h=Number(r[schema.hora]); if(isNaN(h)||h<0||h>23) return;
-      var key=r.dia+"|"+h; byDayHour[key]=(byDayHour[key]||0)+Number(r.fat||0);
-    });
-    var totals=new Array(24).fill(0), counts=new Array(24).fill(0), daysByHour=[...Array(24)].map(()=>new Set());
-    Object.keys(byDayHour).forEach(k=>{
-      var parts=k.split("|"); var d=parts[0], h=Number(parts[1]);
-      totals[h]+=byDayHour[k]; daysByHour[h].add(d);
-    });
+    var byDayHour={}, totals=new Array(24).fill(0), counts=new Array(24).fill(0), daysByHour=[...Array(24)].map(()=>new Set());
+    rows.forEach(r=>{ var h=Number(r[schema.hora]); if(isNaN(h)||h<0||h>23) return; var key=r.dia+"|"+h; byDayHour[key]=(byDayHour[key]||0)+Number(r.fat||0); });
+    Object.keys(byDayHour).forEach(k=>{ var [d,h]=k.split("|"); h=Number(h); totals[h]+=byDayHour[k]; daysByHour[h].add(d); });
     for(var i=0;i<24;i++) counts[i]=daysByHour[i].size;
-    var labels=totals.map((_,i)=>String(i).padStart(2,"0")+":00");
-    return {labels, totals, counts};
+    return {labels:totals.map((_,i)=>String(i).padStart(2,"0")+":00"), totals, counts};
   }
 
   function renderChart(canvasId,type,labels,totals,mode,countsOpt){
@@ -429,9 +431,8 @@
     var dataVals;
     if(mode==="avg"){
       if(canvasId==="gDaily"){
-        // média diária do período = total ÷ nº de dias -> linha plana
         var sumT=totals.reduce((a,b)=>a+b,0), n=labels.length||1, avg=sumT/(n||1);
-        dataVals = labels.map(()=>avg);
+        dataVals = labels.map(()=>avg); // linha plana na média diária
       }else if(countsOpt){
         dataVals = totals.map((v,i)=> (countsOpt[i]>0? v/countsOpt[i] : 0));
       }else{
@@ -444,7 +445,9 @@
     if(canvasId==="gDaily") chartDaily=c; else if(canvasId==="gDOW") chartDOW=c; else if(canvasId==="gMonth") chartMonth=c; else chartHour=c;
   }
 
+  var _lastRows=[]; // guarda amostra atual p/ toggles
   function drawAllCharts(rows){
+    _lastRows = rows.slice();
     var d=groupDaily(rows);        renderChart("gDaily","line", d.labels, d.totals, "total");
     var w=groupDOW(rows);          renderChart("gDOW","bar",   w.labels, w.totals, "total", w.counts);
     var m=groupMonth(rows);        renderChart("gMonth","bar", m.labels, m.totals, "total", m.counts);
@@ -462,7 +465,6 @@
       sw.querySelectorAll("button").forEach(b=>b.classList.remove("active"));
       e.target.classList.add("active");
       var mode=e.target.getAttribute("data-mode"), target=sw.getAttribute("data-target");
-      // recomputa a partir do último render armazenado? Reusa as funções com os dados atuais (guardados em _lastRows)
       if(!_lastRows.length) return;
       if(target==="gDaily"){ var d=groupDaily(_lastRows); renderChart("gDaily","line", d.labels, d.totals, mode); }
       if(target==="gDOW"){   var w=groupDOW(_lastRows);   renderChart("gDOW","bar",   w.labels, w.totals, mode, w.counts); }
@@ -471,16 +473,14 @@
     });
   });
 
-  var _lastRows=[]; // mantém amostra atual p/ switches
   function applyDOWClient(rows){
     var keep={}; mapDOWSelectionToList().forEach(d=>keep[d]=1);
-    // filtra por DOW no nível de linha -> depois as agregações cuidam de datas
     return rows.filter(r=> keep[new Date(r.dia+"T00:00:00Z").getUTCDay()]);
   }
 
   function updateSummaryHint(){
     var pr=prapido.value?prapido.value+"d":"—"; var uni=selUni.value||"Todas";
-    var nj=schema.loja? getSelectedLojas().length : 0;
+    var nj=schema.loja? lojaSelSet.size : 0;
     sumHint.textContent="Unidade: "+uni+" • PR: "+pr+(schema.loja?(" • Lojas: "+(nj>0?nj:"todas")):"");
   }
 
@@ -503,27 +503,24 @@
       elPeriodo.textContent="Período: "+startISO+" → "+endISO+" (âncora: "+dataMaxISO+")";
       var uniVal=selUni.value||"Todas";
 
-      // 1) Busca base SEM loja para montar top10
+      // 1) Base atual sem filtro de loja -> montar Top10
       var baseCur=await fetchPaged(startISO,endISO,uniVal==="Todas"?null:uniVal,{skipLoja:true}); if(myRun!==runId) return;
-      // aplica DOW no cliente
-      var baseCurDOW = applyDOWClient(baseCur);
+      var baseCurDOW=applyDOWClient(baseCur);
 
-      // calcula top10 lojas e atualiza dropdown
+      // monta chips Top10
       if(schema.loja){
         var top10 = top10LojasByFat(baseCurDOW);
-        setLojaOptionsTop10(top10);
+        renderLojaChips(top10);
       }
 
-      // 2) Aplica filtro de loja no cliente sobre a base já carregada
+      // aplica loja (cliente)
       var lojasSel = getSelectedLojas();
       var curF = (!schema.loja || lojasSel.length===0) ? baseCurDOW
                  : baseCurDOW.filter(r => lojasSel.includes(String(r[schema.loja])));
 
-      // 3) Período anterior (com loja selecionada no servidor)
+      // 2) Período anterior (com loja já aplicada no servidor se selecionada)
       var ant = await fetchPaged(prevStartISO,prevEndISO,uniVal==="Todas"?null:uniVal,{skipLoja:false}); if(myRun!==runId) return;
       var antF = applyDOWClient(ant);
-
-      _lastRows = curF.slice(); // guarda p/ switches
 
       updateKPIs(curF,antF,daysLen,prevDaysLen);
       drawAllCharts(curF);
@@ -556,7 +553,7 @@
 
   // ===== Boot =====
   async function boot(){
-    log("[Boot] v17.2-MV-paged-fix3 — média real + filtro loja top10");
+    log("[Boot] v17.2-MV-paged-fix3 — chips de loja + média real nos gráficos");
     var opts=await fetchUnidades(); selUni.innerHTML=""; opts.forEach(u=>{ var o=document.createElement("option"); o.value=u; o.textContent=u; selUni.appendChild(o); }); selUni.value="Todas";
     await refreshBounds("Todas"); await inspectSchema("Todas");
     if(dataMaxISO&&dataMinISO){ var e=new Date(dataMaxISO+"T00:00:00Z"), s=addDays(e,-29); var minDate=new Date(dataMinISO+"T00:00:00Z"); if(s<minDate) s=minDate; setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e)); }
@@ -587,11 +584,10 @@
     updateSummaryOnChange();
   });
   [selDOW,selTurno,selCanal,selPagto,selCanc].forEach(function(el){ if(!el) return; el.addEventListener("change",updateSummaryOnChange); });
-  selLoja.addEventListener("change", updateSummaryOnChange);
   document.getElementById("limpar").addEventListener("click",async function(){
     fltBox.open=true; selUni.value="Todas"; prapido.value="30"; selDOW.value="todos";
     if(schema.turno) selTurno.value="todos"; if(schema.canal) selCanal.value="todos"; if(schema.pagamento) selPagto.value="todos"; if(schema.cancelado) selCanc.value="todos";
-    if(schema.loja){ [...selLoja.options].forEach(o=>o.selected=false); }
+    lojaSelSet.clear(); // limpa seleção de lojas
     await refreshBounds("Todas");
     if(dataMaxISO&&dataMinISO){ var e=new Date(dataMaxISO+"T00:00:00Z"), s=addDays(e,-29); var minDate=new Date(dataMinISO+"T00:00:00Z"); if(s<minDate) s=minDate; setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e)); await refreshFilterOptions(dini.value, dfim.value, selUni.value); }
     updateSummaryHint(); recarregarDebounced();
