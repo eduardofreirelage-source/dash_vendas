@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3+client-filters)</title>
+  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3+turno-canal-pag-canc)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --brd:#e5e7eb; }
@@ -19,11 +19,10 @@
     button{cursor:pointer}
     button.ghost{background:#fff}
     .seg{display:flex;gap:6px;align-items:center}
-    .seg button{padding:6px 10px}
     .seg .lbl{font-size:12px;color:var(--muted)}
     .chartbox{position:relative;height:280px;width:100%} /* altura fixa -> sem “infinito” */
     pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
-    label.chk{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--brd);border-radius:8px;padding:6px 8px}
+    .hidden{display:none}
     @media (max-width:860px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media (max-width:520px){.grid{grid-template-columns:1fr} .row{flex-direction:column;align-items:stretch}}
   </style>
@@ -53,24 +52,12 @@
         </div>
 
         <div class="seg">
-          <span class="lbl">Período rápido (dias)</span>
-          <div class="row" style="gap:6px">
-            <button class="ghost pr" data-d="7">7</button>
-            <button class="ghost pr" data-d="15">15</button>
-            <button class="ghost pr" data-d="30">30</button>
-            <button class="ghost pr" data-d="90">90</button>
-            <button class="ghost pr" data-d="180">180</button>
-            <button class="ghost pr" data-d="360">360</button>
-          </div>
-        </div>
-
-        <div class="seg">
           <span class="lbl">De</span>
-          <input id="dini" placeholder="dd/mm/aaaa" style="width:130px" />
+          <input id="dini" type="date" style="width:150px" />
         </div>
         <div class="seg">
           <span class="lbl">Até</span>
-          <input id="dfim" placeholder="dd/mm/aaaa" style="width:130px" />
+          <input id="dfim" type="date" style="width:150px" />
         </div>
 
         <div class="seg">
@@ -81,41 +68,50 @@
           </select>
         </div>
 
-        <!-- Filtros adicionais (derivados) -->
+        <!-- Dias da semana: dropdown multi -->
         <div class="seg">
-          <span class="lbl">Dias</span>
-          <div class="row" style="gap:6px">
-            <label class="chk"><input type="checkbox" class="dow" data-d="0" checked /> Dom</label>
-            <label class="chk"><input type="checkbox" class="dow" data-d="1" checked /> Seg</label>
-            <label class="chk"><input type="checkbox" class="dow" data-d="2" checked /> Ter</label>
-            <label class="chk"><input type="checkbox" class="dow" data-d="3" checked /> Qua</label>
-            <label class="chk"><input type="checkbox" class="dow" data-d="4" checked /> Qui</label>
-            <label class="chk"><input type="checkbox" class="dow" data-d="5" checked /> Sex</label>
-            <label class="chk"><input type="checkbox" class="dow" data-d="6" checked /> Sáb</label>
-          </div>
+          <span class="lbl">Dias da semana</span>
+          <select id="dow" multiple size="7" style="min-width:140px">
+            <option value="0">Dom</option>
+            <option value="1">Seg</option>
+            <option value="2">Ter</option>
+            <option value="3">Qua</option>
+            <option value="4">Qui</option>
+            <option value="5">Sex</option>
+            <option value="6">Sáb</option>
+          </select>
+        </div>
+
+        <!-- Turno / Canal / Pagamento / Cancelado (auto-ativados se existirem no schema) -->
+        <div class="seg hidden" id="segTurno">
+          <span class="lbl">Turno</span>
+          <select id="turno" multiple size="4" style="min-width:140px"></select>
+        </div>
+
+        <div class="seg hidden" id="segCanal">
+          <span class="lbl">Canal de venda</span>
+          <select id="canal" multiple size="4" style="min-width:160px"></select>
+        </div>
+
+        <div class="seg hidden" id="segPagto">
+          <span class="lbl">Pagamento</span>
+          <select id="pagto" multiple size="4" style="min-width:160px"></select>
+        </div>
+
+        <div class="seg hidden" id="segCanc">
+          <span class="lbl">Está cancelado</span>
+          <select id="canc" style="min-width:160px">
+            <option value="todos">Todos</option>
+            <option value="sim">Somente cancelados</option>
+            <option value="nao">Somente não cancelados</option>
+          </select>
         </div>
 
         <div class="seg">
-          <span class="lbl">Atalhos</span>
-          <div class="row" style="gap:6px">
-            <button class="ghost dowset" data-set="uteis">Úteis</button>
-            <button class="ghost dowset" data-set="fds">FDS</button>
-            <button class="ghost dowset" data-set="todos">Todos</button>
-          </div>
-        </div>
-
-        <div class="seg">
-          <label class="lbl" for="hideZero">Ocultar R$ 0</label>
-          <input id="hideZero" type="checkbox" />
-        </div>
-
-        <div class="seg">
-          <button id="aplicar">Aplicar</button>
           <button id="limpar" class="ghost">Limpar filtros</button>
-          <button id="reload" class="ghost">Recarregar</button>
         </div>
       </div>
-      <div class="muted" style="margin-top:6px">Se preencher as datas, o período rápido é ignorado.</div>
+      <div class="muted" style="margin-top:6px">Datas são limitadas ao intervalo existente no banco (ancoradas no último dia disponível por Unidade).</div>
     </div>
 
     <!-- KPIs -->
@@ -153,52 +149,81 @@
   var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
   var TABLE = "vendas_kpi_daily_v2";
 
-  // ===== UI helpers =====
+  // ===== UI refs =====
   var elLog=document.getElementById("log");
   var elPeriodo=document.getElementById("periodo");
   var elLimites=document.getElementById("limites");
+  var selUni=document.getElementById("uni");
+  var dini=document.getElementById("dini");
+  var dfim=document.getElementById("dfim");
+  var modo=document.getElementById("modo");
+  var selDOW=document.getElementById("dow");
+  var segTurno=document.getElementById("segTurno");
+  var segCanal=document.getElementById("segCanal");
+  var segPagto=document.getElementById("segPagto");
+  var segCanc=document.getElementById("segCanc");
+  var selTurno=document.getElementById("turno");
+  var selCanal=document.getElementById("canal");
+  var selPagto=document.getElementById("pagto");
+  var selCanc=document.getElementById("canc");
+
+  // ===== Helpers =====
   function log(s){ elLog.textContent += "\n"+s; }
   function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
   function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)); }
   function toISO(d){ return d.toISOString().slice(0,10); }
-  function parseBR(dstr){
-    var s=(dstr||"").trim(); if(!s) return null;
-    var m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if(!m) return null;
-    return new Date(Date.UTC(+m[3], +m[2]-1, +m[1]));
-  }
-  function isoToBR(iso){
-    if(!iso) return "";
-    var d = new Date(iso+"T00:00:00Z");
-    var dd=String(d.getUTCDate()).padStart(2,"0");
-    var mm=String(d.getUTCMonth()+1).padStart(2,"0");
-    var yy=d.getUTCFullYear();
-    return dd+"/"+mm+"/"+yy;
-  }
   function addDays(d, k){ var t=new Date(d); t.setUTCDate(t.getUTCDate()+k); return t; }
   function sum(arr, key){ var s=0; for(var i=0;i<arr.length;i++) s+=Number(arr[i][key]||0); return s; }
   function debounce(fn, wait){
     var t; return function(){ var args=arguments, ctx=this; clearTimeout(t); t=setTimeout(function(){ fn.apply(ctx,args); }, wait); };
+  }
+  function getDateFromInput(el){
+    if(!el.value) return null;
+    return new Date(el.value+"T00:00:00Z");
+  }
+  function setDateInput(el, iso){
+    el.value = iso || "";
+    if(dataMinISO) el.min = dataMinISO;
+    if(dataMaxISO) el.max = dataMaxISO;
+  }
+  function getMultiValues(sel){
+    var out=[];
+    for(var i=0;i<sel.options.length;i++){
+      var o=sel.options[i];
+      if(o.selected) out.push(o.value);
+    }
+    return out;
+  }
+  function setOptions(sel, items){
+    var prev=getMultiValues(sel);
+    sel.innerHTML="";
+    items.forEach(function(v){
+      var opt=document.createElement("option");
+      opt.value=String(v);
+      opt.textContent=String(v);
+      sel.appendChild(opt);
+    });
+    // tenta preservar seleção
+    for(var i=0;i<sel.options.length;i++){
+      sel.options[i].selected = prev.indexOf(sel.options[i].value)>=0;
+    }
   }
 
   // ===== Supabase client =====
   var supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:false } });
 
   // ===== Estado =====
-  var selUni=document.getElementById("uni");
-  var dini=document.getElementById("dini");
-  var dfim=document.getElementById("dfim");
-  var modo=document.getElementById("modo");
-  var hideZero=document.getElementById("hideZero");
-  var dowChecks = Array.prototype.slice.call(document.querySelectorAll(".dow"));
   var chartLine=null, chartBar=null;
-  var runId = 0;         // token anti-concorrência
-  var drawing = false;   // trava extra enquanto desenha
+  var runId = 0;
+  var drawing = false;
+  var dataMinISO=null, dataMaxISO=null;
 
-  // Limites de data por Unidade
-  var dataMinISO = null;
-  var dataMaxISO = null;
+  // Mapeamento dinâmico de colunas (se existirem no schema)
+  var schema = {
+    turno:null, canal:null, pagamento:null, cancelado:null, cancelType:null
+  };
 
-  // ===== Data source: paginação =====
+  // ===== Consultas (paginações) =====
   async function fetchPaged(startISO, endISO, unidade){
     var page=1000, off=0, out=[];
     for(;;){
@@ -209,6 +234,10 @@
         .order("dia", {ascending:true})
         .range(off, off+page-1);
       if(unidade && unidade!=="Todas") q = q.eq("unidade", unidade);
+
+      // aplica filtros de servidor se colunas existirem e houver seleção
+      q = applyServerFilters(q);
+
       var r = await q;
       if(r.error){ throw r.error; }
       var a=r.data||[];
@@ -220,7 +249,40 @@
     return out;
   }
 
-  // ===== Unidades (dedup) =====
+  function applyServerFilters(q){
+    // Turno
+    if(schema.turno){
+      var v=getMultiValues(selTurno);
+      if(v.length>0) q = q.in(schema.turno, v);
+    }
+    // Canal
+    if(schema.canal){
+      var c=getMultiValues(selCanal);
+      if(c.length>0) q = q.in(schema.canal, c);
+    }
+    // Pagamento
+    if(schema.pagamento){
+      var p=getMultiValues(selPagto);
+      if(p.length>0) q = q.in(schema.pagamento, p);
+    }
+    // Cancelado
+    if(schema.cancelado && selCanc.value!=="todos"){
+      var val = selCanc.value==="sim";
+      if(schema.cancelType==="bool"){
+        q = q.eq(schema.cancelado, val);
+      }else if(schema.cancelType==="num"){
+        q = q.eq(schema.cancelado, val?1:0);
+      }else if(schema.cancelType==="str"){
+        // tenta padrões comuns
+        q = q.in(schema.cancelado, val? ["Sim","sim","S","1","true","TRUE"] : ["Não","Nao","não","nao","N","0","false","FALSE"]);
+      }else{
+        q = q.eq(schema.cancelado, val); // fallback
+      }
+    }
+    return q;
+  }
+
+  // Unidades (dedup, robusto)
   async function fetchUnidades(){
     var uniq={}, arr=["Todas"];
     function push(list){
@@ -229,7 +291,7 @@
         if(!uniq[u]){ uniq[u]=1; arr.push(u); }
       });
     }
-    var today = new Date(); 
+    var today = new Date();
     var endISO = toISO(new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate())));
     var startISO = "2020-01-01";
     var r1 = await supa.from(TABLE).select("unidade").gte("dia", startISO).lte("dia", endISO).order("unidade",{ascending:true}).range(0,9999);
@@ -240,7 +302,7 @@
     return arr;
   }
 
-  // ===== Bounds (min/max) por Unidade =====
+  // Limites (min/max) por Unidade (mesma lógica de antes)
   async function getDateBounds(unidade){
     var qMax = supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
     var qMin = supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
@@ -266,7 +328,66 @@
       return;
     }
     elLimites.textContent = "Limites no banco: "+dataMinISO+" → "+dataMaxISO+(unidade && unidade!=="Todas" ? (" • Unidade: "+unidade) : " • Todas");
+    setDateInput(dini, dataMinISO);
+    setDateInput(dfim, dataMaxISO);
     log("[Bounds] "+elLimites.textContent);
+  }
+
+  // Inspeção de schema (para ativar/desativar filtros opcionais)
+  async function inspectSchema(unidade){
+    var q = supa.from(TABLE).select("*").limit(1);
+    if(unidade && unidade!=="Todas") q = q.eq("unidade", unidade);
+    var r = await q;
+    if(r.error){ log("[Schema] não foi possível inspecionar: "+r.error.message); return; }
+    var row = (r.data && r.data[0]) ? r.data[0] : {};
+    function pick(keys){ for(var i=0;i<keys.length;i++){ if(keys[i] in row){ return keys[i]; } } return null; }
+    schema.turno     = pick(["turno","periodo_turno","shift"]);
+    schema.canal     = pick(["canal_venda","canal","origem","origem_pedido"]);
+    schema.pagamento = pick(["pagamento","forma_pagamento","meio_pagamento","metodo_pagamento"]);
+    schema.cancelado = pick(["cancelado","is_cancelado","cancel"]);
+    schema.cancelType = null;
+
+    if(schema.cancelado){
+      var v = row[schema.cancelado];
+      if(typeof v==="boolean") schema.cancelType="bool";
+      else if(v===0 || v===1) schema.cancelType="num";
+      else if(typeof v==="string") schema.cancelType="str";
+    }
+
+    segTurno.classList.toggle("hidden", !schema.turno);
+    segCanal.classList.toggle("hidden", !schema.canal);
+    segPagto.classList.toggle("hidden", !schema.pagamento);
+    segCanc.classList.toggle("hidden", !schema.cancelado);
+    log("[Schema] turnos="+!!schema.turno+" canal="+!!schema.canal+" pagto="+!!schema.pagamento+" cancelado="+!!schema.cancelado);
+  }
+
+  // Carrega opções distintas (dentro do período e unidade atuais)
+  async function loadDistinct(col, sel, startISO, endISO, unidade){
+    var uniq={}, out=[], page=1000, off=0;
+    for(;;){
+      var q = supa.from(TABLE).select(col).gte("dia", startISO).lte("dia", endISO).order(col,{ascending:true}).range(off, off+page-1);
+      if(unidade && unidade!=="Todas") q = q.eq("unidade", unidade);
+      var r = await q;
+      if(r.error){ log("[Warn] distinct "+col+": "+r.error.message); break; }
+      var a=r.data||[];
+      for(var i=0;i<a.length;i++){
+        var v=a[i][col];
+        if(v===null || v===undefined || v==="") continue;
+        if(!uniq[v]){ uniq[v]=1; out.push(v); }
+      }
+      if(a.length<page) break;
+      off+=page;
+      if(off>200000){ log("[Warn] distinct "+col+" abortado por salvaguarda."); break; }
+    }
+    setOptions(sel, out);
+  }
+
+  async function refreshFilterOptions(startISO, endISO, unidade){
+    var tasks=[];
+    if(schema.turno)     tasks.push(loadDistinct(schema.turno, selTurno, startISO, endISO, unidade));
+    if(schema.canal)     tasks.push(loadDistinct(schema.canal, selCanal, startISO, endISO, unidade));
+    if(schema.pagamento) tasks.push(loadDistinct(schema.pagamento, selPagto, startISO, endISO, unidade));
+    await Promise.all(tasks);
   }
 
   // ===== KPI + Gráficos =====
@@ -354,31 +475,19 @@
     });
   }
 
-  // ===== Filtros derivados (cliente) =====
+  // ===== Filtros cliente (Dias da semana) =====
   function getSelectedDOW(){
-    var sel=[], any=false;
-    for(var i=0;i<dowChecks.length;i++){
-      if(dowChecks[i].checked){ any=true; sel.push(Number(dowChecks[i].getAttribute("data-d"))); }
-    }
-    if(!any) return [0,1,2,3,4,5,6];
-    return sel;
+    var sel = getMultiValues(selDOW);
+    if(sel.length===0) return [0,1,2,3,4,5,6]; // nenhum selecionado => todos
+    return sel.map(function(v){ return Number(v); });
   }
-
-  function applyClientFilters(rows){
-    var sel = getSelectedDOW();
-    var selSet = {}; for(var i=0;i<sel.length;i++){ selSet[sel[i]]=1; }
-    var useLiq = (modo.value==="liq");
-    var hideZ = !!hideZero.checked;
+  function applyDOWFilter(rows){
+    var keep = {}, arr = getSelectedDOW();
+    for(var i=0;i<arr.length;i++) keep[arr[i]] = 1;
     var out=[];
     for(var j=0;j<rows.length;j++){
-      var r=rows[j];
-      var dow=new Date(r.dia+"T00:00:00Z").getUTCDay();
-      if(!selSet[dow]) continue;
-      if(hideZ){
-        var val = Number(r.fat||0) - (useLiq? Number(r.fre||0) : 0);
-        if(val===0) continue;
-      }
-      out.push(r);
+      var dow=new Date(rows[j].dia+"T00:00:00Z").getUTCDay();
+      if(keep[dow]) out.push(rows[j]);
     }
     return out;
   }
@@ -396,19 +505,19 @@
 
   function validateInputsOrWarn(){
     if(!dataMinISO || !dataMaxISO) return true;
-    var ps = parseBR(dini.value);
-    var pe = parseBR(dfim.value);
+    var ps = getDateFromInput(dini);
+    var pe = getDateFromInput(dfim);
     if(ps && pe){
       var s = clampDateWithinBounds(ps);
       var e = clampDateWithinBounds(pe);
-      if(s.getTime()!==ps.getTime()){ log("[Aviso] Data inicial fora do intervalo do banco. Ajustada para "+isoToBR(toISO(s))); }
-      if(e.getTime()!==pe.getTime()){ log("[Aviso] Data final fora do intervalo do banco. Ajustada para "+isoToBR(toISO(e))); }
+      if(s.getTime()!==ps.getTime()){ log("[Aviso] Data inicial fora do intervalo do banco. Ajustada para "+toISO(s)); }
+      if(e.getTime()!==pe.getTime()){ log("[Aviso] Data final fora do intervalo do banco. Ajustada para "+toISO(e)); }
       if(s > e){
         log("[Erro] Intervalo inválido: 'De' > 'Até'. Ajuste as datas.");
         return false;
       }
-      dini.value = isoToBR(toISO(s));
-      dfim.value = isoToBR(toISO(e));
+      setDateInput(dini, toISO(s));
+      setDateInput(dfim, toISO(e));
     }
     return true;
   }
@@ -425,11 +534,11 @@
           return;
         }
       }
-
       if(!validateInputsOrWarn()) return;
 
-      var ps = parseBR(dini.value);
-      var pe = parseBR(dfim.value);
+      // Datas efetivas (default: últimos 30 dias ancorados no último dia do banco)
+      var ps = getDateFromInput(dini);
+      var pe = getDateFromInput(dfim);
       var s,e;
       if(ps && pe){
         s = clampDateWithinBounds(ps);
@@ -439,8 +548,8 @@
         s = addDays(e,-29);
         var minDate = new Date(dataMinISO+"T00:00:00Z");
         if(s < minDate) s = minDate;
-        dini.value = isoToBR(toISO(s));
-        dfim.value = isoToBR(toISO(e));
+        setDateInput(dini, toISO(s));
+        setDateInput(dfim, toISO(e));
       }
 
       var startISO = toISO(s), endISO = toISO(e);
@@ -453,17 +562,20 @@
       elPeriodo.textContent = "Período: "+startISO+" → "+endISO+" (âncora: último no banco = "+dataMaxISO+")";
 
       var uniVal = selUni.value || "Todas";
-      log("[Query] "+TABLE+" | "+startISO+" → "+endISO+" | UNI="+uniVal);
+      log("[Query] "+TABLE+" | "+startISO+" → "+endISO+" | UNI="+uniVal+" | filtros servidor aplicados conforme schema.");
 
       var cur = await fetchPaged(startISO, endISO, uniVal==="Todas"? null: uniVal);
       if(myRun!==runId) return;
+
       var ant = await fetchPaged(prevStartISO, prevEndISO, uniVal==="Todas"? null: uniVal);
       if(myRun!==runId) return;
 
-      var curF = applyClientFilters(cur);
-      var antF = applyClientFilters(ant);
-      log("[OK] Linhas atual: "+cur.length.toLocaleString("pt-BR")+" → após filtros: "+curF.length.toLocaleString("pt-BR"));
-      log("[OK] Linhas anterior: "+ant.length.toLocaleString("pt-BR")+" → após filtros: "+antF.length.toLocaleString("pt-BR"));
+      // filtro de DOW é no cliente
+      var curF = applyDOWFilter(cur);
+      var antF = applyDOWFilter(ant);
+
+      log("[OK] Linhas atual: "+cur.length.toLocaleString("pt-BR")+" → após DOW: "+curF.length.toLocaleString("pt-BR"));
+      log("[OK] Linhas anterior: "+ant.length.toLocaleString("pt-BR")+" → após DOW: "+antF.length.toLocaleString("pt-BR"));
 
       updateKPI(curF, antF);
       drawCharts(curF);
@@ -476,7 +588,7 @@
   var recarregarDebounced = debounce(recarregar, 120);
 
   async function boot(){
-    log("[Boot] v17.2-MV-paged-fix3 — filtros de dias + ocultar R$ 0 (cliente), âncora último dia");
+    log("[Boot] v17.2-MV-paged-fix3 — novos filtros (turno/canal/pagto/cancelado) + DOW dropdown + calendário em datas");
     var opts = await fetchUnidades();
     selUni.innerHTML = "";
     opts.forEach(function(u){
@@ -485,70 +597,85 @@
     selUni.value = "Todas";
 
     await refreshBounds("Todas");
+    await inspectSchema("Todas");
+
+    // datas padrão (30 dias até o último dia do banco)
     if(dataMaxISO && dataMinISO){
       var e = new Date(dataMaxISO+"T00:00:00Z");
       var s = addDays(e,-29);
       var minDate = new Date(dataMinISO+"T00:00:00Z");
       if(s < minDate) s = minDate;
-      dini.value = isoToBR(toISO(s));
-      dfim.value = isoToBR(toISO(e));
+      setDateInput(dini, toISO(s));
+      setDateInput(dfim, toISO(e));
+    }
+
+    // Carrega opções de filtros (se existirem colunas)
+    if(dataMaxISO && dataMinISO){
+      await refreshFilterOptions(dini.value, dfim.value, selUni.value);
     }
 
     recarregar();
   }
 
-  // Eventos
-  Array.prototype.forEach.call(document.querySelectorAll(".pr"), function(btn){
-    btn.addEventListener("click", async function(){
-      if(!dataMaxISO || !dataMinISO) { await refreshBounds(selUni.value||"Todas"); }
-      if(!dataMaxISO){ log("[Info] Sem limites de data para aplicar período rápido."); return; }
-      var d = Number(btn.getAttribute("data-d"));
+  // Eventos (auto-aplica com debounce)
+  selUni.addEventListener("change", async function(){
+    await refreshBounds(selUni.value||"Todas");
+    await inspectSchema(selUni.value||"Todas");
+    // reset datas para o padrão dessa unidade
+    setDateInput(dini, "");
+    setDateInput(dfim, "");
+    // atualiza opções dos filtros conforme nova unidade e datas padrão
+    if(dataMaxISO && dataMinISO){
       var e = new Date(dataMaxISO+"T00:00:00Z");
-      var s = addDays(e, -(d-1));
+      var s = addDays(e,-29);
       var minDate = new Date(dataMinISO+"T00:00:00Z");
       if(s < minDate) s = minDate;
-      dini.value = isoToBR(toISO(s));
-      dfim.value = isoToBR(toISO(e));
-      recarregarDebounced();
-    });
-  });
-
-  document.getElementById("aplicar").addEventListener("click", recarregarDebounced);
-
-  document.getElementById("limpar").addEventListener("click", async function(){
-    selUni.value="Todas"; dini.value=""; dfim.value=""; modo.value="bruto"; hideZero.checked=false;
-    for(var i=0;i<dowChecks.length;i++){ dowChecks[i].checked=true; }
-    await refreshBounds("Todas");
+      setDateInput(dini, toISO(s));
+      setDateInput(dfim, toISO(e));
+      await refreshFilterOptions(dini.value, dfim.value, selUni.value);
+    }
     recarregarDebounced();
   });
 
-  document.getElementById("reload").addEventListener("click", recarregarDebounced);
-
-  async function handleUniChange(){
-    await refreshBounds(selUni.value||"Todas");
-    dini.value=""; dfim.value="";
-    recarregarDebounced();
-  }
-  selUni.addEventListener("change", handleUniChange);
-
-  modo.addEventListener("change", recarregarDebounced);
-  hideZero.addEventListener("change", recarregarDebounced);
-  for(var i=0;i<dowChecks.length;i++){
-    dowChecks[i].addEventListener("change", recarregarDebounced);
-  }
-
-  Array.prototype.forEach.call(document.querySelectorAll(".dowset"), function(btn){
-    btn.addEventListener("click", function(){
-      var set = btn.getAttribute("data-set");
-      var chosen = (set==="uteis") ? {1:1,2:1,3:1,4:1,5:1}
-                 : (set==="fds")   ? {0:1,6:1}
-                 : {0:1,1:1,2:1,3:1,4:1,5:1,6:1};
-      for(var i=0;i<dowChecks.length;i++){
-        var d = Number(dowChecks[i].getAttribute("data-d"));
-        dowChecks[i].checked = !!chosen[d];
+  [dini, dfim, modo, selDOW, selTurno, selCanal, selPagto, selCanc].forEach(function(el){
+    if(!el) return;
+    el.addEventListener("change", async function(ev){
+      // se alterou datas, atualiza opções dos selects dependentes do período
+      if(ev.target===dini || ev.target===dfim){
+        if(validateInputsOrWarn()){
+          if(schema.turno || schema.canal || schema.pagamento){
+            await refreshFilterOptions(dini.value, dfim.value, selUni.value);
+          }
+        }
       }
       recarregarDebounced();
     });
+  });
+
+  document.getElementById("limpar").addEventListener("click", async function(){
+    selUni.value="Todas";
+    await refreshBounds("Todas");
+    await inspectSchema("Todas");
+    // limpa seleções múltiplas (nenhum selecionado = todos)
+    function clearMulti(sel){ for(var i=0;i<sel.options.length;i++) sel.options[i].selected=false; }
+    clearMulti(selDOW);
+    if(schema.turno) clearMulti(selTurno);
+    if(schema.canal) clearMulti(selCanal);
+    if(schema.pagamento) clearMulti(selPagto);
+    if(schema.cancelado) selCanc.value="todos";
+
+    // datas padrão novamente
+    if(dataMaxISO && dataMinISO){
+      var e = new Date(dataMaxISO+"T00:00:00Z");
+      var s = addDays(e,-29);
+      var minDate = new Date(dataMinISO+"T00:00:00Z");
+      if(s < minDate) s = minDate;
+      setDateInput(dini, toISO(s));
+      setDateInput(dfim, toISO(e));
+      await refreshFilterOptions(dini.value, dfim.value, selUni.value);
+    }
+    modo.value="bruto";
+    recarregarDebounced();
   });
 
   // Start
