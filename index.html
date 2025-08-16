@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3+kpi-extra+grid12)</title>
+  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3+filters-collapsible+kpi-order)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --brd:#e5e7eb; --up:#16a34a; --down:#dc2626; }
@@ -10,46 +10,64 @@
     .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
     h1{font-size:20px;margin:0 0 4px}
     .muted{color:var(--muted);font-size:12px}
-    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:12px}
+
+    /* === Cards & grids === */
     .card{background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+    .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:12px}
+    .khead{display:flex;align-items:center;justify-content:space-between}
     .title{font-size:12px;color:var(--muted)}
-    .val{font-size:22px;font-weight:700;margin-top:4px}
+    .val{font-size:22px;font-weight:700;margin-top:6px}
+    .sub{margin-top:6px}
+
+    /* Badges (variação) */
+    .badge{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid var(--brd);background:#f9fafb;white-space:nowrap}
+    .badge.up{color:var(--up);border-color:#bbf7d0;background:#f0fdf4}
+    .badge.down{color:var(--down);border-color:#fecaca;background:#fef2f2}
+    .badge.flat{color:var(--muted)}
+
+    /* Charts */
     .chartbox{position:relative;height:280px;width:100%}
+
     pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
-    .delta{display:block;margin-top:6px}
-    .delta.up{color:var(--up)} .delta.down{color:var(--down)}
-    .delta .pct{font-weight:600}
 
-    /* ===== Filtros: grid de 12 colunas, sem encavalamentos ===== */
-    .filters .top{display:flex;justify-content:flex-end;align-items:center;margin-bottom:8px}
-    .filters .linkbtn{background:#fff;border:1px solid var(--brd);border-radius:10px;padding:8px 12px;cursor:pointer;opacity:.85}
-    .filters .linkbtn:hover{opacity:1}
-
-    .filters .grid12{display:grid;grid-template-columns:repeat(12, minmax(0,1fr));gap:12px}
-    .col-12{grid-column:span 12} .col-6{grid-column:span 6}
-    .col-4{grid-column:span 4} .col-3{grid-column:span 3} .col-2{grid-column:span 2}
-
+    /* === Filtros: dropdown (details/summary) + grid 12 col === */
+    details.filtros{border:1px solid var(--brd);border-radius:12px;background:var(--card)}
+    details.filtros > summary{
+      list-style:none;cursor:pointer;padding:14px 16px;border-radius:12px;user-select:none;
+      display:flex;justify-content:space-between;align-items:center;font-weight:600
+    }
+    details.filtros > summary::-webkit-details-marker{display:none}
+    .sumTitle{font-size:14px}
+    .sumHint{font-size:12px;color:var(--muted)}
+    .fbody{padding:10px 14px 14px;border-top:1px solid var(--brd)}
+    .grid12{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px}
     .seg{display:flex;flex-direction:column;gap:6px;min-width:0}
     .seg .lbl{font-size:12px;color:var(--muted)}
     select,input[type="date"]{font:inherit;padding:10px 12px;border:1px solid var(--brd);border-radius:10px;background:#fff;width:100%;min-height:40px}
+    .rightBar{display:flex;gap:8px;align-items:center}
+    .subtle{background:#fff;border:1px solid var(--brd);border-radius:10px;padding:8px 12px;cursor:pointer;opacity:.9}
+    .subtle:hover{opacity:1}
 
-    @media (max-width:980px){
-      .filters .grid12{grid-template-columns:repeat(6, minmax(0,1fr))}
-      /* spans adaptam sozinhos (col-4 vira 4/6 etc.) */
-    }
+    /* Col spans */
+    .col-12{grid-column:span 12} .col-6{grid-column:span 6}
+    .col-4{grid-column:span 4} .col-3{grid-column:span 3} .col-2{grid-column:span 2}
+
+    /* Responsive */
+    @media (max-width:980px){ .grid12{grid-template-columns:repeat(6,minmax(0,1fr))} }
     @media (max-width:560px){
-      .filters .grid12{grid-template-columns:repeat(1, minmax(0,1fr))}
+      .grid12{grid-template-columns:repeat(1,minmax(0,1fr))}
       .col-12,.col-6,.col-4,.col-3,.col-2{grid-column:span 1}
-      .grid{grid-template-columns:1fr}
+      .kpi-grid{grid-template-columns:1fr}
     }
-    .hidden{display:none}
   </style>
+
+  <!-- Supabase & Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <div class="wrap">
-    <div class="row" style="display:flex;justify-content:space-between;align-items:flex-end">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end">
       <div>
         <h1>Dashboard Vendas — Supabase <span class="muted">(v17.2-MV-paged-fix3)</span></h1>
         <div class="muted">Fonte: <code>public.vendas_kpi_daily_v2</code> (paginado)</div>
@@ -59,95 +77,105 @@
       <div class="muted">URL: <code>uahmcfzerofhzjvlzrqc.supabase.co</code></div>
     </div>
 
-    <!-- Filtros -->
-    <div class="card filters" style="margin-top:12px">
-      <div class="top">
-        <button id="limpar" class="linkbtn">Limpar filtros</button>
+    <!-- ===== FILTROS (dropdown) ===== -->
+    <details id="fltBox" class="filtros" open>
+      <summary>
+        <span class="sumTitle">FILTROS</span>
+        <div class="rightBar">
+          <span class="sumHint" id="sumHint">—</span>
+          <button id="limpar" class="subtle">Limpar filtros</button>
+        </div>
+      </summary>
+      <div class="fbody">
+        <!-- Linha 1: Unidade (12) -->
+        <div class="grid12">
+          <div class="seg col-12">
+            <span class="lbl">Unidade</span>
+            <select id="uni"></select>
+          </div>
+        </div>
+
+        <!-- Linha 2: De (3) | Até (3) | PR (2) | Turno (2) | DOW (2) -->
+        <div class="grid12" style="margin-top:10px">
+          <div class="seg col-3">
+            <span class="lbl">De</span>
+            <input id="dini" type="date" />
+          </div>
+          <div class="seg col-3">
+            <span class="lbl">Até</span>
+            <input id="dfim" type="date" />
+          </div>
+          <div class="seg col-2">
+            <span class="lbl">Período rápido (dias)</span>
+            <select id="prapido">
+              <option value="">—</option>
+              <option value="7">7</option>
+              <option value="15">15</option>
+              <option value="30" selected>30</option>
+              <option value="90">90</option>
+              <option value="180">180</option>
+              <option value="360">360</option>
+            </select>
+          </div>
+          <div class="seg col-2 hidden" id="segTurno">
+            <span class="lbl">Turno</span>
+            <select id="turno"><option value="todos" selected>Todos</option></select>
+          </div>
+          <div class="seg col-2" id="segDOW">
+            <span class="lbl">Dia da semana</span>
+            <select id="dow">
+              <option value="todos" selected>Todos</option>
+              <option value="uteis">Úteis (Seg–Sex)</option>
+              <option value="fds">Fins de semana (Sáb–Dom)</option>
+              <option value="1">Seg</option><option value="2">Ter</option><option value="3">Qua</option>
+              <option value="4">Qui</option><option value="5">Sex</option><option value="6">Sáb</option><option value="0">Dom</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Linha 3: Canal (4) | Pagamento (4) | Cancelado (4) -->
+        <div class="grid12" style="margin-top:10px">
+          <div class="seg col-4 hidden" id="segCanal">
+            <span class="lbl">Canal de venda</span>
+            <select id="canal"><option value="todos" selected>Todos</option></select>
+          </div>
+          <div class="seg col-4 hidden" id="segPagto">
+            <span class="lbl">Pagamento</span>
+            <select id="pagto"><option value="todos" selected>Todos</option></select>
+          </div>
+          <div class="seg col-4 hidden" id="segCanc">
+            <span class="lbl">Está cancelado</span>
+            <select id="canc">
+              <option value="todos" selected>Todos</option>
+              <option value="sim">Somente cancelados</option>
+              <option value="nao">Somente não cancelados</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="muted" style="margin-top:8px">
+          Datas limitadas ao intervalo existente (ancoradas no último dia disponível por Unidade).
+        </div>
       </div>
+    </details>
 
-      <!-- Linha 1: Unidade (12 col) -->
-      <div class="grid12" style="margin-top:2px">
-        <div class="seg col-12">
-          <span class="lbl">Unidade</span>
-          <select id="uni"></select>
-        </div>
-      </div>
+    <!-- ===== KPIs ===== -->
+    <div class="kpi-grid">
+      <!-- Grupo 1 -->
+      <div class="card"><div class="khead"><div class="title">Pedidos</div><div class="badge" id="k_ped_badge">—</div></div><div class="val" id="k_ped_val">…</div><div class="muted sub" id="k_ped_sub">—</div></div>
+      <div class="card"><div class="khead"><div class="title">Ticket médio</div><div class="badge" id="k_ticket_badge">—</div></div><div class="val" id="k_ticket_val">…</div><div class="muted sub" id="k_ticket_sub">—</div></div>
+      <div class="card"><div class="khead"><div class="title">Faturamento</div><div class="badge" id="k_fat_badge">—</div></div><div class="val" id="k_fat_val">…</div><div class="muted sub" id="k_fat_sub">—</div></div>
+      <div class="card"><div class="khead"><div class="title">Faturamento médio (por dia)</div><div class="badge" id="k_fat_med_badge">—</div></div><div class="val" id="k_fat_med_val">…</div><div class="muted sub" id="k_fat_med_sub">—</div></div>
 
-      <!-- Linha 2: De (3) | Até (3) | PR (2) | Turno (2) | DOW (2) = 12 -->
-      <div class="grid12" style="margin-top:10px">
-        <div class="seg col-3">
-          <span class="lbl">De</span>
-          <input id="dini" type="date" />
-        </div>
-        <div class="seg col-3">
-          <span class="lbl">Até</span>
-          <input id="dfim" type="date" />
-        </div>
-        <div class="seg col-2">
-          <span class="lbl">Período rápido (dias)</span>
-          <select id="prapido">
-            <option value="">—</option>
-            <option value="7">7</option>
-            <option value="15">15</option>
-            <option value="30" selected>30</option>
-            <option value="90">90</option>
-            <option value="180">180</option>
-            <option value="360">360</option>
-          </select>
-        </div>
-        <div class="seg col-2 hidden" id="segTurno">
-          <span class="lbl">Turno</span>
-          <select id="turno"><option value="todos" selected>Todos</option></select>
-        </div>
-        <div class="seg col-2" id="segDOW">
-          <span class="lbl">Dia da semana</span>
-          <select id="dow">
-            <option value="todos" selected>Todos</option>
-            <option value="uteis">Úteis (Seg–Sex)</option>
-            <option value="fds">Fins de semana (Sáb–Dom)</option>
-            <option value="1">Seg</option><option value="2">Ter</option><option value="3">Qua</option>
-            <option value="4">Qui</option><option value="5">Sex</option><option value="6">Sáb</option><option value="0">Dom</option>
-          </select>
-        </div>
-      </div>
+      <!-- Grupo 2 -->
+      <div class="card"><div class="khead"><div class="title">Incentivos</div><div class="badge" id="k_des_badge">—</div></div><div class="val" id="k_des_val">…</div><div class="muted sub" id="k_des_sub">—</div></div>
+      <div class="card"><div class="khead"><div class="title">Incentivos %</div><div class="badge" id="k_des_pct_badge">—</div></div><div class="val" id="k_des_pct_val">…</div><div class="muted sub" id="k_des_pct_sub">—</div></div>
+      <div class="card"><div class="khead"><div class="title">Frete</div><div class="badge" id="k_fre_badge">—</div></div><div class="val" id="k_fre_val">…</div><div class="muted sub" id="k_fre_sub">—</div></div>
+      <div class="card"><div class="khead"><div class="title">Frete médio</div><div class="badge" id="k_fre_med_badge">—</div></div><div class="val" id="k_fre_med_val">…</div><div class="muted sub" id="k_fre_med_sub">—</div></div>
 
-      <!-- Linha 3: Canal (4) | Pagamento (4) | Cancelado (4) -->
-      <div class="grid12" style="margin-top:10px">
-        <div class="seg col-4 hidden" id="segCanal">
-          <span class="lbl">Canal de venda</span>
-          <select id="canal"><option value="todos" selected>Todos</option></select>
-        </div>
-        <div class="seg col-4 hidden" id="segPagto">
-          <span class="lbl">Pagamento</span>
-          <select id="pagto"><option value="todos" selected>Todos</option></select>
-        </div>
-        <div class="seg col-4 hidden" id="segCanc">
-          <span class="lbl">Está cancelado</span>
-          <select id="canc">
-            <option value="todos" selected>Todos</option>
-            <option value="sim">Somente cancelados</option>
-            <option value="nao">Somente não cancelados</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="muted" style="margin-top:8px">
-        Datas limitadas ao intervalo existente (ancoradas no último dia disponível por Unidade).
-      </div>
-    </div>
-
-    <!-- KPIs (agora com +5) -->
-    <div class="grid" style="margin-top:12px">
-      <div class="card"><div class="title">Pedidos</div><div class="val" id="k_ped">…</div><div class="muted" id="k_ped_delta">—</div></div>
-      <div class="card"><div class="title">Faturamento</div><div class="val" id="k_fat">…</div><div class="muted" id="k_fat_delta">—</div></div>
-      <div class="card"><div class="title">Incentivos</div><div class="val" id="k_des">…</div><div class="muted" id="k_des_delta">—</div></div>
-      <div class="card"><div class="title">Frete</div><div class="val" id="k_fre">…</div><div class="muted" id="k_fre_delta">—</div></div>
-
-      <div class="card"><div class="title">Faturamento líquido</div><div class="val" id="k_fatliq">…</div><div class="muted" id="k_fatliq_delta">—</div></div>
-      <div class="card"><div class="title">Faturamento líquido %</div><div class="val" id="k_fatliq_pct">…</div><div class="muted" id="k_fatliq_pct_delta">—</div></div>
-      <div class="card"><div class="title">Incentivos %</div><div class="val" id="k_des_pct">…</div><div class="muted" id="k_des_pct_delta">—</div></div>
-      <div class="card"><div class="title">Frete médio</div><div class="val" id="k_fre_med">…</div><div class="muted" id="k_fre_med_delta">—</div></div>
-      <div class="card"><div class="title">Ticket médio</div><div class="val" id="k_ticket">…</div><div class="muted" id="k_ticket_delta">—</div></div>
+      <!-- Grupo 3 -->
+      <div class="card"><div class="khead"><div class="title">Faturamento líquido</div><div class="badge" id="k_fatliq_badge">—</div></div><div class="val" id="k_fatliq_val">…</div><div class="muted sub" id="k_fatliq_sub">—</div></div>
+      <div class="card"><div class="khead"><div class="title">Faturamento líquido %</div><div class="badge" id="k_fatliq_pct_badge">—</div></div><div class="val" id="k_fatliq_pct_val">…</div><div class="muted sub" id="k_fatliq_pct_sub">—</div></div>
     </div>
 
     <!-- Gráficos -->
@@ -177,13 +205,11 @@
   var TABLE = "vendas_kpi_daily_v2";
 
   // ===== UI refs =====
-  var elLog=document.getElementById("log"), elPeriodo=document.getElementById("periodo"), elLimites=document.getElementById("limites");
-  var selUni=document.getElementById("uni"), dini=document.getElementById("dini"), dfim=document.getElementById("dfim");
-  var prapido=document.getElementById("prapido"), selDOW=document.getElementById("dow");
-  var segTurno=document.getElementById("segTurno"), segCanal=document.getElementById("segCanal"),
-      segPagto=document.getElementById("segPagto"), segCanc=document.getElementById("segCanc");
-  var selTurno=document.getElementById("turno"), selCanal=document.getElementById("canal"),
-      selPagto=document.getElementById("pagto"), selCanc=document.getElementById("canc");
+  var elLog=document.getElementById("log"), elPeriodo=document.getElementById("periodo"), elLimites=document.getElementById("limites"), sumHint=document.getElementById("sumHint");
+  var fltBox=document.getElementById("fltBox");
+  var selUni=document.getElementById("uni"), dini=document.getElementById("dini"), dfim=document.getElementById("dfim"), prapido=document.getElementById("prapido"), selDOW=document.getElementById("dow");
+  var segTurno=document.getElementById("segTurno"), segCanal=document.getElementById("segCanal"), segPagto=document.getElementById("segPagto"), segCanc=document.getElementById("segCanc");
+  var selTurno=document.getElementById("turno"), selCanal=document.getElementById("canal"), selPagto=document.getElementById("pagto"), selCanc=document.getElementById("canc");
 
   // ===== Helpers =====
   function log(s){ elLog.textContent += "\n"+s; }
@@ -196,6 +222,15 @@
   function debounce(fn, wait){ var t; return function(){ var a=arguments,c=this; clearTimeout(t); t=setTimeout(function(){ fn.apply(c,a); }, wait); }; }
   function getDateFromInput(el){ if(!el.value) return null; return new Date(el.value+"T00:00:00Z"); }
   function setDateInput(el, iso){ el.value = iso || ""; if(dataMinISO) el.min = dataMinISO; if(dataMaxISO) el.max = dataMaxISO; }
+  function setBadge(el, pct){
+    var cls = pct>0 ? "badge up" : (pct<0 ? "badge down" : "badge flat");
+    var arrow = pct>0 ? "▲" : (pct<0?"▼":"•");
+    el.className = cls; el.textContent = arrow+" "+pct.toFixed(1).replace('.', ',')+"%";
+  }
+
+  // auto recolher filtros após uso
+  var collapse = debounce(function(){ fltBox.open = false; }, 800);
+  function touchFilters(){ updateSummaryHint(); collapse(); }
 
   // ===== Supabase client =====
   var supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:false } });
@@ -204,7 +239,7 @@
   var chartLine=null, chartBar=null, runId=0, drawing=false, dataMinISO=null, dataMaxISO=null;
   var schema = { turno:null, canal:null, pagamento:null, cancelado:null, cancelType:null };
 
-  // ===== Consultas (paginado) =====
+  // ===== Paginado =====
   async function fetchPaged(startISO, endISO, unidade){
     var page=1000, off=0, out=[];
     for(;;){
@@ -221,7 +256,6 @@
     }
     return out;
   }
-
   function applyServerFilters(q){
     if(schema.turno && selTurno.value!=="todos") q = q.eq(schema.turno, selTurno.value);
     if(schema.canal && selCanal.value!=="todos") q = q.eq(schema.canal, selCanal.value);
@@ -237,7 +271,7 @@
     return q;
   }
 
-  // Unidades
+  // Unidades robusto
   async function fetchUnidades(){
     var uniq={}, arr=["Todas"];
     function push(list){ (list||[]).forEach(function(row){ var u=(row.unidade||"").trim(); if(!u) return; if(!uniq[u]){ uniq[u]=1; arr.push(u); } }); }
@@ -289,14 +323,14 @@
       else if(v===0||v===1)   schema.cancelType="num";
       else if(typeof v==="string") schema.cancelType="str";
     }
-    document.getElementById("segTurno").classList.toggle("hidden", !schema.turno);
-    document.getElementById("segCanal").classList.toggle("hidden", !schema.canal);
-    document.getElementById("segPagto").classList.toggle("hidden", !schema.pagamento);
-    document.getElementById("segCanc").classList.toggle("hidden", !schema.cancelado);
+    segTurno.classList.toggle("hidden", !schema.turno);
+    segCanal.classList.toggle("hidden", !schema.canal);
+    segPagto.classList.toggle("hidden", !schema.pagamento);
+    segCanc.classList.toggle("hidden", !schema.cancelado);
     log("[Schema] turno="+!!schema.turno+" canal="+!!schema.canal+" pagto="+!!schema.pagamento+" canc="+!!schema.cancelado);
   }
 
-  // Distinct
+  // Distincts p/ dropdowns
   function setOptionsWithTodos(sel, items){
     var prev = sel.value || "todos"; sel.innerHTML="";
     var opt0=document.createElement("option"); opt0.value="todos"; opt0.textContent="Todos"; sel.appendChild(opt0);
@@ -323,29 +357,39 @@
     await Promise.all(tasks);
   }
 
-  // ===== KPI helpers =====
-  function deltaCalc(cur, prev){ var pct=(prev>0)?((cur-prev)/prev*100):0; var arrow=pct>0?"▲":(pct<0?"▼":"•"); var klass=pct>0?"up":(pct<0?"down":""); return {pct,arrow,klass}; }
-  function deltaDetailHTML(cur, prev, isMoney){
-    var d=deltaCalc(cur, prev);
-    var prevFmt=isMoney?fmtBRL(prev):fmtPct(prev);
-    var klass=d.klass?`delta ${d.klass}`:"delta";
-    return `<span class="${klass}"><span class="pct">${d.arrow} ${d.pct.toFixed(1)}%</span> <span class="muted">vs ant. • ant: ${prevFmt}</span></span>`;
+  // ===== DOW (cliente) =====
+  function mapDOWSelectionToList(){ var v=selDOW.value||"todos"; if(v==="todos") return [0,1,2,3,4,5,6]; if(v==="uteis") return [1,2,3,4,5]; if(v==="fds") return [6,0]; return [Number(v)]; }
+  function applyDOWFilter(rows){ var keep={}; mapDOWSelectionToList().forEach(function(d){keep[d]=1;}); var out=[]; for(var j=0;j<rows.length;j++){ var dow=new Date(rows[j].dia+"T00:00:00Z").getUTCDay(); if(keep[dow]) out.push(rows[j]); } return out; }
+
+  // ===== Datas =====
+  function clampDateWithinBounds(d){ if(!d) return null; if(!dataMinISO||!dataMaxISO) return d; var min=new Date(dataMinISO+"T00:00:00Z"), max=new Date(dataMaxISO+"T00:00:00Z"); if(d<min) return min; if(d>max) return max; return d; }
+  function validateInputsOrWarn(){
+    if(!dataMinISO||!dataMaxISO) return true;
+    var ps=getDateFromInput(dini), pe=getDateFromInput(dfim);
+    if(ps&&pe){
+      var s=clampDateWithinBounds(ps), e=clampDateWithinBounds(pe);
+      if(s.getTime()!==ps.getTime()) log("[Aviso] 'De' ajustado para "+toISO(s));
+      if(e.getTime()!==pe.getTime()) log("[Aviso] 'Até' ajustado para "+toISO(e));
+      if(s>e){ log("[Erro] Intervalo inválido: 'De' > 'Até'."); return false; }
+      setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e));
+    }
+    return true;
   }
 
-  // ===== Atualiza KPIs =====
-  function updateKPI(rows, rowsAnt){
+  // ===== KPIs =====
+  function updateKPI(rows, rowsAnt, daysCur, daysAnt){
     var ped=sum(rows,"pedidos"), fat=sum(rows,"fat"), des=sum(rows,"des"), fre=sum(rows,"fre");
     var pedA=sum(rowsAnt,"pedidos"), fatA=sum(rowsAnt,"fat"), desA=sum(rowsAnt,"des"), freA=sum(rowsAnt,"fre");
 
-    // 12% de taxa sobre faturamento
+    // Taxa 12% sobre faturamento
     var taxa  = 0.12 * fat;
     var taxaA = 0.12 * fatA;
 
     var fatliq   = fat - des - fre - taxa;
     var fatliqA  = fatA - desA - freA - taxaA;
 
-    var fatliqPct   = fat>0  ? (fatliq / fat * 100) : 0;
-    var fatliqPctA  = fatA>0 ? (fatliqA / fatA * 100) : 0;
+    var fatliqPct  = fat>0  ? (fatliq / fat * 100) : 0;
+    var fatliqPctA = fatA>0 ? (fatliqA / fatA * 100) : 0;
 
     var desPct   = fat>0  ? (des / fat * 100) : 0;
     var desPctA  = fatA>0 ? (desA / fatA * 100) : 0;
@@ -356,32 +400,63 @@
     var ticket   = ped>0  ? (fat / ped) : 0;
     var ticketA  = pedA>0 ? (fatA / pedA) : 0;
 
-    // Valores “limpos”, sem mini porcentagem na linha do valor
-    document.getElementById("k_ped").textContent = fmtInt(ped);
-    document.getElementById("k_fat").textContent = fmtBRL(fat);
-    document.getElementById("k_des").textContent = fmtBRL(des);
-    document.getElementById("k_fre").textContent = fmtBRL(fre);
+    var fatMed   = daysCur>0 ? (fat / daysCur) : 0;
+    var fatMedA  = daysAnt>0 ? (fatA / daysAnt) : 0;
 
-    document.getElementById("k_fatliq").textContent     = fmtBRL(fatliq);
-    document.getElementById("k_fatliq_pct").textContent = fmtPct(fatliqPct).replace('.', ',');
-    document.getElementById("k_des_pct").textContent    = fmtPct(desPct).replace('.', ',');
-    document.getElementById("k_fre_med").textContent    = fmtBRL(freMed);
-    document.getElementById("k_ticket").textContent     = fmtBRL(ticket);
+    function pctChange(cur, prev){ return (prev>0)? ((cur-prev)/prev*100) : 0; }
 
-    // Faixa inferior “vs ant.”
-    document.getElementById("k_ped_delta").innerHTML      = deltaDetailHTML(ped, pedA, false);
-    document.getElementById("k_fat_delta").innerHTML      = deltaDetailHTML(fat, fatA, true);
-    document.getElementById("k_des_delta").innerHTML      = deltaDetailHTML(des, desA, true);
-    document.getElementById("k_fre_delta").innerHTML      = deltaDetailHTML(fre, freA, true);
+    // Pedidos
+    document.getElementById("k_ped_val").textContent = fmtInt(ped);
+    document.getElementById("k_ped_sub").textContent = "ant: "+fmtInt(pedA);
+    setBadge(document.getElementById("k_ped_badge"), pctChange(ped,pedA));
 
-    document.getElementById("k_fatliq_delta").innerHTML       = deltaDetailHTML(fatliq, fatliqA, true);
-    document.getElementById("k_fatliq_pct_delta").innerHTML   = deltaDetailHTML(fatliqPct, fatliqPctA, false);
-    document.getElementById("k_des_pct_delta").innerHTML      = deltaDetailHTML(desPct, desPctA, false);
-    document.getElementById("k_fre_med_delta").innerHTML      = deltaDetailHTML(freMed, freMedA, true);
-    document.getElementById("k_ticket_delta").innerHTML       = deltaDetailHTML(ticket, ticketA, true);
+    // Ticket médio
+    document.getElementById("k_ticket_val").textContent = fmtBRL(ticket);
+    document.getElementById("k_ticket_sub").textContent = "ant: "+fmtBRL(ticketA);
+    setBadge(document.getElementById("k_ticket_badge"), pctChange(ticket,ticketA));
+
+    // Faturamento
+    document.getElementById("k_fat_val").textContent = fmtBRL(fat);
+    document.getElementById("k_fat_sub").textContent = "ant: "+fmtBRL(fatA);
+    setBadge(document.getElementById("k_fat_badge"), pctChange(fat,fatA));
+
+    // Faturamento médio (por dia)
+    document.getElementById("k_fat_med_val").textContent = fmtBRL(fatMed);
+    document.getElementById("k_fat_med_sub").textContent = "ant: "+fmtBRL(fatMedA);
+    setBadge(document.getElementById("k_fat_med_badge"), pctChange(fatMed,fatMedA));
+
+    // Incentivos
+    document.getElementById("k_des_val").textContent = fmtBRL(des);
+    document.getElementById("k_des_sub").textContent = "ant: "+fmtBRL(desA);
+    setBadge(document.getElementById("k_des_badge"), pctChange(des,desA));
+
+    // Incentivos %
+    document.getElementById("k_des_pct_val").textContent = fmtPct(desPct);
+    document.getElementById("k_des_pct_sub").textContent = "ant: "+fmtPct(desPctA);
+    setBadge(document.getElementById("k_des_pct_badge"), pctChange(desPct,desPctA));
+
+    // Frete
+    document.getElementById("k_fre_val").textContent = fmtBRL(fre);
+    document.getElementById("k_fre_sub").textContent = "ant: "+fmtBRL(freA);
+    setBadge(document.getElementById("k_fre_badge"), pctChange(fre,freA));
+
+    // Frete médio
+    document.getElementById("k_fre_med_val").textContent = fmtBRL(freMed);
+    document.getElementById("k_fre_med_sub").textContent = "ant: "+fmtBRL(freMedA);
+    setBadge(document.getElementById("k_fre_med_badge"), pctChange(freMed,freMedA));
+
+    // Faturamento líquido
+    document.getElementById("k_fatliq_val").textContent = fmtBRL(fatliq);
+    document.getElementById("k_fatliq_sub").textContent = "ant: "+fmtBRL(fatliqA);
+    setBadge(document.getElementById("k_fatliq_badge"), pctChange(fatliq,fatliqA));
+
+    // Faturamento líquido %
+    document.getElementById("k_fatliq_pct_val").textContent = fmtPct(fatliqPct);
+    document.getElementById("k_fatliq_pct_sub").textContent = "ant: "+fmtPct(fatliqPctA);
+    setBadge(document.getElementById("k_fatliq_pct_badge"), pctChange(fatliqPct,fatliqPctA));
   }
 
-  // ===== Grupos/Gráficos =====
+  // ===== Gráficos =====
   function groupByDia(rows){
     var m={}; rows.forEach(function(r){ var d=r.dia; if(!m[d]) m[d]=0; m[d]+=Number(r.fat||0); });
     var days=Object.keys(m).sort(); return {labels:days, values:days.map(function(d){return m[d];})};
@@ -404,26 +479,13 @@
     });
   }
 
-  // ===== DOW (cliente) =====
-  function mapDOWSelectionToList(){ var v=selDOW.value||"todos"; if(v==="todos") return [0,1,2,3,4,5,6]; if(v==="uteis") return [1,2,3,4,5]; if(v==="fds") return [6,0]; return [Number(v)]; }
-  function applyDOWFilter(rows){ var keep={}; mapDOWSelectionToList().forEach(function(d){keep[d]=1;}); var out=[]; for(var j=0;j<rows.length;j++){ var dow=new Date(rows[j].dia+"T00:00:00Z").getUTCDay(); if(keep[dow]) out.push(rows[j]); } return out; }
-
-  // ===== Datas =====
-  function clampDateWithinBounds(d){ if(!d) return null; if(!dataMinISO||!dataMaxISO) return d; var min=new Date(dataMinISO+"T00:00:00Z"), max=new Date(dataMaxISO+"T00:00:00Z"); if(d<min) return min; if(d>max) return max; return d; }
-  function validateInputsOrWarn(){
-    if(!dataMinISO||!dataMaxISO) return true;
-    var ps=getDateFromInput(dini), pe=getDateFromInput(dfim);
-    if(ps&&pe){
-      var s=clampDateWithinBounds(ps), e=clampDateWithinBounds(pe);
-      if(s.getTime()!==ps.getTime()) log("[Aviso] 'De' ajustado para "+toISO(s));
-      if(e.getTime()!==pe.getTime()) log("[Aviso] 'Até' ajustado para "+toISO(e));
-      if(s>e){ log("[Erro] Intervalo inválido: 'De' > 'Até'."); return false; }
-      setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e));
-    }
-    return true;
+  // ===== Fluxo principal =====
+  function updateSummaryHint(){
+    var pr = prapido.value? prapido.value+"d" : "—";
+    var uni = selUni.value || "Todas";
+    sumHint.textContent = "Unidade: "+uni+" • PR: "+pr;
   }
 
-  // ===== Fluxo principal =====
   async function recarregar(){
     const myRun=++runId;
     try{
@@ -442,8 +504,10 @@
       var daysLen=Math.max(1, Math.round((e-s)/(24*3600*1000))+1);
       var prevEnd=addDays(s,-1), prevStart=addDays(prevEnd,-(daysLen-1));
       var prevStartISO=toISO(prevStart), prevEndISO=toISO(prevEnd);
+      var prevDaysLen = Math.max(1, Math.round((prevEnd - prevStart)/(24*3600*1000))+1);
 
-      elPeriodo.textContent="Período: "+startISO+" → "+endISO+" (âncora: último no banco = "+dataMaxISO+")";
+      elPeriodo.textContent="Período: "+startISO+" → "+endISO+" (âncora: "+dataMaxISO+")";
+
       var uniVal=selUni.value||"Todas";
       log("[Query] "+TABLE+" | "+startISO+" → "+endISO+" | UNI="+uniVal);
 
@@ -454,14 +518,16 @@
       log("[OK] Linhas atual: "+cur.length.toLocaleString("pt-BR")+" → DOW: "+curF.length.toLocaleString("pt-BR"));
       log("[OK] Linhas anterior: "+ant.length.toLocaleString("pt-BR")+" → DOW: "+antF.length.toLocaleString("pt-BR"));
 
-      updateKPI(curF,antF); drawCharts(curF);
+      updateKPI(curF,antF,daysLen,prevDaysLen);
+      drawCharts(curF);
+      updateSummaryHint();
     }catch(e){ if(myRun!==runId) return; console.error(e); log("[ERRO] "+(e.message||String(e))); }
   }
   var recarregarDebounced = debounce(recarregar,120);
 
   // ===== Boot =====
   async function boot(){
-    log("[Boot] v17.2-MV-paged-fix3 — grid12 + KPIs extra");
+    log("[Boot] v17.2-MV-paged-fix3 — filtros dropdown + KPIs ordenados");
     var opts=await fetchUnidades(); selUni.innerHTML=""; opts.forEach(function(u){ var o=document.createElement("option"); o.value=u; o.textContent=u; selUni.appendChild(o); }); selUni.value="Todas";
     await refreshBounds("Todas"); await inspectSchema("Todas");
 
@@ -471,10 +537,11 @@
       setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e));
     }
     if(dataMaxISO&&dataMinISO){ await refreshFilterOptions(dini.value,dfim.value,selUni.value); }
+    updateSummaryHint();
     recarregar();
   }
 
-  // ===== Eventos =====
+  // ===== Eventos (com auto-recolher) =====
   prapido.addEventListener("change", async function(){
     if(!prapido.value){ return; }
     if(!dataMaxISO||!dataMinISO){ await refreshBounds(selUni.value||"Todas"); if(!dataMaxISO) return; }
@@ -482,7 +549,7 @@
     var minDate=new Date(dataMinISO+"T00:00:00Z"); if(s<minDate) s=minDate;
     setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e));
     if(schema.turno || schema.canal || schema.pagamento){ await refreshFilterOptions(dini.value, dfim.value, selUni.value); }
-    recarregarDebounced();
+    touchFilters(); recarregarDebounced();
   });
 
   [dini, dfim].forEach(function(el){
@@ -490,7 +557,7 @@
       if(!validateInputsOrWarn()) return;
       prapido.value="";
       if(schema.turno || schema.canal || schema.pagamento){ await refreshFilterOptions(dini.value, dfim.value, selUni.value); }
-      recarregarDebounced();
+      touchFilters(); recarregarDebounced();
     });
   });
 
@@ -503,14 +570,15 @@
       setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e));
       await refreshFilterOptions(dini.value, dfim.value, selUni.value);
     }
-    recarregarDebounced();
+    touchFilters(); recarregarDebounced();
   });
 
   [selDOW, selTurno, selCanal, selPagto, selCanc].forEach(function(el){
-    if(!el) return; el.addEventListener("change", function(){ recarregarDebounced(); });
+    if(!el) return; el.addEventListener("change", function(){ touchFilters(); recarregarDebounced(); });
   });
 
   document.getElementById("limpar").addEventListener("click", async function(){
+    fltBox.open = true; // mantém visível após limpar
     selUni.value="Todas"; prapido.value="30"; selDOW.value="todos";
     if(schema.turno) selTurno.value="todos"; if(schema.canal) selCanal.value="todos"; if(schema.pagamento) selPagto.value="todos"; if(schema.cancelado) selCanc.value="todos";
     await refreshBounds("Todas");
@@ -520,6 +588,7 @@
       setDateInput(dini,toISO(s)); setDateInput(dfim,toISO(e));
       await refreshFilterOptions(dini.value, dfim.value, selUni.value);
     }
+    updateSummaryHint();
     recarregarDebounced();
   });
 
