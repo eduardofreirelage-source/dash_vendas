@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix2)</title>
+  <title>Dashboard Vendas — Supabase (v17.2-MV-paged-fix3)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --brd:#e5e7eb; }
@@ -21,7 +21,7 @@
     .seg{display:flex;gap:6px;align-items:center}
     .seg button{padding:6px 10px}
     .seg .lbl{font-size:12px;color:var(--muted)}
-    canvas{width:100%;height:280px}
+    .chartbox{position:relative;height:280px;width:100%} /* altura fixa -> sem “infinito” */
     pre{background:#0b1020;color:#d1e7ff;border:1px solid #1f2937;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}
     @media (max-width:860px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media (max-width:520px){.grid{grid-template-columns:1fr} .row{flex-direction:column;align-items:stretch}}
@@ -35,7 +35,7 @@
   <div class="wrap">
     <div class="row" style="justify-content:space-between;align-items:flex-end">
       <div>
-        <h1>Dashboard Vendas — Supabase <span class="muted">(v17.2-MV-paged-fix2)</span></h1>
+        <h1>Dashboard Vendas — Supabase <span class="muted">(v17.2-MV-paged-fix3)</span></h1>
         <div class="muted">Fonte: <code>public.vendas_kpi_daily_v2</code> (paginado)</div>
         <div class="muted" id="periodo">Período: —</div>
       </div>
@@ -99,11 +99,11 @@
     <!-- Gráficos -->
     <div class="card" style="margin-top:12px">
       <div class="title">Receita diária (R$)</div>
-      <canvas id="cLine"></canvas>
+      <div class="chartbox"><canvas id="cLine"></canvas></div>
     </div>
     <div class="card" style="margin-top:12px">
       <div class="title">Totais por dia da semana (R$)</div>
-      <canvas id="cBar"></canvas>
+      <div class="chartbox"><canvas id="cBar"></canvas></div>
     </div>
 
     <!-- Logs -->
@@ -115,6 +115,10 @@
 
 <script>
 (function(){
+  // Evita boot duplicado (caso o script seja incluído 2x por engano)
+  if (window.__DASH_BOOTED__) return;
+  window.__DASH_BOOTED__ = true;
+
   // ===== Credenciais =====
   var SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
   var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
@@ -133,6 +137,9 @@
   }
   function addDays(d, k){ var t=new Date(d); t.setUTCDate(t.getUTCDate()+k); return t; }
   function sum(arr, key){ var s=0; for(var i=0;i<arr.length;i++) s+=Number(arr[i][key]||0); return s; }
+  function debounce(fn, wait){
+    var t; return function(){ var args=arguments, ctx=this; clearTimeout(t); t=setTimeout(function(){ fn.apply(ctx,args); }, wait); };
+  }
 
   // ===== Supabase client =====
   var supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:false } });
@@ -144,7 +151,8 @@
   var modo=document.getElementById("modo");
   var periodoTxt=document.getElementById("periodo");
   var chartLine=null, chartBar=null;
-  var runId = 0; // <- token anti-concorrência (evita “gráfico infinito”)
+  var runId = 0;         // token anti-concorrência
+  var drawing = false;   // trava extra enquanto desenha
 
   // ===== Data source: paginação =====
   async function fetchPaged(startISO, endISO, unidade){
@@ -177,28 +185,14 @@
         if(!uniq[u]){ uniq[u]=1; arr.push(u); }
       });
     }
-    // janela ampla para garantir todas (mas barata: só coluna 'unidade')
-    var today = new Date(); var endISO = toISO(new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate())));
+    var today = new Date(); 
+    var endISO = toISO(new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate())));
     var startISO = "2020-01-01";
-    // asc
-    var r1 = await supa.from(TABLE)
-      .select("unidade")
-      .gte("dia", startISO).lte("dia", endISO)
-      .order("unidade", { ascending:true })
-      .range(0, 9999);
+    var r1 = await supa.from(TABLE).select("unidade").gte("dia", startISO).lte("dia", endISO).order("unidade",{ascending:true}).range(0,9999);
     if(!r1.error) push(r1.data);
-    // desc
-    var r2 = await supa.from(TABLE)
-      .select("unidade")
-      .gte("dia", startISO).lte("dia", endISO)
-      .order("unidade", { ascending:false })
-      .range(0, 9999);
+    var r2 = await supa.from(TABLE).select("unidade").gte("dia", startISO).lte("dia", endISO).order("unidade",{ascending:false}).range(0,9999);
     if(!r2.error) push(r2.data);
-
-    if(arr.length===1){ // fallback mínimo
-      arr.push("Uni. Raja");
-      arr.push("Uni.Savassi");
-    }
+    if(arr.length===1){ arr.push("Uni. Raja"); arr.push("Uni.Savassi"); }
     return arr;
   }
 
@@ -259,30 +253,39 @@
   }
 
   function drawCharts(rows){
+    // trava reentrância de desenho
+    if (drawing) return; 
+    drawing = true;
+
     var l = groupByDia(rows);
     var b = groupByDOW(rows);
 
     if(chartLine){ chartLine.destroy(); chartLine=null; }
     if(chartBar){ chartBar.destroy(); chartBar=null; }
 
-    var ctxL=document.getElementById("cLine").getContext("2d");
-    chartLine = new window.Chart(ctxL, {
-      type:"line",
-      data:{ labels:l.labels, datasets:[{ label:"Receita diária", data:l.values }] },
-      options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true } } }
-    });
+    // desenha no próximo frame, já com contêiner estável
+    requestAnimationFrame(function(){
+      var ctxL=document.getElementById("cLine").getContext("2d");
+      chartLine = new window.Chart(ctxL, {
+        type:"line",
+        data:{ labels:l.labels, datasets:[{ label:"Receita diária", data:l.values }] },
+        options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true } }, plugins:{ legend:{display:false} } }
+      });
 
-    var ctxB=document.getElementById("cBar").getContext("2d");
-    chartBar = new window.Chart(ctxB, {
-      type:"bar",
-      data:{ labels:b.labels, datasets:[{ label:"Totais por dia da semana", data:b.values }] },
-      options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true } } }
+      var ctxB=document.getElementById("cBar").getContext("2d");
+      chartBar = new window.Chart(ctxB, {
+        type:"bar",
+        data:{ labels:b.labels, datasets:[{ label:"Totais por dia da semana", data:b.values }] },
+        options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true } }, plugins:{ legend:{display:false} } }
+      });
+
+      drawing = false; // libera
     });
   }
 
-  // ===== Fluxo principal (com token anti-concorrência) =====
+  // ===== Fluxo principal (token + debounce) =====
   async function recarregar(){
-    const myRun = ++runId; // token desta execução
+    const myRun = ++runId;
     try{
       var now = new Date();
       var ps = parseBR(dini.value);
@@ -307,7 +310,7 @@
       log("[Query] "+TABLE+" | "+startISO+" → "+endISO+" | UNI="+uniVal);
 
       var cur = await fetchPaged(startISO, endISO, uniVal==="Todas"? null: uniVal);
-      if(myRun!==runId) return; // descarta resultado antigo
+      if(myRun!==runId) return;
       log("[OK] Linhas (atual): "+cur.length.toLocaleString("pt-BR"));
 
       var ant = await fetchPaged(prevStartISO, prevEndISO, uniVal==="Todas"? null: uniVal);
@@ -322,10 +325,10 @@
       log("[ERRO] "+(e.message||String(e)));
     }
   }
+  var recarregarDebounced = debounce(recarregar, 120);
 
   async function boot(){
-    log("[Boot] v17.2-MV-paged-fix2 — tokens anti-concorrência + unidades robustas");
-    // Unidades
+    log("[Boot] v17.2-MV-paged-fix3 — boot guard + debounce + contêiner fixo");
     var opts = await fetchUnidades();
     selUni.innerHTML = "";
     opts.forEach(function(u){
@@ -335,7 +338,7 @@
     recarregar();
   }
 
-  // Eventos
+  // Eventos (todos debounced)
   Array.prototype.forEach.call(document.querySelectorAll(".pr"), function(btn){
     btn.addEventListener("click", function(){
       var d = Number(btn.getAttribute("data-d"));
@@ -343,16 +346,16 @@
       var s = addDays(e, -(d-1));
       dini.value = String(s.getUTCDate()).padStart(2,"0")+"/"+String(s.getUTCMonth()+1).padStart(2,"0")+"/"+s.getUTCFullYear();
       dfim.value = String(e.getUTCDate()).padStart(2,"0")+"/"+String(e.getUTCMonth()+1).padStart(2,"0")+"/"+e.getUTCFullYear();
-      recarregar();
+      recarregarDebounced();
     });
   });
-  document.getElementById("aplicar").addEventListener("click", recarregar);
+  document.getElementById("aplicar").addEventListener("click", recarregarDebounced);
   document.getElementById("limpar").addEventListener("click", function(){
-    selUni.value="Todas"; dini.value=""; dfim.value=""; modo.value="bruto"; recarregar();
+    selUni.value="Todas"; dini.value=""; dfim.value=""; modo.value="bruto"; recarregarDebounced();
   });
-  document.getElementById("reload").addEventListener("click", recarregar);
-  selUni.addEventListener("change", recarregar);
-  modo.addEventListener("change", recarregar);
+  document.getElementById("reload").addEventListener("click", recarregarDebounced);
+  selUni.addEventListener("change", recarregarDebounced);
+  modo.addEventListener("change", recarregarDebounced);
 
   // Start
   boot();
