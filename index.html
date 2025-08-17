@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>Maestro Food</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Favicon embutido (evita 404) -->
+  <!-- Favicon inline para evitar 404 -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%232563eb'/%3E%3Ctext x='32' y='38' font-size='26' text-anchor='middle' fill='%23fff' font-family='Arial'%3EMF%3C/text%3E%3C/svg%3E">
   <style>
     :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --brd:#e5e7eb; --accent:#2563eb; --good:#16a34a; --bad:#dc2626; --chip:#eef2ff; }
@@ -203,9 +203,9 @@
             </div>
           </div>
         </div>
-        <div class="hint">Datas limitadas ao último lançamento do banco. Ao aplicar, a caixa se recolhe automaticamente.</div>
+        <div class="hint">Datas respeitam o limite real do banco. Ao aplicar, a caixa recolhe.</div>
 
-        <!-- Import CSV (Admin light) -->
+        <!-- Import CSV (incremental) -->
         <div class="row" style="margin-top:8px;justify-content:space-between;flex-wrap:wrap">
           <div>
             <input type="file" id="csvfile" accept=".csv" />
@@ -278,7 +278,7 @@
         </div>
       </div>
       <div class="chartbox"><canvas id="cHour"></canvas></div>
-      <div class="muted" style="margin-top:6px">Horas com baixa atividade são ocultadas (proxy &gt; 30min sem venda).</div>
+      <div class="muted" style="margin-top:6px">Oculto horários com baixa atividade (&gt;30min sem venda).</div>
     </div>
 
     <div class="card" style="margin-top:12px">
@@ -313,11 +313,11 @@
   var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
   var supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:true, autoRefreshToken:true } });
 
-  // ===== Fonte de dados (tabela preferida; fallback para view) =====
+  // ===== Fonte =====
   var SOURCE_PREF = "vendas_kpi_daily_v2_data";
   var SOURCE_FALL = "vendas_kpi_daily_v2";
-  var TABLE = null;             // selecionada
-  var keyLoja = "Nome da loja"; // detecta automaticamente a grafia usada
+  var TABLE = null;             // decidido em pickSource()
+  var keyLoja = "Nome da loja"; // detecto grafia real
   var keyCanal = "Canal de venda";
 
   // ===== Estado / elementos =====
@@ -329,36 +329,16 @@
   var periodoTxt=document.getElementById("periodo"), fx=document.getElementById("fx");
   var csvfile=document.getElementById("csvfile"), btnImport=document.getElementById("btnImport"), prog=document.getElementById("prog"), impMsg=document.getElementById("impMsg");
 
-  // AUTH elements
+  // AUTH
   var tabLogin=document.getElementById("tabLogin"), tabSignup=document.getElementById("tabSignup");
   var authEmail=document.getElementById("authEmail"), authPass=document.getElementById("authPass");
   var btnLogin=document.getElementById("btnLogin"), btnSignup=document.getElementById("btnSignup"), btnLogout=document.getElementById("btnLogout");
   var authErr=document.getElementById("authErr"), forgot=document.getElementById("forgot");
   var newPassRow=document.getElementById("newPassRow"), passRow=document.getElementById("passRow"), newPass=document.getElementById("newPass"), btnSaveNew=document.getElementById("btnSaveNew");
 
-  // KPIs
-  function setText(id, txt){ var el=document.getElementById(id); if(el) el.textContent = txt; }
-  function setDelta(el, cur, prev){ var pct = prev>0 ? ( (cur-prev)/prev*100 ) : 0; var cls = pct>=0 ? "up" : "down"; var arrow = pct>=0 ? "▲" : "▼"; el.className="delta "+cls; el.textContent=(pct>=0?"+":"")+pct.toFixed(1)+"% "+arrow; }
-  function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
-  function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)); }
-  function toISO(d){ if(!(d instanceof Date) || isNaN(d)) return null; return d.toISOString().slice(0,10); }
-  function parseISO(s){ if(!s) return null; return new Date(s+"T00:00:00Z"); }
-  function addDays(d, k){ var t=new Date(d.getTime()); t.setUTCDate(t.getUTCDate()+k); return t; }
-  function movingAvg(arr, win){ var out=[], acc=0; for(var i=0;i<arr.length;i++){ acc+=arr[i]; if(i>=win) acc-=arr[i-win]; out.push(acc / Math.min(i+1,win)); } return out; }
-  function avg(a,b){ return b>0 ? a/b : 0; }
-
-  // Charts
-  var chartLine=null, chartDowFat=null, chartDowPed=null, chartHour=null, chartMonth=null, chartTop=null;
-  var lineMode="total", dowMode="total", dowPedMode="total", hourMode="total", monMode="total", topMode="total";
-  function destroyChart(c){ if(c){ try{c.destroy();}catch(e){} } return null; }
-
-  // Limites de data
-  var minISO=null, maxISO=null;
-  var diasSet = new Set();
-
-  // ===== AUTH UI =====
   function showGate(){ gate.style.display="flex"; app.style.display="none"; }
   function hideGate(){ gate.style.display="none"; app.style.display="block"; }
+
   tabLogin.addEventListener("click", ()=>{ tabLogin.classList.add("active"); tabSignup.classList.remove("active"); btnLogin.style.display="inline-block"; btnSignup.style.display="none"; authErr.textContent=""; });
   tabSignup.addEventListener("click", ()=>{ tabSignup.classList.add("active"); tabLogin.classList.remove("active"); btnSignup.style.display="inline-block"; btnLogin.style.display="none"; authErr.textContent=""; });
 
@@ -387,7 +367,7 @@
     authErr.textContent = error ? error.message : "Enviamos o link de redefinição para seu e-mail.";
   });
 
-  // Modo recovery (quando volta do e-mail)
+  // Recovery
   function checkRecovery(){
     const hash = location.hash||"";
     if(hash.includes("access_token") || (new URLSearchParams(location.search)).get("type")==="recovery"){
@@ -408,18 +388,29 @@
     if(session){ hideGate(); afterLogin(); } else { showGate(); }
   });
 
-  async function afterLogin(){
-    const { data:{ user } } = await supa.auth.getUser();
-    who.textContent = user?.email || "";
-    hideGate();
-    await pickSource();
-    await bootstrap();
-  }
+  // ===== Util =====
+  function setText(id, txt){ const el=document.getElementById(id); if(el) el.textContent = txt; }
+  function setDelta(el, cur, prev){ const pct = prev>0 ? ( (cur-prev)/prev*100 ) : 0; const cls = pct>=0 ? "up" : "down"; const arrow = pct>=0 ? "▲" : "▼"; el.className="delta "+cls; el.textContent=(pct>=0?"+":"")+pct.toFixed(1)+"% "+arrow; }
+  function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
+  function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)); }
+  function toISO(d){ if(!(d instanceof Date) || isNaN(d)) return null; return d.toISOString().slice(0,10); }
+  function parseISO(s){ if(!s) return null; return new Date(s+"T00:00:00Z"); }
+  function addDays(d, k){ const t=new Date(d.getTime()); t.setUTCDate(t.getUTCDate()+k); return t; }
+  function movingAvg(arr, win){ const out=[]; let acc=0; for(let i=0;i<arr.length;i++){ acc+=arr[i]; if(i>=win) acc-=arr[i-win]; out.push(acc / Math.min(i+1,win)); } return out; }
+  function avg(a,b){ return b>0 ? a/b : 0; }
 
-  // ===== Fonte: escolher tabela ou view e detectar grafias =====
+  // Charts
+  var chartLine=null, chartDowFat=null, chartDowPed=null, chartHour=null, chartMonth=null, chartTop=null;
+  var lineMode="total", dowMode="total", dowPedMode="total", hourMode="total", monMode="total", topMode="total";
+  function destroyChart(c){ if(c){ try{c.destroy();}catch(e){} } return null; }
+
+  // Datas
+  var minISO=null, maxISO=null;
+  var diasSet = new Set();
+
+  // ===== Fonte: tabela/view e grafias =====
   async function pickSource(){
     TABLE = null;
-    // Tenta tabela
     let r = await supa.from(SOURCE_PREF).select("dia").limit(1);
     if(!r.error){ TABLE = SOURCE_PREF; }
     else{
@@ -427,48 +418,40 @@
       if(!r2.error){ TABLE = SOURCE_FALL; }
     }
     if(!TABLE){
-      statusTxt.className="status err";
-      statusTxt.textContent="Sem dados na fonte.";
+      statusTxt.className="status err"; statusTxt.textContent="Sem dados na fonte.";
       return;
     }
-    // Detecta chaves ("Nome da loja" vs "Nome da Loja"; "Canal de venda" já está estável)
     const t = await supa.from(TABLE).select("*").limit(1);
     if(!t.error && t.data && t.data[0]){
-      const obj=t.data[0];
-      if(!("Nome da loja" in obj) && ("Nome da Loja" in obj)) keyLoja="Nome da Loja";
-      keyCanal = ("Canal de venda" in obj) ? "Canal de venda" : Object.keys(obj).find(k=>k.toLowerCase()=="canal de venda") || "Canal de venda";
+      const o=t.data[0];
+      if(!("Nome da loja" in o) && ("Nome da Loja" in o)) keyLoja="Nome da Loja";
+      keyCanal = ("Canal de venda" in o) ? "Canal de venda" : Object.keys(o).find(k=>k.toLowerCase()=="canal de venda") || "Canal de venda";
     }
-    statusTxt.className="status ok";
-    statusTxt.textContent="Fonte: "+TABLE;
+    statusTxt.className="status ok"; statusTxt.textContent="Fonte: "+TABLE;
   }
 
-  // ===== Util: coleta tudo (paginado) para colunas específicas =====
   async function fetchPaged(columns, filters){
-    var out=[], page=10000, from=0, to=page-1, more=true;
+    let out=[], page=10000, from=0, to=page-1, more=true;
     while(more){
       let q = supa.from(TABLE).select(columns).order("dia",{ascending:true}).range(from,to);
       if(filters && filters.dgte) q = q.gte("dia", filters.dgte);
       if(filters && filters.dlte) q = q.lte("dia", filters.dlte);
-      const r = await q;
-      if(r.error){ throw r.error; }
+      const r = await q; if(r.error) throw r.error;
       const a=r.data||[];
       out = out.concat(a);
-      more = a.length===page;
-      from += page; to += page;
+      more = a.length===page; from += page; to += page;
     }
     return out;
   }
 
   async function fetchMinMax(){
     minISO = null; maxISO = null; diasSet = new Set();
-    // pega min e max
-    let r1 = await supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
-    let r2 = await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
+    const r1 = await supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
+    const r2 = await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
     if(r1.error || r2.error){ throw (r1.error||r2.error); }
     minISO = r1.data?.[0]?.dia || null;
     maxISO = r2.data?.[0]?.dia || null;
     if(minISO && maxISO){
-      // popula diasSet (pode ser pesado; mas ajuda a "snap" e validação de datas)
       const all = await fetchPaged("dia", {});
       (all||[]).forEach(x=>diasSet.add(x.dia));
     }
@@ -477,17 +460,15 @@
     if(!iso || diasSet.has(iso)) return iso;
     const d = parseISO(iso); if(!d) return null;
     for(let k=1;k<=60;k++){
-      const a = toISO(addDays(d, -k)); const b = toISO(addDays(d, k));
+      const a = toISO(addDays(d, -k)), b = toISO(addDays(d, k));
       if(diasSet.has(a)) return a;
       if(diasSet.has(b)) return b;
     }
     return null;
   }
 
-  // ===== Construção dos filtros (opções) =====
   async function buildOptions(){
-    // Unidades, canais, pagamentos e top 10 lojas no banco todo
-    const base = await fetchPaged("*", {}); // busca leve (sem filtros) — robusto p/ grafias
+    const base = await fetchPaged("*", {});
     const setUni=new Set(), setCan=new Set(), setPag=new Set(), sumLoja=new Map();
     base.forEach(r=>{
       if(r.unidade) setUni.add(r.unidade);
@@ -495,10 +476,10 @@
       const c = r[keyCanal]; if(c) setCan.add(c);
       if(r.pagamento) setPag.add(r.pagamento);
     });
-    // unidades
-    uni.innerHTML = ""; ["Todas", ...Array.from(setUni).sort()].forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; uni.appendChild(o); });
+    // Unidade
+    uni.innerHTML=""; ["Todas", ...Array.from(setUni).sort()].forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; uni.appendChild(o); });
     uni.value="Todas";
-    // chips lojas (Top 10 por fat)
+    // Lojas (chips)
     lojasBox.innerHTML="";
     const top = Array.from(sumLoja.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10);
     top.forEach(([name])=>{
@@ -506,41 +487,41 @@
       chip.addEventListener("click", ()=>{ chip.classList.toggle("active"); reload(); fx.open=false; });
       lojasBox.appendChild(chip);
     });
-    // canal
+    // Canal / Pagamento
     canal.innerHTML=""; Array.from(setCan).sort().forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; canal.appendChild(o); });
-    // pagamento
     pag.innerHTML=""; Array.from(setPag).sort().forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; pag.appendChild(o); });
   }
 
-  // ===== Carregamento principal =====
+  async function afterLogin(){
+    const { data:{ user } } = await supa.auth.getUser();
+    who.textContent = user?.email || "";
+    hideGate();
+    await pickSource();
+    await bootstrap();
+  }
+
   async function bootstrap(){
     try{
       if(!TABLE){ await pickSource(); if(!TABLE) return; }
       await fetchMinMax();
-      if(!minISO || !maxISO){
-        statusTxt.className="status err"; statusTxt.textContent="Sem dados.";
-        return;
-      }
-      // datas padrão: últimos 30 até maxISO
-      const end = parseISO(maxISO); const start = addDays(end, -29);
+      if(!minISO || !maxISO){ statusTxt.className="status err"; statusTxt.textContent="Sem dados."; return; }
+      const end = parseISO(maxISO), start = addDays(end, -29);
       dini.value = toISO(start); dfim.value = toISO(end);
       await buildOptions();
-      // listeners
-      document.getElementById("limpar").addEventListener("click", (e)=>{
+
+      document.getElementById("limpar").addEventListener("click",(e)=>{
         e.preventDefault();
         uni.value="Todas"; dini.value=toISO(start); dfim.value=toISO(end); pr.value="30";
         turno.value=""; canal.value=""; pag.value=""; canc.value="Todos";
         Array.from(lojasBox.children).forEach(c=>c.classList.remove("active"));
-        reload();
-        fx.open=false;
+        reload(); fx.open=false;
       });
       [uni,dini,dfim,pr,turno,canal,pag,canc].forEach(el=>{
         el.addEventListener("change", ()=>{ applyQuickDate(); reload(); fx.open=false; });
       });
-      // toggles de gráficos
       document.querySelectorAll(".pill").forEach(p=>{
-        p.addEventListener("click", (ev)=>{
-          const btn = ev.target.closest("button"); if(!btn) return;
+        p.addEventListener("click", ev=>{
+          const btn=ev.target.closest("button"); if(!btn) return;
           p.querySelectorAll("button").forEach(b=>b.classList.remove("active"));
           btn.classList.add("active");
           const target=p.getAttribute("data-target"), val=btn.getAttribute("data-val");
@@ -550,51 +531,41 @@
           if(target==="hourMode") hourMode=val;
           if(target==="monMode") monMode=val;
           if(target==="topMode") topMode=val;
-          reload(); // redesenha com o novo modo
+          reload();
         });
       });
-      // Import
       btnImport.addEventListener("click", importCSV);
 
       await reload();
     }catch(e){
-      statusTxt.className="status err"; statusTxt.textContent = "Erro ao iniciar.";
+      statusTxt.className="status err"; statusTxt.textContent="Erro ao iniciar.";
     }
   }
 
   function applyQuickDate(){
-    // se o usuário mexeu em "pr", ajusta datas para [maxISO - (pr-1) .. maxISO]
     if(!maxISO) return;
-    const days = Number(pr.value||0);
-    if(!days) return;
+    const days = Number(pr.value||0); if(!days) return;
     const end = parseISO(maxISO); const start = addDays(end, -(days-1));
     dini.value = toISO(start); dfim.value = toISO(end);
   }
 
-  function getSelected(el){
-    return Array.from(el.selectedOptions||[]).map(o=>o.value);
-  }
+  function getSelected(el){ return Array.from(el.selectedOptions||[]).map(o=>o.value); }
 
-  // ====== Carga de dados atual (com filtros) ======
   async function reload(){
     try{
       if(!TABLE){ await pickSource(); if(!TABLE) return; }
-      // datas
       let sISO = dini.value||minISO, eISO = dfim.value||maxISO;
       if(!sISO) sISO=minISO; if(!eISO) eISO=maxISO;
       sISO = snap(sISO)||sISO; eISO = snap(eISO)||eISO;
       periodoTxt.textContent = "Período: "+(sISO||"—")+" → "+(eISO||"—");
 
-      // Busca apenas por data (robusto a diferenças de grafia). Demais filtros aplico no client.
       const rows = await fetchPaged("*", { dgte:sISO, dlte:eISO });
 
-      // Determina chaves outra vez (se necessário)
       if(rows[0]){
         if(!("Nome da loja" in rows[0]) && ("Nome da Loja" in rows[0])) keyLoja="Nome da Loja";
-        if(!("Canal de venda" in rows[0])){ keyCanal = Object.keys(rows[0]).find(k=>k.toLowerCase()=="canal de venda") || keyCanal; }
+        if(!("Canal de venda" in rows[0])) keyCanal = Object.keys(rows[0]).find(k=>k.toLowerCase()=="canal de venda") || keyCanal;
       }
 
-      // Filtros client-side
       const lojasSel = Array.from(lojasBox.children).filter(c=>c.classList.contains("active")).map(c=>c.getAttribute("data-v"));
       const turnosSel = getSelected(turno);
       const canaisSel = getSelected(canal);
@@ -612,7 +583,6 @@
         return true;
       });
 
-      // Período anterior (mesmo nº de dias)
       const sD = parseISO(sISO), eD = parseISO(eISO);
       const daysLen = Math.max(1, Math.round((eD - sD)/(24*3600*1000))+1);
       const prevEnd = addDays(sD,-1), prevStart = addDays(prevEnd, -(daysLen-1));
@@ -634,36 +604,24 @@
     }
   }
 
-  // ===== KPIs =====
   function renderKPIs(cur, ant){
     const sum = (arr,k)=>arr.reduce((s,r)=>s+Number(r[k]||0),0);
     const ped = sum(cur,"pedidos"), fat=sum(cur,"fat"), des=sum(cur,"des"), fre=sum(cur,"fre");
     const pedA=sum(ant,"pedidos"), fatA=sum(ant,"fat"), desA=sum(ant,"des"), freA=sum(ant,"fre");
-    const dias = new Set(cur.map(r=>r.dia)).size || 1;
-    const diasA= new Set(ant.map(r=>r.dia)).size || 1;
+    const dias = new Set(cur.map(r=>r.dia)).size || 1, diasA= new Set(ant.map(r=>r.dia)).size || 1;
 
-    const tkm = ped>0 ? fat/ped : 0; const tkmA = pedA>0 ? fatA/pedA : 0;
-    const fmd = fat/dias;            const fmdA = fatA/diasA;
+    const tkm = ped>0 ? fat/ped : 0, tkmA = pedA>0 ? fatA/pedA : 0;
+    const fmd = fat/dias,          fmdA = fatA/diasA;
+    const fatL = fat - des - fre - (0.12*fat), fatLA= fatA - desA - freA - (0.12*fatA);
+    const desP = fat>0 ? (des/fat*100) : 0, desPA= fatA>0 ? (desA/fatA*100) : 0;
+    const freM = ped>0 ? (fre/ped) : 0,   freMA= pedA>0 ? (freA/pedA) : 0;
+    const fatLP= fat>0 ? (fatL/fat*100) : 0, fatLPA = fatA>0 ? (fatLA/fatA*100) : 0;
 
-    const fatL = fat - des - fre - (0.12*fat);
-    const fatLA= fatA - desA - freA - (0.12*fatA);
-    const desP = fat>0 ? (des/fat*100) : 0;
-    const desPA= fatA>0 ? (desA/fatA*100) : 0;
-    const freM = ped>0 ? (fre/ped) : 0;
-    const freMA= pedA>0 ? (freA/pedA) : 0;
-    const fatLP= fat>0 ? (fatL/fat*100) : 0;
-    const fatLPA= fatA>0 ? (fatLA/fatA*100) : 0;
-
-    setText("k_ped", fmtInt(ped));
-    setText("k_tkm", fmtBRL(tkm));
-    setText("k_fat", fmtBRL(fat));
-    setText("k_fmd", fmtBRL(fmd));
-    setText("k_fatl", fmtBRL(fatL));
-    setText("k_fatlp", fatLP.toFixed(1)+"%");
-    setText("k_des", fmtBRL(des));
-    setText("k_desp", desP.toFixed(1)+"%");
-    setText("k_fre", fmtBRL(fre));
-    setText("k_frem", fmtBRL(freM));
+    setText("k_ped", fmtInt(ped)); setText("k_tkm", fmtBRL(tkm));
+    setText("k_fat", fmtBRL(fat)); setText("k_fmd", fmtBRL(fmd));
+    setText("k_fatl", fmtBRL(fatL)); setText("k_fatlp", fatLP.toFixed(1)+"%");
+    setText("k_des", fmtBRL(des)); setText("k_desp", desP.toFixed(1)+"%");
+    setText("k_fre", fmtBRL(fre)); setText("k_frem", fmtBRL(freM));
 
     setDelta(document.getElementById("d_ped"), ped, pedA);
     setDelta(document.getElementById("d_tkm"), tkm, tkmA);
@@ -677,21 +635,16 @@
     setDelta(document.getElementById("d_frem"), freM, freMA);
   }
 
-  // ===== Gráficos =====
   function groupBy(arr, keyFn, valFn){
-    const m=new Map();
-    arr.forEach(r=>{ const k=keyFn(r); m.set(k, (m.get(k)||0)+valFn(r)); });
-    const labels=Array.from(m.keys()).sort();
-    const values=labels.map(k=>m.get(k));
-    return {labels, values};
+    const m=new Map(); arr.forEach(r=>{ const k=keyFn(r); m.set(k, (m.get(k)||0)+valFn(r)); });
+    const labels=Array.from(m.keys()).sort(); const values=labels.map(k=>m.get(k)); return {labels, values};
   }
   function drawLine(labels, curVals, prevVals){
     chartLine = destroyChart(chartLine);
-    var ctx=document.getElementById("cLine").getContext("2d");
-    var dataCur = curVals.slice();
-    var dataMed = movingAvg(curVals, 7);
-    var showMed = (lineMode==="media");
-    var mainData = showMed? dataMed : dataCur;
+    const ctx=document.getElementById("cLine").getContext("2d");
+    const dataMed = movingAvg(curVals, 7);
+    const showMed = (lineMode==="media");
+    const mainData = showMed? dataMed : curVals;
     chartLine = new window.Chart(ctx, {
       type:"line",
       data:{ labels: labels, datasets:[
@@ -702,193 +655,184 @@
     });
   }
   function drawBar(canvasId, labels, totals, counts, mode, horizontal){
-    var showMed = (mode==="media");
-    var vals = showMed ? totals.map((v,i)=> avg(v, counts[i]||1)) : totals.slice();
-    var ctx=document.getElementById(canvasId).getContext("2d");
-    var cfg = {
+    const showMed = (mode==="media");
+    const vals = showMed ? totals.map((v,i)=> avg(v, counts[i]||1)) : totals.slice();
+    const ctx=document.getElementById(canvasId).getContext("2d");
+    return new window.Chart(ctx, {
       type:"bar",
       data:{ labels:labels, datasets:[{ data:vals }] },
       options:{ indexAxis: horizontal?'y':'x', responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true } } }
-    };
-    return new window.Chart(ctx, cfg);
+    });
   }
-
   function renderCharts(cur, ant){
-    // Linha diária (fat)
     const byDay = groupBy(cur, r=>r.dia, r=>Number(r.fat||0));
     const byDayPrev = groupBy(ant, r=>r.dia, r=>Number(r.fat||0));
     drawLine(byDay.labels, byDay.values, byDayPrev.values);
 
-    // DOW receita
-    (function(){
+    (function(){ // Receita por DOW
       const lbl=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
       const m=[0,0,0,0,0,0,0], cnt=[0,0,0,0,0,0,0];
-      const diasSet=new Set(cur.map(r=>r.dia));
-      Array.from(diasSet).forEach(d=>{ cnt[parseISO(d).getUTCDay()]++; });
+      const diasU=new Set(cur.map(r=>r.dia)); Array.from(diasU).forEach(d=>{ cnt[parseISO(d).getUTCDay()]++; });
       cur.forEach(r=>{ const d=parseISO(r.dia).getUTCDay(); m[d]+=Number(r.fat||0); });
-      chartDowFat = destroyChart(chartDowFat);
-      chartDowFat = drawBar("cDowFat", lbl, m, cnt, dowMode, false);
+      chartDowFat = destroyChart(chartDowFat); chartDowFat = drawBar("cDowFat", lbl, m, cnt, dowMode, false);
     })();
-
-    // DOW pedidos
-    (function(){
+    (function(){ // Pedidos por DOW
       const lbl=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
       const m=[0,0,0,0,0,0,0], cnt=[0,0,0,0,0,0,0];
-      const diasSet=new Set(cur.map(r=>r.dia));
-      Array.from(diasSet).forEach(d=>{ cnt[parseISO(d).getUTCDay()]++; });
+      const diasU=new Set(cur.map(r=>r.dia)); Array.from(diasU).forEach(d=>{ cnt[parseISO(d).getUTCDay()]++; });
       cur.forEach(r=>{ const d=parseISO(r.dia).getUTCDay(); m[d]+=Number(r.pedidos||0); });
-      chartDowPed = destroyChart(chartDowPed);
-      chartDowPed = drawBar("cDowPed", lbl, m, cnt, dowPedMode, false);
+      chartDowPed = destroyChart(chartDowPed); chartDowPed = drawBar("cDowPed", lbl, m, cnt, dowPedMode, false);
     })();
-
-    // HORA
-    (function(){
+    (function(){ // Hora
       const m=Array(24).fill(0), daysByHour=Array(24).fill(0).map(()=>new Set());
-      cur.forEach(r=>{
-        const h = Number(r.hora); if(isNaN(h) || h<0 || h>23) return;
-        m[h]+=Number(r.fat||0); daysByHour[h].add(r.dia);
-      });
-      const totalDays = new Set(cur.map(r=>r.dia)).size || 1;
+      cur.forEach(r=>{ const h=Number(r.hora); if(isNaN(h)||h<0||h>23) return; m[h]+=Number(r.fat||0); daysByHour[h].add(r.dia); });
+      const totDays=new Set(cur.map(r=>r.dia)).size||1;
       const labels=[], totals=[], counts=[];
-      for(let h=0; h<24; h++){
-        const active = daysByHour[h].size;
-        const keep = active >= Math.ceil(totalDays*0.5) && m[h]>0; // oculta horários pouco ativos
-        if(keep){ labels.push(String(h).padStart(2,"0")+":00"); totals.push(m[h]); counts.push(active); }
-      }
-      chartHour = destroyChart(chartHour);
-      chartHour = drawBar("cHour", labels, totals, counts, hourMode, false);
+      for(let h=0;h<24;h++){ const active=daysByHour[h].size; const keep=active>=Math.ceil(totDays*0.5) && m[h]>0;
+        if(keep){ labels.push(String(h).padStart(2,"0")+":00"); totals.push(m[h]); counts.push(active); } }
+      chartHour = destroyChart(chartHour); chartHour = drawBar("cHour", labels, totals, counts, hourMode, false);
     })();
-
-    // MÊS
-    (function(){
+    (function(){ // Mês
       const m=new Map(), cnt=new Map(), daysPerMonth=new Map();
-      cur.forEach(r=>{
-        const ym = (r.dia||"").slice(0,7);
-        m.set(ym, (m.get(ym)||0)+Number(r.fat||0));
-        if(!daysPerMonth.has(ym)) daysPerMonth.set(ym, new Set());
-        daysPerMonth.get(ym).add(r.dia);
-      });
+      cur.forEach(r=>{ const ym=(r.dia||"").slice(0,7); m.set(ym,(m.get(ym)||0)+Number(r.fat||0)); if(!daysPerMonth.has(ym)) daysPerMonth.set(ym,new Set()); daysPerMonth.get(ym).add(r.dia); });
       Array.from(daysPerMonth.keys()).forEach(ym=> cnt.set(ym, daysPerMonth.get(ym).size));
-      const labels=Array.from(m.keys()).sort();
-      const totals=labels.map(x=>m.get(x)), counts=labels.map(x=>cnt.get(x)||1);
-      chartMonth = destroyChart(chartMonth);
-      chartMonth = drawBar("cMonth", labels, totals, counts, monMode, false);
+      const labels=Array.from(m.keys()).sort(), totals=labels.map(x=>m.get(x)), counts=labels.map(x=>cnt.get(x)||1);
+      chartMonth = destroyChart(chartMonth); chartMonth = drawBar("cMonth", labels, totals, counts, monMode, false);
     })();
-
-    // TOP 10 LOJAS
-    (function(){
-      const byLoja=new Map(), days=new Set(cur.map(r=>r.dia)).size||1;
-      cur.forEach(r=>{ const n=r[keyLoja]; if(!n) return; byLoja.set(n,(byLoja.get(n)||0)+Number(r.fat||0)); });
-      const top = Array.from(byLoja.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    (function(){ // Top lojas
+      const byL=new Map(), days=new Set(cur.map(r=>r.dia)).size||1;
+      cur.forEach(r=>{ const n=r[keyLoja]; if(!n) return; byL.set(n,(byL.get(n)||0)+Number(r.fat||0)); });
+      const top = Array.from(byL.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10);
       const labels=top.map(x=>x[0]), totals=top.map(x=>x[1]), counts=labels.map(_=>days);
-      chartTop = destroyChart(chartTop);
-      chartTop = drawBar("cTop", labels, totals, counts, topMode, true);
+      chartTop = destroyChart(chartTop); chartTop = drawBar("cTop", labels, totals, counts, topMode, true);
     })();
   }
 
-  // ===== Import CSV (incremental + dedup) =====
+  // ===== Import CSV (robusto) =====
+  function stripBOM(s){ return s.replace(/^\uFEFF/, ""); }
   function normKey(s){
-    return String(s||"").toLowerCase()
+    return stripBOM(String(s||""))
+      .replace(/[^\S\r\n]+/g," ") // espaços repetidos
       .normalize("NFD").replace(/[\u0300-\u036f]/g,"") // sem acento
-      .replace(/\s+/g," ").trim();
+      .replace(/[^\w\s\/\-\.\u00C0-\u024F]/g,"") // remove símbolos estranhos
+      .toLowerCase().trim();
   }
   function toNumber(v){
     if(v===null||v===undefined||v==="") return 0;
     if(typeof v==="number") return v;
-    const s=String(v).replace(/\./g,"").replace(",","."); // "1.234,56" -> "1234.56"
+    const s=String(v).replace(/\./g,"").replace(",",".");
     const n=Number(s); return isNaN(n)?0:n;
   }
   function toDateISO(v){
     if(!v) return null;
     const s=String(v).trim();
-    if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-    const m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;              // 2025-08-14
+    let m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);            // 14/08/2025
+    if(m) return m[3]+"-"+m[2]+"-"+m[1];
+    m=s.match(/^(\d{2})-(\d{2})-(\d{4})$/);                  // 14-08-2025
     if(m) return m[3]+"-"+m[2]+"-"+m[1];
     return null;
   }
+  function pick(map, ...cands){ for(const c of cands){ const k=map[normKey(c)]; if(k) return k; } return null; }
 
   async function importCSV(){
     const f = csvfile.files?.[0];
     if(!f){ impMsg.textContent="Selecione o arquivo CSV."; return; }
     prog.style.display="inline-block"; prog.value=0; impMsg.textContent="Lendo…";
-    // lê como texto para Papa detectar delimitador
+
     Papa.parse(f, {
       header:true, skipEmptyLines:true, dynamicTyping:false,
       complete: async (res)=>{
         try{
-          const rows=res.data||[];
-          if(!rows.length){ impMsg.textContent="Arquivo vazio."; prog.style.display="none"; return; }
-
-          // Mapeia colunas por normalização
+          const rows=res.data||[]; if(!rows.length){ impMsg.textContent="Arquivo vazio."; prog.style.display="none"; return; }
+          // mapeia cabeçalhos robustamente
           const sample = rows[0]||{};
           const map = {}; Object.keys(sample).forEach(k=> map[normKey(k)] = k);
-          function pick(...cands){ for(const c of cands){ const k=map[normKey(c)]; if(k) return k; } return null; }
 
           const K = {
-            dia: pick("dia","data"),
-            unidade: pick("unidade"),
-            pedidos: pick("pedidos","qtd","quantidade"),
-            fat: pick("fat","faturamento","total"),
-            des: pick("des","desconto"),
-            fre: pick("fre","frete","entrega"),
-            loja: pick("nome da loja","nome da Loja","loja","nome_loja"),
-            turno: pick("turno"),
-            canal: pick("canal de venda","canal"),
-            pagamento: pick("pagamento","forma de pagamento","meio de pagamento"),
-            cancelado: pick("cancelado"),
-            hora: pick("hora")
+            dia: pick(map,"dia","data","data do pedido","dt","data venda","data_venda"),
+            unidade: pick(map,"unidade","filial","loja unidade"),
+            pedidos: pick(map,"pedidos","qtd","qtde","quantidade"),
+            fat: pick(map,"fat","faturamento","total","valor total","vl total","total pedido","vr total"),
+            des: pick(map,"des","desconto","desc.","vl desconto"),
+            fre: pick(map,"fre","frete","entrega","delivery","valor entrega","vl entrega"),
+            loja: pick(map,"nome da loja","nome da Loja","loja","nome_loja","fantasia","nome loja"),
+            turno: pick(map,"turno","periodo","shift"),
+            canal: pick(map,"canal de venda","canal","origem"),
+            pagamento: pick(map,"pagamento","forma de pagamento","meio de pagamento","forma","meio"),
+            cancelado: pick(map,"cancelado","pedido cancelado","esta cancelado","está cancelado","cancel."),
+            hora: pick(map,"hora","hora do pedido","hr","hour")
           };
 
           if(!K.dia || !K.unidade || !K.fat){
             impMsg.textContent="Nada para importar (colunas obrigatórias não reconhecidas: dia/unidade/fat).";
-            prog.style.display="none"; return;
+            prog.style.display="none";
+            return;
           }
 
-          // Consolida + dedup no próprio arquivo (chave composta)
-            // soma pedidos, fat, des, fre
+          // Consolida + dedup interno (chave composta)
           const acc = new Map();
+          let minFileISO=null, maxFileISO=null;
           rows.forEach(r=>{
             const dia = toDateISO(r[K.dia]); if(!dia) return;
-            const unidade = (r[K.unidade]||"").trim(); if(!unidade) return;
-            const loja = (K.loja? (r[K.loja]||"").trim() : "") || "";
-            const hora = K.hora ? Number(String(r[K.hora]).replace(/\D/g,"")) : -1;
-            const canal = K.canal ? (r[K.canal]||"").trim() : "";
-            const pagamento = K.pagamento ? (r[K.pagamento]||"").trim() : "";
-            const cancelado = K.cancelado ? (String(r[K.cancelado]||"").trim()) : "";
+            if(!minFileISO || dia<minFileISO) minFileISO=dia;
+            if(!maxFileISO || dia>maxFileISO) maxFileISO=dia;
+
+            const unidade = (r[K.unidade]||"").toString().trim(); if(!unidade) return;
+            const loja = (K.loja? (r[K.loja]||"").toString().trim(): "") || "";
+            let hora = -1; if(K.hora){ const raw=String(r[K.hora]).replace(/\D/g,""); if(raw!=="") hora=Number(raw); }
+            const canal = K.canal ? (r[K.canal]||"").toString().trim() : "";
+            const pagamento = K.pagamento ? (r[K.pagamento]||"").toString().trim() : "";
+            let cancelado = K.cancelado ? (String(r[K.cancelado]||"").trim()) : "";
+            if(cancelado){ const s=cancelado.toLowerCase(); cancelado = s.startsWith("s")||s==="1" ? "Sim" : "Não"; }
 
             const pedidos = K.pedidos ? toNumber(r[K.pedidos]) : 0;
-            const fat = toNumber(r[K.fat]), des = K.des? toNumber(r[K.des]) : 0, fre = K.fre? toNumber(r[K.fre]) : 0;
+            const fat = toNumber(r[K.fat]);
+            const des = K.des? toNumber(r[K.des]) : 0;
+            const fre = K.fre? toNumber(r[K.fre]) : 0;
 
             const key = [dia,unidade,loja,hora,pagamento,canal].join("|");
-            if(!acc.has(key)) acc.set(key, { dia, unidade, pedidos:0, fat:0, des:0, fre:0, [keyLoja]:loja, turno: (K.turno? (r[K.turno]||"").trim():""), [keyCanal]:canal, pagamento, cancelado, hora:(isNaN(hora)?-1:hora) });
-            const o = acc.get(key);
-            o.pedidos += pedidos;
-            o.fat += fat;
-            o.des += des;
-            o.fre += fre;
-            // se qualquer linha for "Sim", marca como Sim
-            if((cancelado||"").toLowerCase().startsWith("s")) o.cancelado="Sim";
+            if(!acc.has(key)){
+              acc.set(key, { dia, unidade, pedidos:0, fat:0, des:0, fre:0,
+                [keyLoja]:loja, turno:(K.turno? (r[K.turno]||"").toString().trim():""),
+                [keyCanal]:canal, pagamento, cancelado, hora:(isNaN(hora)?-1:hora)
+              });
+            }
+            const o=acc.get(key); o.pedidos+=pedidos; o.fat+=fat; o.des+=des; o.fre+=fre;
+            if((o.cancelado||"")!=="Sim" && cancelado==="Sim") o.cancelado="Sim";
           });
 
           const data = Array.from(acc.values());
           if(!data.length){ impMsg.textContent="Nada para importar (dados inválidos)."; prog.style.display="none"; return; }
 
-          // Divide em lotes e UPSERT com onConflict = chave composta
-          const chunk=800; let done=0;
+          // Tenta UPSERT; se falhar, fallback: apaga intervalo e INSERT
+          const chunk=800; let done=0; let upsertOk=true; let errMsg="";
           for(let i=0;i<data.length;i+=chunk){
-            const slice = data.slice(i,i+chunk);
+            const slice=data.slice(i,i+chunk);
             const up = await supa.from(SOURCE_PREF).upsert(slice, {
               onConflict: 'dia,unidade,"'+keyLoja+'",hora,pagamento,"'+keyCanal+'"',
               ignoreDuplicates: false
             });
-            if(up.error){ impMsg.textContent="Erro ao inserir: "+up.error.message; prog.style.display="none"; return; }
-            done+=slice.length; prog.value = Math.round(done/data.length*100);
+            if(up.error){ upsertOk=false; errMsg = up.error.message; break; }
+            done+=slice.length; prog.value=Math.round(done/data.length*100);
+          }
+
+          if(!upsertOk){
+            // fallback sem índice único: limpa intervalo e insere
+            if(!minFileISO || !maxFileISO){ impMsg.textContent="Erro: range de datas não detectado."; prog.style.display="none"; return; }
+            await supa.from(SOURCE_PREF).delete().gte("dia", minFileISO).lte("dia", maxFileISO);
+            // insere
+            done=0; for(let i=0;i<data.length;i+=chunk){
+              const slice=data.slice(i,i+chunk);
+              const ins = await supa.from(SOURCE_PREF).insert(slice);
+              if(ins.error){ impMsg.textContent="Erro ao inserir: "+ins.error.message; prog.style.display="none"; return; }
+              done+=slice.length; prog.value=Math.round(done/data.length*100);
+            }
           }
 
           impMsg.textContent="Importado com sucesso.";
           prog.style.display="none";
-          await pickSource(); // garante que fonte está ok
-          await fetchMinMax(); await buildOptions(); await reload();
+          await pickSource(); await fetchMinMax(); await buildOptions(); await reload();
           fx.open=false;
         }catch(err){
           impMsg.textContent="Erro: "+(err.message||err);
