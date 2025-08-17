@@ -4,10 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Maestro Food</title>
+  <!-- Favicon inline para evitar 404 -->
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="62" fill="%231a73e8"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="64" fill="white">M</text></svg>'/>
   <link rel="stylesheet" href="https://unpkg.com/modern-css-reset/dist/reset.min.css">
   <style>
-    :root{--bg:#f6f8fb;--card:#fff;--muted:#667085;--text:#0f172a;--blue:#1a73e8;--stroke:#e6eaf2;--radius:14px}
+    :root{--bg:#f5f7fb;--card:#fff;--muted:#667085;--text:#0f172a;--blue:#1a73e8;--stroke:#e6eaf2;--radius:14px}
     body{background:var(--bg);color:var(--text);font:14px/1.4 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
     .container{max-width:1200px;margin:24px auto 64px;padding:0 16px}
     h1{font-size:24px;font-weight:700;margin:8px 0 4px}
@@ -30,8 +31,7 @@
     .pill{display:inline-block;padding:4px 10px;border-radius:999px;background:#eef3ff;color:#1747b7;font-weight:600}
     .right{text-align:right}
     .hint{color:var(--muted);font-size:12px}
-    #diag{margin-top:6px;color:var(--muted);font-size:12px}
-    #diag b{color:#0f172a}
+    .status{font-size:12px}
     @media (max-width:960px){.grid-kpi{grid-template-columns:repeat(2,1fr)}.cols-4,.cols-3,.cols-2{grid-template-columns:1fr}}
   </style>
 </head>
@@ -39,18 +39,18 @@
   <div class="container">
     <h1>Maestro Food</h1>
     <small id="periodo" class="muted">Período: —</small>
-    <div id="fonte" class="muted" style="margin-top:6px;"></div>
-    <div id="diag"></div>
 
     <details id="fx" class="card" open>
       <summary class="inline" style="justify-content:space-between;">
         <b>FILTROS</b>
-        <div class="inline"><button id="btnLimpar" class="btn ghost" type="button">Limpar</button></div>
+        <div class="inline">
+          <button id="btnLimpar" class="btn ghost" type="button">Limpar</button>
+        </div>
       </summary>
 
       <div class="row cols-2" style="margin-top:12px;">
         <div><label>Unidade</label><select id="fUnidade"></select></div>
-        <div><label>Nome da loja (Top 10)</label><select id="fLoja"></select></div>
+        <div><label>Nome da loja</label><select id="fLoja"></select></div>
       </div>
 
       <div class="row cols-4" style="margin-top:8px;">
@@ -59,9 +59,9 @@
         <div>
           <label>Período rápido</label>
           <select id="fQuick">
-            <option>Últimos 30</option>
+            <option selected>Últimos 30</option>
             <option>Últimos 60</option>
-            <option selected>Últimos 90</option>
+            <option>Últimos 90</option>
             <option>Este mês</option>
             <option>Último mês</option>
             <option>Este ano</option>
@@ -78,7 +78,8 @@
       <div class="row cols-3" style="margin-top:8px;">
         <div><label>Canal de venda</label><select id="fCanal" multiple></select></div>
         <div><label>Pagamento</label><select id="fPag" multiple></select></div>
-        <div><label>Está cancelado?</label>
+        <div>
+          <label>Está cancelado?</label>
           <select id="fCanc"><option>Todos</option><option>Não</option><option>Sim</option></select>
         </div>
       </div>
@@ -86,15 +87,16 @@
       <div class="card dashed" style="margin-top:12px;">
         <div class="row cols-2">
           <div class="inline"><label style="margin:0;">Admin — Importar CSV (<b>Pasta2.csv</b>)</label></div>
-          <div class="right"><span id="importStatus" class="muted"></span></div>
+          <div class="right status" id="importStatus"></div>
         </div>
         <div class="inline" style="margin-top:8px;">
           <input id="csv" type="file" accept=".csv,text/csv"/>
           <button id="btnImport" class="btn" type="button">Importar CSV (incremental)</button>
         </div>
         <p class="hint" style="margin-top:8px;">
-          Importação somativa com deduplicação por <b>dia, unidade, "Nome da loja", hora, pagamento, "Canal de venda"</b>.  
-          Obrigatórios no CSV: <b>Data da venda</b> (dd/mm/aaaa ou dd/mm/aaaa hh:mm) • <b>unidade</b> • <b>Total</b> (fat).
+          Limpo apenas o intervalo de datas do arquivo e insiro com deduplicação por chave composta
+          (<b>dia + unidade + "Nome da loja" + hora + pagamento + "Canal de venda"</b>).
+          Mínimo aceito no CSV: <b>Data/Dia</b>, <b>unidade</b>, <b>Total/fat</b>.
         </p>
       </div>
     </details>
@@ -115,331 +117,359 @@
         <b>Receita diária (R$)</b>
         <div class="inline">
           <span class="pill">Total</span>
-          <span class="pill" style="margin-left:6px;background:#fff;border:1px solid var(--stroke);color:#667085;">Média (7d)</span>
         </div>
       </div>
-      <canvas id="chart" height="120" style="margin-top:8px;"></canvas>
+      <div style="height:320px;margin-top:8px;">
+        <canvas id="chart"></canvas>
+      </div>
     </div>
   </div>
 
-  <!-- libs -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <!-- Bibliotecas (sem defer/async) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 
+  <!-- App -->
   <script>
-  (function(){
-    // ===== CONFIG =====
-    const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-    const TABLE_PREF = "vendas_kpi_daily_v2_data";
-    const VIEW_FALL  = "vendas_kpi_daily_v2";
-    const PAGE = 1000;
-    const UPSERT_CHUNK = 5000;
+  (function startWhenReady(){
+    function ready(){ return typeof window.supabase !== "undefined"; }
+    if(!ready()){ window.addEventListener('load', ()=>{ if(ready()) boot(); }); } else { boot(); }
 
-    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {auth:{persistSession:true,autoRefreshToken:true}});
+    function boot(){
+      // ===== CONFIG =====
+      const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
+      const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+      const TABLE  = "vendas_kpi_daily_v2_data";   // use a TABELA (não view)
+      const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-    // ===== DOM =====
-    const $=(id)=>document.getElementById(id);
-    const periodo=$("periodo"), fonte=$("fonte"), diag=$("diag"), fx=$("fx");
-    const fUni=$("fUnidade"), fLoja=$("fLoja"), fDini=$("fDini"), fDfim=$("fDfim"),
-          fQuick=$("fQuick"), fTurno=$("fTurno"), fCanal=$("fCanal"), fPag=$("fPag"), fCanc=$("fCanc");
-    const btnLimpar=$("btnLimpar"), csv=$("csv"), btnImport=$("btnImport"), importStatus=$("importStatus");
-    const kPedidos=$("kPedidos"), kTicket=$("kTicket"), kFat=$("kFat"), kFatDia=$("kFatDia"),
-          kDes=$("kDes"), kDesPct=$("kDesPct"), kFre=$("kFre"), kFatLiq=$("kFatLiq");
-    const chartEl=$("chart"); let chart;
+      // ===== DOM =====
+      const el=(id)=>document.getElementById(id);
+      const periodoEl=el("periodo");
+      const uni=el("fUnidade"), loja=el("fLoja"), dini=el("fDini"), dfim=el("fDfim"),
+            pr=el("fQuick"), turno=el("fTurno"), canal=el("fCanal"), pag=el("fPag"), canc=el("fCanc");
+      const btnLimpar=el("btnLimpar"), csv=el("csv"), btnImport=el("btnImport"), importStatus=el("importStatus");
+      const kPedidos=el("kPedidos"), kTicket=el("kTicket"), kFat=el("kFat"), kFatDia=el("kFatDia"),
+            kDes=el("kDes"), kDesPct=el("kDesPct"), kFre=el("kFre"), kFatLiq=el("kFatLiq");
+      const chartEl=el("chart"); let chart=null;
 
-    // ===== STATE =====
-    let TABLE=null, minISO=null, maxISO=null;
+      // ===== STATE =====
+      let minISO=null, maxISO=null, lastData=[];
 
-    // ===== UTILS =====
-    const N=(v)=>{const n=Number(v);return Number.isFinite(n)?n:0};
-    const fmtBRL=(v)=>Number.isFinite(v)?v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):"—";
-    const fmtPct=(v)=>Number.isFinite(v)?(v*100).toFixed(1).replace('.',',')+'%':"—";
-    const onlyDate=(iso)=>iso&&iso.length>=10?iso.slice(0,10):null;
-    const parseBR=(x)=>{if(x==null||x==='')return 0;if(typeof x==='number')return x;const s=String(x).trim().replace(/\./g,'').replace(',','.');const n=Number(s);return Number.isFinite(n)?n:0};
-    const norm=(s)=>String(s??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
-    const normCancel=(v)=>{const s=String(v??"").trim().toLowerCase();return (v===true||s==="sim"||s==="s"||s==="1"||s==="true")?"Sim":"Não"};
-    const toISO=(d)=>{try{const t=new Date(d);return Number.isFinite(t.getTime())?t.toISOString().slice(0,10):null}catch(_){return null}};
-    function ddmmyyyyToISO(s){ if(!s) return null; const str=String(s).trim(); const [datePart,timePart]=str.split(' '); if(!datePart)return null; const [d,m,y]=datePart.split('/'); const iso=`${String(y).padStart(4,'0')}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; return timePart?`${iso}T${timePart}:00`:`${iso}T00:00:00`; }
-    function hourFromDateText(s){ const str=String(s??''); const parts=str.split(' '); if(parts[1]&&parts[1].includes(':')){ const [hh]=parts[1].split(':'); const h=parseInt(hh,10); return Number.isFinite(h)?h:-1 } return -1 }
-    function percentile(arr,p){ const a=arr.filter(Number.isFinite).sort((x,y)=>x-y); if(!a.length) return 0; const idx=(p/100)*(a.length-1); const lo=Math.floor(idx), hi=Math.ceil(idx); const h=idx-lo; return a[lo] + (a[hi]-a[lo])*(h); }
+      // ===== HELPERS =====
+      const fmtBRL=(v)=> (isFinite(v)? v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : "—");
+      const fmtPct=(v)=> (isFinite(v)? (v*100).toFixed(1).replace('.',',')+'%' : "—");
+      const toISO=(d)=>{ try{ const t=new Date(d); if(!isFinite(t)) return null; return t.toISOString().slice(0,10);}catch(_){return null;} };
+      const onlyDateISO=(iso)=> iso && iso.length>=10 ? iso.slice(0,10) : iso;
+      const parseBR=(x)=>{ if(x==null||x==='')return 0; if(typeof x==='number')return x; const s=String(x).trim().replace(/\./g,'').replace(',','.'); const n=Number(s); return isFinite(n)?n:0; };
+      const norm=(s)=> String(s??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+      const normCancel=(v)=>{const s=String(v??"").trim().toLowerCase(); if(v===true||s==="sim"||s==="s"||s==="1"||s==="true")return"Sim"; return"Não";};
+      function ddmmyyyyToISO(s){ if(!s)return null; const str=String(s).trim(); const [datePart,timePart]=str.split(' '); const [d,m,y]=datePart.split('/'); const day=+d, mon=+m, yr=+y; if(!day||!mon||!yr||mon<1||mon>12||day<1||day>31) return null; const iso=`${String(yr).padStart(4,'0')}-${String(mon).padStart(2,'0')}-${String(day).padStart(2,'0')}`; const test=new Date(iso); if(test.getUTCFullYear()!==yr || (test.getUTCMonth()+1)!==mon || test.getUTCDate()!==day) return null; return `${iso}${timePart? 'T'+timePart+':00' : 'T00:00:00'}`;}
+      function hourFromDateText(s){ const str=String(s??''); const parts=str.split(' '); if(parts[1]&&parts[1].includes(':')){ const [hh]=parts[1].split(':'); const h=parseInt(hh,10); return isFinite(h)?h:-1 } return -1 }
+      function applyQuickDate(){ if(!maxISO||!minISO){ const end=new Date(); const start=new Date(end); start.setDate(end.getDate()-29); dini.value=toISO(start); dfim.value=toISO(end); return; } const opt=pr.value; const end=new Date(maxISO); let start; if(opt.startsWith("Últimos ")){ const n=parseInt(opt.split(' ')[1],10)||30; start=new Date(end); start.setDate(end.getDate()-(n-1)); } else if(opt==="Este mês"){ start=new Date(end.getFullYear(),end.getMonth(),1); } else if(opt==="Último mês"){ start=new Date(end.getFullYear(),end.getMonth()-1,1); const e=new Date(end.getFullYear(),end.getMonth(),0); dini.value=toISO(start); dfim.value=toISO(e); return; } else if(opt==="Este ano"){ start=new Date(end.getFullYear(),0,1); } else { start=new Date(end); start.setDate(end.getDate()-29); } dini.value=toISO(start); dfim.value=toISO(end); }
 
-    // ===== DB helpers =====
-    async function pickSource(){
-      let r=await supa.from(TABLE_PREF).select('dia').limit(1);
-      if(!r.error){TABLE=TABLE_PREF;return;}
-      r=await supa.from(VIEW_FALL).select('dia').limit(1);
-      if(!r.error){TABLE=VIEW_FALL;return;}
-      TABLE=null;
-    }
-
-    async function fetchMinMax(){
-      if(!TABLE){minISO=maxISO=null;fonte.textContent='Sem dados na fonte.';return;}
-      const a=await supa.from(TABLE).select('dia').order('dia',{ascending:true}).limit(1);
-      const b=await supa.from(TABLE).select('dia').order('dia',{ascending:false}).limit(1);
-      let count='—';
-      const c=await supa.from(TABLE).select('dia',{count:'exact',head:true}); if(!c.error) count=c.count;
-      if(!a.error&&a.data?.length&&!b.error&&b.data?.length){
-        minISO=onlyDate(a.data[0].dia); maxISO=onlyDate(b.data[0].dia);
-        fonte.textContent=`Fonte OK (${minISO} → ${maxISO}) · linhas: ${count} · origem: ${TABLE}`;
-      }else{minISO=maxISO=null;fonte.textContent='Sem dados na fonte.';}
-    }
-
-    async function fetchPagedColumnDistinct(col, quoted=false){
-      const set=new Set(); let off=0;
-      while(true){
-        const sel = quoted ? `"${col}"` : col;
-        let q=supa.from(TABLE).select(sel).not(col,'is',null).order(col,{ascending:true}).range(off, off+PAGE-1);
-        const r=await q; if(r.error){diag.textContent=`Erro listando ${col}: ${r.error.message}`; break;}
-        const arr=r.data||[];
-        for(const row of arr){ const v=row[col]; if(v!=null && v!=='') set.add(v); }
-        const got=arr.length; if(got===0) break; off+=got;
-      }
-      return Array.from(set).sort((a,b)=>String(a).localeCompare(String(b),'pt-BR'));
-    }
-
-    async function buildOptions(){
-      if(!TABLE) return;
-      diag.textContent='Carregando opções…';
-      fUni.innerHTML = `<option>Todas</option>` +
-        (await fetchPagedColumnDistinct('unidade')).map(v=>`<option>${v}</option>`).join('');
-      fPag.innerHTML = (await fetchPagedColumnDistinct('pagamento')).map(v=>`<option>${v}</option>`).join('');
-      fCanal.innerHTML = (await fetchPagedColumnDistinct('Canal de venda',true)).map(v=>`<option>${v}</option>`).join('');
-
-      // Lojas top 10 (soma paginada)
-      const acc=new Map(); let off=0;
-      while(true){
-        const r=await supa.from(TABLE).select('"Nome da loja",fat').range(off, off+PAGE-1);
-        if(r.error){diag.textContent=`Erro somando lojas: ${r.error.message}`; break;}
-        const arr=r.data||[];
-        for(const row of arr){ const k=row["Nome da loja"]; if(!k) continue; acc.set(k,(acc.get(k)||0)+N(row.fat)); }
-        const got=arr.length; if(got===0) break; off+=got;
-      }
-      const top=Array.from(acc.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k])=>k);
-      fLoja.innerHTML = `<option>Todos</option>` + top.map(v=>`<option>${v}</option>`).join('');
-      diag.textContent='Opções carregadas.';
-    }
-
-    async function fetchRowsByDate(a,b){
-      if(!TABLE) return [];
-      const from=a||minISO,to=b||maxISO;
-      const bag=[]; let off=0;
-      while(true){
-        let q=supa.from(TABLE)
-          .select('dia,unidade,pedidos,fat,des,fre,"Nome da loja",turno,"Canal de venda",pagamento,cancelado,hora')
-          .order('dia',{ascending:true})
-          .range(off, off+PAGE-1);
-        if(from) q=q.gte('dia',from);
-        if(to)   q=q.lte('dia',to);
-        const r=await q; if(r.error){diag.textContent=`Erro carregando dados: ${r.error.message}`; break;}
-        const arr=r.data||[];
-        for(const row of arr){
-          const d=onlyDate(row.dia); if(!d) continue;
-          bag.push({
-            ...row,
-            dia:d,
-            pedidos:N(row.pedidos),
-            fat:N(row.fat),
-            des:N(row.des),
-            fre:N(row.fre),
-            cancelado:normCancel(row.cancelado)
-          });
+      async function fetchAll(q, step=50000){
+        let from = 0, to = step-1, out = [];
+        for(;;){
+          const { data, error } = await q.range(from, to);
+          if (error){ console.error('[fetchAll]', error); break; }
+          out = out.concat(data||[]);
+          if (!data || data.length < step) break;
+          from += step; to += step;
+          if (from > 1_000_000){ console.warn('[fetchAll] stop safeguard'); break; }
         }
-        const got=arr.length; if(got===0) break; off+=got;
+        return out;
       }
-      diag.textContent=`Linhas lidas no período: ${bag.length.toLocaleString('pt-BR')}`;
-      return bag.filter(x=>Number.isFinite(x.fat));
-    }
 
-    function computeKPIs(rows){
-      let pedidos=0,fat=0,des=0,fre=0;
-      for(const r of rows){ pedidos+=N(r.pedidos); fat+=N(r.fat); des+=N(r.des); fre+=N(r.fre); }
-      const dias=Math.max(1,new Set(rows.map(r=>r.dia)).size);
-      const ticket=pedidos?fat/pedidos:0, fatDia=fat/dias, fatLiq=fat-des-fre, desPct=fat?des/fat:0;
-      kPedidos.textContent=pedidos.toLocaleString('pt-BR');
-      kTicket.textContent=fmtBRL(ticket);
-      kFat.textContent=fmtBRL(fat);
-      kFatDia.textContent=fmtBRL(fatDia);
-      kDes.textContent=fmtBRL(des);
-      kDesPct.textContent=fmtPct(desPct);
-      kFre.textContent=fmtBRL(fre);
-      kFatLiq.textContent=fmtBRL(fatLiq);
-    }
-
-    function drawChart(rows){
-      // agrega por dia, filtra não-finito
-      const byDay=new Map();
-      for(const r of rows){
-        const v=N(r.fat);
-        if(!Number.isFinite(v) || Math.abs(v)>1e12) continue; // corta absurdos
-        byDay.set(r.dia,(byDay.get(r.dia)||0)+v);
+      async function fetchMinMax(){
+        const a=await supa.from(TABLE).select('dia').order('dia',{ascending:true}).limit(1);
+        const b=await supa.from(TABLE).select('dia').order('dia',{ascending:false}).limit(1);
+        if(!a.error && a.data?.length && !b.error && b.data?.length){
+          minISO=onlyDateISO(a.data[0].dia); maxISO=onlyDateISO(b.data[0].dia);
+          dini.min=minISO; dfim.min=minISO; dini.max=maxISO; dfim.max=maxISO;
+        }else{
+          minISO=maxISO=null;
+        }
       }
-      const labels=Array.from(byDay.keys()).sort();
-      const rawValues=labels.map(d=>byDay.get(d)).map(v=>Number.isFinite(v)?v:null);
 
-      // cap por P95 para evitar “infinito”
-      const P95 = percentile(rawValues.filter(Number.isFinite), 95);
-      const cap = P95>0 ? P95*1.2 : Math.max(0, ...rawValues.filter(Number.isFinite));
-      const values = rawValues.map(v => (Number.isFinite(v) ? Math.min(v, cap) : null));
-
-      const ctx=chartEl.getContext('2d');
-      if(chart) chart.destroy();
-      chart=new Chart(ctx,{
-        type:'line',
-        data:{labels,datasets:[{label:'Receita',data:values,spanGaps:true,tension:0.2}]},
-        options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,
-          scales:{y:{beginAtZero:true,suggestedMax: cap, ticks:{callback:(v)=>Number(v).toLocaleString('pt-BR')}}}}
-      });
-    }
-
-    async function reload(){
-      if(!TABLE){ periodo.textContent='Sem dados.'; if(chart) chart.destroy(); computeKPIs([]); return; }
-      const a=fDini.value||minISO, b=fDfim.value||maxISO;
-      const uniSel=fUni.value||'Todas', lojaSel=fLoja.value||'Todos';
-      const turnSel=Array.from(fTurno.selectedOptions).map(o=>o.value);
-      const canSel =Array.from(fCanal.selectedOptions).map(o=>o.value);
-      const pagSel =Array.from(fPag.selectedOptions).map(o=>o.value);
-      const cancSel=fCanc.value||'Todos';
-
-      const all=await fetchRowsByDate(a,b);
-      const rows=all.filter(r=>{
-        if(uniSel!=='Todas' && norm(r.unidade)!==norm(uniSel)) return false;
-        if(lojaSel!=='Todos' && norm(r["Nome da loja"])!==norm(lojaSel)) return false;
-        if(turnSel.length && !turnSel.includes(r.turno)) return false;
-        if(canSel.length  && !canSel.includes(r["Canal de venda"])) return false;
-        if(pagSel.length  && !pagSel.includes(r.pagamento)) return false;
-        if(cancSel!=='Todos' && normCancel(r.cancelado)!==cancSel) return false;
-        return true;
-      });
-
-      periodo.textContent=`Período: ${a??'—'} → ${b??'—'} · registros filtrados: ${rows.length.toLocaleString('pt-BR')}`;
-      computeKPIs(rows); drawChart(rows);
-    }
-
-    // ===== IMPORT =====
-    function mapHeader(h){
-      const key=String(h??'').normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
-      const cand=[
-        {std:'dia',list:['dia','data','data da venda','data de venda','data_venda','datadavenda','date']},
-        {std:'unidade',list:['unidade','filial','unidades','uni','store','loja']},
-        {std:'pedidos',list:['pedidos','pedido','qtd','qtde','quantidade','orders','qty']},
-        {std:'fat',list:['fat','faturamento','total','valor total','valor','total geral','revenue','sales']},
-        {std:'des',list:['des','desconto','discount']},
-        {std:'fre',list:['fre','frete','entrega','delivery','shipping']},
-        {std:'turno',list:['turno','shift','periodo','período']},
-        {std:'Nome da loja',list:['nome da loja','nome loja','loja','nomedaloja','nome_da_loja','store_name']},
-        {std:'Canal de venda',list:['canal de venda','canal','canal de vendas','canal_venda','channel','sales_channel']},
-        {std:'pagamento',list:['pagamento','forma de pagamento','meio de pagamento','payment','payment_method']},
-        {std:'cancelado',list:['esta cancelado','está cancelado','cancelado','cancelada','cancelled','canceled']},
-        {std:'hora',list:['hora','horario','horário','hour','time']},
-      ];
-      for(const c of cand) if(c.list.includes(key)) return c.std;
-      return h;
-    }
-
-    async function upsertInChunks(rows){
-      const onC='dia,unidade,"Nome da loja",hora,pagamento,"Canal de venda"';
-      for(let i=0;i<rows.length;i+=UPSERT_CHUNK){
-        const slice=rows.slice(i,i+UPSERT_CHUNK);
-        importStatus.textContent=`Inserindo lote ${Math.floor(i/UPSERT_CHUNK)+1}/${Math.ceil(rows.length/UPSERT_CHUNK)}…`;
-        const r=await supa.from(TABLE).upsert(slice,{onConflict:onC});
-        if(r.error) throw r.error;
+      async function buildOptions(){
+        // Unidade
+        { let q=supa.from(TABLE).select('unidade').not('unidade','is',null).order('unidade',{ascending:true});
+          const arr = (await fetchAll(q, 50000)).map(x=>x.unidade).filter(Boolean);
+          const uniq=[...new Set(arr)];
+          uni.innerHTML=`<option>Todas</option>` + uniq.map(v=>`<option>${v}</option>`).join('');
+        }
+        // Pagamento
+        { let q=supa.from(TABLE).select('pagamento').not('pagamento','is',null).order('pagamento',{ascending:true});
+          const arr=(await fetchAll(q, 50000)).map(x=>x.pagamento).filter(Boolean);
+          const uniq=[...new Set(arr)];
+          pag.innerHTML=uniq.map(v=>`<option>${v}</option>`).join('');
+        }
+        // Canal (aspas)
+        { let q=supa.from(TABLE).select('"Canal de venda"').order('Canal de venda',{ascending:true});
+          const arr=(await fetchAll(q, 50000)).map(x=>x["Canal de venda"]).filter(Boolean);
+          const uniq=[...new Set(arr)];
+          canal.innerHTML=uniq.map(v=>`<option>${v}</option>`).join('');
+        }
+        // Lojas (todas; se ficar pesado, vira top 100 por receita)
+        { let q=supa.from(TABLE).select('"Nome da loja"').order('Nome da loja',{ascending:true});
+          const arr=(await fetchAll(q, 50000)).map(x=>x["Nome da loja"]).filter(Boolean);
+          const uniq=[...new Set(arr)];
+          loja.innerHTML = `<option>Todos</option>` + uniq.map(v=>`<option>${v}</option>`).join('');
+        }
       }
-    }
 
-    document.getElementById('btnImport').addEventListener('click', async ()=>{
-      const file=csv.files?.[0]; if(!file){importStatus.textContent='Selecione um CSV.';return;}
-      importStatus.textContent='Lendo arquivo…';
-      window.Papa.parse(file,{
-        header:true,
-        skipEmptyLines:'greedy',
-        delimiter:"",          // autodetect
-        transformHeader:mapHeader,
-        complete: async (res)=>{
-          const raw=res.data||[];
-          const headers=Object.keys(raw[0]||{});
-          const hasDia=headers.includes('dia')||headers.some(h=>String(h).toLowerCase().includes('data'));
-          const hasUni=headers.includes('unidade');
-          const hasFat=headers.includes('fat')||headers.includes('Total');
-          if(!hasDia||!hasUni||!hasFat){ importStatus.textContent='Nada para importar (colunas obrigatórias não reconhecidas: dia/unidade/fat).'; return; }
+      function inDateRange(iso,a,b){ return (!a||iso>=a)&&(!b||iso<=b); }
+      function computeKPIs(rows){
+        const pedidos=rows.reduce((s,r)=>s+(Number(r.pedidos)||0),0);
+        const fat=rows.reduce((s,r)=>s+(Number(r.fat)||0),0);
+        const des=rows.reduce((s,r)=>s+(Number(r.des)||0),0);
+        const fre=rows.reduce((s,r)=>s+(Number(r.fre)||0),0);
+        const fatliq=fat-des-fre; const dias=new Set(rows.map(r=>r.dia)).size||1;
+        const ticket=pedidos?fat/pedidos:0; const fatDia=fat/dias; const desPct=fat?(des/fat):0;
+        kPedidos.textContent=pedidos.toLocaleString('pt-BR'); kTicket.textContent=fmtBRL(ticket);
+        kFat.textContent=fmtBRL(fat); kFatDia.textContent=fmtBRL(fatDia);
+        kDes.textContent=fmtBRL(des); kDesPct.textContent=fmtPct(desPct);
+        kFre.textContent=fmtBRL(fre); kFatLiq.textContent=fmtBRL(fatliq);
+      }
 
-          let lidas=0, validas=0;
-          const normRows=raw.map(r=>{
-            lidas++;
-            const diaVal=r.dia||r['Data da venda']||r['data']||r['Data'];
-            const diaIso=diaVal?(String(diaVal).includes('/')?ddmmyyyyToISO(diaVal):(String(diaVal).includes('T')?diaVal:diaVal+'T00:00:00')):null;
-            if(!diaIso) return null;
-            const uni=String(r.unidade||r.Unidade||'').trim(); if(!uni) return null;
-            const hora=('hora'in r)?(parseInt(r.hora,10)||-1):hourFromDateText(diaVal);
-            const fat=parseBR(r.fat||r['Total']||r.total||0);
-            const des=parseBR(r.des||r['Desconto']||r.desconto||0);
-            const fre=parseBR(r.fre||r['Entrega']||r.entrega||r.frete||0);
-            const obj={
-              dia: onlyDate(diaIso),
-              unidade: uni,
-              pedidos: Math.max(1, Number(r.pedidos)||1),
-              fat,des,fre,
-              turno:r.turno||r.Turno||null,
-              pagamento:r.pagamento||r.Pagamento||null,
-              "Canal de venda":r["Canal de venda"]||r.Canal||null,
-              "Nome da loja":r["Nome da loja"]||r.Loja||null,
-              cancelado:normCancel(r.cancelado||r['Está cancelado']),
-              hora:Number.isFinite(hora)?hora:-1
-            };
-            if(!(obj.dia && obj.unidade && Number.isFinite(obj.fat))) return null;
-            validas++; return obj;
-          }).filter(Boolean);
+      function drawChart(rows){
+        const byDay = new Map();
+        for(const r of rows){
+          const d=r.dia; const v=Number(r.fat)||0;
+          if(!d || !isFinite(v) || Math.abs(v)>1e12) continue;
+          byDay.set(d, (byDay.get(d)||0)+v);
+        }
+        let pairs = Array.from(byDay.entries()).sort((a,b)=>a[0].localeCompare(b[0]));
+        if(pairs.length>365){ const step=Math.ceil(pairs.length/360); pairs=pairs.filter((_,i)=>i%step===0); }
+        const labels=pairs.map(p=>p[0]); const values=pairs.map(p=>p[1]);
 
-          // Deduplicação por chave composta (no cliente) somando métricas
-          const acc=new Map();
-          for(const r of normRows){
-            const key=[r.dia,r.unidade,r["Nome da loja"]||'',r.hora,r.pagamento||'',r["Canal de venda"]||''].join('|');
-            const v=acc.get(key)||{...r,pedidos:0,fat:0,des:0,fre:0};
-            v.pedidos+=N(r.pedidos); v.fat+=N(r.fat); v.des+=N(r.des); v.fre+=N(r.fre);
-            v.cancelado=r.cancelado||v.cancelado; acc.set(key,v);
+        if(chart) chart.destroy();
+        chart = new Chart(chartEl.getContext('2d'), {
+          type:'line',
+          data:{labels, datasets:[{label:'Receita', data:values, pointRadius:0, borderWidth:2, tension:0.2}]},
+          options:{
+            responsive:true, maintainAspectRatio:false, parsing:false, animation:false,
+            plugins:{ legend:{display:false}, decimation:{enabled:true, algorithm:'lttb', samples:300} },
+            scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>Intl.NumberFormat('pt-BR',{notation:'compact',maximumFractionDigits:1}).format(v)} } }
           }
-          const rows=[...acc.values()];
-          importStatus.textContent=`Lidas ${lidas.toLocaleString('pt-BR')} · válidas ${validas.toLocaleString('pt-BR')} · enviando ${rows.length.toLocaleString('pt-BR')}…`;
+        });
+      }
 
-          try{
-            if(!TABLE) await pickSource();
-            if(!TABLE) throw new Error('Sem tabela no banco.');
-            await upsertInChunks(rows);
-            importStatus.textContent='Importado.';
-            await fetchMinMax(); await buildOptions(); await reload();
-          }catch(e){ importStatus.textContent='Erro ao inserir.'; diag.textContent=`Falha no upsert: ${e.message||e}`; }
-        },
-        error:()=>{ importStatus.textContent='Erro ao ler CSV.'; }
+      async function reload(){
+        if(!minISO || !maxISO){ periodoEl.textContent='Sem dados.'; computeKPIs([]); if(chart) chart.destroy(); return; }
+
+        const a = dini.value || minISO;
+        const b = dfim.value || maxISO;
+        const uniSel  = uni.value  || 'Todas';
+        const lojaSel = loja.value || 'Todos';
+        const turnSel = Array.from(turno.selectedOptions).map(o=>o.value);
+        const canSel  = Array.from(canal.selectedOptions).map(o=>o.value);
+        const pagSel  = Array.from(pag.selectedOptions).map(o=>o.value);
+        const cancSel = (canc.value || 'Todos');
+
+        let q = supa.from(TABLE)
+          .select('dia,unidade,pedidos,fat,des,fre,"Nome da loja",turno,"Canal de venda",pagamento,cancelado,hora')
+          .gte('dia', a).lte('dia', b)
+          .order('dia',{ascending:true});
+
+        if (uniSel  !== 'Todas') q = q.eq('unidade', uniSel);
+        if (lojaSel !== 'Todos') q = q.eq('Nome da loja', lojaSel);
+        if (turnSel.length)       q = q.in('turno', turnSel);
+        if (canSel.length)        q = q.in('Canal de venda', canSel);
+        if (pagSel.length)        q = q.in('pagamento', pagSel);
+        if (cancSel !== 'Todos')  q = q.eq('cancelado', cancSel);
+
+        const rows = await fetchAll(q, 50000);
+
+        const clean = (rows||[]).map(r=>({
+          dia: r?.dia ? r.dia.slice(0,10) : null,
+          unidade: r?.unidade ?? null,
+          fat: Number(r?.fat) || 0,
+          pedidos: Number(r?.pedidos) || 0,
+          des: Number(r?.des) || 0,
+          fre: Number(r?.fre) || 0,
+          turno: r?.turno ?? null,
+          pagamento: r?.pagamento ?? null,
+          'Canal de venda': r?.['Canal de venda'] ?? null,
+          'Nome da loja': r?.['Nome da loja'] ?? null,
+          cancelado: r?.cancelado ?? 'Não',
+          hora: (Number(r?.hora) % 24 + 24) % 24
+        })).filter(r=> r.dia && isFinite(r.fat));
+
+        lastData = clean;
+        periodoEl.textContent = `Período: ${a} → ${b} (${clean.length.toLocaleString('pt-BR')} linhas)`;
+        computeKPIs(clean);
+        drawChart(clean);
+      }
+
+      // ===== IMPORT CSV =====
+      const mapHeader = (h)=>{
+        const key = norm(h);
+        const cand = [
+          {std:'dia', list:['dia','data','data da venda','data de venda','data_venda','datadavenda','date']},
+          {std:'unidade', list:['unidade','filial','unidades','uni','store']},
+          {std:'pedidos', list:['pedidos','pedido','qtd','qtde','quantidade','orders','qty']},
+          {std:'fat', list:['fat','faturamento','total','valor total','valor','total geral','revenue','sales']},
+          {std:'des', list:['des','desconto','discount']},
+          {std:'fre', list:['fre','frete','entrega','delivery','shipping']},
+          {std:'turno', list:['turno','shift','periodo','período']},
+          {std:'Nome da loja', list:['nome da loja','nome loja','loja','nomedaloja','nome_da_loja','store_name']},
+          {std:'Canal de venda', list:['canal de venda','canal','canal de vendas','canal_venda','channel','sales_channel']},
+          {std:'pagamento', list:['pagamento','forma de pagamento','meio de pagamento','payment','payment_method']},
+          {std:'cancelado', list:['esta cancelado','está cancelado','cancelado','cancelada','cancelled','canceled']},
+          {std:'hora', list:['hora','horario','horário','hour','time']},
+        ];
+        for(const c of cand){ if(c.list.includes(key)) return c.std; }
+        return h;
+      };
+
+      btnImport.addEventListener('click', async ()=>{
+        const file=csv.files?.[0];
+        if(!file){ importStatus.textContent='Selecione um CSV.'; importStatus.style.color='#b91c1c'; return; }
+        importStatus.textContent='Lendo arquivo…'; importStatus.style.color='#1a73e8';
+
+        // streaming + dedup + flush por lotes
+        let minFileISO=null, maxFileISO=null;
+        const seen=new Set();           // chaves vistas no arquivo inteiro
+        let batchMap=new Map();         // dedup intra-lote
+        const BATCH=10000;
+
+        async function flush(){
+          if(batchMap.size===0) return;
+          const rows=[...batchMap.values()];
+          // upsert com conflito na chave composta
+          const onC='dia,unidade,"Nome da loja",hora,pagamento,"Canal de venda"';
+          const r = await supa.from(TABLE).upsert(rows, { onConflict:onC });
+          if(r.error){ console.error(r.error); importStatus.textContent='Erro ao inserir (verifique RLS/índice único).'; importStatus.style.color='#b91c1c'; throw r.error; }
+          batchMap.clear();
+        }
+
+        function pushRow(r){
+          const key=[r.dia,r.unidade,r["Nome da loja"],r.hora,r.pagamento,r["Canal de venda"]].join('|');
+          if(seen.has(key)){
+            // soma nos agregados
+            const cur=batchMap.get(key);
+            if(cur){
+              cur.pedidos=(cur.pedidos||0)+(r.pedidos||0);
+              cur.fat=(cur.fat||0)+(r.fat||0);
+              cur.des=(cur.des||0)+(r.des||0);
+              cur.fre=(cur.fre||0)+(r.fre||0);
+              cur.cancelado=r.cancelado||cur.cancelado;
+            }
+            return;
+          }
+          seen.add(key);
+          batchMap.set(key, r);
+          if(batchMap.size>=BATCH){
+            // flush assíncrono sequencial
+            pendingPromises = pendingPromises.then(()=>flush());
+          }
+        }
+
+        let totalKept=0;
+        let pendingPromises = Promise.resolve();
+
+        Papa.parse(file,{
+          header:true, skipEmptyLines:'greedy', transformHeader:mapHeader,
+          step: function(row, parser){
+            const r=row.data||{};
+            // dia -> ISO
+            let diaValue = r.dia || r['Data da venda'] || r['data'] || r['Data'];
+            let diaIso = null;
+            if(diaValue){
+              diaIso = String(diaValue).includes('/') ? ddmmyyyyToISO(diaValue) : toISO(diaValue);
+            }
+            if(!diaIso){ return; }
+            const diaOnly = onlyDateISO(diaIso);
+            if(!diaOnly){ return; }
+
+            // hora
+            const hora = ('hora' in r) ? (parseInt(r.hora,10)||-1) : hourFromDateText(diaValue);
+
+            // valores
+            const fat = parseBR(r.fat || r['Total'] || r.total || 0);
+            if(!isFinite(fat)) return;
+            const des = parseBR(r.des || r['Desconto'] || r.desconto || 0);
+            const fre = parseBR(r.fre || r['Entrega']  || r.entrega  || r.frete || 0);
+            const unidade = String(r.unidade || r.Unidade || '').trim();
+            if(!unidade) return;
+
+            const obj = {
+              dia: diaOnly,
+              unidade,
+              pedidos: Math.max(1, Number(r.pedidos)||1),
+              fat: fat,
+              des: Math.max(0, des),
+              fre: Math.max(0, fre),
+              turno: r.turno || r.Turno || null,
+              pagamento: r.pagamento || r.Pagamento || null,
+              "Canal de venda": r["Canal de venda"] || r.Canal || null,
+              "Nome da loja": r["Nome da loja"] || r.Loja || null,
+              cancelado: normCancel(r.cancelado || r['Está cancelado']),
+              hora: isFinite(hora)?hora:-1
+            };
+
+            // stats de janela
+            if(!minFileISO || obj.dia<minFileISO) minFileISO=obj.dia;
+            if(!maxFileISO || obj.dia>maxFileISO) maxFileISO=obj.dia;
+
+            pushRow(obj);
+            totalKept++;
+            if(totalKept%20000===0){
+              importStatus.textContent = `Processando ${totalKept.toLocaleString('pt-BR')}…`;
+            }
+          },
+          complete: async ()=>{
+            try{
+              await pendingPromises; // garante últimos flushes do tamanho
+              await flush();
+
+              if(!minFileISO || !maxFileISO){
+                importStatus.textContent='Nada para importar (linhas inválidas).'; importStatus.style.color='#b91c1c'; return;
+              }
+
+              // limpa janela do arquivo ANTES do novo insert (idempotente)
+              importStatus.textContent = `Limpando janela ${minFileISO} → ${maxFileISO}…`;
+              await supa.from(TABLE).delete().gte('dia', minFileISO).lte('dia', maxFileISO);
+
+              // re-inserir tudo que acumulamos (seen + batchMap já upsertados)
+              // nada a fazer — o upsert foi feito no fluxo
+
+              importStatus.textContent = `Importado: ${totalKept.toLocaleString('pt-BR')} linhas (janela ${minFileISO} → ${maxFileISO}).`;
+              importStatus.style.color='#16a34a';
+
+              await fetchMinMax();
+              applyQuickDate();
+              await buildOptions();
+              await reload();
+            }catch(e){
+              console.error(e);
+              importStatus.textContent='Erro ao finalizar importação.';
+              importStatus.style.color='#b91c1c';
+            }
+          },
+          error: function(err){
+            console.error(err);
+            importStatus.textContent='Erro ao ler arquivo CSV';
+            importStatus.style.color='#b91c1c';
+          }
+        });
       });
-    });
 
-    // ===== LISTENERS =====
-    fQuick.addEventListener('change', ()=>{
-      const end=new Date(); let start; const opt=fQuick.value;
-      if(opt.startsWith("Últimos ")){ const n=parseInt(opt.split(' ')[1],10); start=new Date(); start.setDate(end.getDate()-(n-1)); }
-      else if(opt==="Este mês"){ start=new Date(end.getFullYear(),end.getMonth(),1); }
-      else if(opt==="Último mês"){ start=new Date(end.getFullYear(),end.getMonth()-1,1); const e=new Date(end.getFullYear(),end.getMonth(),0); fDini.value=toISO(start); fDfim.value=toISO(e); reload(); fx.open=false; return; }
-      else if(opt==="Este ano"){ start=new Date(end.getFullYear(),0,1); }
-      else { start=new Date(end.getFullYear(),end.getMonth(),end.getDate()-29); }
-      fDini.value=toISO(start); fDfim.value=toISO(end); reload(); fx.open=false;
-    });
-    [fUni,fLoja,fDini,fDfim,fTurno,fCanal,fPag,fCanc].forEach(el=>el.addEventListener('change',()=>{ reload(); fx.open=false; }));
-    $("btnLimpar").addEventListener('click',()=>{
-      fUni.value='Todas'; fLoja.value='Todos'; fTurno.selectedIndex=-1; fCanal.selectedIndex=-1; fPag.selectedIndex=-1; fCanc.value='Todos';
-      const end=new Date(); const start=new Date(); start.setDate(end.getDate()-89); fDini.value=toISO(start); fDfim.value=toISO(end);
-      reload();
-    });
+      // ===== EVENTS =====
+      pr.addEventListener("change", ()=>{ applyQuickDate(); reload(); fx.open=false; });
+      [uni,loja,dini,dfim,turno,canal,pag,canc].forEach(e=> e.addEventListener("change", ()=>{ reload(); fx.open=false; }));
+      btnLimpar.addEventListener('click', ()=>{ uni.value='Todas'; loja.value='Todos'; turno.selectedIndex=-1; canal.selectedIndex=-1; pag.selectedIndex=-1; canc.value='Todos'; applyQuickDate(); reload(); });
 
-    // ===== BOOT =====
-    (async function(){
-      await pickSource();
-      await fetchMinMax();
-      const end=new Date(); const start=new Date(); start.setDate(end.getDate()-89);
-      fDini.value=toISO(start); fDfim.value=toISO(end);
-      await buildOptions();
-      await reload();
-    })();
+      // ===== BOOT =====
+      (async function(){
+        await fetchMinMax();
+        if(minISO && maxISO){ applyQuickDate(); } else { periodoEl.textContent='Sem dados.'; }
+        await buildOptions();
+        await reload();
+      })();
+    }
   })();
   </script>
 </body>
