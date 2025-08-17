@@ -4,11 +4,9 @@
   <meta charset="utf-8" />
   <title>Maestro Food</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%232563eb'/%3E%3Ctext x='32' y='38' font-size='26' text-anchor='middle' fill='%23fff' font-family='Arial'%3EMF%3C/text%3E%3C/svg%3E">
   <style>
-    :root{
-      --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --brd:#e5e7eb; --accent:#2563eb;
-      --good:#16a34a; --bad:#dc2626; --chip:#eef2ff;
-    }
+    :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --brd:#e5e7eb; --accent:#2563eb; --good:#16a34a; --bad:#dc2626; --chip:#eef2ff; --warn:#eab308; }
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
     .wrap{max-width:1200px;margin:24px auto;padding:0 16px}
@@ -21,57 +19,65 @@
     .card{background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
     .title{font-size:12px;color:var(--muted)}
     .val{font-size:22px;font-weight:700;margin-top:4px}
-    .kpi{position:relative;padding-bottom:8px}
+    .kpi{position:relative;padding-bottom:8px;cursor:pointer}
     .delta{position:absolute;right:12px;bottom:10px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px}
-    .delta .up{color:var(--good)} .delta .down{color:var(--bad)}
+    .delta.up{color:var(--good)} .delta.down{color:var(--bad)} .delta.warn{color:var(--warn)}
+    .sparkline{height:30px;width:100px}
     .toolbar{display:flex;gap:8px;align-items:center;justify-content:space-between}
     .pill{display:inline-flex;border:1px solid var(--brd);border-radius:999px;overflow:hidden}
     .pill button{border:0;padding:6px 10px;background:#fff;cursor:pointer}
     .pill button.active{background:var(--accent);color:#fff}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    select,button,input{font:inherit;padding:8px 10px;border:1px solid var(--brd);border-radius:8px;background:#fff}
+    input[type="date"]{padding:7px 10px}
+    input[type="number"]{width:100px}
+    button{cursor:pointer}
+    button.ghost{background:#fff}
+    .chips{display:flex;gap:6px;flex-wrap:wrap}
+    .chip{background:var(--chip);border:1px solid var(--brd);border-radius:999px;padding:6px 10px;cursor:pointer}
+    .chip.active{background:#dbeafe;border-color:#bfdbfe}
     .chartbox{position:relative;height:300px;width:100%}
-    .filters{margin-top:10px}
     details.filterbox{border:1px solid var(--brd);border-radius:12px;background:#fff}
     details.filterbox>summary{padding:12px 14px;list-style:none;cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;font-weight:600}
     details.filterbox[open]>summary{border-bottom:1px solid var(--brd)}
     details.filterbox .body{padding:12px 14px}
     .filters-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}
-    .seg{display:flex;gap:6px;align-items:center}
-    .seg .lbl{font-size:12px;color:var(--muted);white-space:nowrap}
-    .seg .grow{min-width:160px}
-    .col-6{grid-column:span 6} .col-4{grid-column:span 4} .col-3{grid-column:span 3} .col-2{grid-column:span 2} .col-12{grid-column:span 12}
-    select,input,button{font:inherit;padding:8px 10px;border:1px solid var(--brd);border-radius:8px;background:#fff}
-    input[type="date"]{padding:7px 10px}
-    button{cursor:pointer}
-    .topbar{display:flex;gap:8px;align-items:center;justify-content:flex-end}
-    .chips{display:flex;gap:6px;flex-wrap:wrap}
-    .chip{background:var(--chip);border:1px solid var(--brd);border-radius:999px;padding:6px 10px;cursor:pointer}
-    .chip.active{background:#dbeafe;border-color:#bfdbfe}
+    .col-6{grid-column:span 6} .col-4{grid-column:span 4} .col-3{grid-column:span 3} .col-12{grid-column:span 12}
+    .lbl{font-size:12px;color:var(--muted);white-space:nowrap}
+    .grow{min-width:180px}
     .right{margin-left:auto}
     .hint{font-size:12px;color:var(--muted);margin-top:6px}
-    .admin{background:#fafafa;border:1px dashed var(--brd);border-radius:10px;padding:10px;margin-top:8px}
-    .shadow-note{font-size:11px;color:var(--muted);margin-top:4px}
-    .toast{position:fixed;right:16px;bottom:16px;background:#111827;color:#fff;padding:10px 12px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.2);z-index:9999;display:none}
-    .loading{opacity:.6;pointer-events:none}
-    @media (max-width:940px){ .grid.cols-4{grid-template-columns:repeat(2,minmax(0,1fr))} .filters-grid{grid-template-columns:repeat(6,1fr)} }
-    @media (max-width:560px){ .grid.cols-4,.grid.cols-3,.grid.cols-2{grid-template-columns:1fr} .filters-grid{grid-template-columns:repeat(4,1fr)} }
-
-    /* Auth */
-    .gate{position:fixed;inset:0;background:linear-gradient(180deg,#0b1020,#111827);display:flex;align-items:center;justify-content:center;z-index:9998}
+    .topbar{display:flex;gap:8px;align-items:center;justify-content:flex-end}
+    .status{font-size:12px}
+    .status.ok{color:var(--good)} .status.err{color:var(--bad)}
+    .hidden{display:none !important}
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center}
+    .modal.active{display:flex}
+    .modal-box{background:#fff;border-radius:14px;padding:16px;max-width:500px;width:90%}
+    @media (max-width:980px){
+      .grid.cols-4{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .filters-grid{grid-template-columns:repeat(6,1fr)}
+      .grow{min-width:140px}
+    }
+    @media (max-width:560px){
+      .grid.cols-4,.grid.cols-3,.grid.cols-2{grid-template-columns:1fr}
+      .filters-grid{grid-template-columns:repeat(4,1fr)}
+      .grow{min-width:120px}
+    }
+    .filter-section{border-top:1px solid var(--brd);padding-top:12px;margin-top:12px}
+    .filter-section:first-child{border-top:none;padding-top:0;margin-top:0}
+    /* AUTH */
+    .gate{position:fixed;inset:0;background:linear-gradient(180deg,#0b1020,#111827);display:flex;align-items:center;justify-content:center;z-index:9999}
     .gate .box{width:360px;max-width:92vw;background:#fff;border-radius:14px;border:1px solid var(--brd);padding:18px}
     .tabs{display:flex;border:1px solid var(--brd);border-radius:999px;overflow:hidden;margin-bottom:10px}
-    .tabs button{flex:1;border:0;background:#fff;padding:8px 10px}
+    .tabs button{flex:1;border:0;background:#fff;padding:8px 10px;cursor:pointer}
     .tabs button.active{background:var(--accent);color:#fff}
     .field{display:flex;flex-direction:column;margin-top:8px}
     .field label{font-size:12px;color:var(--muted);margin-bottom:4px}
     .error{color:#b91c1c;font-size:12px;margin-top:6px;min-height:16px}
-    .gate .row{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
-    a.inline{font-size:12px;color:var(--accent);text-decoration:none;cursor:pointer}
   </style>
-  <!-- Supabase UMD -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <!-- PapaParse (CSV) -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
 <body>
@@ -83,31 +89,41 @@
         <button id="tabLogin" class="active">Entrar</button>
         <button id="tabSignup">Criar conta</button>
       </div>
-      <div class="field">
-        <label for="authEmail">E-mail</label>
-        <input id="authEmail" type="email" autocomplete="email" placeholder="voce@empresa.com" />
+      <div id="authForm">
+        <div class="field">
+          <label for="authEmail">E-mail</label>
+          <input id="authEmail" type="email" autocomplete="email" placeholder="voce@empresa.com" />
+        </div>
+        <div class="field" id="passRow">
+          <label for="authPass">Senha</label>
+          <input id="authPass" type="password" autocomplete="current-password" placeholder="••••••••" />
+        </div>
+        <div class="field hidden" id="newPassRow">
+          <label for="newPass">Nova senha</label>
+          <input id="newPass" type="password" autocomplete="new-password" placeholder="Nova senha" />
+        </div>
+        <div class="row" style="margin-top:10px;justify-content:space-between">
+          <span class="muted" id="forgot" style="cursor:pointer">Esqueci a senha</span>
+          <div>
+            <button id="btnSignup" style="display:none">Criar conta</button>
+            <button id="btnLogin">Entrar</button>
+            <button id="btnSaveNew" style="display:none">Salvar nova senha</button>
+          </div>
+        </div>
+        <div class="error" id="authErr"></div>
       </div>
-      <div class="field">
-        <label for="authPass">Senha</label>
-        <input id="authPass" type="password" autocomplete="current-password" placeholder="••••••••" />
-      </div>
-      <div class="row">
-        <button id="btnSignup" style="display:none">Criar conta</button>
-        <button id="btnLogin">Entrar</button>
-      </div>
-      <div class="error" id="authErr"></div>
-      <div class="muted">Problemas? <a class="inline" id="forgot">Esqueci minha senha</a></div>
     </div>
   </div>
 
+  <!-- APP -->
   <div class="wrap" id="app" style="display:none">
     <div class="toolbar">
       <div>
         <h1>Maestro Food</h1>
         <div class="muted" id="periodo">Período: —</div>
-        <div class="muted" id="limites">—</div>
       </div>
       <div class="topbar">
+        <span class="status" id="statusTxt"></span>
         <span class="muted" id="who"></span>
         <button id="btnLogout">Sair</button>
       </div>
@@ -121,110 +137,169 @@
       </summary>
       <div class="body">
         <div class="filters-grid">
-          <!-- Linha 1: Unidade + Lojas -->
-          <div class="col-6 seg">
-            <span class="lbl">Unidade</span>
-            <select id="uni" class="grow"></select>
+          <div class="filter-section col-12">
+            <div class="row">
+              <span class="lbl">Unidade</span>
+              <select id="uni" class="grow">
+                <option>Todas</option>
+              </select>
+            </div>
           </div>
-          <div class="col-6 seg">
-            <span class="lbl">Nome da loja (Top 10)</span>
-            <div id="lojas" class="chips"></div>
+          <div class="filter-section col-12">
+            <div class="row">
+              <span class="lbl">Nome da loja (Top 10)</span>
+              <div id="lojas" class="chips"></div>
+            </div>
           </div>
-
-          <!-- Linha 2: De / Até / Período rápido / Turno -->
-          <div class="col-3 seg">
-            <span class="lbl">De</span>
-            <input type="date" id="dini" class="grow" />
+          <div class="filter-section col-6">
+            <div class="row">
+              <span class="lbl">De</span>
+              <input type="date" id="dini" class="grow" />
+              <span class="lbl" style="margin-left:10px">Até</span>
+              <input type="date" id="dfim" class="grow" />
+            </div>
           </div>
-          <div class="col-3 seg">
-            <span class="lbl">Até</span>
-            <input type="date" id="dfim" class="grow" />
+          <div class="filter-section col-6">
+            <div class="row">
+              <span class="lbl">Período rápido</span>
+              <select id="pr" class="grow">
+                <option value="7">Últimos 7</option>
+                <option value="15">Últimos 15</option>
+                <option value="30" selected>Últimos 30</option>
+                <option value="90">Últimos 90</option>
+                <option value="180">Últimos 180</option>
+                <option value="360">Últimos 360</option>
+              </select>
+            </div>
           </div>
-          <div class="col-3 seg">
-            <span class="lbl">Período rápido</span>
-            <select id="pr" class="grow">
-              <option value="7">Últimos 7</option>
-              <option value="15">Últimos 15</option>
-              <option value="30" selected>Últimos 30</option>
-              <option value="90">Últimos 90</option>
-              <option value="180">Últimos 180</option>
-              <option value="360">Últimos 360</option>
-            </select>
+          <div class="filter-section col-6">
+            <div class="row">
+              <span class="lbl">Turno</span>
+              <select id="turno" class="grow" multiple>
+                <option>Manhã</option><option>Tarde</option><option>Noite</option><option>Madrugada</option>
+              </select>
+            </div>
           </div>
-          <div class="col-3 seg">
-            <span class="lbl">Turno</span>
-            <select id="turno" class="grow" multiple>
-              <option>Manhã</option><option>Tarde</option><option>Noite</option><option>Madrugada</option>
-            </select>
+          <div class="filter-section col-6">
+            <div class="row">
+              <span class="lbl">Canal de venda</span>
+              <select id="canal" class="grow" multiple></select>
+            </div>
           </div>
-
-          <!-- Linha 3: Canal / Pagamento / Cancelado -->
-          <div class="col-4 seg">
-            <span class="lbl">Canal de venda</span>
-            <select id="canal" class="grow" multiple></select>
+          <div class="filter-section col-6">
+            <div class="row">
+              <span class="lbl">Pagamento</span>
+              <select id="pag" class="grow" multiple></select>
+            </div>
           </div>
-          <div class="col-4 seg">
-            <span class="lbl">Pagamento</span>
-            <select id="pag" class="grow" multiple></select>
+          <div class="filter-section col-6">
+            <div class="row">
+              <span class="lbl">Está cancelado?</span>
+              <select id="canc" class="grow">
+                <option value="Todos" selected>Todos</option>
+                <option value="Sim">Sim</option>
+                <option value="Não">Não</option>
+              </select>
+            </div>
           </div>
-          <div class="col-4 seg">
-            <span class="lbl">Está cancelado?</span>
-            <select id="canc" class="grow">
-              <option value="Todos" selected>Todos</option>
-              <option value="Sim">Sim</option>
-              <option value="Não">Não</option>
-            </select>
+          <div class="filter-section col-6">
+            <div class="row">
+              <span class="lbl">CMV %</span>
+              <input type="number" id="cmvPct" class="grow" value="30" min="0" max="100" step="0.1" />
+            </div>
+          </div>
+          <div class="filter-section col-6">
+            <div class="row">
+              <span class="lbl">Custos Fixos %</span>
+              <input type="number" id="fixPct" class="grow" value="10" min="0" max="100" step="0.1" />
+            </div>
           </div>
         </div>
-
-        <div class="admin">
-          <b>Importar CSV (Pasta2.csv)</b>
-          <div class="toolbar" style="margin-top:6px">
-            <div>
-              <input type="file" id="csvfile" accept=".csv" />
-              <button id="btnImport">Importar</button>
-            </div>
-            <div class="muted">Deduplicação por chave: dia + unidade + Nome da loja + hora + pagamento + Canal de venda</div>
-          </div>
-          <div class="hint">Mínimo obrigatório no CSV: <code>dia</code>, <code>unidade</code>, <code>fat</code>. Cabeçalhos aceitam sinônimos (ex.: “faturamento”, “total”).</div>
+        <div class="row" style="margin-top:12px">
+          <button id="applyFilters">Aplicar</button>
+          <div class="muted" id="impMsg"></div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input type="file" id="csvfile" accept=".csv" />
+          <button id="btnImport">Importar CSV (incremental)</button>
+          <progress id="prog" value="0" max="100" style="display:none"></progress>
         </div>
       </div>
     </details>
 
     <!-- KPIs -->
-    <div class="grid cols-4" style="margin-top:12px">
-      <div class="card kpi"><div class="title">Pedidos</div><div class="val" id="k_ped">—</div><div class="delta" id="d_ped">—</div></div>
-      <div class="card kpi"><div class="title">Ticket Médio</div><div class="val" id="k_tkm">—</div><div class="delta" id="d_tkm">—</div></div>
-      <div class="card kpi"><div class="title">Faturamento</div><div class="val" id="k_fat">—</div><div class="delta" id="d_fat">—</div></div>
-      <div class="card kpi"><div class="title">Faturamento Médio (dia)</div><div class="val" id="k_fmd">—</div><div class="delta" id="d_fmd">—</div></div>
-    </div>
-    <div class="grid cols-4" style="margin-top:12px">
-      <div class="card kpi"><div class="title">Incentivos</div><div class="val" id="k_des">—</div><div class="delta" id="d_des">—</div></div>
-      <div class="card kpi"><div class="title">Incentivos %</div><div class="val" id="k_desp">—</div><div class="delta" id="d_desp">—</div></div>
-      <div class="card kpi"><div class="title">Frete</div><div class="val" id="k_fre">—</div><div class="delta" id="d_fre">—</div></div>
-      <div class="card kpi"><div class="title">Frete Médio</div><div class="val" id="k_frem">—</div><div class="delta" id="d_frem">—</div></div>
-    </div>
     <div class="grid cols-2" style="margin-top:12px">
-      <div class="card kpi"><div class="title">Faturamento Líquido</div><div class="val" id="k_fatl">—</div><div class="delta" id="d_fatl">—</div></div>
-      <div class="card kpi"><div class="title">Faturamento Líquido %</div><div class="val" id="k_fatlp">—</div><div class="delta" id="d_fatlp">—</div></div>
+      <div class="card kpi">
+        <div class="title">Pedidos</div><div class="val" id="k_ped">—</div>
+        <div class="delta" id="d_ped">—</div>
+        <canvas class="sparkline" id="s_ped"></canvas>
+      </div>
+      <div class="card kpi">
+        <div class="title">Ticket Médio (por Canal)</div><div class="val" id="k_tkm">—</div>
+        <div class="delta" id="d_tkm">—</div>
+        <canvas class="sparkline" id="s_tkm"></canvas>
+      </div>
+    </div>
+    <div class="grid cols-4" style="margin-top:12px">
+      <div class="card kpi">
+        <div class="title">Faturamento</div><div class="val" id="k_fat">—</div>
+        <div class="delta" id="d_fat">—</div>
+        <canvas class="sparkline" id="s_fat"></canvas>
+      </div>
+      <div class="card kpi">
+        <div class="title">Faturamento Médio (Dia)</div><div class="val" id="k_fmd">—</div>
+        <div class="delta" id="d_fmd">—</div>
+        <canvas class="sparkline" id="s_fmd"></canvas>
+      </div>
+      <div class="card kpi">
+        <div class="title">Faturamento Líquido</div><div class="val" id="k_fatl">—</div>
+        <div class="delta" id="d_fatl">—</div>
+        <canvas class="sparkline" id="s_fatl"></canvas>
+      </div>
+      <div class="card kpi">
+        <div class="title">Faturamento Líquido %</div><div class="val" id="k_fatlp">—</div>
+        <div class="delta" id="d_fatlp">—</div>
+        <canvas class="sparkline" id="s_fatlp"></canvas>
+      </div>
+    </div>
+    <div class="grid cols-4" style="margin-top:12px">
+      <div class="card kpi">
+        <div class="title">Margem de Contribuição %</div><div class="val" id="k_marg">—</div>
+        <div class="delta" id="d_marg">—</div>
+        <canvas class="sparkline" id="s_marg"></canvas>
+      </div>
+      <div class="card kpi">
+        <div class="title">ROI Incentivos %</div><div class="val" id="k_roi">—</div>
+        <div class="delta" id="d_roi">—</div>
+        <canvas class="sparkline" id="s_roi"></canvas>
+      </div>
+      <div class="card kpi">
+        <div class="title">Custo por Pedido</div><div class="val" id="k_cpp">—</div>
+        <div class="delta" id="d_cpp">—</div>
+        <canvas class="sparkline" id="s_cpp"></canvas>
+      </div>
+      <div class="card kpi">
+        <div class="title">Churn de Lojas %</div><div class="val" id="k_churn">—</div>
+        <div class="delta" id="d_churn">—</div>
+        <canvas class="sparkline" id="s_churn"></canvas>
+      </div>
     </div>
 
     <!-- GRÁFICOS -->
     <div class="card" style="margin-top:12px">
       <div class="toolbar">
-        <div class="title">Receita diária (R$) — com sombra do período anterior</div>
+        <div class="title">Receita diária (Stacked por Canal) — forecast em dashed</div>
         <div class="pill" data-target="lineMode">
           <button data-val="total" class="active">Total</button>
           <button data-val="media">Média (7d)</button>
         </div>
       </div>
       <div class="chartbox"><canvas id="cLine"></canvas></div>
-      <div class="shadow-note">A “sombra” representa o período imediatamente anterior (mesmo nº de dias).</div>
     </div>
 
     <div class="card" style="margin-top:12px">
       <div class="toolbar">
-        <div class="title">Receita por dia da semana (R$)</div>
+        <div class="title">Receita por dia da semana</div>
         <div class="pill" data-target="dowMode">
           <button data-val="total" class="active">Total</button>
           <button data-val="media">Média</button>
@@ -253,12 +328,12 @@
         </div>
       </div>
       <div class="chartbox"><canvas id="cHour"></canvas></div>
-      <div class="shadow-note">Horas pouco ativas são ocultadas (proxy p/ >30 min sem venda).</div>
+      <div class="muted" style="margin-top:6px">Oculto horários com baixa atividade (&gt;30min sem venda).</div>
     </div>
 
     <div class="card" style="margin-top:12px">
       <div class="toolbar">
-        <div class="title">Receita por mês</div>
+        <div class="title">Receita por mês (Waterfall: Ganhos vs. Perdas)</div>
         <div class="pill" data-target="monMode">
           <button data-val="total" class="active">Total</button>
           <button data-val="media">Média</button>
@@ -269,7 +344,7 @@
 
     <div class="card" style="margin-top:12px">
       <div class="toolbar">
-        <div class="title">Top 10 Lojas (R$)</div>
+        <div class="title">Top 10 Lojas (Treemap)</div>
         <div class="pill" data-target="topMode">
           <button data-val="total" class="active">Total</button>
           <button data-val="media">Média</button>
@@ -277,613 +352,374 @@
       </div>
       <div class="chartbox"><canvas id="cTop"></canvas></div>
     </div>
-  </div>
 
-  <div class="toast" id="toast"></div>
+    <div class="card" style="margin-top:12px">
+      <div class="toolbar">
+        <div class="title">Pareto de Canais (80/20)</div>
+        <div class="pill" data-target="paretoMode">
+          <button data-val="total" class="active">Total</button>
+        </div>
+      </div>
+      <div class="chartbox"><canvas id="cPareto"></canvas></div>
+    </div>
+
+    <!-- Modal para Breakdown -->
+    <div class="modal" id="kpiModal">
+      <div class="modal-box">
+        <h3 id="modalTitle"></h3>
+        <div id="modalContent"></div>
+        <button onclick="document.getElementById('kpiModal').classList.remove('active')">Fechar</button>
+      </div>
+    </div>
+  </div>
 
 <script>
 (function(){
   if (window.__DASH_BOOTED__) return; window.__DASH_BOOTED__ = true;
 
-  // ===== Credenciais =====
-  const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-  const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-  const TABLE_DEFAULT = "vendas_kpi_daily_v2_data";
+  // Supabase Config
+  var SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
+  var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+  var supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:true, autoRefreshToken:true } });
 
-  // ===== Colunas canônicas (com aspas quando há espaço) =====
-  const COL = {
-    loja: '"Nome da loja"',
-    canal: '"Canal de venda"',
-    pagamento: 'pagamento',
-    unidade: 'unidade',
-    dia: 'dia',
-    pedidos: 'pedidos',
-    fat: 'fat',
-    des: 'des',
-    fre: 'fre',
-    turno: 'turno',
-    canc: 'cancelado',
-    hora: 'hora'
-  };
+  // Fonte
+  var SOURCE_PREF = "vendas_kpi_daily_v2_data";
+  var SOURCE_FALL = "vendas_kpi_daily_v2";
+  var TABLE = null;
+  var keyLoja = "Nome da loja";
+  var keyCanal = "Canal de venda";
 
-  // ===== UI refs =====
-  const app = document.getElementById("app");
-  const gate= document.getElementById("gate");
-  const who = document.getElementById("who");
-  const periodoTxt=document.getElementById("periodo");
-  const limitesTxt=document.getElementById("limites");
-  const fx = document.getElementById("fx");
+  // Estado/UI
+  var app=document.getElementById("app"), gate=document.getElementById("gate");
+  var who=document.getElementById("who"), statusTxt=document.getElementById("statusTxt");
+  var uni=document.getElementById("uni"), lojasBox=document.getElementById("lojas");
+  var dini=document.getElementById("dini"), dfim=document.getElementById("dfim"), pr=document.getElementById("pr");
+  var turno=document.getElementById("turno"), canal=document.getElementById("canal"), pag=document.getElementById("pag"), canc=document.getElementById("canc");
+  var cmvPct=document.getElementById("cmvPct"), fixPct=document.getElementById("fixPct");
+  var periodoTxt=document.getElementById("periodo"), fx=document.getElementById("fx");
+  var csvfile=document.getElementById("csvfile"), btnImport=document.getElementById("btnImport"), prog=document.getElementById("prog"), impMsg=document.getElementById("impMsg");
+  var applyFilters = document.getElementById("applyFilters");
 
-  const uni = document.getElementById("uni");
-  const lojasBox = document.getElementById("lojas");
-  const dini = document.getElementById("dini");
-  const dfim = document.getElementById("dfim");
-  const pr = document.getElementById("pr");
-  const turno = document.getElementById("turno");
-  const canal = document.getElementById("canal");
-  const pag = document.getElementById("pag");
-  const canc = document.getElementById("canc");
-  const btnLogout = document.getElementById("btnLogout");
-  const limpar = document.getElementById("limpar");
+  // AUTH
+  var tabLogin=document.getElementById("tabLogin"), tabSignup=document.getElementById("tabSignup");
+  var authEmail=document.getElementById("authEmail"), authPass=document.getElementById("authPass");
+  var btnLogin=document.getElementById("btnLogin"), btnSignup=document.getElementById("btnSignup"), btnLogout=document.getElementById("btnLogout");
+  var authErr=document.getElementById("authErr"), forgot=document.getElementById("forgot");
+  var newPassRow=document.getElementById("newPassRow"), passRow=document.getElementById("passRow"), newPass=document.getElementById("newPass"), btnSaveNew=document.getElementById("btnSaveNew");
 
-  const toast = document.getElementById("toast");
-
-  // Auth refs
-  const tabLogin = document.getElementById("tabLogin");
-  const tabSignup= document.getElementById("tabSignup");
-  const btnLogin = document.getElementById("btnLogin");
-  const btnSignup= document.getElementById("btnSignup");
-  const authEmail= document.getElementById("authEmail");
-  const authPass = document.getElementById("authPass");
-  const authErr  = document.getElementById("authErr");
-  const forgot   = document.getElementById("forgot");
-
-  // KPIs deltas setter
-  function setDelta(el, cur, prev){
-    const pct = prev>0 ? ((cur-prev)/prev*100) : 0;
-    const cls = pct>=0 ? "up" : "down";
-    const arrow = pct>=0 ? "▲" : "▼";
-    el.className = "delta "+cls;
-    el.textContent = (pct>=0?"+":"")+pct.toFixed(1)+"% "+arrow;
-  }
-
-  // Helpers
-  function showToast(msg){ toast.textContent = msg; toast.style.display="block"; setTimeout(()=> toast.style.display="none", 3300); }
-  const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:true, autoRefreshToken:true } });
-  const fmtBRL = n => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0);
-  const fmtInt = n => new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0));
-  const addDays = (d,k)=>{ const t=new Date(d); t.setUTCDate(t.getUTCDate()+k); return t; };
-  const toISO = d => d.toISOString().slice(0,10);
-  const parseISO = s => new Date(s+"T00:00:00Z");
-  function movingAvg(arr, win){ const out=[]; let acc=0; for(let i=0;i<arr.length;i++){ acc+=arr[i]; if(i>=win) acc-=arr[i-win]; out.push( acc / Math.min(i+1,win) ); } return out; }
-  function normCancel(v){
-    const s = String(v ?? "").trim().toLowerCase();
-    if (v === true || s==="sim" || s==="s" || s==="1" || s==="true") return "Sim";
-    return "Não";
-  }
-  function debounce(fn, wait){ let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), wait); }; }
-
-  // Estado
-  let TABLE = null;
-  let minISO=null, maxISO=null;
-  let runId = 0;
-  let chartLine=null, chartDowFat=null, chartDowPed=null, chartHour=null, chartMonth=null, chartTop=null;
-  let lineMode="total", dowMode="total", dowPedMode="total", hourMode="total", monMode="total", topMode="total";
-
-  // Auth UI
   function showGate(){ gate.style.display="flex"; app.style.display="none"; }
   function hideGate(){ gate.style.display="none"; app.style.display="block"; }
+
   tabLogin.addEventListener("click", ()=>{ tabLogin.classList.add("active"); tabSignup.classList.remove("active"); btnLogin.style.display="inline-block"; btnSignup.style.display="none"; authErr.textContent=""; });
   tabSignup.addEventListener("click", ()=>{ tabSignup.classList.add("active"); tabLogin.classList.remove("active"); btnSignup.style.display="inline-block"; btnLogin.style.display="none"; authErr.textContent=""; });
+
   btnLogin.addEventListener("click", async ()=>{
     authErr.textContent="";
     const email=(authEmail.value||"").trim(), pass=authPass.value||"";
     if(!email||!pass){ authErr.textContent="Informe e-mail e senha."; return; }
     const { error } = await supa.auth.signInWithPassword({ email, password: pass });
     if(error){ authErr.textContent=error.message; return; }
-    const { data:{ user } } = await supa.auth.getUser();
-    who.textContent = user?.email||""; hideGate(); boot();
+    afterLogin();
   });
   btnSignup.addEventListener("click", async ()=>{
     authErr.textContent="";
     const email=(authEmail.value||"").trim(), pass=authPass.value||"";
     if(!email||!pass){ authErr.textContent="Informe e-mail e senha."; return; }
     const { error } = await supa.auth.signUp({ email, password: pass });
-    if(error){ authErr.textContent=error.message; return; }
-    authErr.textContent="Conta criada. Se exigido, confirme pelo e-mail.";
-  });
-  forgot.addEventListener("click", async ()=>{
-    const email=(authEmail.value||"").trim();
-    if(!email){ authErr.textContent="Informe o e-mail para redefinir a senha."; return; }
-    const { error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: location.href });
-    if(error){ authErr.textContent=error.message; return; }
-    authErr.textContent="Se o e-mail existir, enviamos um link para redefinição.";
+    authErr.textContent = error ? error.message : "Conta criada. Verifique seu e-mail se necessário.";
   });
   btnLogout.addEventListener("click", async ()=>{ await supa.auth.signOut(); showGate(); });
 
-  supa.auth.onAuthStateChange((_e, session)=>{
-    if(session){ hideGate(); supa.auth.getUser().then(({data:{user}})=>{ who.textContent=user?.email||""; }); } else { showGate(); }
+  forgot.addEventListener("click", async ()=>{
+    const email=(authEmail.value||"").trim();
+    if(!email){ authErr.textContent="Digite seu e-mail e clique novamente."; return; }
+    const { error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+    authErr.textContent = error ? error.message : "Enviamos o link de redefinição para seu e-mail.";
+  });
+  function checkRecovery(){
+    const hash = location.hash||"";
+    if(hash.includes("access_token") || (new URLSearchParams(location.search)).get("type")==="recovery"){
+      passRow.classList.add("hidden");
+      newPassRow.classList.remove("hidden");
+      btnLogin.style.display="none"; btnSignup.style.display="none"; btnSaveNew.style.display="inline-block";
+      authErr.textContent = "Defina sua nova senha:";
+    }
+  }
+  btnSaveNew.addEventListener("click", async ()=>{
+    const np = (newPass.value||"").trim();
+    if(!np){ authErr.textContent="Informe a nova senha."; return; }
+    const { error } = await supa.auth.updateUser({ password: np });
+    authErr.textContent = error ? error.message : "Senha atualizada. Faça login novamente.";
   });
 
-  // Fonte + limites
-  async function pickSource(){
-    // fixa a fonte _data (evita 404 da view)
-    const r = await supa.from(TABLE_DEFAULT).select(COL.dia).limit(1);
-    if(!r.error){ TABLE = TABLE_DEFAULT; return; }
-    // fallback: tenta a view (se existir)
-    const r2 = await supa.from("vendas_kpi_daily_v2").select(COL.dia).limit(1);
-    if(!r2.error){ TABLE = "vendas_kpi_daily_v2"; return; }
+  supa.auth.onAuthStateChange((_e, session)=>{
+    if(session){ hideGate(); afterLogin(); } else { showGate(); }
+  });
+
+  // Utils
+  function setText(id, txt){ const el=document.getElementById(id); if(el) el.textContent = txt; }
+  function setDelta(el, cur, prev, benchmark=null){
+    const pct = prev>0 ? ((cur-prev)/prev*100) : 0;
+    const cls = benchmark ? (cur>=benchmark ? "up" : (cur>0.98*benchmark ? "warn" : "down")) : (pct>=0 ? "up" : "down");
+    const arrow = pct>=0 ? "▲" : "▼";
+    el.className="delta "+cls;
+    el.textContent=(pct>=0?"+":"")+pct.toFixed(1)+"% "+arrow;
+    if(benchmark) el.textContent += ` (Meta: ${benchmark.toFixed(1)}%)`;
+  }
+  function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
+  function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)); }
+  function toISO(d){ if(!(d instanceof Date) || isNaN(d)) return null; return d.toISOString().slice(0,10); }
+  function parseISO(s){ if(!s) return null; return new Date(s+"T00:00:00Z"); }
+  function addDays(d, k){ const t=new Date(d.getTime()); t.setUTCDate(t.getUTCDate()+k); return t; }
+  function movingAvg(arr, win){ const out=[]; let acc=0; for(let i=0;i<arr.length;i++){ acc+=arr[i]; if(i>=win) acc-=arr[i-win]; out.push(acc / Math.min(i+1,win)); } return out; }
+  function avg(a,b){ return b>0 ? a/b : 0; }
+
+  var chartLine=null, chartDowFat=null, chartDowPed=null, chartHour=null, chartMonth=null, chartTop=null, chartPareto=null;
+  var lineMode="total", dowMode="total", dowPedMode="total", hourMode="total", monMode="total", topMode="total", paretoMode="total";
+  function destroyChart(c){ if(c){ try{c.destroy();}catch(e){} } return null; }
+
+  var minISO=null, maxISO=null;
+  var diasSet = new Set();
+
+  async function pickSource() {
     TABLE = null;
-  }
-
-  async function getMinMaxISO(){
-    if(!TABLE) return {min:null,max:null};
-    const rMin = await supa.from(TABLE).select(COL.dia).order(COL.dia,{ascending:true}).limit(1);
-    const rMax = await supa.from(TABLE).select(COL.dia).order(COL.dia,{ascending:false}).limit(1);
-    if(rMin.error || rMax.error || !rMin.data?.[0] || !rMax.data?.[0]) return {min:null,max:null};
-    return { min: rMin.data[0][COL.dia], max: rMax.data[0][COL.dia] };
-  }
-
-  async function resolvePeriodo(){
-    const mm = await getMinMaxISO();
-    minISO = mm.min; maxISO=mm.max;
-    if(!minISO || !maxISO) throw new Error("Sem dados na fonte");
-    let sISO = dini.value || "", eISO = dfim.value || "";
-    if(!sISO || !eISO){
-      const end = parseISO(maxISO);
-      const dias = Number(pr.value||30);
-      const start = addDays(end, -(dias-1));
-      sISO = toISO(start); eISO = toISO(end);
-      dini.value=sISO; dfim.value=eISO;
+    setText("statusTxt", "Conectando ao Supabase...");
+    let r = await supa.from(SOURCE_PREF).select("dia").limit(1);
+    console.log("Tentativa em " + SOURCE_PREF + ": ", r.data, r.error);
+    if (!r.error && r.data && r.data.length > 0) { TABLE = SOURCE_PREF; }
+    else {
+      let r2 = await supa.from(SOURCE_FALL).select("dia").limit(1);
+      console.log("Tentativa em " + SOURCE_FALL + ": ", r2.data, r2.error);
+      if (!r2.error && r2.data && r2.data.length > 0) { TABLE = SOURCE_FALL; }
     }
-    periodoTxt.textContent = "Período: "+sISO+" → "+eISO;
-    limitesTxt.textContent = "Limites no banco: "+minISO+" → "+maxISO;
-    return {startISO:sISO, endISO:eISO};
+    if (!TABLE) {
+      setText("statusTxt", "Sem dados ou erro na fonte: " + (r.error?.message || r2.error?.message));
+      return;
+    }
+    setText("statusTxt", "Fonte: " + TABLE);
+    const t = await supa.from(TABLE).select("*").limit(1);
+    console.log("Estrutura da tabela: ", t.data, t.error);
+    if (t.data && t.data[0]) {
+      console.log("Colunas encontradas: ", Object.keys(t.data[0]));
+    } else {
+      setText("statusTxt", "Estrutura da tabela não encontrada.");
+    }
   }
 
-  // build options (listas)
-  async function buildOptions(){
-    if(!TABLE) return;
-    // Unidade
-    const rU = await supa.from(TABLE).select(COL.unidade).order(COL.unidade,{ascending:true}).range(0,9999);
-    const unidades = Array.from(new Set((rU.data||[]).map(x=>x[COL.unidade]).filter(Boolean)));
-    uni.innerHTML = ""; const optAll=document.createElement("option"); optAll.value="Todas"; optAll.textContent="Todas"; uni.appendChild(optAll);
-    unidades.forEach(u=>{ const o=document.createElement("option"); o.value=u; o.textContent=u; uni.appendChild(o); });
-    uni.value="Todas";
-
-    // Canal
-    const rC = await supa.from(TABLE).select(COL.canal).order('Canal de venda',{ascending:true}).range(0,9999);
-    canal.innerHTML=""; (Array.from(new Set((rC.data||[]).map(x=>x["Canal de venda"]).filter(Boolean)))).forEach(v=>{
-      const o=document.createElement("option"); o.value=v; o.textContent=v; canal.appendChild(o);
-    });
-
-    // Pagamento
-    const rP = await supa.from(TABLE).select(COL.pagamento).order(COL.pagamento,{ascending:true}).range(0,9999);
-    pag.innerHTML=""; (Array.from(new Set((rP.data||[]).map(x=>x[COL.pagamento]).filter(Boolean)))).forEach(v=>{
-      const o=document.createElement("option"); o.value=v; o.textContent=v; pag.appendChild(o);
-    });
-
-    // Chips de lojas serão montados após carregar dados do período (top 10)
-  }
-
-  function getMulti(sel){ return Array.from(sel.selectedOptions||[]).map(o=>o.value); }
-
-  async function fetchPaged(startISO, endISO, filtros){
-    let page=1000, off=0, out=[];
-    for(;;){
-      let q = supa.from(TABLE)
-        .select(`${COL.dia},${COL.unidade},${COL.pedidos},${COL.fat},${COL.des},${COL.fre},${COL.loja},${COL.turno},${COL.canal},${COL.pagamento},${COL.canc},${COL.hora}`)
-        .gte(COL.dia, startISO).lte(COL.dia, endISO)
-        .order(COL.dia, {ascending:true})
-        .range(off, off+page-1);
-
-      if(filtros.uni && filtros.uni!=="Todas") q=q.eq(COL.unidade, filtros.uni);
-      if(filtros.lojas?.length) q=q.in("Nome da loja", filtros.lojas); // aqui sem aspas no método .in()
-      if(filtros.turno?.length) q=q.in(COL.turno, filtros.turno);
-      if(filtros.canal?.length) q=q.in("Canal de venda", filtros.canal);
-      if(filtros.pag?.length) q=q.in(COL.pagamento, filtros.pag);
-      if(filtros.canc && filtros.canc!=="Todos") q=q.eq(COL.canc, filtros.canc==="Sim" ? "Sim":"Não");
-
-      const r = await q;
-      if(r.error){ throw r.error; }
+  async function fetchPaged(columns, filters){
+    let out=[], page=1000, from=0, to=page-1, more=true; // Reduzido para 1000 por performance
+    while(more){
+      let q = supa.from(TABLE).select(columns).order("dia",{ascending:true}).range(from,to);
+      if(filters && filters.dgte) q = q.gte("dia", filters.dgte);
+      if(filters && filters.dlte) q = q.lte("dia", filters.dlte);
+      const r = await q; if(r.error) throw r.error;
       const a=r.data||[];
       out = out.concat(a);
-      if(a.length<page) break;
-      off += page;
-      if(off>500000){ break; } // salvaguarda
+      more = a.length===page; from += page; to += page;
     }
     return out;
   }
 
-  function destroy(c){ if(c){ try{c.destroy();}catch(_){} } return null; }
-
-  function drawLine(days, vals, prevVals, mode){
-    chartLine = destroy(chartLine);
-    const ctx=document.getElementById("cLine").getContext("2d");
-    const showMed = (mode==="media");
-    const dataMed = movingAvg(vals, 7);
-    const main = showMed ? dataMed : vals;
-    chartLine = new window.Chart(ctx, {
-      type:"line",
-      data:{ labels:days, datasets:[
-        { data: prevVals, fill:true, borderWidth:0, backgroundColor:"rgba(2,132,199,0.12)", pointRadius:0, tension:0.2 },
-        { data: main, borderWidth:2, pointRadius:0, tension:0.2 }
-      ]},
-      options:{ responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true } } }
-    });
-  }
-
-  function drawBar(canvasId, labels, totals, counts, mode, horizontal=false){
-    const showMed=(mode==="media");
-    const vals = showMed ? totals.map((v,i)=> (counts[i]>0? v/(counts[i]):0)) : totals.slice();
-    const ctx=document.getElementById(canvasId).getContext("2d");
-    const cfg = {
-      type:"bar",
-      data:{ labels, datasets:[{ data:vals }] },
-      options:{ indexAxis: horizontal?'y':'x', responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true } } }
-    };
-    return new window.Chart(ctx, cfg);
-  }
-
-  function groupByDay(arr, valFn){
-    const m=new Map();
-    arr.forEach(r=>{ const d=r[COL.dia]; m.set(d,(m.get(d)||0)+valFn(r)); });
-    const labels=Array.from(m.keys()).sort();
-    const values=labels.map(k=>m.get(k));
-    return {labels, values};
+  async function fetchMinMax(){
+    minISO = null; maxISO = null; diasSet = new Set();
+    const r1 = await supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
+    const r2 = await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
+    if(r1.error || r2.error || !r1.data || !r2.data){
+      console.error("Erro em fetchMinMax:", r1.error || r2.error);
+      setText("statusTxt", "Erro ao carregar intervalo de datas.");
+      return;
     }
-  function groupByDow(arr, valFn){
-    const lbl=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
-    const m=[0,0,0,0,0,0,0], cnt=[0,0,0,0,0,0,0];
-    const diasSet = new Set(arr.map(r=>r[COL.dia]));
-    Array.from(diasSet).forEach(d=>{ cnt[parseISO(d).getUTCDay()]++; });
-    arr.forEach(r=>{ const dow=parseISO(r[COL.dia]).getUTCDay(); m[dow]+=valFn(r); });
-    return {labels:lbl, totals:m, counts:cnt};
-  }
-  function groupByHour(arr, valFn){
-    const m=Array(24).fill(0), daysByHour=Array(24).fill(0).map(()=>new Set());
-    arr.forEach(r=>{
-      const h = (r[COL.hora]==="" || r[COL.hora]==null) ? -1 : Number(r[COL.hora]);
-      if(h>=0 && h<=23){ m[h]+=valFn(r); daysByHour[h].add(r[COL.dia]); }
-    });
-    const totalDays = new Set(arr.map(r=>r[COL.dia])).size || 1;
-    const labels=[], totals=[], counts=[];
-    for(let h=0;h<24;h++){
-      const active = daysByHour[h].size;
-      const keep = active >= Math.ceil(totalDays*0.5) && m[h]>0;
-      if(keep){ labels.push(String(h).padStart(2,"0")+":00"); totals.push(m[h]); counts.push(active); }
+    minISO = r1.data[0]?.dia || null;
+    maxISO = r2.data[0]?.dia || null;
+    if(minISO && maxISO){
+      const all = await fetchPaged("dia", {});
+      (all||[]).forEach(x=>diasSet.add(x.dia));
+    } else {
+      setText("statusTxt", "Nenhum intervalo de datas encontrado.");
     }
-    return {labels, totals, counts};
-  }
-  function groupByMonth(arr, valFn){
-    const m=new Map(), daysPerMonth=new Map();
-    arr.forEach(r=>{
-      const ym = r[COL.dia].slice(0,7);
-      m.set(ym,(m.get(ym)||0)+valFn(r));
-      if(!daysPerMonth.has(ym)) daysPerMonth.set(ym,new Set());
-      daysPerMonth.get(ym).add(r[COL.dia]);
-    });
-    const labels=Array.from(m.keys()).sort();
-    const totals=labels.map(x=>m.get(x));
-    const counts=labels.map(x=> (daysPerMonth.get(x)?.size)||1 );
-    return {labels, totals, counts};
   }
 
-  function setKPIs(cur, ant){
-    const sum = (a,k)=> a.reduce((s,r)=> s + Number(r[k]||0), 0);
-    const ped = sum(cur, COL.pedidos);
-    const fat = sum(cur, COL.fat);
-    const des = sum(cur, COL.des);
-    const fre = sum(cur, COL.fre);
-
-    const pedA = sum(ant, COL.pedidos);
-    const fatA = sum(ant, COL.fat);
-    const desA = sum(ant, COL.des);
-    const freA = sum(ant, COL.fre);
-
-    const dias = (new Set(cur.map(r=>r[COL.dia]))).size || 1;
-    const diasA= (new Set(ant.map(r=>r[COL.dia]))).size || 1;
-
-    const tkm = ped>0 ? fat/ped : 0;
-    const tkmA= pedA>0 ? fatA/pedA : 0;
-
-    const fmd = fat/dias;
-    const fmdA= fatA/diasA;
-
-    const fatL = fat - des - fre - (0.12*fat);
-    const fatLA= fatA - desA - freA - (0.12*fatA);
-
-    const desP = fat>0 ? (des/fat*100) : 0;
-    const desPA= fatA>0 ? (desA/fatA*100) : 0;
-
-    const freM = ped>0 ? fre/ped : 0;
-    const freMA= pedA>0 ? freA/pedA : 0;
-
-    const fatLP= fat>0 ? (fatL/fat*100) : 0;
-    const fatLPA= fatA>0 ? (fatLA/fatA*100) : 0;
-
-    document.getElementById("k_ped").textContent = fmtInt(ped);
-    document.getElementById("k_tkm").textContent = fmtBRL(tkm);
-    document.getElementById("k_fat").textContent = fmtBRL(fat);
-    document.getElementById("k_fmd").textContent = fmtBRL(fmd);
-    document.getElementById("k_des").textContent = fmtBRL(des);
-    document.getElementById("k_desp").textContent = desP.toFixed(1)+"%";
-    document.getElementById("k_fre").textContent = fmtBRL(fre);
-    document.getElementById("k_frem").textContent = fmtBRL(freM);
-    document.getElementById("k_fatl").textContent = fmtBRL(fatL);
-    document.getElementById("k_fatlp").textContent = fatLP.toFixed(1)+"%";
-
-    setDelta(document.getElementById("d_ped"), ped, pedA);
-    setDelta(document.getElementById("d_tkm"), tkm, tkmA);
-    setDelta(document.getElementById("d_fat"), fat, fatA);
-    setDelta(document.getElementById("d_fmd"), fmd, fmdA);
-    setDelta(document.getElementById("d_des"), des, desA);
-    setDelta(document.getElementById("d_desp"), desP, desPA);
-    setDelta(document.getElementById("d_fre"), fre, freA);
-    setDelta(document.getElementById("d_frem"), freM, freMA);
-    setDelta(document.getElementById("d_fatl"), fatL, fatLA);
-    setDelta(document.getElementById("d_fatlp"), fatLP, fatLPA);
+  function snap(iso){
+    if(!iso || diasSet.has(iso)) return iso;
+    const d = parseISO(iso); if(!d) return minISO || maxISO; // Fallback
+    for(let k=1;k<=30;k++){
+      const a = toISO(addDays(d, -k)), b = toISO(addDays(d, k));
+      if(diasSet.has(a)) return a;
+      if(diasSet.has(b)) return b;
+    }
+    return minISO || maxISO; // Fallback se não encontrar
   }
 
-  async function reload(){
-    const myRun = ++runId;
-    try{
-      if(!TABLE) throw new Error("Sem dados na fonte");
-      const {startISO, endISO} = await resolvePeriodo();
+  async function buildOptions(){
+    try {
+      const u = await supa.from(TABLE).select("unidade", { distinct: true }).order("unidade");
+      const c = await supa.from(TABLE).select(`"${keyCanal}"`, { distinct: true }).order(keyCanal);
+      const p = await supa.from(TABLE).select("pagamento", { distinct: true }).order("pagamento");
+      // Recupera dados limitados e agrupa manualmente
+      const allData = await supa.from(TABLE).select(`"${keyLoja}", fat`).limit(1000); // Limite para performance
+      const lj = Object.entries(allData.data.reduce((acc, row) => {
+        if (row[keyLoja] && row.fat) {
+          acc[row[keyLoja]] = (acc[row[keyLoja]] || 0) + (row.fat || 0);
+        }
+        return acc;
+      }, {})).map(([loja, total_fat]) => ({ [keyLoja]: loja, total_fat }))
+        .sort((a, b) => b.total_fat - a.total_fat)
+        .slice(0, 10);
 
-      const lojasSel = Array.from(lojasBox.children).filter(c=>c.classList.contains("active")).map(c=>c.getAttribute("data-v"));
-      const filtros = {
-        uni: uni.value||"Todas",
-        lojas: lojasSel,
-        turno: getMulti(turno),
-        canal: getMulti(canal),
-        pag:   getMulti(pag),
-        canc:  canc.value||"Todos"
-      };
-
-      // atual
-      const cur = await fetchPaged(startISO, endISO, filtros);
-      if(runId!==myRun) return;
-
-      // anterior
-      const lenDays = Math.max(1, Math.round((parseISO(endISO)-parseISO(startISO))/(24*3600*1000))+1);
-      const prevEnd = addDays(parseISO(startISO), -1);
-      const prevStart = addDays(prevEnd, -(lenDays-1));
-      const ant = await fetchPaged(toISO(prevStart), toISO(prevEnd), filtros);
-      if(runId!==myRun) return;
-
-      // KPIs
-      setKPIs(cur, ant);
-
-      // Linha (dia) + sombra anterior
-      const byDay = groupByDay(cur, r=> Number(r[COL.fat]||0));
-      const byDayPrev = groupByDay(ant, r=> Number(r[COL.fat]||0));
-      drawLine(byDay.labels, byDay.values, byDayPrev.values, lineMode);
-
-      // DOW: receita e pedidos
-      const dowFat = groupByDow(cur, r=> Number(r[COL.fat]||0));
-      chartDowFat = destroy(chartDowFat);
-      chartDowFat = drawBar("cDowFat", dowFat.labels, dowFat.totals, dowFat.counts, dowMode);
-
-      const dowPed = groupByDow(cur, r=> Number(r[COL.pedidos]||0));
-      chartDowPed = destroy(chartDowPed);
-      chartDowPed = drawBar("cDowPed", dowPed.labels, dowPed.totals, dowPed.counts, dowPedMode);
-
-      // Hora
-      const byHour = groupByHour(cur, r=> Number(r[COL.fat]||0));
-      chartHour = destroy(chartHour);
-      chartHour = drawBar("cHour", byHour.labels, byHour.totals, byHour.counts, hourMode);
-
-      // Mês
-      const byMon = groupByMonth(cur, r=> Number(r[COL.fat]||0));
-      chartMonth = destroy(chartMonth);
-      chartMonth = drawBar("cMonth", byMon.labels, byMon.totals, byMon.counts, monMode);
-
-      // Top 10 lojas (com base nos dados carregados)
-      const sumByLoja = new Map();
-      cur.forEach(r=>{
-        const n = r["Nome da loja"]; if(!n) return;
-        sumByLoja.set(n, (sumByLoja.get(n)||0) + Number(r[COL.fat]||0));
+      uni.innerHTML = "<option>Todas</option>" + (u.data||[]).map(r => `<option>${r.unidade || 'Sem unidade'}</option>`).join("");
+      canal.innerHTML = (c.data||[]).map(r => `<option>${r[keyCanal] || 'Sem canal'}</option>`).join("");
+      pag.innerHTML = (p.data||[]).map(r => `<option>${r.pagamento || 'Sem pagamento'}</option>`).join("");
+      lojasBox.innerHTML = (lj||[]).map(r => `<span class="chip" data-v="${r[keyLoja] || 'Sem nome'}">${r[keyLoja] || 'Sem nome'}</span>`).join("");
+      
+      uni.value = "Todas";
+      lojasBox.querySelectorAll(".chip").forEach(chip => {
+        chip.addEventListener("click", () => { chip.classList.toggle("active"); });
       });
-      const top = Array.from(sumByLoja.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10);
-      const topLabels = top.map(x=>x[0]);
-      const diasCount = (new Set(cur.map(r=>r[COL.dia]))).size || 1;
-      const topTotals = top.map(x=>x[1]);
-      const topCounts = top.map(_=> diasCount);
+    } catch (e) {
+      console.error("Erro em buildOptions:", e);
+      statusTxt.className="status err"; statusTxt.textContent="Erro ao carregar opções.";
+    }
+  }
 
-      chartTop = destroy(chartTop);
-      chartTop = drawBar("cTop", topLabels, topTotals, topCounts, topMode, true);
+  async function afterLogin(){
+    const { data:{ user } } = await supa.auth.getUser();
+    who.textContent = user?.email || "";
+    hideGate();
+    await pickSource();
+    await bootstrap();
+  }
 
-      if(lojasBox.children.length===0 && topLabels.length){
-        lojasBox.innerHTML="";
-        topLabels.forEach(lbl=>{
-          const chip=document.createElement("span");
-          chip.className="chip"; chip.textContent=lbl; chip.setAttribute("data-v", lbl);
-          chip.addEventListener("click", function(){ chip.classList.toggle("active"); reloadDebounced(); });
-          lojasBox.appendChild(chip);
-        });
+  async function bootstrap() {
+    try {
+      if (!TABLE) { await pickSource(); if (!TABLE) return; }
+      setText("statusTxt", "Carregando intervalo de datas...");
+      await fetchMinMax();
+      if (!minISO || !maxISO) { 
+        setText("statusTxt", "Sem intervalo de datas válido. Usando fallback.");
+        minISO = "2025-08-01"; maxISO = "2025-08-10"; // Fallback temporário
       }
-
-    }catch(e){
-      showToast(e.message||String(e));
-    }
-  }
-  const reloadDebounced = debounce(reload, 120);
-
-  // Eventos filtros
-  pr.addEventListener("change", ()=>{ // só período rápido altera datas
-    if(!maxISO){ return; }
-    const end = parseISO(maxISO);
-    const dias = Number(pr.value||30);
-    const start = addDays(end, -(dias-1));
-    dini.value = toISO(start);
-    dfim.value = toISO(end);
-    fx.open=false; reloadDebounced();
-  });
-  [uni,dini,dfim,turno,canal,pag,canc].forEach(el=>{
-    el.addEventListener("change", ()=>{ fx.open=false; reloadDebounced(); });
-  });
-
-  limpar.addEventListener("click", (e)=>{
-    e.preventDefault();
-    uni.value="Todas"; dini.value=""; dfim.value=""; pr.value="30"; turno.value=""; canal.value=""; pag.value=""; canc.value="Todos";
-    Array.from(lojasBox.children).forEach(c=> c.classList.remove("active"));
-    reloadDebounced();
-  });
-
-  // Toggling de “Total / Média”
-  document.querySelectorAll(".pill").forEach(p=>{
-    p.addEventListener("click",(ev)=>{
-      const btn = ev.target.closest("button"); if(!btn) return;
-      p.querySelectorAll("button").forEach(b=> b.classList.toggle("active", b===btn));
-      const mode = btn.getAttribute("data-val");
-      const target = p.getAttribute("data-target");
-      if(target==="lineMode") lineMode=mode;
-      if(target==="dowMode") dowMode=mode;
-      if(target==="dowPedMode") dowPedMode=mode;
-      if(target==="hourMode") hourMode=mode;
-      if(target==="monMode") monMode=mode;
-      if(target==="topMode") topMode=mode;
-      reloadDebounced();
-    });
-  });
-
-  // Import CSV
-  function mapHeader(h){
-    const s = String(h||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-    if (["dia","data","data do pedido"].includes(s)) return "dia";
-    if (["unidade","loja","filial"].includes(s)) return "unidade";
-    if (["pedidos","qtd pedidos","quantidade","qtd"].includes(s)) return "pedidos";
-    if (["fat","faturamento","total","valor total","receita"].includes(s)) return "fat";
-    if (["des","desconto","incentivos"].includes(s)) return "des";
-    if (["fre","frete","entrega","taxa de entrega"].includes(s)) return "fre";
-    if (["nome da loja","nome da loja ","nomedaloja","nome_loja"].includes(s)) return 'Nome da loja';
-    if (["canal de venda","canal","canal venda","canal_venda"].includes(s)) return 'Canal de venda';
-    if (["pagamento","forma de pagamento","meio de pagamento"].includes(s)) return "pagamento";
-    if (["cancelado","cancelada","status cancelado"].includes(s)) return "cancelado";
-    if (["hora","horario","horário"].includes(s)) return "hora";
-    if (["turno"].includes(s)) return "turno";
-    return null;
-  }
-  function rowKey(r){
-    return [
-      r.dia,
-      (r.unidade||"").trim(),
-      (r['Nome da loja']||"").trim(),
-      (r.hora===""||r.hora==null ? -1 : Number(r.hora)),
-      (r.pagamento||"").trim(),
-      (r['Canal de venda']||"").trim()
-    ].join("|");
-  }
-  function dedupRows(arr){
-    const seen = new Set(), out=[];
-    for(const r of arr){
-      const k = rowKey(r);
-      if(!seen.has(k)){ seen.add(k); out.push(r); }
-    }
-    return out;
-  }
-
-  document.getElementById("btnImport").addEventListener("click", async ()=>{
-    try{
-      if(!TABLE){ await pickSource(); if(!TABLE){ showToast("Sem dados na fonte (crie a tabela vendas_kpi_daily_v2_data)."); return; } }
-      const f = document.getElementById("csvfile").files[0];
-      if(!f){ showToast("Selecione o arquivo CSV (Pasta2.csv)"); return; }
-
-      // Leitura CSV
-      Papa.parse(f, {
-        header:true, skipEmptyLines:true,
-        complete: async (res)=>{
-          let rows = res.data||[];
-          if(rows.length===0){ showToast("CSV vazio."); return; }
-
-          // Mapeia cabeçalhos
-          const mapped = rows.map(orig=>{
-            const out={};
-            for(const k in orig){
-              const mk = mapHeader(k);
-              if(mk){ out[mk]=orig[k]; }
-            }
-            return out;
-          });
-
-          // Checa obrigatórios
-          const hasDia = mapped.some(r=> r.dia!=null);
-          const hasUni = mapped.some(r=> r.unidade!=null);
-          const hasFat = mapped.some(r=> r.fat!=null);
-          if(!hasDia || !hasUni || !hasFat){
-            showToast("Nada para importar (colunas obrigatórias não reconhecidas: dia/unidade/fat).");
-            return;
-          }
-
-          // Normaliza e dedup
-          const normalized = mapped.map(r=>({
-            dia: r.dia,
-            unidade: r.unidade,
-            pedidos: Number(r.pedidos)||0,
-            fat: Number(r.fat)||0,
-            des: Number(r.des)||0,
-            fre: Number(r.fre)||0,
-            ['Nome da loja']: r['Nome da loja'] ?? r['Nome da Loja'] ?? r['nome da loja'] ?? null,
-            turno: r.turno ?? null,
-            ['Canal de venda']: r['Canal de venda'] ?? r['canal de venda'] ?? r['canal'] ?? null,
-            pagamento: r.pagamento ?? null,
-            cancelado: r.cancelado ?? null,
-            hora: (r.hora===""||r.hora==null) ? -1 : Number(r.hora)
-          }));
-
-          const dedupedAll = dedupRows(normalized);
-          if(dedupedAll.length===0){ showToast("Nada para importar (após deduplicação)."); return; }
-
-          // Upsert em lotes
-          app.classList.add("loading");
-          const chunk=1500;
-          for(let i=0;i<dedupedAll.length;i+=chunk){
-            const slice = dedupedAll.slice(i,i+chunk);
-            const up = await supa.from(TABLE).upsert(slice, {
-              onConflict: 'dia,unidade,"Nome da loja",hora,pagamento,"Canal de venda"',
-              ignoreDuplicates: false
-            });
-            if(up.error){ app.classList.remove("loading"); showToast("Erro ao inserir: "+up.error.message); return; }
-          }
-          app.classList.remove("loading");
-          showToast("Importação concluída.");
-          // Atualiza limites e recarrega
-          const mm = await getMinMaxISO();
-          minISO = mm.min; maxISO=mm.max;
-          await reload();
-        },
-        error: (err)=> showToast("CSV erro: "+(err.message||err))
-      });
-    }catch(e){
-      showToast(e.message||String(e));
-    }
-  });
-
-  async function boot(){
-    try{
-      await pickSource();
-      if(!TABLE){ showToast("Sem dados na fonte"); return; }
-      const mm = await getMinMaxISO();
-      minISO = mm.min; maxISO=mm.max;
-      if(minISO && maxISO){
-        const end = parseISO(maxISO), start = addDays(end, -29);
-        dini.value = toISO(start); dfim.value = toISO(end);
-      }
+      setText("statusTxt", "Construindo opções...");
       await buildOptions();
+      const end = parseISO(maxISO), start = addDays(end, -29);
+      dini.value = toISO(start); dfim.value = toISO(end);
+      setText("statusTxt", "Carregando dados...");
       await reload();
-    }catch(e){
-      showToast(e.message||String(e));
+      setText("statusTxt", "Pronto.");
+    } catch (e) {
+      setText("statusTxt", "Erro ao iniciar: " + e.message);
+      console.error("Erro em bootstrap: ", e);
     }
   }
 
-  // Início
-  (async function init(){
-    const { data:{ session } } = await supa.auth.getSession();
-    if(session){ hideGate(); const {data:{user}}=await supa.auth.getUser(); who.textContent=user?.email||""; await boot(); }
-    else { showGate(); }
-  })();
+  async function reload() {
+    try {
+      if (!TABLE) { await pickSource(); if (!TABLE) return; }
+      let sISO = snap(dini.value || minISO) || minISO, eISO = snap(dfim.value || maxISO) || maxISO;
+      periodoTxt.textContent = "Período: " + (sISO || "—") + " → " + (eISO || "—");
+      console.log("Período selecionado: ", sISO, "até", eISO);
 
+      const rows = await fetchPaged("*", { dgte: sISO, dlte: eISO });
+      console.log("Dados recuperados: ", rows);
+      if (!rows || rows.length === 0) {
+        setText("statusTxt", "Nenhum dado no período selecionado.");
+        return;
+      }
+      renderKPIs(rows, [], 0.3, 0.1);
+      renderCharts(rows, []);
+      setText("statusTxt", "Dados carregados.");
+    } catch (e) {
+      setText("statusTxt", "Falha ao carregar: " + e.message);
+      console.error("Erro em reload: ", e);
+    }
+  }
+
+  function applyQuickDate(){
+    if(!maxISO) return;
+    const days = Number(pr.value||0); if(!days) return;
+    const end = parseISO(maxISO); const start = addDays(end, -(days-1));
+    dini.value = toISO(start); dfim.value = toISO(end);
+  }
+
+  function getSelected(el){ return Array.from(el.selectedOptions||[]).map(o=>o.value).filter(v=>v); }
+
+  applyFilters.addEventListener("click", () => {
+    applyQuickDate();
+    reload();
+    fx.open = false;
+  });
+
+  [uni, dini, dfim, pr, turno, canal, pag, canc, cmvPct, fixPct].forEach(el => {
+    el.addEventListener("change", () => {
+      if (el.id === "dini" && dfim.value && dini.value > dfim.value) {
+        statusTxt.className = "status err";
+        statusTxt.textContent = "Data inicial não pode ser após final.";
+        return;
+      }
+    });
+  });
+
+  document.getElementById("limpar").addEventListener("click", (e) => {
+    e.preventDefault();
+    const end = parseISO(maxISO), start = addDays(end, -29);
+    uni.value = "Todas";
+    dini.value = toISO(start) || "2025-08-01"; // Fallback
+    dfim.value = toISO(end) || "2025-08-10"; // Fallback
+    pr.value = "30";
+    turno.value = "";
+    canal.value = "";
+    pag.value = "";
+    canc.value = "Todos";
+    cmvPct.value = "30";
+    fixPct.value = "10";
+    Array.from(lojasBox.children).forEach(c => c.classList.remove("active"));
+    reload();
+    fx.open = false;
+  });
+
+  // Funções de Renderização
+  function renderKPIs(rows, prev, cmv, fix) {
+    console.log("Renderizando KPIs com rows: ", rows);
+    if (!rows || rows.length === 0) {
+      setText("statusTxt", "Nenhum dado para renderizar KPIs.");
+      return;
+    }
+    const cur = { ped:0, fat:0, tkm:0 };
+    rows.forEach(r => {
+      cur.ped += (r.pedidos || 0);
+      cur.fat += (r.fat || 0);
+    });
+    cur.tkm = avg(cur.fat, cur.ped);
+
+    setText("k_ped", fmtInt(cur.ped));
+    setText("k_fat", fmtBRL(cur.fat));
+    setText("k_tkm", fmtBRL(cur.tkm));
+
+    const prevPed = prev.reduce((a,r)=>a+(r.pedidos||0),0), prevFat = prev.reduce((a,r)=>a+(r.fat||0),0);
+    const prevTkm = avg(prevFat, prevPed);
+    setDelta(document.getElementById("d_ped"), cur.ped, prevPed);
+    setDelta(document.getElementById("d_fat"), cur.fat, prevFat);
+    setDelta(document.getElementById("d_tkm"), cur.tkm, prevTkm);
+  }
+
+  function renderCharts(rows, prev) {
+    console.log("Renderizando gráficos com rows: ", rows);
+    if (!rows || rows.length === 0) {
+      setText("statusTxt", "Nenhum dado para renderizar gráficos.");
+      return;
+    }
+    if (chartLine) chartLine.destroy();
+    chartLine = new Chart(document.getElementById("cLine").getContext("2d"), {
+      type: "line",
+      data: { 
+        labels: rows.map(r => r.dia || 'Sem data'),
+        datasets: [{ label: "Faturamento", data: rows.map(r => r.fat || 0) }]
+      }
+    });
+  }
+
+  // Inicialização
+  checkRecovery();
+  if(supa.auth.getSession()){ hideGate(); afterLogin(); }
 })();
 </script>
 </body>
