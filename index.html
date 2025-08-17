@@ -154,7 +154,7 @@
       // ===== STATE =====
       let minISO=null, maxISO=null, lastData=[]; let updating=false;
 
-      // ===== HELPERS =====
+      // ===== HELPERS (sem logs) =====
       const fmtBRL=(v)=> (isFinite(v)? v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : "—");
       const fmtPct=(v)=> (isFinite(v)? (v*100).toFixed(1).replace('.',',')+'%' : "—");
       const toISO=(d)=>{ try{ const t=new Date(d); if(!isFinite(t)) return null; return t.toISOString().slice(0,10);}catch(_){return null;} };
@@ -165,17 +165,16 @@
       function ddmmyyyyToISO(s){ if(!s)return null; const str=String(s).trim(); const [datePart,timePart]=str.split(' '); const [d,m,y]=datePart.split('/'); const day=+d, mon=+m, yr=+y; if(!day||!mon||!yr||mon<1||mon>12||day<1||day>31) return null; const iso=`${String(yr).padStart(4,'0')}-${String(mon).padStart(2,'0')}-${String(day).padStart(2,'0')}`; const test=new Date(iso); if(test.getUTCFullYear()!==yr || (test.getUTCMonth()+1)!==mon || test.getUTCDate()!==day) return null; return `${iso}${timePart? 'T'+timePart+':00' : 'T00:00:00'}`;}
       function hourFromDateText(s){ const str=String(s??''); const parts=str.split(' '); if(parts[1]&&parts[1].includes(':')){ const [hh]=parts[1].split(':'); const h=parseInt(hh,10); return isFinite(h)?h:-1 } return -1 }
 
-      function applyQuickDate(){ if(!maxISO||!minISO){ const end=new Date(); const start=new Date(end); start.setDate(end.getDate()-29); dini.value=toISO(start); dfim.value=toISO(end); return; } const opt=pr.value; const end=new Date(maxISO); let start; if(opt.startsWith("Últimos ")){ const n=parseInt(opt.split(' ')[1],10)||30; start=new Date(end); start.setDate(end.getDate()-(n-1)); } else if(opt==="Este mês"){ start=new Date(end.getFullYear(),end.getMonth(),1); } else if(opt==="Último mês"){ start=new Date(end.getFullYear(),end.getMonth()-1,1); const e=new Date(end.getFullYear(),end.getMonth(),0); dini.value=toISO(start); dfim.value=toISO(e); return; } else if(opt==="Este ano"){ start=new Date(end.getFullYear(),0,1); } else { start=new Date(end); start.setDate(end.getDate()-29); } dini.value=toISO(start); dfim.value=toISO(end); }
-
-      async function fetchAll(q, step=50000){
+      // paginação universal (sem limite de 1000)
+      async function fetchAll(builder, step=50000){
         let from = 0, to = step-1, out = [];
         for(;;){
-          const { data, error } = await q.range(from, to);
-          if (error){ console.error('[fetchAll]', error); break; }
+          const { data, error } = await builder.range(from, to);
+          if (error){ break; }
           out = out.concat(data||[]);
           if (!data || data.length < step) break;
           from += step; to += step;
-          if (from > 1_000_000){ console.warn('[fetchAll] stop safeguard'); break; }
+          if (from > 2_000_000){ break; } // trava de segurança
         }
         return out;
       }
@@ -191,41 +190,53 @@
         }
       }
 
-      // Opções de filtros dentro do período (reflete a realidade do recorte temporal)
+      function applyQuickDate(){
+        if(!maxISO||!minISO){
+          const end=new Date(); const start=new Date(end); start.setDate(end.getDate()-29);
+          dini.value=toISO(start); dfim.value=toISO(end); return;
+        }
+        const opt=pr.value; const end=new Date(maxISO); let start;
+        if(opt.startsWith("Últimos ")){ const n=parseInt(opt.split(' ')[1],10)||30; start=new Date(end); start.setDate(end.getDate()-(n-1)); }
+        else if(opt==="Este mês"){ start=new Date(end.getFullYear(),end.getMonth(),1); }
+        else if(opt==="Último mês"){ start=new Date(end.getFullYear(),end.getMonth()-1,1); const e=new Date(end.getFullYear(),end.getMonth(),0); dini.value=toISO(start); dfim.value=toISO(e); return; }
+        else if(opt==="Este ano"){ start=new Date(end.getFullYear(),0,1); }
+        else { start=new Date(end); start.setDate(end.getDate()-29); }
+        dini.value=toISO(start); dfim.value=toISO(end);
+      }
+
+      // Opções dos filtros respeitando o período (evita “não reflete realidade”)
       async function buildOptions(a,b){
         if(!a||!b) return;
         updating = true;
         try{
           // Unidade
           { let q=supa.from(TABLE).select('unidade').gte('dia',a).lte('dia',b).not('unidade','is',null).order('unidade',{ascending:true});
-            const arr=(await fetchAll(q,50000)).map(x=>x.unidade).filter(Boolean);
+            const arr=(await fetchAll(q)).map(x=>x.unidade).filter(Boolean);
             const uniq=[...new Set(arr)];
             const cur=uni.value; uni.innerHTML=`<option>Todas</option>`+uniq.map(v=>`<option${v===cur?' selected':''}>${v}</option>`).join('');
           }
           // Pagamento
           { let q=supa.from(TABLE).select('pagamento').gte('dia',a).lte('dia',b).not('pagamento','is',null).order('pagamento',{ascending:true});
-            const arr=(await fetchAll(q,50000)).map(x=>x.pagamento).filter(Boolean);
+            const arr=(await fetchAll(q)).map(x=>x.pagamento).filter(Boolean);
             const uniq=[...new Set(arr)];
             const sel=new Set(Array.from(pag.selectedOptions).map(o=>o.value));
             pag.innerHTML=uniq.map(v=>`<option${sel.has(v)?' selected':''}>${v}</option>`).join('');
           }
           // Canal (aspas no select)
           { let q=supa.from(TABLE).select('"Canal de venda"').gte('dia',a).lte('dia',b).order('Canal de venda',{ascending:true});
-            const arr=(await fetchAll(q,50000)).map(x=>x["Canal de venda"]).filter(Boolean);
+            const arr=(await fetchAll(q)).map(x=>x["Canal de venda"]).filter(Boolean);
             const uniq=[...new Set(arr)];
             const sel=new Set(Array.from(canal.selectedOptions).map(o=>o.value));
             canal.innerHTML=uniq.map(v=>`<option${sel.has(v)?' selected':''}>${v}</option>`).join('');
           }
-          // Lojas (todas dentro do período)
+          // Lojas (todas do período)
           { let q=supa.from(TABLE).select('"Nome da loja"').gte('dia',a).lte('dia',b).order('Nome da loja',{ascending:true});
-            const arr=(await fetchAll(q,50000)).map(x=>x["Nome da loja"]).filter(Boolean);
+            const arr=(await fetchAll(q)).map(x=>x["Nome da loja"]).filter(Boolean);
             const uniq=[...new Set(arr)];
             const cur=loja.value;
             loja.innerHTML=`<option>Todos</option>`+uniq.map(v=>`<option${v===cur?' selected':''}>${v}</option>`).join('');
           }
-        } finally {
-          updating = false;
-        }
+        } finally { updating = false; }
       }
 
       function computeKPIs(rows){
@@ -249,6 +260,7 @@
           byDay.set(d, (byDay.get(d)||0)+v);
         }
         let pairs = Array.from(byDay.entries()).sort((a,b)=>a[0].localeCompare(b[0]));
+        if(!pairs.length){ if(chart) chart.destroy(); return; }
         if(pairs.length>365){ const step=Math.ceil(pairs.length/360); pairs=pairs.filter((_,i)=>i%step===0); }
         const labels=pairs.map(p=>p[0]); const values=pairs.map(p=>p[1]);
 
@@ -275,28 +287,22 @@
         const turnSel = Array.from(turno.selectedOptions).map(o=>o.value);
         const canSel  = Array.from(canal.selectedOptions).map(o=>o.value);
         const pagSel  = Array.from(pag.selectedOptions).map(o=>o.value);
-        const cancSel = (canc.value || 'Todos'); // filtraremos no cliente
+        const cancSel = (canc.value || 'Todos'); // filtro no cliente
 
-        // Primeiro, atualize as opções do período (reflete realidade do range)
         await buildOptions(a,b);
 
-        // Depois, traga as linhas do período + (demais filtros exceto cancelado)
         let q = supa.from(TABLE)
           .select('dia,unidade,pedidos,fat,des,fre,"Nome da loja",turno,"Canal de venda",pagamento,cancelado,hora')
           .gte('dia', a).lte('dia', b)
           .order('dia',{ascending:true});
-
         if (uniSel  !== 'Todas') q = q.eq('unidade', uniSel);
         if (lojaSel !== 'Todos') q = q.eq('Nome da loja', lojaSel);
         if (turnSel.length)       q = q.in('turno', turnSel);
         if (canSel.length)        q = q.in('Canal de venda', canSel);
         if (pagSel.length)        q = q.in('pagamento', pagSel);
-        // NÃO filtra cancelado no servidor (pode ser boolean no banco)
 
-        const rows = await fetchAll(q, 50000);
-
-        // Normalização + filtro de cancelado no cliente
-        const clean = (rows||[]).map(r=>({
+        const data = await fetchAll(q); // <<< sem limite de 1000
+        const rows = (data||[]).map(r=>({
           dia: r?.dia ? r.dia.slice(0,10) : null,
           unidade: r?.unidade ?? null,
           fat: Number(r?.fat) || 0,
@@ -309,19 +315,17 @@
           'Nome da loja': r?.['Nome da loja'] ?? null,
           cancelado: normCancel(r?.cancelado),
           hora: (Number(r?.hora) % 24 + 24) % 24
-        })).filter(r=> r.dia && isFinite(r.fat))
-          .filter(r=>{
-            if(cancSel==='Todos') return true;
-            return r.cancelado === cancSel;
-          });
+        }))
+        .filter(r=> r.dia && isFinite(r.fat))
+        .filter(r=> cancSel==='Todos' ? true : r.cancelado===cancSel);
 
-        lastData = clean;
-        periodoEl.textContent = `Período: ${a} → ${b} (${clean.length.toLocaleString('pt-BR')} linhas)`;
-        computeKPIs(clean);
-        drawChart(clean);
+        lastData = rows;
+        periodoEl.textContent = `Período: ${a} → ${b} (${rows.length.toLocaleString('pt-BR')} linhas)`;
+        computeKPIs(rows);
+        drawChart(rows);
       }
 
-      // ===== IMPORT CSV (mantido) =====
+      // ===== IMPORTAÇÃO (primeiro limpa janela, depois upsert em lotes) =====
       const mapHeader = (h)=>{
         const key = String(h??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
         const cand = [
@@ -342,48 +346,23 @@
         return h;
       };
 
-      document.getElementById('btnImport').addEventListener('click', async ()=>{
+      btnImport.addEventListener('click', async ()=>{
         const file=csv.files?.[0];
         if(!file){ importStatus.textContent='Selecione um CSV.'; importStatus.style.color='#b91c1c'; return; }
         importStatus.textContent='Lendo arquivo…'; importStatus.style.color='#1a73e8';
 
-        let minFileISO=null, maxFileISO=null;
-        const seen=new Set(); let batchMap=new Map(); const BATCH=10000;
-        async function flush(){
-          if(batchMap.size===0) return;
-          const rows=[...batchMap.values()];
-          const onC='dia,unidade,"Nome da loja",hora,pagamento,"Canal de venda"';
-          const r = await supa.from(TABLE).upsert(rows,{onConflict:onC});
-          if(r.error){ console.error(r.error); importStatus.textContent='Erro ao inserir (verifique RLS/índice único).'; importStatus.style.color='#b91c1c'; throw r.error; }
-          batchMap.clear();
-        }
-        function pushRow(r){
-          const key=[r.dia,r.unidade,r["Nome da loja"],r.hora,r.pagamento,r["Canal de venda"]].join('|');
-          if(seen.has(key)){
-            const cur=batchMap.get(key);
-            if(cur){
-              cur.pedidos=(cur.pedidos||0)+(r.pedidos||0);
-              cur.fat=(cur.fat||0)+(r.fat||0);
-              cur.des=(cur.des||0)+(r.des||0);
-              cur.fre=(cur.fre||0)+(r.fre||0);
-              cur.cancelado=r.cancelado||cur.cancelado;
-            }
-            return;
-          }
-          seen.add(key);
-          batchMap.set(key, r);
-          if(batchMap.size>=BATCH){ pendingPromises = pendingPromises.then(()=>flush()); }
-        }
-        let totalKept=0; let pendingPromises = Promise.resolve();
+        const acc = new Map(); // chave composta -> linha somada
+        let minFileISO=null, maxFileISO=null; let totalIn=0;
 
         Papa.parse(file,{
           header:true, skipEmptyLines:'greedy', transformHeader:mapHeader,
           step: function(row){
+            totalIn++;
             const r=row.data||{};
             let diaValue = r.dia || r['Data da venda'] || r['data'] || r['Data'];
             let diaIso = null;
             if(diaValue){ diaIso = String(diaValue).includes('/') ? ddmmyyyyToISO(diaValue) : toISO(diaValue); }
-            if(!diaIso){ return; }
+            if(!diaIso) return;
             const diaOnly = onlyDateISO(diaIso); if(!diaOnly) return;
 
             const hora = ('hora' in r) ? (parseInt(r.hora,10)||-1) : hourFromDateText(diaValue);
@@ -410,21 +389,36 @@
             if(!minFileISO || obj.dia<minFileISO) minFileISO=obj.dia;
             if(!maxFileISO || obj.dia>maxFileISO) maxFileISO=obj.dia;
 
-            pushRow(obj);
-            totalKept++;
-            if(totalKept%20000===0){ importStatus.textContent = `Processando ${totalKept.toLocaleString('pt-BR')}…`; }
+            const key=[obj.dia,obj.unidade,obj["Nome da loja"],obj.hora,obj.pagamento,obj["Canal de venda"]].join('|');
+            const cur=acc.get(key);
+            if(cur){
+              cur.pedidos=(cur.pedidos||0)+(obj.pedidos||0);
+              cur.fat=(cur.fat||0)+(obj.fat||0);
+              cur.des=(cur.des||0)+(obj.des||0);
+              cur.fre=(cur.fre||0)+(obj.fre||0);
+              cur.cancelado=obj.cancelado||cur.cancelado;
+            }else{
+              acc.set(key, obj);
+            }
           },
           complete: async ()=>{
-            try{
-              await pendingPromises; await flush();
-              if(!minFileISO || !maxFileISO){ importStatus.textContent='Nada para importar (linhas inválidas).'; importStatus.style.color='#b91c1c'; return; }
-              importStatus.textContent = `Limpando janela ${minFileISO} → ${maxFileISO}…`;
-              await supa.from(TABLE).delete().gte('dia', minFileISO).lte('dia', maxFileISO);
-              importStatus.textContent = `Importado: ${totalKept.toLocaleString('pt-BR')} linhas (janela ${minFileISO} → ${maxFileISO}).`; importStatus.style.color='#16a34a';
-              await fetchMinMax(); applyQuickDate(); await reload();
-            }catch(e){ console.error(e); importStatus.textContent='Erro ao finalizar importação.'; importStatus.style.color='#b91c1c'; }
+            if(!minFileISO || !maxFileISO){ importStatus.textContent='Nada para importar (linhas inválidas).'; importStatus.style.color='#b91c1c'; return; }
+            const rows=[...acc.values()];
+            importStatus.textContent=`Limpando janela ${minFileISO} → ${maxFileISO}…`; importStatus.style.color='#1a73e8';
+            await supa.from(TABLE).delete().gte('dia', minFileISO).lte('dia', maxFileISO);
+
+            importStatus.textContent=`Enviando ${rows.length.toLocaleString('pt-BR')} registros…`;
+            const onC='dia,unidade,"Nome da loja",hora,pagamento,"Canal de venda"';
+            const BATCH=10000;
+            for(let i=0;i<rows.length;i+=BATCH){
+              const slice = rows.slice(i,i+BATCH);
+              const r = await supa.from(TABLE).upsert(slice,{onConflict:onC});
+              if(r.error){ importStatus.textContent='Erro ao inserir (verifique RLS/índice único).'; importStatus.style.color='#b91c1c'; return; }
+            }
+            importStatus.textContent=`Importado: ${rows.length.toLocaleString('pt-BR')} linhas (janela ${minFileISO} → ${maxFileISO}).`; importStatus.style.color='#16a34a';
+            await fetchMinMax(); applyQuickDate(); await reload();
           },
-          error: function(err){ console.error(err); importStatus.textContent='Erro ao ler arquivo CSV'; importStatus.style.color='#b91c1c'; }
+          error: function(){ importStatus.textContent='Erro ao ler arquivo CSV'; importStatus.style.color='#b91c1c'; }
         });
       });
 
@@ -436,7 +430,7 @@
       // ===== BOOT =====
       (async function(){
         await fetchMinMax();
-        if(minISO && maxISO){ applyQuickDate(); } else { periodoEl.textContent='Sem dados.'; }
+        if(minISO && maxISO){ applyQuickDate(); }
         await reload();
       })();
     }
