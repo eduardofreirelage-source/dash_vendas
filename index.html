@@ -5,12 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Maestro Food</title>
 
-  <!-- Favicon inline (acaba com 404) -->
+  <!-- Favicon inline (sem 404) -->
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="62" fill="%231a73e8"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="64" fill="white">M</text></svg>'/>
 
-  <!-- Reset CSS -->
   <link rel="stylesheet" href="https://unpkg.com/modern-css-reset/dist/reset.min.css">
-
   <style>
     :root{--bg:#f5f7fb;--card:#fff;--muted:#667085;--text:#0f172a;--blue:#1a73e8;--stroke:#e6eaf2;--radius:14px}
     body{background:var(--bg);color:var(--text);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
@@ -101,8 +99,8 @@
           <button id="btnImport" class="btn" type="button">Importar CSV (incremental)</button>
         </div>
         <p class="hint" style="margin-top:8px;">
-          Deduplicação por chave: <code>dia, unidade, "Nome da loja", hora, pagamento, "Canal de venda"</code>.  
-          Mínimo no CSV: <b>Data da venda</b> (dia) • <b>unidade</b> • <b>Total</b> (fat). Demais colunas são mapeadas automaticamente.
+          Estratégia: limpa **somente** o intervalo de datas do arquivo e insere com deduplicação por chave  
+          <code>dia, unidade, "Nome da loja", hora, pagamento, "Canal de venda"</code>.
         </p>
       </div>
     </details>
@@ -130,13 +128,12 @@
     </div>
   </div>
 
-  <!-- Libs ANTES do app (evita 'supabase is not defined') -->
+  <!-- Supply ANON KEY antes do app -->
   <script>window.SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';</script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 
-  <!-- APP -->
   <script>
   (function(){
     // ===== CONFIG =====
@@ -159,7 +156,7 @@
 
     // ===== STATE =====
     let TABLE=null, minISO=null, maxISO=null, lastData=[];
-    // Colunas com espaço detectadas no banco
+    // nomes exatos no banco (com espaço e caixa correta)
     let KEY_LOJA='Nome da loja';
     let KEY_CANAL='Canal de venda';
 
@@ -170,11 +167,12 @@
     const parseBR=(x)=>{ if(x==null||x==='')return 0; if(typeof x==='number')return x; const s=String(x).replace(/\s/g,'').replace(/\./g,'').replace(',','.'); const n=Number(s.replace(/[^\d\.-]/g,'')); return isFinite(n)?n:0; };
     const norm=s=> String(s??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
     const normCancel=v=>{const s=String(v??"").trim().toLowerCase(); if(v===true||s==="sim"||s==="s"||s==="1"||s==="true")return"Sim"; return"Não";};
+
     function ddmmyyyyToISO(s){
       if(!s) return null;
       const str=String(s).trim();
       const [datePart,timePart] = str.split(/\s+/);
-      const m = datePart.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+      const m = datePart?.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
       if(!m) return null;
       let d=+m[1], mth=+m[2], y=+m[3]; if(y<100) y+=2000;
       if(!(d>=1&&d<=31&&mth>=1&&mth<=12&&y>=2000&&y<=2100)) return null;
@@ -190,13 +188,14 @@
       const end=new Date(); let start;
       if(pr.value.startsWith("Últimos ")){ const n=parseInt(pr.value.split(' ')[1],10)||30; start=new Date(); start.setDate(end.getDate()-(n-1)); }
       else if(pr.value==="Este mês"){ start=new Date(end.getFullYear(),end.getMonth(),1); }
-      else if(pr.value==="Último mês"){ start=new Date(end.getFullYear(),end.getMonth()-1,1); const e=new Date(end.getFullYear(),end.getMonth(),0); dini.value=e ? e.toISOString().slice(0,10) : dini.value; }
+      else if(pr.value==="Último mês"){ start=new Date(end.getFullYear(),end.getMonth()-1,1); const e=new Date(end.getFullYear(),end.getMonth(),0); dini.value=e.toISOString().slice(0,10); dfim.value=end.toISOString().slice(0,10); return; }
       else if(pr.value==="Este ano"){ start=new Date(end.getFullYear(),0,1); }
       else { start=new Date(end.getFullYear(),end.getMonth(),end.getDate()-29); }
       dini.value = start.toISOString().slice(0,10);
       dfim.value = end.toISOString().slice(0,10);
     }
-    const getSelected=(sel)=> sel.multiple? Array.from(sel.selectedOptions).map(o=>o.value).filter(Boolean) : (sel.value||"");
+
+    const chunk = (arr, n=1000)=> Array.from({length: Math.ceil(arr.length/n)}, (_,i)=> arr.slice(i*n, i*n+n));
 
     async function pickSource(){
       let r = await supa.from(PREFER_TABLE).select('dia').limit(1);
@@ -207,7 +206,7 @@
     }
 
     async function detectColumnNames(){
-      // Tenta variações de caixa/acentos
+      // tenta variações com aspas no select
       async function probe(name, alts){
         for(const k of [name, ...alts]){
           const q = await supa.from(TABLE).select(`"${k}"`).limit(1);
@@ -215,8 +214,8 @@
         }
         return name;
       }
-      KEY_LOJA  = await probe('Nome da loja', ['Nome da Loja','nome da loja']);
-      KEY_CANAL = await probe('Canal de venda', ['Canal de Venda','canal de venda']);
+      KEY_LOJA  = await probe('Nome da loja',  ['Nome da Loja','nome da loja']);
+      KEY_CANAL = await probe('Canal de venda',['Canal de Venda','canal de venda']);
     }
 
     async function fetchMinMax(){
@@ -252,7 +251,7 @@
         pag.innerHTML=arr.map(v=>`<option>${v}</option>`).join('');
       }
 
-      // Canal (com aspas corretas)
+      // Canal
       {
         const r = await supa.from(TABLE).select(`"${KEY_CANAL}"`).order(KEY_CANAL,{ascending:true}).range(0,9999);
         const arr=[...new Set((r.data||[]).map(x=>x[KEY_CANAL]).filter(Boolean))];
@@ -273,7 +272,7 @@
       const fat=rows.reduce((s,r)=>s+(Number(r.fat)||0),0);
       const des=rows.reduce((s,r)=>s+(Number(r.des)||0),0);
       const fre=rows.reduce((s,r)=>s+(Number(r.fre)||0),0);
-      const fatliq=fat-des-fre; const dias=new Set(rows.map(r=>r.dia)).size||1;
+      const fatliq=fat-des-fre; const dias=Math.max(1, new Set(rows.map(r=>r.dia)).size);
       const ticket=pedidos?fat/pedidos:0; const fatDia=fat/dias; const desPct=fat?(des/fat):0;
       kPedidos.textContent=pedidos.toLocaleString('pt-BR'); kTicket.textContent=fmtBRL(ticket);
       kFat.textContent=fmtBRL(fat); kFatDia.textContent=fmtBRL(fatDia);
@@ -285,6 +284,7 @@
       const byDay=new Map(); rows.forEach(r=>byDay.set(r.dia,(byDay.get(r.dia)||0)+(Number(r.fat)||0)));
       const labels=Array.from(byDay.keys()).sort(); const values=labels.map(d=>byDay.get(d));
       const ctx=chartEl.getContext('2d'); if(chart) chart.destroy();
+      if(!labels.length){ chart=null; return; }
       chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'Receita',data:values,tension:0.2}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}}}});
     }
 
@@ -301,7 +301,7 @@
 
         const sel = `dia,unidade,pedidos,fat,des,fre,"${KEY_LOJA}","${KEY_CANAL}",turno,pagamento,cancelado,hora`;
         const q=await supa.from(TABLE).select(sel).order('dia',{ascending:true}).range(0,200000);
-        if(q.error){ console.error(q.error); periodoEl.textContent='Erro ao carregar dados'; return; }
+        if(q.error){ console.error(q.error); periodoEl.textContent='Erro ao carregar dados'; computeKPIs([]); if(chart) chart.destroy(); return; }
 
         let rows=(q.data||[]).map(r=>({...r,dia:onlyDateISO(r.dia),cancelado:normCancel(r.cancelado)}));
         rows=rows.filter(r=>{
@@ -324,18 +324,20 @@
       }catch(e){
         console.error(e);
         periodoEl.textContent='Erro geral';
+        computeKPIs([]); if(chart) chart.destroy();
       }
     }
 
-    // ===== IMPORT =====
+    // ===== IMPORT (DELETE-THEN-INSERT EM LOTES) =====
     btnImport.addEventListener('click', async ()=>{
       const file=csv.files?.[0];
-      if(!file){ importStatus.textContent='Selecione um CSV.'; importStatus.className='status error'; return; }
-      importStatus.textContent='Lendo arquivo…'; importStatus.className='status';
+      if(!file){ setImport('Selecione um CSV.', 'error'); return; }
+      setImport('Lendo arquivo…', 'warn');
 
       Papa.parse(file,{
-        header:true, skipEmptyLines:'greedy', delimiter:"", transformHeader: h=>{
-          const key = norm(h);
+        header:true, skipEmptyLines:'greedy', delimiter:"", // autodetect
+        transformHeader: (h)=>{
+          const key = String(h??'').normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
           const map = [
             ['dia', ['dia','data','data da venda','data de venda','data_venda','datadavenda','date']],
             ['unidade', ['unidade','filial','unidades','uni','store','loja']],
@@ -351,34 +353,30 @@
             ['hora',['hora','horario','horário','hour','time']],
           ];
           for(const [std, list] of map) if(list.includes(key)) return std;
-          return h; // mantém desconhecidos
+          return h;
         },
         complete: async (res)=>{
           try{
             const raw=res.data||[];
-            if(raw.length===0){ importStatus.textContent='Arquivo vazio.'; importStatus.className='status error'; return; }
+            if(raw.length===0){ setImport('Arquivo vazio.', 'error'); return; }
 
-            // Checagem de obrigatórias (após mapeamento)
+            // Confere colunas mínimas
             const headers = Object.keys(raw[0]);
             const hasDia = headers.includes('dia') || headers.includes('Data da venda');
             const hasUni = headers.includes('unidade');
             const hasFat = headers.includes('fat') || headers.includes('Total');
-            if(!hasDia||!hasUni||!hasFat){
-              importStatus.textContent='Nada para importar (colunas obrigatórias não reconhecidas: dia/unidade/fat).';
-              importStatus.className='status error';
-              return;
-            }
+            if(!hasDia||!hasUni||!hasFat){ setImport('Nada para importar (colunas obrigatórias não reconhecidas: dia/unidade/fat).','error'); return; }
 
-            // Normalização linha a linha
+            // Normaliza registros
             const reasons = {};
-            function drop(reason){ reasons[reason]=(reasons[reason]||0)+1; return null; }
+            const drop=(r)=>{ reasons[r]=(reasons[r]||0)+1; return null; };
 
-            const normRows = raw.map((r, idx)=>{
+            const normRows = raw.map(r=>{
               let diaValue = r.dia || r['Data da venda'] || r['data'] || r['Data'];
-              let iso = null;
+              let iso=null;
               if(diaValue){
-                if(String(diaValue).match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/)) iso = ddmmyyyyToISO(diaValue);
-                else iso = onlyDateISO(String(diaValue));
+                if(String(diaValue).match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/)) iso=ddmmyyyyToISO(diaValue);
+                else iso=onlyDateISO(String(diaValue));
               }
               if(!iso) return drop('data inválida');
 
@@ -391,27 +389,22 @@
               if(!isFinite(fat)) return drop('fat inválido');
 
               return {
-                dia: iso,
+                dia: onlyDateISO(iso),
                 unidade,
                 pedidos: Math.max(1, Number(r.pedidos) || 1),
                 fat, des, fre,
                 turno: r.turno ?? r.Turno ?? null,
                 pagamento: r.pagamento ?? r.Pagamento ?? null,
                 [KEY_CANAL]: r['Canal de venda'] ?? r.Canal ?? null,
-                [KEY_LOJA]: r['Nome da loja'] ?? r.Loja ?? null,
+                [KEY_LOJA]:  r['Nome da loja']  ?? r.Loja  ?? null,
                 cancelado: normCancel(r.cancelado ?? r['Está cancelado']),
                 hora: isFinite(hora)? hora : -1
               };
             }).filter(Boolean);
 
-            if(normRows.length===0){
-              importStatus.textContent='Nada para importar (linhas inválidas).';
-              importStatus.className='status error';
-              console.warn('Descartes por motivo:', reasons);
-              return;
-            }
+            if(normRows.length===0){ setImport('Nada para importar (linhas inválidas).','error'); console.warn('Descartes:',reasons); return; }
 
-            // Dedupe client-side por chave composta
+            // Dedup client-side
             const acc=new Map();
             for(const r of normRows){
               const key=[r.dia,r.unidade,r[KEY_LOJA],r.hora,r.pagamento,r[KEY_CANAL]].join('|');
@@ -424,36 +417,46 @@
               acc.set(key,v);
             }
             const rows=[...acc.values()];
-            importStatus.textContent=`Enviando ${rows.length.toLocaleString('pt-BR')} registros…`; importStatus.className='status';
+            // Intervalo do arquivo
+            const minFile = rows.map(x=>x.dia).sort()[0];
+            const maxFile = rows.map(x=>x.dia).sort().slice(-1)[0];
 
-            if(!TABLE){ await pickSource(); if(!TABLE){ importStatus.textContent='Sem tabela no banco.'; importStatus.className='status error'; return; } }
+            if(!TABLE){ await pickSource(); if(!TABLE){ setImport('Sem tabela no banco.','error'); return; } }
 
-            // Tenta upsert com índice único; se falhar, faz insert simples
-            const onC = `dia,unidade,"${KEY_LOJA}",hora,pagamento,"${KEY_CANAL}"`;
-            let r = await supa.from(TABLE).upsert(rows,{ onConflict:onC });
-            if(r.error){
-              console.warn('upsert falhou, tentando insert simples:', r.error);
-              r = await supa.from(TABLE).insert(rows);
+            // 1) Limpa SOMENTE o intervalo de datas do arquivo
+            setImport(`Limpando ${minFile} → ${maxFile}…`,'warn');
+            const del = await supa.from(TABLE).delete().gte('dia', minFile).lte('dia', maxFile);
+            if(del.error){ console.error(del.error); setImport('Erro ao limpar intervalo no banco.','error'); return; }
+
+            // 2) Insere em lotes (evita 500/409)
+            setImport(`Inserindo ${rows.length.toLocaleString('pt-BR')} registros…`,'warn');
+            for(const part of chunk(rows, 1000)){
+              const ins = await supa.from(TABLE).insert(part, { ignoreDuplicates: true });
+              if(ins.error){ console.error(ins.error); setImport('Erro ao inserir (lote).','error'); return; }
             }
-            if(r.error){ importStatus.textContent='Erro ao inserir.'; importStatus.className='status error'; console.error(r.error); return; }
 
-            importStatus.textContent='Importado.'; importStatus.className='status ok';
+            setImport('Importado.','ok');
             await fetchMinMax(); await buildOptions(); await reload();
+
           }catch(err){
             console.error(err);
-            importStatus.textContent='Erro inesperado no import.'; importStatus.className='status error';
+            setImport('Erro inesperado no import.','error');
           }
         },
-        error: (e)=>{ console.error(e); importStatus.textContent='Erro ao ler CSV'; importStatus.className='status error'; }
+        error: (e)=>{ console.error(e); setImport('Erro ao ler CSV','error'); }
       });
     });
 
+    function setImport(msg, kind='warn'){
+      importStatus.textContent=msg;
+      importStatus.className='status ' + (kind==='ok'?'ok':kind==='error'?'error':'warn');
+    }
+
     // ===== LISTENERS =====
     pr.addEventListener("change", ()=>{ applyQuickDate(); reload(); });
-    [uni,dini,dfim,turno,canal,pag,canc,loja].forEach(e=> e.addEventListener("change", ()=>{ reload(); }));
+    ;[uni,dini,dfim,turno,canal,pag,canc,loja].forEach(e=> e.addEventListener("change", ()=>{ reload(); }));
 
     btnLimpar.addEventListener('click', ()=>{
-      uni.innerHTML = `<option>Todas</option>` + uni.innerHTML.replace(/^.*<\/option>/,''); // mantém opções
       loja.value='Todos'; uni.value='Todas';
       turno.selectedIndex=-1; canal.selectedIndex=-1; pag.selectedIndex=-1; canc.value='Todos';
       applyQuickDate(); reload();
@@ -464,9 +467,9 @@
       health.textContent='Checando fonte…'; health.className='status warn';
       await pickSource();
       if(!TABLE){ health.textContent='Tabela/View não encontrada'; health.className='status error'; return; }
+      await detectColumnNames();
       await fetchMinMax();
       applyQuickDate();
-      await detectColumnNames();
       await buildOptions();
       await reload();
     })();
