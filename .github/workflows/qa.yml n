@@ -1,0 +1,61 @@
+name: QA
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm i -D @playwright/test
+      - run: npx playwright install --with-deps chromium
+      - run: mkdir -p tests
+      - run: |
+          cat > tests/qa.spec.ts <<'EOF'
+          import { test, expect } from '@playwright/test';
+
+          const URL = 'https://eduardofreirelage-source.github.io/dash_vendas/';
+
+          test('Página carrega sem erros graves e com filtros preenchidos', async ({ page }) => {
+            const errors:string[] = [];
+            page.on('console', msg => {
+              const t = msg.type();
+              if (t === 'error') errors.push(msg.text());
+            });
+
+            await page.goto(URL, { waitUntil: 'domcontentloaded' });
+
+            // Espera elementos base
+            await expect(page.locator('text=Maestro Food')).toBeVisible();
+            await expect(page.locator('#uni')).toBeVisible();
+            await expect(page.locator('#loja')).toBeVisible();
+
+            // Filtros não podem estar vazios (devem conter "Todas/Todos" e pelo menos 1 opção real quando há dados)
+            const uniOpts = await page.$$eval('#uni option', els => els.map(e => (e as HTMLOptionElement).text));
+            const lojaOpts = await page.$$eval('#loja option', els => els.map(e => (e as HTMLOptionElement).text));
+
+            expect(uniOpts.length).toBeGreaterThan(0);
+            expect(lojaOpts.length).toBeGreaterThan(0);
+
+            // KPIs renderizados
+            await expect(page.locator('#k_fat')).toBeVisible();
+
+            // Sem dia=null nas chamadas (heurística)
+            const reqs = [];
+            page.on('request', r => reqs.push(r.url()));
+            // interaja um pouco para disparar reload
+            await page.selectOption('#pr', '30');
+            await page.waitForTimeout(1000);
+
+            const hasNullDay = reqs.some(u => /dia=gte\.null|dia=lte\.null/i.test(u));
+            expect(hasNullDay).toBeFalsy();
+
+            // Erros de console?
+            expect(errors.join('\n')).toEqual('');
+          });
+          EOF
+      - run: npx playwright test -c .
