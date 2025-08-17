@@ -1,35 +1,383 @@
--- 1) Contagem e limites de data
-SELECT COUNT(*) AS linhas FROM public.vendas_kpi_daily_v2_data;
-SELECT MIN(dia) AS min_dia, MAX(dia) AS max_dia FROM public.vendas_kpi_daily_v2_data;
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Maestro Food</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- favicon inline para evitar 404 -->
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><rect width="72" height="72" rx="14" fill="%232563eb"/><path d="M22 40c10 0 10-8 20-8 6 0 8 4 8 8 0 8-8 16-18 16S14 52 14 44c0-8 6-12 8-12" fill="white" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>'>
 
--- 2) Unidades existentes (e volume)
-SELECT unidade, COUNT(*) AS linhas
-FROM public.vendas_kpi_daily_v2_data
-GROUP BY 1
-ORDER BY 2 DESC;
+  <!-- libs -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
--- 3) Top 20 lojas
-SELECT "Nome da loja", COUNT(*) AS linhas, SUM(fat) AS fat
-FROM public.vendas_kpi_daily_v2_data
-GROUP BY 1
-ORDER BY 3 DESC
-LIMIT 20;
+  <style>
+    :root{ --bg:#f4f6fb; --fg:#0f172a; --muted:#6b7280; --card:#fff; --brd:#e5e7eb; --pri:#2563eb; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",sans-serif}
+    .wrap{max-width:1200px;margin:18px auto;padding:0 16px}
+    .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+    h1{margin:0;font-size:22px}
+    .muted{color:var(--muted)}
+    .badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--brd);border-radius:999px;padding:6px 10px;background:#fff;cursor:pointer}
+    .filters{background:var(--card);border:1px solid var(--brd);border-radius:14px;padding:14px}
+    .grid{display:grid;gap:10px}
+    .g12{grid-template-columns:repeat(12,1fr)}
+    .c12{grid-column:span 12}.c6{grid-column:span 6}.c4{grid-column:span 4}.c3{grid-column:span 3}
+    label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+    select,input{width:100%;padding:10px;border:1px solid var(--brd);background:#fff;border-radius:10px;font:inherit}
+    .btn{border:0;background:var(--pri);color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
+    .card{background:var(--card);border:1px solid var(--brd);border-radius:14px;padding:14px}
+    .kpis{display:grid;gap:12px;grid-template-columns:repeat(4,1fr);margin-top:12px}
+    .kpi .t{font-size:12px;color:var(--muted)} .kpi .v{font-size:22px;font-weight:700;margin-top:6px}
+    .chartbox{height:360px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .status{font-size:12px;color:var(--muted)}
+    .ok{color:#16a34a}.err{color:#b91c1c}
+    @media (max-width:980px){ .kpis{grid-template-columns:repeat(2,1fr)} .g12{grid-template-columns:repeat(6,1fr)} }
+    @media (max-width:560px){ .kpis{grid-template-columns:1fr} .g12{grid-template-columns:repeat(4,1fr)} }
+  </style>
+</head>
+<body>
+  <!-- PROMPT MESTRE v18.1.8 (anti-regressão)
+       - Colunas: dia, unidade, pedidos, fat, des, fre, "Nome da loja", turno, "Canal de venda", pagamento, cancelado, hora.
+       - Import: somativo + dedup por (dia,unidade,"Nome da loja",hora,pagamento,"Canal de venda").
+       - Facets: nunca enviar dia=null; ignorar NULL/vazio; reconstruir ao trocar período/unidade/turno/cancelado e após import.
+       - UI clean, sem logs ruidosos. -->
 
--- 4) Canais de venda e pagamentos
-SELECT "Canal de venda", COUNT(*) AS linhas FROM public.vendas_kpi_daily_v2_data GROUP BY 1 ORDER BY 2 DESC;
-SELECT pagamento, COUNT(*) AS linhas FROM public.vendas_kpi_daily_v2_data GROUP BY 1 ORDER BY 2 DESC;
+  <div class="wrap">
+    <div class="toolbar">
+      <div>
+        <h1>Maestro Food</h1>
+        <div class="muted" id="periodo">Período: —</div>
+      </div>
+      <button id="btnClear" class="badge">Limpar</button>
+    </div>
 
--- 5) Nulos / vazios nas colunas que alimentam os filtros
-SELECT
-  SUM(CASE WHEN unidade IS NULL OR TRIM(unidade)='' THEN 1 ELSE 0 END) AS unidade_vazios,
-  SUM(CASE WHEN "Nome da loja" IS NULL OR TRIM("Nome da loja")='' THEN 1 ELSE 0 END) AS loja_vazios,
-  SUM(CASE WHEN "Canal de venda" IS NULL OR TRIM("Canal de venda")='' THEN 1 ELSE 0 END) AS canal_vazios,
-  SUM(CASE WHEN pagamento IS NULL OR TRIM(pagamento)='' THEN 1 ELSE 0 END) AS pagamento_vazios
-FROM public.vendas_kpi_daily_v2_data;
+    <!-- filtros -->
+    <div class="filters">
+      <div class="grid g12">
+        <div class="c6">
+          <label>Unidade</label>
+          <select id="uni"></select>
+        </div>
+        <div class="c6">
+          <label>Nome da loja</label>
+          <select id="loja"></select>
+        </div>
 
--- 6) Amostra do período recente (ajuste datas conforme necessário)
-SELECT dia, SUM(pedidos) AS pedidos, SUM(fat) AS fat
-FROM public.vendas_kpi_daily_v2_data
-WHERE dia BETWEEN (CURRENT_DATE - INTERVAL '30 day')::date AND CURRENT_DATE
-GROUP BY 1
-ORDER BY 1;
+        <div class="c3">
+          <label>De</label>
+          <input id="dini" type="date" />
+        </div>
+        <div class="c3">
+          <label>Até</label>
+          <input id="dfim" type="date" />
+        </div>
+        <div class="c3">
+          <label>Período rápido</label>
+          <select id="pr">
+            <option value="7">Últimos 7</option>
+            <option value="15">Últimos 15</option>
+            <option value="30">Últimos 30</option>
+            <option value="90" selected>Últimos 90</option>
+            <option value="180">Últimos 180</option>
+          </select>
+        </div>
+        <div class="c3">
+          <label>Turno</label>
+          <select id="turno">
+            <option value="Todos" selected>Todos</option>
+            <option>Manhã</option><option>Tarde</option><option>Noite</option><option>Madrugada</option>
+          </select>
+        </div>
+
+        <div class="c4">
+          <label>Canal de venda</label>
+          <select id="canal"></select>
+        </div>
+        <div class="c4">
+          <label>Pagamento</label>
+          <select id="pag"></select>
+        </div>
+        <div class="c4">
+          <label>Está cancelado?</label>
+          <select id="canc">
+            <option value="Todos" selected>Todos</option>
+            <option value="Não">Não</option>
+            <option value="Sim">Sim</option>
+          </select>
+        </div>
+
+        <div class="c12 card" style="border-style:dashed">
+          <b>Admin — Importar CSV (<i>Pasta2.csv</i>)</b>
+          <div class="row" style="margin-top:8px">
+            <input type="file" id="csv" accept=".csv" />
+            <button class="btn" id="import">Importar CSV</button>
+            <span class="status" id="status"></span>
+          </div>
+          <div class="status">Importação é somativa com deduplicação por (dia, unidade, "Nome da loja", hora, pagamento, "Canal de venda").</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpis">
+      <div class="card kpi"><div class="t">Pedidos</div><div class="v" id="k_ped">—</div></div>
+      <div class="card kpi"><div class="t">Ticket Médio</div><div class="v" id="k_tkm">—</div></div>
+      <div class="card kpi"><div class="t">Faturamento</div><div class="v" id="k_fat">—</div></div>
+      <div class="card kpi"><div class="t">Faturamento Médio (dia)</div><div class="v" id="k_fmd">—</div></div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="row" style="justify-content:space-between">
+        <div style="font-weight:600">Receita diária</div>
+        <span class="badge" id="modeBtn">Total</span>
+      </div>
+      <div class="chartbox"><canvas id="cLine"></canvas></div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  if (window.__MAESTRO_BOOT__) return; window.__MAESTRO_BOOT__=true;
+
+  // ==== CONFIG ================================================================
+  const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
+  const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+  const TABLE = "vendas_kpi_daily_v2_data";
+  const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  // ==== UI REFS ==============================================================
+  const dini=document.getElementById("dini"), dfim=document.getElementById("dfim"), pr=document.getElementById("pr");
+  const uni=document.getElementById("uni"), loja=document.getElementById("loja"), turno=document.getElementById("turno");
+  const canal=document.getElementById("canal"), pag=document.getElementById("pag"), canc=document.getElementById("canc");
+  const statusEl=document.getElementById("status"), periodoEl=document.getElementById("periodo");
+
+  // ==== STATE/UTILS ==========================================================
+  let minISO=null, maxISO=null, chartLine=null, showAvg=false;
+  const fmtBRL=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0);
+  const fmtINT=n=>new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Number(n)||0);
+  const setStatus=(m,ok)=>{ statusEl.textContent=m||""; statusEl.className="status "+(ok===true?"ok":ok===false?"err":""); if(ok===true) setTimeout(()=>statusEl.textContent="",2200); };
+  const safeISO = d=>{ try{ if(!d) return null; const x=new Date(d+"T00:00:00"); return isNaN(x)?null:x.toISOString().slice(0,10);}catch(_){return null;} };
+  const addDays=(iso,dd)=>{ const x=new Date((iso||"1970-01-01")+"T00:00:00"); x.setDate(x.getDate()+dd); return x.toISOString().slice(0,10); };
+  const numberFromBR = s=>{ if(s===undefined||s===null||s==="") return 0; if(typeof s==="number") return s; s=String(s).trim().replace(/[R$\s]/g,""); if(s.includes(",")) s=s.replace(/\./g,"").replace(",","."); return Number(s)||0; };
+  const sanitizeHeader = h=>String(h||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim().replace(/\s+/g," ");
+
+  function guessCols(headers){
+    const H=(headers||[]).map(sanitizeHeader);
+    const find=(...alts)=>{ for(const a of alts){ const i=H.indexOf(a); if(i>=0) return headers[i]; } return null; };
+    return {
+      dia: find("data da venda","data","dia","data do pedido"),
+      hora: find("hora","horario","hora da venda"),
+      unidade: find("unidade","filial"),
+      loja: find("nome da loja","loja","pdv"),
+      turno: find("turno","periodo"),
+      canal: find("canal de venda","canal","origem"),
+      pagamento: find("pagamento","forma de pagamento","meio de pagamento"),
+      cancelado: find("esta cancelado","cancelado","status cancelado"),
+      fat: find("total","valor total","faturamento","receita","valor"),
+      des: find("desconto","descontos","incentivos","incentivo"),
+      fre: find("entrega","frete","taxa de entrega"),
+      pedidos: find("pedidos","quantidade","qtd")
+    };
+  }
+
+  // ==== LIMITES & UNIDADES ===================================================
+  async function refreshLimits(){
+    const a=await supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
+    const b=await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
+    minISO=(a.data&&a.data[0]&&a.data[0].dia)||null;
+    maxISO=(b.data&&b.data[0]&&b.data[0].dia)||null;
+    if(maxISO && !dfim.value) dfim.value=maxISO;
+    if(maxISO && !dini.value) dini.value=addDays(maxISO,-((Number(pr.value)||90)-1));
+    if(minISO && maxISO){ dini.min=minISO; dfim.min=minISO; dini.max=maxISO; dfim.max=maxISO; }
+  }
+
+  async function loadUnidades(){
+    const set=new Set(); let from=0, page=2000;
+    for(;;){
+      const {data,error}=await supa.from(TABLE).select("unidade").not("unidade","is",null).range(from,from+page-1);
+      if(error){ setStatus("Erro unidades: "+error.message,false); break; }
+      (data||[]).forEach(r=>{ const v=(r.unidade??"").toString().trim(); if(v) set.add(v); });
+      if(!data || data.length<page) break; from+=page; if(from>500000) break;
+    }
+    uni.innerHTML=""; const o0=document.createElement("option"); o0.value="Todas"; o0.textContent="Todas"; uni.appendChild(o0);
+    Array.from(set).sort((a,b)=>a.localeCompare(b,"pt-BR")).forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; uni.appendChild(o); });
+    if(!uni.value) uni.value="Todas";
+  }
+
+  // ==== FACETS (com guards de data) ==========================================
+  async function rebuildFacetOptions(){
+    let s=safeISO(dini.value), e=safeISO(dfim.value);
+
+    // fallback ao período rápido quando vazio (sem nunca enviar dia=null)
+    if((!s||!e) && maxISO){ e=maxISO; s=addDays(maxISO,-((Number(pr.value)||90)-1)); if(!dini.value) dini.value=s; if(!dfim.value) dfim.value=e; }
+
+    const labels=['"Nome da loja"','"Canal de venda"','pagamento'];
+    const setLoja=new Set(), setCanal=new Set(), setPag=new Set();
+    let from=0,page=2000;
+
+    for(;;){
+      let q=supa.from(TABLE).select(labels.join(",")).range(from,from+page-1);
+
+      if(s) q=q.gte("dia",s);
+      if(e) q=q.lte("dia",e);
+      if(uni.value && uni.value!=="Todas") q=q.eq("unidade",uni.value);
+      if(turno.value && turno.value!=="Todos") q=q.eq("turno",turno.value);
+      if(canc.value && canc.value!=="Todos") q=q.eq("cancelado",canc.value);
+
+      // filtra nulos/vazios
+      q=q.not("Nome da loja","is",null).not("Canal de venda","is",null).not("pagamento","is",null);
+
+      const {data,error}=await q;
+      if(error){ setStatus("Erro filtros: "+error.message,false); break; }
+      (data||[]).forEach(r=>{
+        const L=(r["Nome da loja"]??"").toString().trim(); if(L) setLoja.add(L);
+        const C=(r["Canal de venda"]??"").toString().trim(); if(C) setCanal.add(C);
+        const P=(r["pagamento"]??"").toString().trim(); if(P) setPag.add(P);
+      });
+      if(!data || data.length<page) break; from+=page; if(from>500000) break;
+    }
+
+    const refill=(sel,set,allLbl)=>{
+      const cur=sel.value; sel.innerHTML="";
+      const o0=document.createElement("option"); o0.value="Todos"; o0.textContent=allLbl||"Todos"; sel.appendChild(o0);
+      Array.from(set).sort((a,b)=>a.localeCompare(b,"pt-BR")).forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; sel.appendChild(o); });
+      sel.value=(cur && (cur==="Todos" || set.has(cur)))?cur:"Todos";
+    };
+    refill(loja,setLoja,"Todas");
+    refill(canal,setCanal,"Todos");
+    refill(pag,setPag,"Todos");
+  }
+
+  // ==== CONSULTA & RENDER ====================================================
+  async function fetchPaged(startISO,endISO){
+    const fields='dia,unidade,pedidos,fat,des,fre,"Nome da loja",turno,"Canal de venda",pagamento,cancelado,hora';
+    let from=0,page=2000,out=[];
+    for(;;){
+      let q=supa.from(TABLE).select(fields).order("dia",{ascending:true}).range(from,from+page-1);
+      if(startISO) q=q.gte("dia",startISO);
+      if(endISO)   q=q.lte("dia",endISO);
+      if(uni.value && uni.value!=="Todas") q=q.eq("unidade",uni.value);
+      if(loja.value && loja.value!=="Todos") q=q.eq("Nome da loja",loja.value);
+      if(turno.value && turno.value!=="Todos") q=q.eq("turno",turno.value);
+      if(canal.value && canal.value!=="Todos") q=q.eq("Canal de venda",canal.value);
+      if(pag.value && pag.value!=="Todos")     q=q.eq("pagamento",pag.value);
+      if(canc.value && canc.value!=="Todos")   q=q.eq("cancelado",canc.value);
+      const {data,error}=await q; if(error) throw error;
+      out=out.concat(data||[]); if(!data || data.length<page) break; from+=page; if(from>500000) break;
+    }
+    return out;
+  }
+
+  function drawLine(labels,values){
+    if(chartLine){ try{chartLine.destroy();}catch(_){ } }
+    chartLine=new window.Chart(document.getElementById("cLine").getContext("2d"),{
+      type:"line",
+      data:{labels,datasets:[{data:values,borderWidth:2,pointRadius:0,tension:0.2}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
+    });
+  }
+
+  function computeAndRender(rows){
+    const byDay=new Map(); let ped=0,fat=0;
+    rows.forEach(r=>{ ped+=Number(r.pedidos||0); fat+=Number(r.fat||0); byDay.set(r.dia,(byDay.get(r.dia)||0)+Number(r.fat||0)); });
+    const days=Array.from(byDay.keys()).sort(); const vals=days.map(d=>byDay.get(d)||0);
+    let series=vals; if(showAvg){ let acc=0,out=[]; for(let i=0;i<vals.length;i++){ acc+=vals[i]; if(i>=7) acc-=vals[i-7]; out.push(acc/Math.min(i+1,7)); } series=out; }
+    document.getElementById("k_ped").textContent=fmtINT(ped);
+    document.getElementById("k_tkm").textContent=fmtBRL(ped? fat/ped : 0);
+    document.getElementById("k_fat").textContent=fmtBRL(fat);
+    document.getElementById("k_fmd").textContent=fmtBRL(days.length? fat/days.length : 0);
+    drawLine(days,series);
+  }
+
+  async function reload(){
+    let s=safeISO(dini.value), e=safeISO(dfim.value);
+    if((!s||!e) && maxISO){ e=maxISO; s=addDays(maxISO,-((Number(pr.value)||90)-1)); if(!dini.value) dini.value=s; if(!dfim.value) dfim.value=e; }
+    periodoEl.textContent="Período: "+(s||"—")+" → "+(e||"—");
+    try{
+      await rebuildFacetOptions(); // mantém opções coerentes
+      const rows=await fetchPaged(s,e);
+      computeAndRender(rows);
+    }catch(err){ setStatus("Falha ao carregar: "+(err.message||err),false); }
+  }
+
+  // ==== IMPORTAÇÃO ===========================================================
+  document.getElementById("import").addEventListener("click", async ()=>{
+    const f=document.getElementById("csv").files[0]; if(!f){ setStatus("Selecione o arquivo.",false); return; }
+    setStatus("Lendo arquivo…");
+    Papa.parse(f,{
+      header:true, skipEmptyLines:true, dynamicTyping:false,
+      complete: async (res)=>{
+        try{
+          const rows=res.data||[]; if(rows.length===0){ setStatus("Arquivo vazio.",false); return; }
+          const cols=guessCols(res.meta.fields||[]);
+          if(!cols.dia || !cols.unidade || !cols.fat){ setStatus("Colunas mínimas não encontradas (dia/unidade/total).",false); return; }
+          const acc=new Map(); const get=(r,c)=> r[c] ?? r[c?.toLowerCase()] ?? r[c?.toUpperCase()];
+          for(const r of rows){
+            // data
+            let iso=null; const raw=(get(r,cols.dia)||"").toString().trim();
+            if(/^\d{2}\/\d{2}\/\d{4}/.test(raw)){ const [dd,mm,yy]=raw.slice(0,10).split("/"); iso=safeISO(`${yy}-${mm}-${dd}`); } else { iso=safeISO(raw); }
+            if(!iso) continue;
+            // hora
+            let hour=null; if(cols.hora){ const hv=String(get(r,cols.hora)||"").trim(); const m=hv.match(/(\d{1,2})/); hour=m? Math.min(23,Math.max(0,Number(m[1])||0)) : null; }
+
+            const out={
+              dia: iso,
+              unidade: String(get(r,cols.unidade)||"").trim()||"—",
+              pedidos: cols.pedidos ? (Number(get(r,cols.pedidos))||0) : 1,
+              fat: numberFromBR(get(r,cols.fat)),
+              des: cols.des ? numberFromBR(get(r,cols.des)) : 0,
+              fre: cols.fre ? numberFromBR(get(r,cols.fre)) : 0,
+              ["Nome da loja"]: cols.loja ? String(get(r,cols.loja)||"").trim() : null,
+              turno: cols.turno ? String(get(r,cols.turno)||"").trim() : null,
+              ["Canal de venda"]: cols.canal ? String(get(r,cols.canal)||"").trim() : null,
+              pagamento: cols.pagamento ? String(get(r,cols.pagamento)||"").trim() : null,
+              cancelado: (function(){ if(!cols.cancelado) return "Não"; const v=String(get(r,cols.cancelado)||"").toLowerCase(); return /sim|true|1|cancel/i.test(v)?"Sim":"Não"; })(),
+              hora: hour
+            };
+            const key=[out.dia,out.unidade,out["Nome da loja"]||"",out.hora==null?"":out.hora,out.pagamento||"",out["Canal de venda"]||""].join("§");
+            if(!acc.has(key)) acc.set(key,{...out}); else { const a=acc.get(key); a.pedidos+=out.pedidos; a.fat+=out.fat; a.des+=out.des; a.fre+=out.fre; }
+          }
+          const payload=Array.from(acc.values()); if(payload.length===0){ setStatus("Nada válido para importar.",false); return; }
+          setStatus("Enviando "+payload.length.toLocaleString("pt-BR")+"…");
+          const chunk=1200;
+          for(let i=0;i<payload.length;i+=chunk){
+            const slice=payload.slice(i,i+chunk);
+            const { error } = await supa.from(TABLE).upsert(slice,{ onConflict:'dia,unidade,"Nome da loja",hora,pagamento,"Canal de venda"' });
+            if(error){ setStatus("Erro ao inserir: "+error.message,false); return; }
+          }
+          setStatus("Importado.",true);
+          await refreshLimits();
+          await loadUnidades();
+          await rebuildFacetOptions();
+          await reload();
+        }catch(err){ setStatus("Erro: "+(err.message||err),false); }
+      },
+      error:(e)=>setStatus("Erro CSV: "+(e.message||e),false)
+    });
+  });
+
+  // ==== EVENTOS UI ===========================================================
+  document.getElementById("btnClear").addEventListener("click", async ()=>{
+    uni.value="Todas"; loja.value="Todos"; turno.value="Todos"; canal.value="Todos"; pag.value="Todos"; canc.value="Todos";
+    if(maxISO){ dfim.value=maxISO; dini.value=addDays(maxISO,-((Number(pr.value)||90)-1)); }
+    await rebuildFacetOptions(); await reload();
+  });
+  [dini,dfim,uni,loja,turno,canal,pag,canc].forEach(el=> el.addEventListener("change", ()=>reload()));
+  pr.addEventListener("change", ()=>{ if(maxISO){ dfim.value=maxISO; dini.value=addDays(maxISO,-((Number(pr.value)||90)-1)); } reload(); });
+  document.getElementById("modeBtn").addEventListener("click", ()=>{ showAvg=!showAvg; document.getElementById("modeBtn").textContent=showAvg?"Média (7d)":"Total"; reload(); });
+
+  // ==== BOOT ================================================================
+  (async function(){
+    await refreshLimits();
+    await loadUnidades();          // popula “Unidade”
+    await rebuildFacetOptions();   // popula Loja/Canal/Pagamento
+    await reload();                // KPIs + gráfico
+  })();
+})();
+</script>
+</body>
+</html>
