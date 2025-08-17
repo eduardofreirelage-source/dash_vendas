@@ -20,11 +20,11 @@
     .val{font-size:22px;font-weight:700;margin-top:4px}
     .kpi{position:relative;padding-bottom:8px}
     .delta{position:absolute;right:12px;bottom:10px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px}
-    .delta .up{color:var(--good)} .delta .down{color:var(--bad)}
+    .delta.up{color:var(--good)} .delta.down{color:var(--bad)}
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
     select,button,input{font:inherit;padding:10px 12px;border:1px solid var(--brd);border-radius:8px;background:#fff;line-height:1}
     input[type="date"]{padding:9px 12px}
-    @supports (-webkit-touch-callout: none) { select, input { font-size:16px; } } /* evita zoom iOS */
+    @supports (-webkit-touch-callout: none) { select, input { font-size:16px; } }
     button{cursor:pointer}
     button.ghost{background:#fff}
 
@@ -33,7 +33,7 @@
     details.filterbox>summary{padding:12px 14px;list-style:none;cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;font-weight:600}
     details.filterbox[open]>summary{border-bottom:1px solid var(--brd)}
     details.filterbox .body{padding:12px 14px}
-    .filters-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px;grid-auto-flow:row dense}
+    .filters-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
     .col-12{grid-column:span 12} .col-6{grid-column:span 6} .col-4{grid-column:span 4} .col-3{grid-column:span 3}
     .seg{display:flex;gap:6px;align-items:center}
     .seg .lbl{font-size:12px;color:var(--muted);white-space:nowrap}
@@ -68,6 +68,10 @@
 
     .admin{background:#fafafa;border:1px dashed var(--brd);border-radius:10px;padding:10px;margin-top:8px}
     .link{color:var(--accent);cursor:pointer}
+
+    /* Gate (auth) */
+    .gate{position:fixed;inset:0;background:linear-gradient(180deg,#0b1020,#111827);display:none;align-items:center;justify-content:center;z-index:9999}
+    .gate .box{width:360px;max-width:92vw;background:#fff;border-radius:14px;border:1px solid var(--brd);padding:18px}
   </style>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
@@ -76,31 +80,33 @@
 </head>
 <body>
   <!-- AUTH -->
-  <div class="gate" id="gate" style="position:fixed;inset:0;background:linear-gradient(180deg,#0b1020,#111827);display:none;align-items:center;justify-content:center;z-index:9999">
-    <div class="box" style="width:360px;max-width:92vw;background:#fff;border-radius:14px;border:1px solid var(--brd);padding:18px">
+  <div class="gate" id="gate">
+    <div class="box">
       <h3 style="margin:0 0 8px">Acesso ao Maestro Food</h3>
-      <div class="tabs" style="display:flex;border:1px solid var(--brd);border-radius:999px;overflow:hidden;margin-bottom:10px">
-        <button id="tabLogin" class="active" style="flex:1;border:0;background:#fff;padding:8px 10px">Entrar</button>
-        <button id="tabSignup" style="flex:1;border:0;background:#fff;padding:8px 10px">Criar conta</button>
+      <div class="row" style="gap:8px;margin-bottom:8px">
+        <button id="tabLogin" class="active">Entrar</button>
+        <button id="tabSignup">Criar conta</button>
       </div>
       <div id="authForm">
-        <div class="field" style="display:flex;flex-direction:column;margin-top:8px">
-          <label for="authEmail" style="font-size:12px;color:var(--muted);margin-bottom:4px">E-mail</label>
-          <input id="authEmail" type="email" autocomplete="email" placeholder="voce@empresa.com" />
-        </div>
-        <div class="field" style="display:flex;flex-direction:column;margin-top:8px">
-          <label for="authPass" style="font-size:12px;color:var(--muted);margin-bottom:4px">Senha</label>
-          <input id="authPass" type="password" autocomplete="current-password" placeholder="••••••••" />
-          <div class="muted" style="margin-top:6px"><span id="lForgot" class="link">Esqueci minha senha</span></div>
+        <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+          <div>
+            <div class="muted">E-mail</div>
+            <input id="authEmail" type="email" autocomplete="email" placeholder="voce@empresa.com" />
+          </div>
+          <div>
+            <div class="muted">Senha</div>
+            <input id="authPass" type="password" autocomplete="current-password" placeholder="••••••••" />
+            <div class="muted" style="margin-top:6px"><span id="lForgot" class="link">Esqueci minha senha</span></div>
+          </div>
         </div>
         <div class="row" style="margin-top:10px;justify-content:flex-end">
           <button id="btnSignup" style="display:none">Criar conta</button>
           <button id="btnLogin">Entrar</button>
         </div>
-        <div class="error" id="authErr" style="color:#b91c1c;font-size:12px;margin-top:6px;min-height:16px"></div>
+        <div class="muted" id="authErr" style="color:#b91c1c"></div>
       </div>
 
-      <!-- Box de recuperar e criar nova senha -->
+      <!-- Forgot password -->
       <div id="resetBox" style="display:none">
         <div class="muted" style="margin:6px 0 8px">Informe seu e-mail para receber o link de redefinição.</div>
         <input id="resetEmail" type="email" placeholder="seu@email.com" />
@@ -110,6 +116,7 @@
         <div id="resetMsg" class="muted" style="margin-top:6px"></div>
       </div>
 
+      <!-- New password -->
       <div id="newPassBox" style="display:none">
         <div class="muted" style="margin:6px 0 8px">Defina a nova senha:</div>
         <input id="newPass1" type="password" placeholder="Nova senha" />
@@ -127,7 +134,6 @@
       <h1 style="margin:0">Maestro Food</h1>
       <div class="topbar">
         <span class="muted" id="who"></span>
-        <button id="btnAdmin" class="ghost" style="display:none">Admin (Usuários)</button>
         <button id="btnLogout">Sair</button>
       </div>
     </div>
@@ -232,14 +238,6 @@
         <div class="pill" data-target="topMode"><button data-val="total" class="active">Total</button><button data-val="media">Média</button></div>
       </div><div class="chartbox"><canvas id="cTop"></canvas></div>
     </div>
-
-    <div class="card" id="adminPanel" style="margin-top:12px; display:none">
-      <div class="row" style="justify-content:space-between;align-items:center">
-        <div class="title" style="font-size:14px;color:#111">Admin — Usuários</div>
-        <div class="muted">Somente admins podem excluir contas.</div>
-      </div>
-      <div id="usersBox" class="muted">Carregando…</div>
-    </div>
   </div>
 
 <script>
@@ -247,51 +245,41 @@
   if (window.__DASH_BOOTED__) return; window.__DASH_BOOTED__ = true;
 
   // ===== Config =====
-  var SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-  var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-  var TABLE  = "vendas_kpi_daily_v2";         // alvo principal
-  var STAGING= "vendas_kpi_daily_v2_data";    // onde o CSV entra
-  var RESET_REDIRECT = window.location.href.split('#')[0] + "#recover"; // adicione este URL em Auth → Redirect URLs
-  var ADMIN_FUNCTION_URL = ""; // opcional (lista/exclui usuários)
+  const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
+  const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+  let TABLE  = "vendas_kpi_daily_v2";         // alvo principal (MV)
+  const STAGING= "vendas_kpi_daily_v2_data";   // staging (upload)
+
+  const RESET_REDIRECT = window.location.href.split('#')[0] + "#recover"; // Configure no Auth → Redirect URLs
 
   // ===== Helpers =====
+  const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:true, autoRefreshToken:true } });
+  const Q = (id)=>document.getElementById(id);
   function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
   function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)); }
   function toISO(d){ return d.toISOString().slice(0,10); }
   function parseISO(s){ return new Date(s+"T00:00:00Z"); }
-  function addDays(d, k){ var t=new Date(d); t.setUTCDate(t.getUTCDate()+k); return t; }
+  function addDays(d, k){ const t=new Date(d); t.setUTCDate(t.getUTCDate()+k); return t; }
   function avg(a,b){ return b>0? a/b : 0; }
-  function debounce(fn, wait){ var t; return function(){ var a=arguments,c=this; clearTimeout(t); t=setTimeout(function(){ fn.apply(c,a); }, wait); }; }
+  function debounce(fn, wait){ let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), wait); }; }
 
-  var supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:true, autoRefreshToken:true } });
+  // ===== Estado =====
+  const selUni=Q("uni"), chipLojas=Q("lojas"), dini=Q("dini"), dfim=Q("dfim"), pr=Q("pr"),
+        turno=Q("turno"), canal=Q("canal"), pag=Q("pag"), canc=Q("canc");
+  let chartLine=null, chartDowFat=null, chartDowPed=null, chartHour=null, chartMonth=null, chartTop=null;
+  let lineMode="total", dowMode="total", dowPedMode="total", hourMode="total", monMode="total", topMode="total";
+  let diasDisponiveis=new Set(), maxDiaISO=null, minDiaISO=null, runId=0;
 
-  // ===== Estado DOM =====
-  var selUni=document.getElementById("uni"), chipLojas=document.getElementById("lojas"),
-      dini=document.getElementById("dini"), dfim=document.getElementById("dfim"), pr=document.getElementById("pr"),
-      turno=document.getElementById("turno"), canal=document.getElementById("canal"), pag=document.getElementById("pag"), canc=document.getElementById("canc");
-
-  var gate=document.getElementById("gate"), app=document.getElementById("app"), who=document.getElementById("who");
-  var btnLogout=document.getElementById("btnLogout"), btnAdmin=document.getElementById("btnAdmin"),
-      adminPanel=document.getElementById("adminPanel"), usersBox=document.getElementById("usersBox");
-
-  var tabLogin=document.getElementById("tabLogin"), tabSignup=document.getElementById("tabSignup"),
-      authEmail=document.getElementById("authEmail"), authPass=document.getElementById("authPass"),
-      btnLogin=document.getElementById("btnLogin"), btnSignup=document.getElementById("btnSignup"),
-      authErr=document.getElementById("authErr");
-
-  var lForgot=document.getElementById("lForgot"), resetBox=document.getElementById("resetBox"),
-      resetEmail=document.getElementById("resetEmail"), btnSendReset=document.getElementById("btnSendReset"),
-      resetMsg=document.getElementById("resetMsg"), newPassBox=document.getElementById("newPassBox"),
-      newPass1=document.getElementById("newPass1"), newPass2=document.getElementById("newPass2"), btnDoReset=document.getElementById("btnDoReset");
-
-  var runId=0, chartLine=null, chartDowFat=null, chartDowPed=null, chartHour=null, chartMonth=null, chartTop=null;
-  var lineMode="total", dowMode="total", dowPedMode="total", hourMode="total", monMode="total", topMode="total";
-  var diasDisponiveis=new Set(), maxDiaISO=null, minDiaISO=null;
+  // ===== Auth (entrar/criar conta/esqueci senha) =====
+  const gate=Q("gate"), app=Q("app"), who=Q("who");
+  const tabLogin=Q("tabLogin"), tabSignup=Q("tabSignup"), btnLogin=Q("btnLogin"), btnSignup=Q("btnSignup"),
+        authEmail=Q("authEmail"), authPass=Q("authPass"), authErr=Q("authErr"), btnLogout=Q("btnLogout");
+  const lForgot=Q("lForgot"), resetBox=Q("resetBox"), resetEmail=Q("resetEmail"), btnSendReset=Q("btnSendReset"), resetMsg=Q("resetMsg");
+  const newPassBox=Q("newPassBox"), newPass1=Q("newPass1"), newPass2=Q("newPass2"), btnDoReset=Q("btnDoReset");
 
   function showGate(){ gate.style.display="flex"; app.style.display="none"; }
   function hideGate(){ gate.style.display="none"; app.style.display="block"; }
 
-  // ===== Auth UI =====
   tabLogin.onclick=()=>{ tabLogin.classList.add("active"); tabSignup.classList.remove("active"); btnLogin.style.display="inline-block"; btnSignup.style.display="none"; authErr.textContent=""; resetBox.style.display="none"; newPassBox.style.display="none"; };
   tabSignup.onclick=()=>{ tabSignup.classList.add("active"); tabLogin.classList.remove("active"); btnSignup.style.display="inline-block"; btnLogin.style.display="none"; authErr.textContent=""; resetBox.style.display="none"; newPassBox.style.display="none"; };
 
@@ -312,7 +300,6 @@
     authErr.textContent = error ? error.message : "Conta criada. Verifique seu e-mail se necessário.";
   };
 
-  // Esqueci a senha
   lForgot.onclick=()=>{ resetBox.style.display="block"; newPassBox.style.display="none"; authErr.textContent=""; };
   btnSendReset.onclick=async ()=>{
     resetMsg.textContent="";
@@ -320,18 +307,14 @@
     const { error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: RESET_REDIRECT });
     resetMsg.textContent = error ? ("Erro: "+error.message) : "Link enviado! Verifique seu e-mail.";
   };
-
-  // Link abre com token → troca de senha
   btnDoReset.onclick=async ()=>{
     const p1=newPass1.value||"", p2=newPass2.value||"";
-    if(p1.length<6){ newPassMsg.textContent="Mínimo 6 caracteres."; return; }
-    if(p1!==p2){ newPassMsg.textContent="Senhas não conferem."; return; }
+    if(p1.length<6){ Q("newPassMsg").textContent="Mínimo 6 caracteres."; return; }
+    if(p1!==p2){ Q("newPassMsg").textContent="Senhas não conferem."; return; }
     const { error } = await supa.auth.updateUser({ password:p1 });
-    newPassMsg.textContent = error ? ("Erro: "+error.message) : "Senha atualizada! Faça login.";
+    Q("newPassMsg").textContent = error ? ("Erro: "+error.message) : "Senha atualizada! Faça login.";
   };
-
   btnLogout.onclick=async()=>{ await supa.auth.signOut(); showGate(); };
-
   supa.auth.onAuthStateChange((event, session)=>{
     if(event==="PASSWORD_RECOVERY"){ showGate(); tabLogin.click(); newPassBox.style.display="block"; }
     if(session && event!=="PASSWORD_RECOVERY"){ hideGate(); afterLogin(); }
@@ -340,35 +323,36 @@
   async function afterLogin(){
     const { data:{ user } } = await supa.auth.getUser();
     who.textContent = user?.email || "";
-    btnAdmin.style.display = ADMIN_FUNCTION_URL ? "inline-block" : "none";
     boot();
   }
 
-  // ===== Filtros base =====
-  document.getElementById("limpar").onclick=function(e){
+  // ===== Filtros =====
+  Q("limpar").onclick=function(e){
     e.preventDefault();
     selUni.value="Todas"; dini.value=""; dfim.value=""; pr.value="30"; turno.value=""; canal.value=""; pag.value=""; canc.value="Todos";
-    Array.prototype.forEach.call(chipLojas.children, c=>c.classList.remove("active"));
+    Array.from(chipLojas.children).forEach(c=>c.classList.remove("active"));
     recarregarDebounced();
   };
 
-  function setDelta(el, cur, prev){
-    var pct=(prev>0)? ((cur-prev)/prev*100):0, cls=pct>=0?"up":"down", arrow=pct>=0?"▲":"▼";
-    el.className="delta "+cls; el.textContent=(pct>=0?"+":"")+pct.toFixed(1)+"% "+arrow;
+  // ===== Data helpers =====
+  async function ensureSource(){
+    // tenta ler 1 linha da MV; se quebrar, cai para STAGING
+    const probe = await supa.from(TABLE).select("dia").limit(1);
+    if(probe.error){ TABLE = STAGING; }
   }
 
   async function fetchPaged(fields, startISO, endISO, unidade, lojas, filtros){
-    var page=1000, off=0, out=[];
+    let page=1000, off=0, out=[];
     for(;;){
-      var q=supa.from(TABLE).select(fields).gte("dia",startISO).lte("dia",endISO).order("dia",{ascending:true}).range(off,off+page-1);
+      let q = supa.from(TABLE).select(fields).gte("dia", startISO).lte("dia", endISO).order("dia",{ascending:true}).range(off, off+page-1);
       if(unidade && unidade!=="Todas") q=q.eq("unidade",unidade);
       if(lojas && lojas.length) q=q.in("Nome da Loja",lojas);
       if(filtros.turno && filtros.turno.length) q=q.in("turno",filtros.turno);
       if(filtros.canal && filtros.canal.length) q=q.in("Canal de venda",filtros.canal);
       if(filtros.pag && filtros.pag.length) q=q.in("pagamento",filtros.pag);
       if(filtros.canc && filtros.canc!=="Todos") q=q.eq("cancelado", filtros.canc==="Sim"?"Sim":"Não");
-      var r=await q; if(r.error){ throw r.error; }
-      var a=r.data||[]; out=out.concat(a);
+      const r=await q; if(r.error){ throw r.error; }
+      const a=r.data||[]; out=out.concat(a);
       if(a.length<page) break;
       off+=page; if(off>500000) break;
     }
@@ -376,27 +360,27 @@
   }
 
   async function fetchUnidades(){
-    var uniq={}, arr=["Todas"];
-    function push(list){ (list||[]).forEach(function(row){ var u=(row.unidade||"").trim(); if(!u) return; if(!uniq[u]){ uniq[u]=1; arr.push(u); } }); }
-    var r1=await supa.from(TABLE).select("unidade").order("unidade",{ascending:true}).range(0,9999);
+    const uniq={}, arr=["Todas"];
+    function push(list){ (list||[]).forEach(row=>{ const u=(row.unidade||"").trim(); if(!u) return; if(!uniq[u]){ uniq[u]=1; arr.push(u); } }); }
+    const r1=await supa.from(TABLE).select("unidade").order("unidade",{ascending:true}).range(0,9999);
     if(!r1.error) push(r1.data);
-    var r2=await supa.from(TABLE).select("unidade").order("unidade",{ascending:false}).range(0,9999);
+    const r2=await supa.from(TABLE).select("unidade").order("unidade",{ascending:false}).range(0,9999);
     if(!r2.error) push(r2.data);
     if(arr.length===1){ arr.push("Uni. Raja","Uni.Savassi"); }
     return arr;
   }
 
   async function fetchLimites(){
-    var r=await supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
-    var r2=await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
+    const r = await supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
+    const r2= await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
     if(r.error||r2.error) return;
-    minDiaISO=(r.data&&r.data[0]&&r.data[0].dia)||null;
-    maxDiaISO=(r2.data&&r2.data[0]&&r2.data[0].dia)||null;
+    minDiaISO = (r.data&&r.data[0]&&r.data[0].dia)||null;
+    maxDiaISO = (r2.data&&r2.data[0]&&r2.data[0].dia)||null;
 
-    diasDisponiveis=new Set();
-    var page=1000, off=0;
+    diasDisponiveis = new Set();
+    let page=1000, off=0;
     for(;;){
-      var rs=await supa.from(TABLE).select("dia").order("dia",{ascending:true}).range(off,off+page-1);
+      const rs=await supa.from(TABLE).select("dia").order("dia",{ascending:true}).range(off,off+page-1);
       if(rs.error) break;
       (rs.data||[]).forEach(x=>diasDisponiveis.add(x.dia));
       if((rs.data||[]).length<page) break;
@@ -406,22 +390,23 @@
   }
   function snapToAvailable(iso){
     if(!iso || diasDisponiveis.has(iso)) return iso;
-    var d=parseISO(iso);
-    for(var k=1;k<60;k++){
-      var a=toISO(addDays(d,-k)), b=toISO(addDays(d,k));
+    const d=parseISO(iso);
+    for(let k=1;k<60;k++){
+      const a=toISO(addDays(d,-k)), b=toISO(addDays(d,k));
       if(diasDisponiveis.has(a)) return a;
       if(diasDisponiveis.has(b)) return b;
     }
     return null;
   }
 
-  function movingAvg(arr,win){ var out=[],acc=0; for(var i=0;i<arr.length;i++){ acc+=arr[i]; if(i>=win) acc-=arr[i-win]; out.push(acc/Math.min(i+1,win)); } return out; }
+  function movingAvg(arr,win){ const out=[],n=arr.length; let acc=0; for(let i=0;i<n;i++){ acc+=arr[i]; if(i>=win) acc-=arr[i-win]; out.push(acc/Math.min(i+1,win)); } return out; }
   function destroyChart(c){ if(c){ try{c.destroy();}catch(e){} } return null; }
+  function setDelta(el, cur, prev){ const pct=(prev>0)?((cur-prev)/prev*100):0; const up=pct>=0; el.className="delta "+(up?"up":"down"); el.textContent=(up?"+":"")+pct.toFixed(1)+"% "+(up?"▲":"▼"); }
 
   function drawLine(days, vals, prevVals, mode){
     chartLine=destroyChart(chartLine);
-    var ctx=document.getElementById("cLine").getContext("2d");
-    var dataMed=movingAvg(vals,7), showMed=(mode==="media"), mainData=showMed?dataMed:vals;
+    const ctx=Q("cLine").getContext("2d");
+    const dataMed=movingAvg(vals,7), showMed=(mode==="media"), mainData=showMed?dataMed:vals;
     chartLine=new window.Chart(ctx,{ type:"line",
       data:{ labels:days, datasets:[
         { data:prevVals, fill:true, borderWidth:0, backgroundColor:"rgba(2,132,199,.12)", pointRadius:0, tension:.2 },
@@ -431,8 +416,8 @@
     });
   }
   function drawBar(canvasId, labels, totals, counts, mode){
-    var showMed=(mode==="media"), vals=showMed? totals.map((v,i)=> avg(v,counts[i]||1)) : totals.slice();
-    var ctx=document.getElementById(canvasId).getContext("2d");
+    const showMed=(mode==="media"), vals=showMed? totals.map((v,i)=> avg(v,counts[i]||1)) : totals.slice();
+    const ctx=Q(canvasId).getContext("2d");
     return new window.Chart(ctx,{ type:"bar", data:{ labels, datasets:[{data:vals}] }, options:{ responsive:true, maintainAspectRatio:false, animation:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }});
   }
 
@@ -442,130 +427,156 @@
       if(!maxDiaISO) await fetchLimites();
       if(!maxDiaISO) return;
 
-      var psISO=dini.value||"", peISO=dfim.value||"", s,e;
+      let psISO=dini.value||"", peISO=dfim.value||"", s,e;
       if(psISO&&peISO){
-        var s0=snapToAvailable(psISO), e0=snapToAvailable(peISO);
+        const s0=snapToAvailable(psISO), e0=snapToAvailable(peISO);
         if(s0!==psISO) dini.value=s0; if(e0!==peISO) dfim.value=e0;
         s=parseISO(dini.value); e=parseISO(dfim.value);
       }else{
-        var end=parseISO(maxDiaISO), days=Number(pr.value)||30, start=addDays(end,-(days-1));
+        const end=parseISO(maxDiaISO), days=Number(pr.value)||30, start=addDays(end,-(days-1));
         s=start; e=end; dini.value=toISO(s); dfim.value=toISO(e);
       }
-      var startISO=toISO(s), endISO=toISO(e);
+      const startISO=toISO(s), endISO=toISO(e);
 
-      var lojas=Array.prototype.filter.call(chipLojas.children, c=>c.classList.contains("active")).map(c=>c.getAttribute("data-v"));
-      var filtros={ turno:Array.from(turno.selectedOptions).map(o=>o.value), canal:Array.from(canal.selectedOptions).map(o=>o.value), pag:Array.from(pag.selectedOptions).map(o=>o.value), canc:(canc.value||"Todos") };
-      var uniVal=selUni.value||"Todas";
+      const lojas=Array.from(chipLojas.children).filter(c=>c.classList.contains("active")).map(c=>c.getAttribute("data-v"));
+      const filtros={ turno:Array.from(turno.selectedOptions).map(o=>o.value), canal:Array.from(canal.selectedOptions).map(o=>o.value), pag:Array.from(pag.selectedOptions).map(o=>o.value), canc:(canc.value||"Todos") };
+      const uniVal=selUni.value||"Todas";
 
-      var fields='dia,unidade,pedidos,fat,des,fre,"Nome da Loja",turno,"Canal de venda",pagamento,cancelado,hora';
-      var cur=await fetchPaged(fields,startISO,endISO,uniVal==="Todas"?null:uniVal,lojas,filtros); if(myRun!==runId) return;
+      const fields='dia,unidade,pedidos,fat,des,fre,"Nome da Loja",turno,"Canal de venda",pagamento,cancelado,hora';
+      const cur=await fetchPaged(fields,startISO,endISO,uniVal==="Todas"?null:uniVal,lojas,filtros); if(myRun!==runId) return;
 
-      var daysLen=Math.max(1, Math.round((parseISO(endISO)-parseISO(startISO))/(24*3600*1000))+1);
-      var prevEnd=addDays(parseISO(startISO),-1), prevStart=addDays(prevEnd,-(daysLen-1));
-      var ant=await fetchPaged(fields,toISO(prevStart),toISO(prevEnd),uniVal==="Todas"?null:uniVal,lojas,filtros); if(myRun!==runId) return;
+      const daysLen=Math.max(1, Math.round((parseISO(endISO)-parseISO(startISO))/(24*3600*1000))+1);
+      const prevEnd=addDays(parseISO(startISO),-1), prevStart=addDays(prevEnd,-(daysLen-1));
+      const ant=await fetchPaged(fields,toISO(prevStart),toISO(prevEnd),uniVal==="Todas"?null:uniVal,lojas,filtros); if(myRun!==runId) return;
 
       if(canal.options.length===0 || pag.options.length===0){
-        var all=await fetchPaged('dia,"Canal de venda",pagamento', minDiaISO, maxDiaISO, null, null, {});
-        var canals=Array.from(new Set((all||[]).map(r=>r["Canal de venda"]).filter(Boolean))).sort();
-        var pags=Array.from(new Set((all||[]).map(r=>r["pagamento"]).filter(Boolean))).sort();
-        canals.forEach(v=>{ var o=document.createElement("option"); o.value=v; o.textContent=v; canal.appendChild(o); });
-        pags.forEach(v=>{ var o=document.createElement("option"); o.value=v; o.textContent=v; pag.appendChild(o); });
+        const all=await fetchPaged('dia,"Canal de venda",pagamento', minDiaISO, maxDiaISO, null, null, {});
+        const canals=Array.from(new Set((all||[]).map(r=>r["Canal de venda"]).filter(Boolean))).sort();
+        const pags=Array.from(new Set((all||[]).map(r=>r["pagamento"]).filter(Boolean))).sort();
+        canals.forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; canal.appendChild(o); });
+        pags.forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; pag.appendChild(o); });
       }
 
       // KPIs
       (function(){
-        var ped=cur.reduce((s,r)=>s+Number(r.pedidos||0),0),
-            fat=cur.reduce((s,r)=>s+Number(r.fat||0),0),
-            des=cur.reduce((s,r)=>s+Number(r.des||0),0),
-            fre=cur.reduce((s,r)=>s+Number(r.fre||0),0),
-            pedA=ant.reduce((s,r)=>s+Number(r.pedidos||0),0),
-            fatA=ant.reduce((s,r)=>s+Number(r.fat||0),0),
-            desA=ant.reduce((s,r)=>s+Number(r.des||0),0),
-            freA=ant.reduce((s,r)=>s+Number(r.fre||0),0),
-            diasDistinct=new Set(cur.map(r=>r.dia)).size||1,
-            diasDistinctA=new Set(ant.map(r=>r.dia)).size||1;
+        const ped = cur.reduce((s,r)=>s+Number(r.pedidos||0),0);
+        const fat = cur.reduce((s,r)=>s+Number(r.fat||0),0);
+        const des = cur.reduce((s,r)=>s+Number(r.des||0),0);
+        const fre = cur.reduce((s,r)=>s+Number(r.fre||0),0);
 
-        var tkm=ped>0? fat/ped:0, tkmA=pedA>0? fatA/pedA:0;
-        var fmd=fat/diasDistinct, fmdA=fatA/diasDistinctA;
-        var fatLiq=fat-des-fre-(0.12*fat), fatLiqA=fatA-desA-freA-(0.12*f atA);
-        var desPct=fat>0?(des/fat*100):0, desPctA=fatA>0?(desA/fatA*100):0;
-        var freMed=ped>0? fre/ped:0, freMedA=pedA>0? freA/pedA:0;
-        var fatLiqPct=fat>0?(fatLiq/fat*100):0, fatLiqPctA=fatA>0?(fatLiqA/fatA*100):0;
+        const pedA = ant.reduce((s,r)=>s+Number(r.pedidos||0),0);
+        const fatA = ant.reduce((s,r)=>s+Number(r.fat||0),0);
+        const desA = ant.reduce((s,r)=>s+Number(r.des||0),0);
+        const freA = ant.reduce((s,r)=>s+Number(r.fre||0),0);
 
-        document.getElementById("k_ped").textContent=fmtInt(ped);
-        document.getElementById("k_tkm").textContent=fmtBRL(tkm);
-        document.getElementById("k_fat").textContent=fmtBRL(fat);
-        document.getElementById("k_fmd").textContent=fmtBRL(fmd);
-        document.getElementById("k_des").textContent=fmtBRL(des);
-        document.getElementById("k_desp").textContent=desPct.toFixed(1)+"%";
-        document.getElementById("k_fre").textContent=fmtBRL(fre);
-        document.getElementById("k_frem").textContent=fmtBRL(freMed);
-        document.getElementById("k_fatl").textContent=fmtBRL(fatLiq);
-        document.getElementById("k_fatlp").textContent=fatLiqPct.toFixed(1)+"%";
+        const diasDistinct  = new Set(cur.map(r=>r.dia)).size || 1;
+        const diasDistinctA = new Set(ant.map(r=>r.dia)).size || 1;
 
-        function setD(id,c,p){ var el=document.getElementById(id); var pct=(p>0)?((c-p)/p*100):0, cls=pct>=0?"up":"down"; el.className="delta "+cls; el.textContent=(pct>=0?"+":"")+pct.toFixed(1)+"% "+(pct>=0?"▲":"▼"); }
-        setD("d_ped",ped,pedA); setD("d_tkm",tkm,tkmA); setD("d_fat",fat,fatA); setD("d_fmd",fmd,fmdA);
-        setD("d_des",des,desA); setD("d_desp",desPct,desPctA); setD("d_fre",fre,freA); setD("d_frem",freMed,freMedA);
-        setD("d_fatl",fatLiq,fatLiqA); setD("d_fatlp",fatLiqPct,fatLiqPctA);
+        const tkm  = ped  > 0 ? fat  / ped  : 0;
+        const tkmA = pedA > 0 ? fatA / pedA : 0;
+
+        const fmd  = fat  / diasDistinct;
+        const fmdA = fatA / diasDistinctA;
+
+        const fatLiq  = fat  - des  - fre  - (0.12 * fat);
+        const fatLiqA = fatA - desA - freA - (0.12 * fatA);
+
+        const desPct  = fat  > 0 ? (des  / fat  * 100) : 0;
+        const desPctA = fatA > 0 ? (desA / fatA * 100) : 0;
+
+        const freMed  = ped  > 0 ? fre  / ped  : 0;
+        const freMedA = pedA > 0 ? freA / pedA : 0;
+
+        const fatLiqPct  = fat  > 0 ? (fatLiq  / fat  * 100) : 0;
+        const fatLiqPctA = fatA > 0 ? (fatLiqA / fatA * 100) : 0;
+
+        Q("k_ped").textContent   = fmtInt(ped);
+        Q("k_tkm").textContent   = fmtBRL(tkm);
+        Q("k_fat").textContent   = fmtBRL(fat);
+        Q("k_fmd").textContent   = fmtBRL(fmd);
+        Q("k_des").textContent   = fmtBRL(des);
+        Q("k_desp").textContent  = desPct.toFixed(1)+"%";
+        Q("k_fre").textContent   = fmtBRL(fre);
+        Q("k_frem").textContent  = fmtBRL(freMed);
+        Q("k_fatl").textContent  = fmtBRL(fatLiq);
+        Q("k_fatlp").textContent = fatLiqPct.toFixed(1)+"%";
+
+        setDelta(Q("d_ped"),   ped,   pedA);
+        setDelta(Q("d_tkm"),   tkm,   tkmA);
+        setDelta(Q("d_fat"),   fat,   fatA);
+        setDelta(Q("d_fmd"),   fmd,   fmdA);
+        setDelta(Q("d_des"),   des,   desA);
+        setDelta(Q("d_desp"),  desPct,desPctA);
+        setDelta(Q("d_fre"),   fre,   freA);
+        setDelta(Q("d_frem"),  freMed,freMedA);
+        setDelta(Q("d_fatl"),  fatLiq,fatLiqA);
+        setDelta(Q("d_fatlp"), fatLiqPct,fatLiqPctA);
       })();
 
       // Gráficos
-      function byDay(arr){ var m=new Map(); arr.forEach(r=>m.set(r.dia,(m.get(r.dia)||0)+Number(r.fat||0))); var labels=Array.from(m.keys()).sort(); return {labels, values:labels.map(k=>m.get(k))};}
-      var curD=byDay(cur), antD=byDay(ant);
+      function byDay(arr){ const m=new Map(); arr.forEach(r=>m.set(r.dia,(m.get(r.dia)||0)+Number(r.fat||0))); const labels=Array.from(m.keys()).sort(); return {labels, values:labels.map(k=>m.get(k))};}
+      const curD=byDay(cur), antD=byDay(ant);
       drawLine(curD.labels, curD.values, antD.values, lineMode);
 
       function groupDow(arr, field){
-        var lbl=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"], m=[0,0,0,0,0,0,0], cnt=[0,0,0,0,0,0,0];
-        var diasSet=new Set(arr.map(r=>r.dia)); Array.from(diasSet).forEach(d=>{ cnt[parseISO(d).getUTCDay()]++; });
-        arr.forEach(r=>{ var d=parseISO(r.dia).getUTCDay(); m[d]+=Number(r[field]||0); }); return {labels:lbl, totals:m, counts:cnt};
+        const lbl=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"], m=[0,0,0,0,0,0,0], cnt=[0,0,0,0,0,0,0];
+        const diasSet=new Set(arr.map(r=>r.dia)); Array.from(diasSet).forEach(d=>{ cnt[parseISO(d).getUTCDay()]++; });
+        arr.forEach(r=>{ const d=parseISO(r.dia).getUTCDay(); m[d]+=Number(r[field]||0); }); return {labels:lbl, totals:m, counts:cnt};
       }
-      var dowFat=groupDow(cur,'fat'); chartDowFat=destroyChart(chartDowFat); chartDowFat=drawBar("cDowFat", dowFat.labels, dowFat.totals, dowFat.counts, dowMode);
-      var dowPed=groupDow(cur,'pedidos'); chartDowPed=destroyChart(chartDowPed); chartDowPed=drawBar("cDowPed", dowPed.labels, dowPed.totals, dowPed.counts, dowPedMode);
+      const dowFat=groupDow(cur,'fat'); chartDowFat=destroyChart(chartDowFat); chartDowFat=drawBar("cDowFat", dowFat.labels, dowFat.totals, dowFat.counts, dowMode);
+      const dowPed=groupDow(cur,'pedidos'); chartDowPed=destroyChart(chartDowPed); chartDowPed=drawBar("cDowPed", dowPed.labels, dowPed.totals, dowPed.counts, dowPedMode);
 
-      var hour=(function(){ var m=Array(24).fill(0), cnt=Array(24).fill(0), daysByHour=Array(24).fill(0).map(()=>new Set());
-        cur.forEach(r=>{ if(r.hora==null) return; var h=Number(r.hora)||0; if(h<0||h>23) return; m[h]+=Number(r.fat||0); daysByHour[h].add(r.dia); });
-        var totalDays=new Set(cur.map(r=>r.dia)).size||1, labels=[], totals=[], counts=[];
-        for(var h=0;h<24;h++){ cnt[h]=daysByHour[h].size; var keep=cnt[h] >= Math.ceil(totalDays*0.5) && m[h]>0;
+      const hour=(function(){ const m=Array(24).fill(0), cnt=Array(24).fill(0), daysByHour=Array(24).fill(0).map(()=>new Set());
+        cur.forEach(r=>{ if(r.hora==null) return; const h=Number(r.hora)||0; if(h<0||h>23) return; m[h]+=Number(r.fat||0); daysByHour[h].add(r.dia); });
+        const totalDays=new Set(cur.map(r=>r.dia)).size||1, labels=[], totals=[], counts=[];
+        for(let h=0;h<24;h++){ cnt[h]=daysByHour[h].size; const keep=cnt[h] >= Math.ceil(totalDays*0.5) && m[h]>0;
           if(keep){ labels.push(String(h).padStart(2,"0")+":00"); totals.push(m[h]); counts.push(cnt[h]); }}
         return {labels, totals, counts}; })();
       chartHour=destroyChart(chartHour); chartHour=drawBar("cHour", hour.labels, hour.totals, hour.counts, hourMode);
 
-      var month=(function(){ var m=new Map(), cnt=new Map(), daysPerMonth=new Map();
-        cur.forEach(r=>{ var ym=r.dia.slice(0,7); m.set(ym,(m.get(ym)||0)+Number(r.fat||0)); if(!daysPerMonth.has(ym)) daysPerMonth.set(ym,new Set()); daysPerMonth.get(ym).add(r.dia); });
+      const month=(function(){ const m=new Map(), cnt=new Map(), daysPerMonth=new Map();
+        cur.forEach(r=>{ const ym=r.dia.slice(0,7); m.set(ym,(m.get(ym)||0)+Number(r.fat||0)); if(!daysPerMonth.has(ym)) daysPerMonth.set(ym,new Set()); daysPerMonth.get(ym).add(r.dia); });
         Array.from(daysPerMonth.keys()).forEach(ym=>cnt.set(ym,daysPerMonth.get(ym).size));
-        var labels=Array.from(m.keys()).sort(), totals=labels.map(x=>m.get(x)), counts=labels.map(x=>cnt.get(x)||1); return {labels, totals, counts}; })();
+        const labels=Array.from(m.keys()).sort(), totals=labels.map(x=>m.get(x)), counts=labels.map(x=>cnt.get(x)||1); return {labels, totals, counts}; })();
       chartMonth=destroyChart(chartMonth); chartMonth=drawBar("cMonth", month.labels, month.totals, month.counts, monMode);
 
-      var byLoja={}; cur.forEach(r=>{ var n=r["Nome da Loja"]; if(!n) return; byLoja[n]=(byLoja[n]||0)+Number(r.fat||0); });
-      var top=Object.entries(byLoja).sort((a,b)=>b[1]-a[1]).slice(0,10);
-      var topLabels=top.map(x=>x[0]), topTotals=top.map(x=>x[1]), topCounts=top.map(_=>(new Set(cur.map(r=>r.dia)).size));
+      const byLoja={}; cur.forEach(r=>{ const n=r["Nome da Loja"]; if(!n) return; byLoja[n]=(byLoja[n]||0)+Number(r.fat||0); });
+      const top=Object.entries(byLoja).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      const topLabels=top.map(x=>x[0]), topTotals=top.map(x=>x[1]), topCounts=top.map(_=>(new Set(cur.map(r=>r.dia)).size));
       chartTop=destroyChart(chartTop);
-      (function(){ var ctx=document.getElementById("cTop").getContext("2d"); var showMed=(topMode==="media");
-        var vals=showMed? topTotals.map((v,i)=>avg(v,topCounts[i]||1)) : topTotals.slice();
+      (function(){ const ctx=Q("cTop").getContext("2d"); const showMed=(topMode==="media");
+        const vals=showMed? topTotals.map((v,i)=>avg(v,topCounts[i]||1)) : topTotals.slice();
         chartTop=new window.Chart(ctx,{type:"bar",data:{labels:topLabels,datasets:[{data:vals}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}}); })();
 
+      // chips lojas (só a 1ª vez)
       if(chipLojas.children.length===0){
         chipLojas.innerHTML="";
-        topLabels.forEach(lbl=>{ var chip=document.createElement("span"); chip.className="chip"; chip.textContent=lbl; chip.setAttribute("data-v",lbl);
-          chip.addEventListener("click", function(){ chip.classList.toggle("active"); recarregarDebounced(); }); chipLojas.appendChild(chip); });
+        topLabels.forEach(lbl=>{ const chip=document.createElement("span"); chip.className="chip"; chip.textContent=lbl; chip.setAttribute("data-v",lbl);
+          chip.addEventListener("click", ()=>{ chip.classList.toggle("active"); recarregarDebounced(); }); chipLojas.appendChild(chip); });
       }
 
-    }catch(e){ /* silencioso */ }
+    }catch(_e){ /* silencioso */ }
   }
-  var recarregarDebounced=debounce(recarregar,120);
+  const recarregarDebounced=debounce(recarregar,120);
 
   async function boot(){
-    await fetchLimites();
-    if(maxDiaISO){ var end=parseISO(maxDiaISO), start=addDays(end,-29); dini.value=toISO(start); dfim.value=toISO(end); }
-    var opts=await fetchUnidades(); selUni.innerHTML=""; opts.forEach(u=>{ var o=document.createElement("option"); o.value=u; o.textContent=u; selUni.appendChild(o); }); selUni.value="Todas";
+    await ensureSource();               // garante fonte (MV ou STAGING)
+    await fetchLimites();               // pega min/max do banco
+    if(maxDiaISO){ const end=parseISO(maxDiaISO), start=addDays(end,-29); dini.value=toISO(start); dfim.value=toISO(end); }
 
-    [selUni,dini,dfim,pr,turno,canal,pag,canc].forEach(el=>{ el.addEventListener("change", function(){ document.getElementById("fx").open=false; recarregarDebounced(); }); });
+    const opts=await fetchUnidades();   // popula unidade
+    selUni.innerHTML=""; opts.forEach(u=>{ const o=document.createElement("option"); o.value=u; o.textContent=u; selUni.appendChild(o); }); selUni.value="Todas";
 
+    [selUni,dini,dfim,pr,turno,canal,pag,canc].forEach(el=>{
+      el.addEventListener("change", ()=>{ Q("fx").open=false; recarregarDebounced(); });
+    });
+
+    // toggles Total/Média
     document.querySelectorAll(".pill").forEach(p=>{
       p.querySelectorAll("button").forEach(btn=>{
-        btn.addEventListener("click", function(){
+        btn.addEventListener("click", ()=>{
           p.querySelectorAll("button").forEach(b=>b.classList.remove("active")); btn.classList.add("active");
-          var tgt=p.getAttribute("data-target"), v=btn.getAttribute("data-val");
+          const tgt=p.getAttribute("data-target"), v=btn.getAttribute("data-val");
           if(tgt==="lineMode") lineMode=v; if(tgt==="dowMode") dowMode=v; if(tgt==="dowPedMode") dowPedMode=v;
           if(tgt==="hourMode") hourMode=v; if(tgt==="monMode") monMode=v; if(tgt==="topMode") topMode=v;
           recarregarDebounced();
@@ -573,80 +584,46 @@
       });
     });
 
-    // Admin users (opcional)
-    btnAdmin.addEventListener("click", async ()=>{
-      if(!ADMIN_FUNCTION_URL){ alert("Function de admin não configurada."); return; }
-      const { data:{ session } } = await supa.auth.getSession();
-      if(!session){ alert("Faça login."); return; }
-      adminPanel.style.display="block"; usersBox.textContent="Carregando…";
-      try{
-        const r=await fetch(ADMIN_FUNCTION_URL, { headers:{ "Authorization":"Bearer "+session.access_token } });
-        if(!r.ok){ usersBox.textContent="Sem permissão."; return; }
-        const js=await r.json(); if(!Array.isArray(js)||!js.length){ usersBox.textContent="Sem usuários."; return; }
-        const table=document.createElement("table"); table.style.width="100%"; table.style.borderCollapse="collapse";
-        table.innerHTML=`<thead><tr><th style="text-align:left;padding:6px;border-bottom:1px solid var(--brd)">E-mail</th><th style="text-align:left;padding:6px;border-bottom:1px solid var(--brd)">Criado</th><th style="padding:6px;border-bottom:1px solid var(--brd)">Ação</th></tr></thead><tbody></tbody>`;
-        js.forEach(u=>{ const tr=document.createElement("tr");
-          tr.innerHTML=`<td style="padding:6px;border-bottom:1px solid var(--brd)">${u.email}</td>
-                        <td style="padding:6px;border-bottom:1px solid var(--brd)">${(u.created_at||"").replace("T"," ").replace("Z","")}</td>
-                        <td style="padding:6px;border-bottom:1px solid var(--brd);text-align:center"><button data-id="${u.id}">Excluir</button></td>`;
-          table.tBodies[0].appendChild(tr); });
-        usersBox.innerHTML=""; usersBox.appendChild(table);
-        usersBox.querySelectorAll("button[data-id]").forEach(b=>{
-          b.addEventListener("click", async ()=>{
-            if(!confirm("Excluir este usuário?")) return;
-            const id=b.getAttribute("data-id");
-            const { data:{ session } } = await supa.auth.getSession();
-            const del=await fetch(ADMIN_FUNCTION_URL+"?id="+encodeURIComponent(id), { method:"DELETE", headers:{ "Authorization":"Bearer "+(session?.access_token||"") } });
-            if(del.ok){ b.closest("tr").remove(); } else { alert("Falha ao excluir."); }
-          });
-        });
-      }catch(_){ usersBox.textContent="Erro."; }
-    });
-
     await recarregar();
   }
 
-  // ===== Import CSV (staging) + promoção =====
-  document.getElementById("btnImport").addEventListener("click", async function(){
-    var f=document.getElementById("csvfile").files[0]; if(!f){ alert("Selecione o arquivo Pasta2.csv"); return; }
-    const prog=document.getElementById("prog"); prog.style.display="inline-block"; prog.value=0;
+  // ===== Import CSV (staging) + tentativa de promoção =====
+  Q("btnImport").addEventListener("click", async function(){
+    const f=Q("csvfile").files[0]; if(!f){ alert("Selecione o arquivo Pasta2.csv"); return; }
+    const prog=Q("prog"); prog.style.display="inline-block"; prog.value=0;
 
-    await supa.from(STAGING).delete().neq('dia', null); // limpa staging
+    // limpa staging
+    await supa.from(STAGING).delete().neq('dia', null);
 
+    // Autodetecta separador (Papa: delimiter:"" faz detecção automática)
     Papa.parse(f, {
-      header:true, skipEmptyLines:true, dynamicTyping:false,
+      header:true, skipEmptyLines:true, dynamicTyping:false, delimiter:"",
       complete: async function(res){
         const rows=res.data||[]; const chunk=2000; let done=0;
         for(let i=0;i<rows.length;i+=chunk){
-          const slice=rows.slice(i,i+chunk).map(r=>({
-            dia:r.dia, unidade:r.unidade, pedidos:Number(r.pedidos)||0, fat:Number(r.fat)||0, des:Number(r.des)||0, fre:Number(r.fre)||0,
-            "Nome da Loja":r["Nome da Loja"], turno:r.turno, "Canal de venda":r["Canal de venda"], pagamento:r.pagamento, cancelado:r.cancelado, hora:r.hora!==""? Number(r.hora):null
-          }));
-          const ins=await supa.from(STAGING).insert(slice); if(ins.error){ alert("Erro ao importar: "+ins.error.message); break; }
+          const slice=rows.slice(i,i+chunk).map(r=>{
+            // normaliza chaves com possíveis variações
+            const nomeLoja = r["Nome da Loja"] ?? r["nome da loja"] ?? r["nome_loja"] ?? r["Nome_loja"];
+            const canal    = r["Canal de venda"] ?? r["canal de venda"] ?? r["canal_venda"];
+            return {
+              dia:r.dia, unidade:r.unidade, pedidos:Number(r.pedidos)||0, fat:Number(r.fat)||0, des:Number(r.des)||0, fre:Number(r.fre)||0,
+              "Nome da Loja": nomeLoja, turno:r.turno, "Canal de venda": canal, pagamento:r.pagamento, cancelado:r.cancelado, hora:(r.hora!=="" && r.hora!=null)? Number(r.hora):null
+            };
+          });
+          const ins=await supa.from(STAGING).insert(slice);
+          if(ins.error){ alert("Erro ao importar: "+ins.error.message); prog.style.display="none"; return; }
           done+=slice.length; prog.value=Math.round(done/rows.length*100);
         }
         prog.style.display="none";
-        // tenta promover (função SQL); se falhar, usa staging temporariamente
-        const ok=await tryPromoteToMain();
-        await fetchLimites(); await recarregar();
-        if(!ok){ alert("Dados carregados do arquivo (staging). Para fixar no objeto final, crie a função promote_v2 (SQL abaixo) e importe novamente."); }
+        // tenta usar MV; se MV não existir, fica no STAGING automaticamente pelo ensureSource()
+        await ensureSource(); await fetchLimites(); await recarregar();
+        alert("Importação concluída.");
       },
       error: function(err){ prog.style.display="none"; alert("Erro no CSV: "+(err.message||err)); }
     });
   });
 
-  async function tryPromoteToMain(){
-    // 1) tenta RPC (refresh MV / copiar para tabela)
-    try{
-      const r=await supa.rpc('promote_v2');
-      if(!r.error){ return true; }
-    }catch(_){}
-    // 2) fallback de leitura: usa staging nesta sessão
-    TABLE = STAGING;
-    return false;
-  }
-
-  // inicia (checa sessão ou hash de recuperação)
+  // start
   (async function init(){
     if(location.hash==="#recover"){ showGate(); tabLogin.click(); newPassBox.style.display="block"; }
     const { data:{ session } } = await supa.auth.getSession();
