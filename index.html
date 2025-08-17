@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <title>Maestro Food</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- favicon embutido para eliminar 404 -->
   <link rel="icon" href="data:,">
   <style>
     :root{--bg:#f6f7fb;--fg:#0f172a;--mut:#6b7280;--card:#fff;--brd:#e5e7eb;--acc:#2563eb;--good:#16a34a;--bad:#dc2626;--chip:#eef2ff}
@@ -42,7 +43,6 @@
     .chips{display:flex;gap:6px;flex-wrap:wrap}
     .chip{background:var(--chip);border:1px solid var(--brd);border-radius:999px;padding:6px 10px;cursor:pointer}
     .chip.active{background:#dbeafe;border-color:#bfdbfe}
-    /* compacta multiselect */
     select[multiple]{height:36px;overflow:hidden}
     @media (max-width:940px){.grid.cols-4{grid-template-columns:repeat(2,minmax(0,1fr))}.fgrid{grid-template-columns:repeat(6,1fr)}}
     @media (max-width:560px){.grid.cols-4,.grid.cols-2{grid-template-columns:1fr}.fgrid{grid-template-columns:repeat(4,1fr)}}
@@ -75,12 +75,11 @@
         <div class="field"><label for="authEmail">E-mail</label><input id="authEmail" type="email" placeholder="voce@empresa.com" /></div>
         <div class="field" id="passRow"><label for="authPass">Senha</label><input id="authPass" type="password" placeholder="••••••••" /></div>
         <div class="field" id="newPassRow" style="display:none"><label for="newPass">Nova senha</label><input id="newPass" type="password" placeholder="Defina a nova senha" /></div>
-        <div class="field" id="newPassBtnRow" style="display:none"><button id="btnSetNewPass">Definir nova senha</button></div>
-        <div class="hint"><a href="#" id="forgot">Esqueci a senha</a></div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
           <button id="btnSignup" style="display:none">Criar conta</button>
           <button id="btnLogin">Entrar</button>
         </div>
+        <div class="hint"><a href="#" id="forgot">Esqueci a senha</a></div>
         <div class="error" id="authErr"></div>
       </div>
     </div>
@@ -184,7 +183,7 @@
         <div class="pill" id="hourMode"><button data-v="total" class="active">Total</button><button data-v="media">Média</button></div>
       </div>
       <div class="chartbox"><canvas id="cHour"></canvas></div>
-      <div class="mut" style="margin-top:4px">Horas com baixa atividade são ocultadas (proxy para >30 min sem venda).</div>
+      <div class="mut" style="margin-top:4px">Horas com baixa atividade são ocultadas (proxy >30 min sem venda).</div>
     </div>
 
     <div class="card" style="margin-top:12px">
@@ -201,7 +200,7 @@
       <div class="chartbox"><canvas id="cTop"></canvas></div>
     </div>
 
-    <!-- Painel Admin (remoto via Edge Function, opcional) -->
+    <!-- Painel Admin (opcional via Edge Function) -->
     <div class="card" id="adminPanel" style="margin-top:12px;display:none">
       <div class="toolbar"><div class="title">Admin — Usuários</div><div class="mut">Excluir usuários (admins)</div></div>
       <div id="usersBox" class="mut">Carregando…</div>
@@ -210,26 +209,25 @@
 
 <script>
 (function(){
-  if (window.__DASH_BOOTED__) return; window.__DASH_BOOTED__=true;
+  if(window.__DASH_BOOTED__) return; window.__DASH_BOOTED__=true;
 
   const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
   const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
 
-  const STAGING = "vendas_kpi_daily_v2_data";   // recebe o CSV
-  let   TABLE   = "vendas_kpi_daily_v2";        // MV/tabela oficial; muda para STAGING após import
+  const STAGING = "vendas_kpi_daily_v2_data"; // recebe CSV
+  let   TABLE   = "vendas_kpi_daily_v2";      // fonte padrão (MV/tabela)
 
-  const ADMIN_FUNCTION_URL = ""; // preencha quando publicar a Edge Function de admin
+  const ADMIN_FUNCTION_URL = ""; // preencha se publicar a function de admin
 
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth:{ persistSession:true, autoRefreshToken:true } });
 
-  // ===== UI =====
-  const app=document.getElementById("app"), gate=document.getElementById("gate"), who=document.getElementById("who");
+  // ===== AUTH =====
+  const gate=document.getElementById("gate"), app=document.getElementById("app"), who=document.getElementById("who");
   const tabLogin=document.getElementById("tabLogin"), tabSignup=document.getElementById("tabSignup");
   const authEmail=document.getElementById("authEmail"), authPass=document.getElementById("authPass");
   const btnLogin=document.getElementById("btnLogin"), btnSignup=document.getElementById("btnSignup");
   const authErr=document.getElementById("authErr"), forgot=document.getElementById("forgot");
-  const newPassRow=document.getElementById("newPassRow"), newPassBtnRow=document.getElementById("newPassBtnRow");
-  const btnSetNewPass=document.getElementById("btnSetNewPass"), newPass=document.getElementById("newPass");
+  const newPassRow=document.getElementById("newPassRow");
   const passRow=document.getElementById("passRow");
   const btnLogout=document.getElementById("btnLogout"), btnAdmin=document.getElementById("btnAdmin");
   const adminPanel=document.getElementById("adminPanel"), usersBox=document.getElementById("usersBox");
@@ -267,37 +265,36 @@
     authErr.textContent = error ? error.message : "Enviamos um link de redefinição para o seu e-mail.";
   });
 
-  // Link de recuperação → troca de senha
   async function handleRecoveryIfAny(){
     const hasCode = window.location.hash.includes("type=recovery") || window.location.search.includes("type=recovery");
     if(!hasCode) return;
     const { error } = await supa.auth.exchangeCodeForSession(window.location.href);
     if(error){ authErr.textContent = error.message; return; }
-    // Mostra campos de nova senha
+    // Modo definir nova senha
     tabLogin.classList.add("active"); tabSignup.classList.remove("active");
     passRow.style.display="none"; btnLogin.style.display="none"; btnSignup.style.display="none";
-    newPassRow.style.display="block"; newPassBtnRow.style.display="block";
-    authErr.textContent="Defina sua nova senha e clique em 'Definir nova senha'.";
+    newPassRow.style.display="block";
+    const row=document.createElement("div"); row.style.marginTop="8px"; row.style.display="flex"; row.style.justifyContent="flex-end";
+    const btn=document.createElement("button"); btn.textContent="Definir nova senha"; row.appendChild(btn);
+    document.getElementById("authForm").appendChild(row);
+    btn.addEventListener("click", async ()=>{
+      const pw=(document.getElementById("newPass").value||"").trim(); if(!pw){ authErr.textContent="Digite a nova senha."; return; }
+      const { error } = await supa.auth.updateUser({ password: pw });
+      authErr.textContent = error ? error.message : "Senha alterada. Você já está autenticado.";
+      if(!error){ row.remove(); newPassRow.style.display="none"; }
+    });
   }
-  btnSetNewPass.addEventListener("click", async ()=>{
-    const pw=(newPass.value||"").trim(); if(!pw){ authErr.textContent="Digite a nova senha."; return; }
-    const { error } = await supa.auth.updateUser({ password: pw });
-    authErr.textContent = error ? error.message : "Senha alterada. Você já está autenticado.";
-    if(!error){ newPassRow.style.display="none"; newPassBtnRow.style.display="none"; }
-  });
 
   supa.auth.onAuthStateChange(async (_e, session)=>{
     if(session){ hideGate(); const u=await supa.auth.getUser(); who.textContent=u.data.user?.email||""; await afterLogin(); }
     else{ showGate(); who.textContent=""; }
   });
 
-  // ====== Filtros & Data ======
+  // ===== FILTROS / DADOS =====
   const selUni=document.getElementById("uni"), chipLojas=document.getElementById("lojas");
   const dini=document.getElementById("dini"), dfim=document.getElementById("dfim"), pr=document.getElementById("pr");
   const turno=document.getElementById("turno"), canal=document.getElementById("canal"), pag=document.getElementById("pag"), canc=document.getElementById("canc");
-
-  const limpar=document.getElementById("limpar");
-  limpar.addEventListener("click",(e)=>{e.preventDefault(); selUni.value="Todas"; dini.value=""; dfim.value=""; pr.value="30"; turno.value=""; canal.value=""; pag.value=""; canc.value="Todos"; [...chipLojas.children].forEach(c=>c.classList.remove("active")); recarregarDebounced(); });
+  document.getElementById("limpar").addEventListener("click",(e)=>{e.preventDefault(); selUni.value="Todas"; dini.value=""; dfim.value=""; pr.value="30"; turno.value=""; canal.value=""; pag.value=""; canc.value="Todos"; [...chipLojas.children].forEach(c=>c.classList.remove("active")); recarregarDebounced(); });
 
   function fmtBRL(n){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0); }
   function fmtInt(n){ return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Math.round(Number(n)||0)); }
@@ -307,21 +304,20 @@
   function debounce(fn,wait){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),wait); }; }
 
   let maxDiaISO=null, minDiaISO=null, diasDisponiveis=new Set();
+
   async function fetchLimites(){
-    // tenta STAGING primeiro: se tiver dados, já usa staging como fonte
-    const st = await supa.from(STAGING).select("dia", { count:"exact", head:true });
+    // se a staging tiver dados, use-a como fonte
+    const st = await supa.from(STAGING).select("dia",{ head:true, count:"exact" });
     if(!st.error && (st.count||0)>0){ TABLE = STAGING; }
     const r1 = await supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
     const r2 = await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
     if(r1.error||r2.error) return;
-    minDiaISO = r1.data?.[0]?.dia||null;
-    maxDiaISO = r2.data?.[0]?.dia||null;
+    minDiaISO=r1.data?.[0]?.dia||null; maxDiaISO=r2.data?.[0]?.dia||null;
 
-    // popula set de dias (para "fixar" datas inexistentes)
-    diasDisponiveis = new Set();
+    diasDisponiveis=new Set();
     let page=1000, off=0;
     for(;;){
-      const rs = await supa.from(TABLE).select("dia").order("dia",{ascending:true}).range(off,off+page-1);
+      const rs=await supa.from(TABLE).select("dia").order("dia",{ascending:true}).range(off,off+page-1);
       if(rs.error) break;
       (rs.data||[]).forEach(x=>diasDisponiveis.add(x.dia));
       if((rs.data||[]).length<page) break;
@@ -332,9 +328,9 @@
   function snap(iso){ if(!iso||diasDisponiveis.has(iso)) return iso; const d=parseISO(iso); for(let k=1;k<60;k++){ const a=toISO(addDays(d,-k)), b=toISO(addDays(d,k)); if(diasDisponiveis.has(a)) return a; if(diasDisponiveis.has(b)) return b; } return null; }
 
   async function fetchUnidades(){
-    const set=new Set(); set.add("Todas");
-    const a = await supa.from(TABLE).select("unidade").order("unidade",{ascending:true}).range(0,9999);
-    const b = await supa.from(TABLE).select("unidade").order("unidade",{ascending:false}).range(0,9999);
+    const set=new Set(["Todas"]);
+    const a=await supa.from(TABLE).select("unidade").order("unidade",{ascending:true}).range(0,9999);
+    const b=await supa.from(TABLE).select("unidade").order("unidade",{ascending:false}).range(0,9999);
     [a,b].forEach(r=>!r.error && (r.data||[]).forEach(x=>x.unidade&&set.add(x.unidade)));
     return [...set];
   }
@@ -356,21 +352,15 @@
     return out;
   }
 
-  // KPIs + Gráficos
-  const ids={
-    ped:["k_ped","d_ped"],tkm:["k_tkm","d_tkm"],fat:["k_fat","d_fat"],fmd:["k_fmd","d_fmd"],
-    des:["k_des","d_des"],desp:["k_desp","d_desp"],fre:["k_fre","d_fre"],frem:["k_frem","d_frem"],
-    fatl:["k_fatl","d_fatl"],fatlp:["k_fatlp","d_fatlp"]
-  };
+  // KPIs/Charts helpers
+  const ids={ ped:["k_ped","d_ped"], tkm:["k_tkm","d_tkm"], fat:["k_fat","d_fat"], fmd:["k_fmd","d_fmd"], des:["k_des","d_des"], desp:["k_desp","d_desp"], fre:["k_fre","d_fre"], frem:["k_frem","d_frem"], fatl:["k_fatl","d_fatl"], fatlp:["k_fatlp","d_fatlp"] };
   function setDelta(el,cur,prev){ const pct= prev>0? ((cur-prev)/prev*100):0; el.className="delta "+(pct>=0?"up":"down"); el.textContent=(pct>=0?"+":"")+pct.toFixed(1)+"%"; }
-
   let chartLine=null,chartDowFat=null,chartDowPed=null,chartHour=null,chartMonth=null,chartTop=null;
-  function destroy(c){ if(c){ try{c.destroy();}catch(e){} } return null; }
+  function destroy(c){ if(c){ try{c.destroy();}catch(_){ } } return null; }
   function movingAvg(a,w){ const out=[],n=a.length; let acc=0; for(let i=0;i<n;i++){ acc+=a[i]; if(i>=w) acc-=a[i-w]; out.push(acc/Math.min(i+1,w)); } return out; }
-
   function drawLine(days,vals,prev,mode){
     chartLine=destroy(chartLine); const ctx=document.getElementById("cLine").getContext("2d");
-    const dataCur=mode==="media"? movingAvg(vals,7) : vals.slice();
+    const dataCur= mode==="media" ? movingAvg(vals,7) : vals.slice();
     chartLine=new Chart(ctx,{type:"line",data:{labels:days,datasets:[
       {data:prev,fill:true,borderWidth:0,backgroundColor:"rgba(2,132,199,.12)",pointRadius:0,tension:.2},
       {data:dataCur,borderWidth:2,pointRadius:0,tension:.2}
@@ -391,27 +381,25 @@
 
       let s,e;
       if(dini.value && dfim.value){
-        const s0=snap(dini.value), e0=snap(dfim.value);
-        if(s0) dini.value=s0; if(e0) dfim.value=e0;
+        const s0=snap(dini.value), e0=snap(dfim.value); if(s0) dini.value=s0; if(e0) dfim.value=e0;
         s=parseISO(dini.value); e=parseISO(dfim.value);
       }else{
-        const end=parseISO(maxDiaISO); const start=addDays(end,-((Number(pr.value)||30)-1)); s=start; e=end; dini.value=toISO(s); dfim.value=toISO(e);
+        const end=parseISO(maxDiaISO), start=addDays(end,-((Number(pr.value)||30)-1)); s=start; e=end; dini.value=toISO(s); dfim.value=toISO(e);
       }
       const startISO=toISO(s), endISO=toISO(e);
-
       const lojas=[...chipLojas.children].filter(c=>c.classList.contains("active")).map(c=>c.getAttribute("data-v"));
       const filtros={ turno:[...turno.selectedOptions].map(o=>o.value), canal:[...canal.selectedOptions].map(o=>o.value), pag:[...pag.selectedOptions].map(o=>o.value), canc:canc.value||"Todos" };
       const uniVal=selUni.value||"Todas";
+      const fields='dia,unidade,pedidos,fat,des,fre,"Nome da Loja",turno,"Canal de venda",pagamento,cancelado,hora';
 
-      const fields = 'dia,unidade,pedidos,fat,des,fre,"Nome da Loja",turno,"Canal de venda",pagamento,cancelado,hora';
       const cur = await fetchPaged(fields,startISO,endISO,uniVal==="Todas"?null:uniVal,lojas,filtros);
       if(myRun!==runId) return;
+
       const daysLen=Math.max(1, Math.round((e-s)/(24*3600*1000))+1);
       const prevEnd=addDays(s,-1), prevStart=addDays(prevEnd,-(daysLen-1));
       const ant= await fetchPaged(fields,toISO(prevStart),toISO(prevEnd),uniVal==="Todas"?null:uniVal,lojas,filtros);
       if(myRun!==runId) return;
 
-      // preencher opções de Canal/Pagamento (somente 1ª vez)
       if(canal.options.length===0 || pag.options.length===0){
         const all=await fetchPaged('"Canal de venda",pagamento',minDiaISO,maxDiaISO,null,null,{});
         const canals=[...new Set((all||[]).map(r=>r["Canal de venda"]).filter(Boolean))].sort();
@@ -454,42 +442,32 @@
       setDelta(document.getElementById(ids.fatl[1]), fatL, fatLA);
       setDelta(document.getElementById(ids.fatlp[1]), fatLP, fatLPA);
 
-      // Line (com sombra)
-      const byDayMap=new Map(), byDayPrev=new Map();
-      cur.forEach(r=>byDayMap.set(r.dia,(byDayMap.get(r.dia)||0)+Number(r.fat||0)));
-      ant.forEach(r=>byDayPrev.set(r.dia,(byDayPrev.get(r.dia)||0)+Number(r.fat||0)));
-      const days=[...byDayMap.keys()].sort(); const vals=days.map(d=>byDayMap.get(d));
-      const prevVals=days.map(d=>byDayPrev.get(d)||0);
-      drawLine(days,vals,prevVals, lineMode);
+      // Linha com sombra
+      const byDay=new Map(), byPrev=new Map();
+      cur.forEach(r=>byDay.set(r.dia,(byDay.get(r.dia)||0)+Number(r.fat||0)));
+      ant.forEach(r=>byPrev.set(r.dia,(byPrev.get(r.dia)||0)+Number(r.fat||0)));
+      const days=[...byDay.keys()].sort();
+      drawLine(days, days.map(d=>byDay.get(d)), days.map(d=>byPrev.get(d)||0), lineMode);
 
-      // DOW fat/ped
-      function aggDow(rows, field){
-        const lbl=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"]; const tot=[0,0,0,0,0,0,0]; const cnt=[0,0,0,0,0,0,0];
-        const diasSet=new Set(rows.map(r=>r.dia)); [...diasSet].forEach(d=>cnt[parseISO(d).getUTCDay()]++);
-        rows.forEach(r=>{ const d=parseISO(r.dia).getUTCDay(); tot[d]+=Number(r[field]||0); });
-        return {labels:lbl, totals:tot, counts:cnt};
-      }
+      // DOW (fat/ped)
+      const aggDow=(rows,field)=>{ const lbl=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"]; const tot=Array(7).fill(0), cnt=Array(7).fill(0); const ds=new Set(rows.map(r=>r.dia)); [...ds].forEach(d=>cnt[parseISO(d).getUTCDay()]++); rows.forEach(r=>{ const i=parseISO(r.dia).getUTCDay(); tot[i]+=Number(r[field]||0); }); return {labels:lbl, totals:tot, counts:cnt}; };
       const dFat=aggDow(cur,"fat"); chartDowFat=destroy(chartDowFat); chartDowFat=drawBar("cDowFat", dFat.labels, dFat.totals, dFat.counts, dowFatMode);
-
       const dPed=aggDow(cur,"pedidos"); chartDowPed=destroy(chartDowPed); chartDowPed=drawBar("cDowPed", dPed.labels, dPed.totals, dPed.counts, dowPedMode);
 
-      // HORA (ocultando horas com poucos dias ativos)
-      const hourLabels=[], hourTotals=[], hourCounts=[];
-      const daysByHour = Array(24).fill(0).map(()=>new Set()); const acc=Array(24).fill(0);
+      // Hora
+      const hourLabels=[], hourTotals=[], hourCounts=[], daysByHour=Array(24).fill(0).map(()=>new Set()), acc=Array(24).fill(0);
       cur.forEach(r=>{ if(r.hora==null) return; const h=Number(r.hora)||0; if(h<0||h>23) return; acc[h]+=Number(r.fat||0); daysByHour[h].add(r.dia); });
       const totalDays=new Set(cur.map(r=>r.dia)).size||1;
-      for(let h=0;h<24;h++){ const active=daysByHour[h].size; const keep = active>=Math.ceil(totalDays*0.5) && acc[h]>0;
-        if(keep){ hourLabels.push(String(h).padStart(2,"0")+":00"); hourTotals.push(acc[h]); hourCounts.push(active); } }
+      for(let h=0;h<24;h++){ const active=daysByHour[h].size; const keep=active>=Math.ceil(totalDays*0.5)&&acc[h]>0; if(keep){ hourLabels.push(String(h).padStart(2,"0")+":00"); hourTotals.push(acc[h]); hourCounts.push(active); } }
       chartHour=destroy(chartHour); chartHour=drawBar("cHour", hourLabels, hourTotals, hourCounts, hourMode);
 
-      // MÊS
+      // Mês
       const mMap=new Map(), daysPerM=new Map();
-      cur.forEach(r=>{ const ym=r.dia.slice(0,7); mMap.set(ym,(mMap.get(ym)||0)+Number(r.fat||0));
-        if(!daysPerM.has(ym)) daysPerM.set(ym,new Set()); daysPerM.get(ym).add(r.dia); });
-      const mLabels=[...mMap.keys()].sort(); const mTotals=mLabels.map(x=>mMap.get(x)); const mCounts=mLabels.map(x=> (daysPerM.get(x)||new Set()).size||1);
+      cur.forEach(r=>{ const ym=r.dia.slice(0,7); mMap.set(ym,(mMap.get(ym)||0)+Number(r.fat||0)); if(!daysPerM.has(ym)) daysPerM.set(ym,new Set()); daysPerM.get(ym).add(r.dia); });
+      const mLabels=[...mMap.keys()].sort(), mTotals=mLabels.map(x=>mMap.get(x)), mCounts=mLabels.map(x=> (daysPerM.get(x)||new Set()).size||1);
       chartMonth=destroy(chartMonth); chartMonth=drawBar("cMonth", mLabels, mTotals, mCounts, monMode);
 
-      // TOP 10 + chips (só preenche chips na 1ª vez)
+      // Top 10 + chips
       const byLoja={}; cur.forEach(r=>{ const n=r["Nome da Loja"]; if(!n) return; byLoja[n]=(byLoja[n]||0)+Number(r.fat||0); });
       const top=Object.entries(byLoja).sort((a,b)=>b[1]-a[1]).slice(0,10);
       const topLabels=top.map(x=>x[0]), topTotals=top.map(x=>x[1]), topCounts=topLabels.map(_=>diasCur);
@@ -501,12 +479,27 @@
   }
   const recarregarDebounced=debounce(recarregar,120);
 
-  // Botões dos modos (Total/Média)
+  // Botões Total/Média (corrigido para não sobrar parêntese)
   let lineMode="total", dowFatMode="total", dowPedMode="total", hourMode="total", monMode="total", topMode="total";
-  function wirePill(id, setter){ document.getElementById(id).querySelectorAll("button").forEach(b=>{ b.addEventListener("click",()=>{ b.parentElement.querySelectorAll("button").forEach(x=>x.classList.remove("active")); b.classList.add("active"); setter(b.getAttribute("data-v")); recarregarDebounced(); }); });}
-  wirePill("lineMode",v=>lineMode=v); wirePill("dowFatMode",v=>dowFatMode=v); wirePill("dowPedMode",v=>dowPedMode=v); wirePill("hourMode",v=>hourMode=v); wirePill("monMode",v=>monMode=v); wirePill("topMode",v=>topMode=v);
+  function wirePill(id,setter){
+    const root=document.getElementById(id);
+    root.querySelectorAll("button").forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        root.querySelectorAll("button").forEach(x=>x.classList.remove("active"));
+        btn.classList.add("active");
+        setter(btn.getAttribute("data-v"));
+        recarregarDebounced();
+      });
+    });
+  }
+  wirePill("lineMode",v=>lineMode=v);
+  wirePill("dowFatMode",v=>dowFatMode=v);
+  wirePill("dowPedMode",v=>dowPedMode=v);
+  wirePill("hourMode",v=>hourMode=v);
+  wirePill("monMode",v=>monMode=v);
+  wirePill("topMode",v=>topMode=v);
 
-  // Import CSV (limpa staging e insere — correção: not('is', null) em vez de neq(null))
+  // Import CSV (usa staging imediatamente)
   document.getElementById("btnImport").addEventListener("click", async ()=>{
     const f=document.getElementById("csvfile").files[0]; if(!f){ alert("Selecione Pasta2.csv"); return; }
     const prog=document.getElementById("prog"); prog.style.display="inline-block"; prog.value=0;
@@ -514,7 +507,8 @@
     // limpa staging
     await supa.from(STAGING).delete().not('dia','is',null);
 
-    Papa.parse(f,{ header:true, skipEmptyLines:true, dynamicTyping:false,
+    window.Papa.parse(f,{
+      header:true, skipEmptyLines:true, dynamicTyping:false,
       complete: async (res)=>{
         const rows=res.data||[]; const chunk=2000; let done=0;
         for(let i=0;i<rows.length;i+=chunk){
@@ -522,13 +516,13 @@
             dia:r.dia, unidade:r.unidade, pedidos:Number(r.pedidos)||0, fat:Number(r.fat)||0, des:Number(r.des)||0, fre:Number(r.fre)||0,
             "Nome da Loja":r["Nome da Loja"], turno:r.turno, "Canal de venda":r["Canal de venda"], pagamento:r.pagamento, cancelado:r.cancelado, hora:r.hora!==""?Number(r.hora):null
           }));
-          const ins=await supa.from(STAGING).insert(slice); if(ins.error){ alert("Erro ao importar: "+ins.error.message); break; }
+          const ins=await supa.from(STAGING).insert(slice);
+          if(ins.error){ alert("Erro ao importar: "+ins.error.message); break; }
           done+=slice.length; prog.value=Math.round(done/rows.length*100);
         }
         prog.style.display="none";
-        TABLE=STAGING; // usa imediatamente o staging
+        TABLE=STAGING; // passa a ler da staging
         await fetchLimites(); await recarregar();
-        // recolhe a caixa de filtros
         document.getElementById("fx").open=false;
       },
       error:(err)=>{ prog.style.display="none"; alert("CSV inválido: "+(err.message||err)); }
@@ -541,11 +535,10 @@
     selUni.innerHTML=""; opts.forEach(u=>{ const o=document.createElement("option"); o.value=u; o.textContent=u; selUni.appendChild(o); }); selUni.value="Todas";
     [selUni,dini,dfim,pr,turno,canal,pag,canc].forEach(el=>el.addEventListener("change",()=>{ document.getElementById("fx").open=false; recarregarDebounced(); }));
     await fetchLimites();
-    // datas iniciais ancoradas no último dia do banco
     if(maxDiaISO){ const end=parseISO(maxDiaISO); const start=addDays(end,-29); dini.value=toISO(start); dfim.value=toISO(end); }
     await recarregar();
 
-    // admin users (opcional)
+    // Admin (opcional)
     btnAdmin.style.display = ADMIN_FUNCTION_URL ? "inline-block" : "none";
     btnAdmin.addEventListener("click", async ()=>{
       if(!ADMIN_FUNCTION_URL){ alert("Function não configurada."); return; }
@@ -558,26 +551,27 @@
         const table=document.createElement("table"); table.style.width="100%"; table.style.borderCollapse="collapse";
         table.innerHTML=`<thead><tr><th style="text-align:left;padding:6px;border-bottom:1px solid var(--brd)">E-mail</th><th style="text-align:left;padding:6px;border-bottom:1px solid var(--brd)">Criado</th><th style="padding:6px;border-bottom:1px solid var(--brd)">Ação</th></tr></thead><tbody></tbody>`;
         js.forEach(u=>{ const tr=document.createElement("tr");
-          tr.innerHTML=`<td style="padding:6px;border-bottom:1px solid var(--brd)">${u.email}</td>
-            <td style="padding:6px;border-bottom:1px solid var(--brd)">${(u.created_at||"").replace("T"," ").replace("Z","")}</td>
-            <td style="padding:6px;border-bottom:1px solid var(--brd);text-align:center"><button data-id="${u.id}">Excluir</button></td>`;
+          tr.innerHTML=\`<td style="padding:6px;border-bottom:1px solid var(--brd)">\${u.email}</td>
+            <td style="padding:6px;border-bottom:1px solid var(--brd)">\${(u.created_at||"").replace("T"," ").replace("Z","")}</td>
+            <td style="padding:6px;border-bottom:1px solid var(--brd);text-align:center"><button data-id="\${u.id}">Excluir</button></td>\`;
           table.tBodies[0].appendChild(tr);
         });
         usersBox.innerHTML=""; usersBox.appendChild(table);
-        usersBox.querySelectorAll("button[data-id]").forEach(b=>b.addEventListener("click", async ()=>{
-          if(!confirm("Excluir este usuário?")) return;
-          const { data:{ session } } = await supa.auth.getSession();
-          const del=await fetch(ADMIN_FUNCTION_URL+"?id="+encodeURIComponent(b.getAttribute("data-id")), { method:"DELETE", headers:{Authorization:"Bearer "+session.access_token} });
-          if(del.ok) b.closest("tr").remove(); else alert("Falha ao excluir.");
-        }));
+        usersBox.querySelectorAll("button[data-id]").forEach(b=>{
+          b.addEventListener("click", async ()=>{
+            if(!confirm("Excluir este usuário?")) return;
+            const { data:{ session } } = await supa.auth.getSession();
+            const del=await fetch(ADMIN_FUNCTION_URL+"?id="+encodeURIComponent(b.getAttribute("data-id")), { method:"DELETE", headers:{Authorization:"Bearer "+session.access_token} });
+            if(del.ok) b.closest("tr").remove(); else alert("Falha ao excluir.");
+          });
+        });
       }catch(err){ usersBox.textContent="Erro: "+(err.message||err); }
     });
   }
 
-  // arranque
   (async function init(){
     const { data:{ session } } = await supa.auth.getSession();
-    if(session){ hideGate(); who.textContent=(await supa.auth.getUser()).data.user?.email||""; await afterLogin(); }
+    if(session){ hideGate(); const u=await supa.auth.getUser(); who.textContent=u.data.user?.email||""; await afterLogin(); }
     else{ showGate(); await handleRecoveryIfAny(); }
   })();
 })();
