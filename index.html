@@ -4,25 +4,23 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Maestro Food</title>
-
-  <!-- Favicon inline (sem 404) -->
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="62" fill="%231a73e8"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="64" fill="white">M</text></svg>'/>
-
   <link rel="stylesheet" href="https://unpkg.com/modern-css-reset/dist/reset.min.css">
   <style>
-    :root{--bg:#f5f7fb;--card:#fff;--muted:#667085;--text:#0f172a;--blue:#1a73e8;--stroke:#e6eaf2;--radius:14px}
+    :root{--bg:#f6f8fb;--card:#fff;--muted:#667085;--text:#0f172a;--blue:#1a73e8;--ok:#059669;--err:#dc2626;--stroke:#e6eaf2;--radius:14px}
     body{background:var(--bg);color:var(--text);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
-    .container{max-width:1200px;margin:24px auto 64px;padding:0 16px}
-    h1{font-size:24px;font-weight:700;margin:8px 0 4px}
+    .container{max-width:1200px;margin:22px auto 64px;padding:0 16px}
+    h1{font-size:24px;font-weight:700;margin:8px 0 6px}
     small.muted{color:var(--muted)}
     .row{display:grid;gap:12px}
     .cols-2{grid-template-columns:repeat(2,1fr)}
     .cols-3{grid-template-columns:repeat(3,1fr)}
     .cols-4{grid-template-columns:repeat(4,1fr)}
     .card{background:var(--card);border:1px solid var(--stroke);border-radius:var(--radius);padding:14px}
+    .card.dashed{border-style:dashed}
     label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
     input,select,button{appearance:none;border:1px solid var(--stroke);background:#fff;color:var(--text);border-radius:10px;padding:10px 12px;width:100%}
-    select[multiple]{height:160px}
+    select[multiple]{height:140px}
     .inline{display:flex;gap:10px;align-items:center}
     .btn{background:var(--blue);color:#fff;border:none;padding:10px 14px;border-radius:10px;cursor:pointer}
     .btn.ghost{background:#eef3ff;color:#1747b7}
@@ -32,10 +30,8 @@
     .pill{display:inline-block;padding:4px 10px;border-radius:999px;background:#eef3ff;color:#1747b7;font-weight:600}
     .right{text-align:right}
     .hint{color:var(--muted);font-size:12px}
-    .status{font-size:12px}
-    .status.error{color:#b91c1c}
-    .status.ok{color:#16a34a}
-    .status.warn{color:#ca8a04}
+    .badge-ok{color:var(--ok);font-weight:700}
+    .badge-err{color:var(--err);font-weight:700}
     @media (max-width:960px){.grid-kpi{grid-template-columns:repeat(2,1fr)}.cols-4,.cols-3,.cols-2{grid-template-columns:1fr}}
   </style>
 </head>
@@ -43,12 +39,12 @@
   <div class="container">
     <h1>Maestro Food</h1>
     <small id="periodo" class="muted">Período: —</small>
+    <div id="srcBanner" class="muted" style="margin-top:4px;"></div>
 
     <details id="fx" class="card" open>
       <summary class="inline" style="justify-content:space-between;">
         <b>FILTROS</b>
         <div class="inline">
-          <span id="health" class="status warn">Checando fonte…</span>
           <button id="btnLimpar" class="btn ghost" type="button">Limpar</button>
         </div>
       </summary>
@@ -64,9 +60,9 @@
         <div>
           <label>Período rápido</label>
           <select id="fQuick">
-            <option>Últimos 30</option>
-            <option>Últimos 60</option>
             <option selected>Últimos 90</option>
+            <option>Últimos 60</option>
+            <option>Últimos 30</option>
             <option>Este mês</option>
             <option>Último mês</option>
             <option>Este ano</option>
@@ -89,18 +85,18 @@
         </div>
       </div>
 
-      <div class="card" style="margin-top:12px;">
+      <div class="card dashed" style="margin-top:12px;">
         <div class="row cols-2">
           <div class="inline"><label style="margin:0;">Admin — Importar CSV (<b>Pasta2.csv</b>)</label></div>
-          <div class="right status" id="importStatus"></div>
+          <div class="right"><span id="importStatus" class="muted"></span></div>
         </div>
         <div class="inline" style="margin-top:8px;">
           <input id="csv" type="file" accept=".csv,text/csv"/>
           <button id="btnImport" class="btn" type="button">Importar CSV (incremental)</button>
         </div>
         <p class="hint" style="margin-top:8px;">
-          Estratégia: limpa **somente** o intervalo de datas do arquivo e insere com deduplicação por chave  
-          <code>dia, unidade, "Nome da loja", hora, pagamento, "Canal de venda"</code>.
+          Importação é somativa com deduplicação por chave composta (dia, unidade, "Nome da loja", hora, pagamento, "Canal de venda").  
+          Mínimo aceito no CSV: <b>Data da venda</b> (dia) • <b>unidade</b> • <b>Total</b> (fat).
         </p>
       </div>
     </details>
@@ -120,294 +116,248 @@
       <div class="inline" style="justify-content:space-between;">
         <b>Receita diária (R$)</b>
         <div class="inline">
-          <span class="pill">Total</span>
-          <span class="pill" style="margin-left:6px;background:#fff;border:1px solid var(--stroke);color:#667085;">Média (7d)</span>
+          <span class="pill" id="modoTotal">Total</span>
+          <span class="pill" id="modoAvg" style="margin-left:6px;background:#fff;border:1px solid var(--stroke);color:#667085;">Média (7d)</span>
         </div>
       </div>
       <canvas id="chart" height="120" style="margin-top:8px;"></canvas>
     </div>
   </div>
 
-  <!-- Supply ANON KEY antes do app -->
-  <script>window.SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';</script>
+  <!-- bibliotecas antes do seu código -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 
   <script>
-  (function(){
-    // ===== CONFIG =====
-    const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-    const SUPABASE_ANON = window.SUPABASE_ANON_KEY;
-    const PREFER_TABLE  = "vendas_kpi_daily_v2_data";
-    const FALLBACK_VIEW = "vendas_kpi_daily_v2";
+  (function bootWhenReady(){
+    const wait = setInterval(()=>{
+      if (window.supabase && window.Papa && window.Chart){
+        clearInterval(wait);
+        boot();
+      }
+    }, 30);
 
-    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth:{persistSession:true,autoRefreshToken:true} });
+    function boot(){
+      // ===== CONFIG =====
+      const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
+      const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+      const PREFER_TABLE  = "vendas_kpi_daily_v2_data";
+      const FALLBACK_VIEW = "vendas_kpi_daily_v2";
+      if (!SUPABASE_ANON || SUPABASE_ANON.includes("COLOQUE") ){
+        document.body.innerHTML = '<div style="padding:40px;text-align:center;color:#dc2626;"><h1>⚠️ Configure a chave do Supabase</h1><p>Substitua SUPABASE_ANON pela sua chave <b>anon public</b>.</p></div>';
+        return;
+      }
+      const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {auth:{persistSession:true,autoRefreshToken:true}});
 
-    // ===== DOM =====
-    const el = id => document.getElementById(id);
-    const periodoEl=el("periodo"), health=el("health");
-    const uni=el("fUnidade"), loja=el("fLoja"), dini=el("fDini"), dfim=el("fDfim"),
-          pr=el("fQuick"), turno=el("fTurno"), canal=el("fCanal"), pag=el("fPag"), canc=el("fCanc");
-    const btnLimpar=el("btnLimpar"), csv=el("csv"), btnImport=el("btnImport"), importStatus=el("importStatus");
-    const kPedidos=el("kPedidos"), kTicket=el("kTicket"), kFat=el("kFat"), kFatDia=el("kFatDia"),
-          kDes=el("kDes"), kDesPct=el("kDesPct"), kFre=el("kFre"), kFatLiq=el("kFatLiq");
-    const chartEl=el("chart"); let chart;
+      // ===== DOM =====
+      const $ = (id)=>document.getElementById(id);
+      const fx=$("fx"), srcBanner=$("srcBanner"), periodoEl=$("periodo");
+      const uni=$("fUnidade"), loja=$("fLoja"), dini=$("fDini"), dfim=$("fDfim"),
+            pr=$("fQuick"), turno=$("fTurno"), canal=$("fCanal"), pag=$("fPag"), canc=$("fCanc");
+      const btnLimpar=$("btnLimpar"), csv=$("csv"), btnImport=$("btnImport"), importStatus=$("importStatus");
+      const kPedidos=$("kPedidos"), kTicket=$("kTicket"), kFat=$("kFat"), kFatDia=$("kFatDia"),
+            kDes=$("kDes"), kDesPct=$("kDesPct"), kFre=$("kFre"), kFatLiq=$("kFatLiq");
+      const chartEl=$("chart"); let chart;
 
-    // ===== STATE =====
-    let TABLE=null, minISO=null, maxISO=null, lastData=[];
-    // nomes exatos no banco (com espaço e caixa correta)
-    let KEY_LOJA='Nome da loja';
-    let KEY_CANAL='Canal de venda';
+      // ===== STATE =====
+      let TABLE=null, minISO=null, maxISO=null, lastData=[], rowsCount=null;
 
-    // ===== UTILS =====
-    const fmtBRL=v=> (isFinite(v)? v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : "—");
-    const fmtPct=v=> (isFinite(v)? (v*100).toFixed(1).replace('.',',')+'%' : "—");
-    const onlyDateISO=iso=> (iso&&iso.length>=10?iso.slice(0,10):iso);
-    const parseBR=(x)=>{ if(x==null||x==='')return 0; if(typeof x==='number')return x; const s=String(x).replace(/\s/g,'').replace(/\./g,'').replace(',','.'); const n=Number(s.replace(/[^\d\.-]/g,'')); return isFinite(n)?n:0; };
-    const norm=s=> String(s??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
-    const normCancel=v=>{const s=String(v??"").trim().toLowerCase(); if(v===true||s==="sim"||s==="s"||s==="1"||s==="true")return"Sim"; return"Não";};
+      // ===== UTILS =====
+      const fmtBRL=(v)=> (isFinite(v)? v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : "—");
+      const fmtPct=(v)=> (isFinite(v)? (v*100).toFixed(1).replace('.',',')+'%' : "—");
+      const onlyDateISO=(iso)=> iso && iso.length>=10 ? iso.slice(0,10) : iso;
+      const norm=(s)=> String(s??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+      const normCancel=(v)=>{const s=String(v??"").trim().toLowerCase(); if(v===true||s==="sim"||s==="s"||s==="1"||s==="true")return"Sim"; return"Não";};
+      function parseBR(x){ if(x==null||x==='')return 0; if(typeof x==='number')return x; const s=String(x).replace(/\./g,'').replace(',','.'); const n=Number(s); return isFinite(n)?n:0; }
+      function ddmmyyyyToISO(s){ if(!s) return null; const str=String(s).trim(); const [datePart,timePart]=str.split(' '); if(!datePart) return null; const [d,m,y]=datePart.split('/'); const day=+d, mon=+m, yr=+y; if(!day||!mon||!yr||day<1||day>31||mon<1||mon>12||yr<1900||yr>2100) return null; const base=`${String(yr).padStart(4,'0')}-${String(mon).padStart(2,'0')}-${String(day).padStart(2,'0')}`; const test=new Date(base); if (isNaN(test)) return null; return base + (timePart?`T${timePart}:00`:'T00:00:00'); }
+      function hourFromDateText(s){ const str=String(s??''); const parts=str.split(' '); if(parts[1]&&parts[1].includes(':')){ const [hh]=parts[1].split(':'); const h=parseInt(hh,10); return isFinite(h)?h:-1 } return -1 }
+      function applyQuickDate(){
+        const end = new Date(); let start;
+        const opt = pr.value;
+        if (opt.startsWith("Últimos ")) { start=new Date(); start.setDate(end.getDate()-(parseInt(opt.split(' ')[1],10)-1)); }
+        else if (opt==="Este mês"){ start=new Date(end.getFullYear(),end.getMonth(),1); }
+        else if (opt==="Último mês"){ start=new Date(end.getFullYear(),end.getMonth()-1,1); const e=new Date(end.getFullYear(),end.getMonth(),0); dini.value=toISO(start); dfim.value=toISO(e); return; }
+        else if (opt==="Este ano"){ start=new Date(end.getFullYear(),0,1); }
+        else { start=new Date(end.getFullYear(),end.getMonth(),end.getDate()-89); }
+        dini.value = toISO(start); dfim.value = toISO(end);
+      }
+      function toISO(d){ if(!d) return null; const date=new Date(d); if(isNaN(date)) return null; return date.toISOString().slice(0,10); }
+      const getMulti=(sel)=> Array.from(sel.selectedOptions).map(o=>o.value).filter(Boolean);
 
-    function ddmmyyyyToISO(s){
-      if(!s) return null;
-      const str=String(s).trim();
-      const [datePart,timePart] = str.split(/\s+/);
-      const m = datePart?.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
-      if(!m) return null;
-      let d=+m[1], mth=+m[2], y=+m[3]; if(y<100) y+=2000;
-      if(!(d>=1&&d<=31&&mth>=1&&mth<=12&&y>=2000&&y<=2100)) return null;
-      const iso = `${String(y).padStart(4,'0')}-${String(mth).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-      return timePart ? `${iso}T${timePart}:00` : `${iso}T00:00:00`;
-    }
-    function hourFromDateText(s){
-      const str=String(s??''); const m=str.match(/\b(\d{1,2}):(\d{2})\b/);
-      if(m){ const h=+m[1]; if(h>=0&&h<=23) return h; }
-      return -1;
-    }
-    function applyQuickDate(){
-      const end=new Date(); let start;
-      if(pr.value.startsWith("Últimos ")){ const n=parseInt(pr.value.split(' ')[1],10)||30; start=new Date(); start.setDate(end.getDate()-(n-1)); }
-      else if(pr.value==="Este mês"){ start=new Date(end.getFullYear(),end.getMonth(),1); }
-      else if(pr.value==="Último mês"){ start=new Date(end.getFullYear(),end.getMonth()-1,1); const e=new Date(end.getFullYear(),end.getMonth(),0); dini.value=e.toISOString().slice(0,10); dfim.value=end.toISOString().slice(0,10); return; }
-      else if(pr.value==="Este ano"){ start=new Date(end.getFullYear(),0,1); }
-      else { start=new Date(end.getFullYear(),end.getMonth(),end.getDate()-29); }
-      dini.value = start.toISOString().slice(0,10);
-      dfim.value = end.toISOString().slice(0,10);
-    }
-
-    const chunk = (arr, n=1000)=> Array.from({length: Math.ceil(arr.length/n)}, (_,i)=> arr.slice(i*n, i*n+n));
-
-    async function pickSource(){
-      let r = await supa.from(PREFER_TABLE).select('dia').limit(1);
-      if(!r.error){ TABLE=PREFER_TABLE; return; }
-      r = await supa.from(FALLBACK_VIEW).select('dia').limit(1);
-      if(!r.error){ TABLE=FALLBACK_VIEW; return; }
-      TABLE=null;
-    }
-
-    async function detectColumnNames(){
-      // tenta variações com aspas no select
-      async function probe(name, alts){
-        for(const k of [name, ...alts]){
-          const q = await supa.from(TABLE).select(`"${k}"`).limit(1);
-          if(!q.error) return k;
+      async function pickSource(){
+        let ok=await supa.from(PREFER_TABLE).select('dia').limit(1);
+        if(!ok.error){ TABLE=PREFER_TABLE; return; }
+        ok=await supa.from(FALLBACK_VIEW).select('dia').limit(1);
+        if(!ok.error){ TABLE=FALLBACK_VIEW; return; }
+        TABLE=null;
+      }
+      async function fetchMinMax(){
+        if(!TABLE){minISO=maxISO=null;rowsCount=null; return;}
+        const min = await supa.from(TABLE).select('dia').order('dia',{ascending:true}).limit(1);
+        const max = await supa.from(TABLE).select('dia').order('dia',{ascending:false}).limit(1);
+        const cnt = await supa.from(TABLE).select('count', { count:'exact', head:true });
+        minISO = (!min.error && min.data?.[0]?.dia)? onlyDateISO(min.data[0].dia) : null;
+        maxISO = (!max.error && max.data?.[0]?.dia)? onlyDateISO(max.data[0].dia) : null;
+        rowsCount = (cnt?.count ?? null);
+        srcBanner.innerHTML = (minISO && maxISO)
+          ? `<span class="badge-ok">Fonte OK</span> (${minISO} → ${maxISO}) • linhas: ${rowsCount ?? '—'} • origem: <b>${TABLE}</b>`
+          : `<span class="badge-err">Sem dados</span>`;
+      }
+      async function buildOptions(){
+        if(!TABLE) return;
+        // Unidade
+        {
+          const r=await supa.from(TABLE).select('unidade').not('unidade','is',null).neq('unidade','').order('unidade',{ascending:true}).range(0,9999);
+          const arr=[...new Set((r.data||[]).map(x=>x.unidade).filter(Boolean))];
+          uni.innerHTML='<option>Todas</option>'+arr.map(v=>`<option>${v}</option>`).join('');
         }
-        return name;
+        // Pagamento
+        {
+          const r=await supa.from(TABLE).select('pagamento').not('pagamento','is',null).neq('pagamento','').order('pagamento',{ascending:true}).range(0,9999);
+          const arr=[...new Set((r.data||[]).map(x=>x.pagamento).filter(Boolean))];
+          pag.innerHTML=arr.map(v=>`<option>${v}</option>`).join('');
+        }
+        // Canal (aspas)
+        {
+          const r=await supa.from(TABLE).select('"Canal de venda"').not('Canal de venda','is',null).order('Canal de venda',{ascending:true}).range(0,9999);
+          const arr=[...new Set((r.data||[]).map(x=>x["Canal de venda"]).filter(Boolean))];
+          canal.innerHTML=arr.map(v=>`<option>${v}</option>`).join('');
+        }
+        // Lojas Top10 (soma de fat)
+        {
+          const q=await supa.from(TABLE).select('"Nome da loja",fat').not('fat','is',null).not('Nome da loja','is',null).range(0,20000);
+          const acc=new Map(); (q.data||[]).forEach(r=>{ const k=r['Nome da loja']; acc.set(k,(acc.get(k)||0)+(Number(r.fat)||0)); });
+          const top=[...acc.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k])=>k);
+          loja.innerHTML='<option>Todos</option>'+top.map(v=>`<option>${v}</option>`).join('');
+        }
       }
-      KEY_LOJA  = await probe('Nome da loja',  ['Nome da Loja','nome da loja']);
-      KEY_CANAL = await probe('Canal de venda',['Canal de Venda','canal de venda']);
-    }
-
-    async function fetchMinMax(){
-      if(!TABLE){minISO=maxISO=null; return;}
-      const a = await supa.from(TABLE).select('dia').order('dia',{ascending:true}).limit(1);
-      const b = await supa.from(TABLE).select('dia').order('dia',{ascending:false}).limit(1);
-      if(!a.error && a.data?.length && !b.error && b.data?.length){
-        minISO = onlyDateISO(a.data[0].dia);
-        maxISO = onlyDateISO(b.data[0].dia);
-        health.textContent = `Fonte OK (${minISO} → ${maxISO})`;
-        health.className = "status ok";
-      }else{
-        minISO=maxISO=null;
-        health.textContent = "Sem dados na fonte";
-        health.className = "status error";
+      function computeKPIs(rows){
+        const pedidos=rows.reduce((s,r)=>s+(Number(r.pedidos)||0),0);
+        const fat=rows.reduce((s,r)=>s+(Number(r.fat)||0),0);
+        const des=rows.reduce((s,r)=>s+(Number(r.des)||0),0);
+        const fre=rows.reduce((s,r)=>s+(Number(r.fre)||0),0);
+        const fatliq=fat-des-fre; const dias=new Set(rows.map(r=>r.dia)).size||1;
+        const ticket=pedidos?fat/pedidos:0; const fatDia=fat/dias; const desPct=fat?(des/fat):0;
+        kPedidos.textContent=pedidos.toLocaleString('pt-BR');
+        kTicket.textContent=fmtBRL(ticket);
+        kFat.textContent=fmtBRL(fat);
+        kFatDia.textContent=fmtBRL(fatDia);
+        kDes.textContent=fmtBRL(des);
+        kDesPct.textContent=fmtPct(desPct);
+        kFre.textContent=fmtBRL(fre);
+        kFatLiq.textContent=fmtBRL(fatliq);
       }
-    }
-
-    async function buildOptions(){
-      if(!TABLE) return;
-
-      // Unidade
-      {
-        const r = await supa.from(TABLE).select('unidade').not('unidade','is',null).order('unidade',{ascending:true}).range(0,9999);
-        const arr=[...new Set((r.data||[]).map(x=>x.unidade).filter(Boolean))];
-        uni.innerHTML=`<option>Todas</option>` + arr.map(v=>`<option>${v}</option>`).join('');
+      function drawChart(rows){
+        const byDay=new Map(); rows.forEach(r=>byDay.set(r.dia,(byDay.get(r.dia)||0)+(Number(r.fat)||0)));
+        const labels=[...byDay.keys()].sort(); const values=labels.map(d=>byDay.get(d));
+        const ctx=chartEl.getContext('2d'); if(chart) chart.destroy();
+        chart=new Chart(ctx,{type:'line',
+          data:{labels,datasets:[{label:'Receita',data:values,tension:0.25,pointRadius:0,borderWidth:2}]},
+          options:{responsive:true,maintainAspectRatio:false,animation:false,scales:{y:{beginAtZero:true}}}
+        });
       }
-
-      // Pagamento
-      {
-        const r = await supa.from(TABLE).select('pagamento').not('pagamento','is',null).order('pagamento',{ascending:true}).range(0,9999);
-        const arr=[...new Set((r.data||[]).map(x=>x.pagamento).filter(Boolean))];
-        pag.innerHTML=arr.map(v=>`<option>${v}</option>`).join('');
-      }
-
-      // Canal
-      {
-        const r = await supa.from(TABLE).select(`"${KEY_CANAL}"`).order(KEY_CANAL,{ascending:true}).range(0,9999);
-        const arr=[...new Set((r.data||[]).map(x=>x[KEY_CANAL]).filter(Boolean))];
-        canal.innerHTML=arr.map(v=>`<option>${v}</option>`).join('');
-      }
-
-      // Lojas Top10
-      {
-        const q=await supa.from(TABLE).select(`"${KEY_LOJA}", fat`).not('fat','is',null).not(KEY_LOJA,'is',null).range(0,50000);
-        const acc=new Map(); (q.data||[]).forEach(r=>{ const k=r[KEY_LOJA]; acc.set(k,(acc.get(k)||0)+(Number(r.fat)||0)); });
-        const top=Array.from(acc.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k])=>k);
-        loja.innerHTML = `<option>Todos</option>` + top.map(v=>`<option>${v}</option>`).join('');
-      }
-    }
-
-    function computeKPIs(rows){
-      const pedidos=rows.reduce((s,r)=>s+(Number(r.pedidos)||0),0);
-      const fat=rows.reduce((s,r)=>s+(Number(r.fat)||0),0);
-      const des=rows.reduce((s,r)=>s+(Number(r.des)||0),0);
-      const fre=rows.reduce((s,r)=>s+(Number(r.fre)||0),0);
-      const fatliq=fat-des-fre; const dias=Math.max(1, new Set(rows.map(r=>r.dia)).size);
-      const ticket=pedidos?fat/pedidos:0; const fatDia=fat/dias; const desPct=fat?(des/fat):0;
-      kPedidos.textContent=pedidos.toLocaleString('pt-BR'); kTicket.textContent=fmtBRL(ticket);
-      kFat.textContent=fmtBRL(fat); kFatDia.textContent=fmtBRL(fatDia);
-      kDes.textContent=fmtBRL(des); kDesPct.textContent=fmtPct(desPct);
-      kFre.textContent=fmtBRL(fre); kFatLiq.textContent=fmtBRL(fatliq);
-    }
-
-    function drawChart(rows){
-      const byDay=new Map(); rows.forEach(r=>byDay.set(r.dia,(byDay.get(r.dia)||0)+(Number(r.fat)||0)));
-      const labels=Array.from(byDay.keys()).sort(); const values=labels.map(d=>byDay.get(d));
-      const ctx=chartEl.getContext('2d'); if(chart) chart.destroy();
-      if(!labels.length){ chart=null; return; }
-      chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'Receita',data:values,tension:0.2}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}}}});
-    }
-
-    async function reload(){
-      try{
+      async function reload(){
         if(!TABLE){ periodoEl.textContent='Sem dados.'; computeKPIs([]); if(chart) chart.destroy(); return; }
-
         const a=dini.value||minISO, b=dfim.value||maxISO;
-        const uniSel=uni.value||'Todas'; const lojaSel=loja.value||'Todos';
-        const turnSel=Array.from(turno.selectedOptions).map(o=>o.value);
-        const canSel=Array.from(canal.selectedOptions).map(o=>o.value);
-        const pagSel=Array.from(pag.selectedOptions).map(o=>o.value);
+        const uniSel=uni.value||'Todas', lojaSel=loja.value||'Todos';
+        const turnSel=getMulti(turno), canSel=getMulti(canal), pagSel=getMulti(pag);
         const cancSel=canc.value||'Todos';
 
-        const sel = `dia,unidade,pedidos,fat,des,fre,"${KEY_LOJA}","${KEY_CANAL}",turno,pagamento,cancelado,hora`;
-        const q=await supa.from(TABLE).select(sel).order('dia',{ascending:true}).range(0,200000);
-        if(q.error){ console.error(q.error); periodoEl.textContent='Erro ao carregar dados'; computeKPIs([]); if(chart) chart.destroy(); return; }
+        const q=await supa.from(TABLE)
+          .select('dia,unidade,pedidos,fat,des,fre,"Nome da loja",turno,"Canal de venda",pagamento,cancelado,hora')
+          .order('dia',{ascending:true})
+          .range(0,200000);
 
-        let rows=(q.data||[]).map(r=>({...r,dia:onlyDateISO(r.dia),cancelado:normCancel(r.cancelado)}));
-        rows=rows.filter(r=>{
-          if(!r.dia) return false;
-          if(a && r.dia<a) return false;
-          if(b && r.dia>b) return false;
-          if(uniSel!=='Todas' && norm(r.unidade)!==norm(uniSel)) return false;
-          if(lojaSel!=='Todos' && norm(r[KEY_LOJA])!==norm(lojaSel)) return false;
-          if(turnSel.length && !turnSel.includes(r.turno)) return false;
-          if(canSel.length && !canSel.includes(r[KEY_CANAL])) return false;
-          if(pagSel.length && !pagSel.includes(r.pagamento)) return false;
-          if(cancSel!=='Todos' && normCancel(r.cancelado)!==cancSel) return false;
-          return true;
-        });
+        if(q.error){ console.error(q.error); periodoEl.textContent='Erro ao carregar dados'; computeKPIs([]); return; }
+
+        let rows=(q.data||[]).map(r=>({...r,dia:r.dia?r.dia.slice(0,10):null,cancelado:normCancel(r.cancelado)}))
+          .filter(r=>{
+            if(!r.dia) return false;
+            if(a && r.dia < a) return false;
+            if(b && r.dia > b) return false;
+            if(uniSel!=='Todas' && norm(r.unidade)!==norm(uniSel)) return false;
+            if(lojaSel!=='Todos' && norm(r["Nome da loja"])!==norm(lojaSel)) return false;
+            if(turnSel.length && !turnSel.includes(r.turno)) return false;
+            if(canSel.length && !canSel.includes(r["Canal de venda"])) return false;
+            if(pagSel.length && !pagSel.includes(r.pagamento)) return false;
+            if(cancSel!=='Todos' && normCancel(r.cancelado)!==cancSel) return false;
+            return true;
+          });
 
         lastData=rows;
-        periodoEl.textContent=`Período: ${a??'—'} → ${b??'—'}`;
+        periodoEl.textContent=`Período: ${a??'—'} → ${b??'—'} • registros filtrados: ${rows.length}`;
         computeKPIs(rows);
         drawChart(rows);
-      }catch(e){
-        console.error(e);
-        periodoEl.textContent='Erro geral';
-        computeKPIs([]); if(chart) chart.destroy();
       }
-    }
 
-    // ===== IMPORT (DELETE-THEN-INSERT EM LOTES) =====
-    btnImport.addEventListener('click', async ()=>{
-      const file=csv.files?.[0];
-      if(!file){ setImport('Selecione um CSV.', 'error'); return; }
-      setImport('Lendo arquivo…', 'warn');
+      // ===== IMPORTAÇÃO =====
+      function mapHeader(h){
+        const key = norm(h);
+        const cand = [
+          {std:'dia', list:['dia','data','data da venda','data de venda','date','data_venda','datadavenda']},
+          {std:'unidade', list:['unidade','filial','unidades','uni','loja_unidade']},
+          {std:'pedidos', list:['pedidos','pedido','qtd','qtde','quantidade','orders','qty']},
+          {std:'fat', list:['fat','faturamento','total','valor total','valor','total geral','revenue','sales']},
+          {std:'des', list:['des','desconto','discount']},
+          {std:'fre', list:['fre','frete','entrega','delivery','shipping']},
+          {std:'turno', list:['turno','shift','periodo','período']},
+          {std:'Nome da loja', list:['nome da loja','nome loja','loja','nomedaloja','nome_da_loja','store_name']},
+          {std:'Canal de venda', list:['canal de venda','canal','canal de vendas','canal_venda','channel','sales_channel']},
+          {std:'pagamento', list:['pagamento','forma de pagamento','meio de pagamento','payment','payment_method']},
+          {std:'cancelado', list:['esta cancelado','está cancelado','cancelado','cancelada','cancelled','canceled']},
+          {std:'hora', list:['hora','horario','horário','hour','time']},
+        ];
+        for (const c of cand) if (c.list.includes(key)) return c.std;
+        return h;
+      }
 
-      Papa.parse(file,{
-        header:true, skipEmptyLines:'greedy', delimiter:"", // autodetect
-        transformHeader: (h)=>{
-          const key = String(h??'').normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
-          const map = [
-            ['dia', ['dia','data','data da venda','data de venda','data_venda','datadavenda','date']],
-            ['unidade', ['unidade','filial','unidades','uni','store','loja']],
-            ['pedidos', ['pedidos','pedido','qtd','qtde','quantidade','orders','qty']],
-            ['fat', ['fat','faturamento','total','valor total','valor','total geral','revenue','sales']],
-            ['des', ['des','desconto','discount']],
-            ['fre', ['fre','frete','entrega','delivery','shipping']],
-            ['turno',['turno','periodo','período','shift']],
-            ['Nome da loja',['nome da loja','nome loja','loja','nomedaloja','nome_da_loja','store_name']],
-            ['Canal de venda',['canal de venda','canal','canal de vendas','canal_venda','channel','sales_channel']],
-            ['pagamento',['pagamento','forma de pagamento','meio de pagamento','payment','payment_method']],
-            ['cancelado',['esta cancelado','está cancelado','cancelado','cancelada','cancelled','canceled']],
-            ['hora',['hora','horario','horário','hour','time']],
-          ];
-          for(const [std, list] of map) if(list.includes(key)) return std;
-          return h;
-        },
-        complete: async (res)=>{
-          try{
+      btnImport.addEventListener('click', async ()=>{
+        const file=csv.files?.[0]; if(!file){importStatus.textContent='Selecione um CSV.';return;}
+        importStatus.textContent='Lendo arquivo…';
+        Papa.parse(file,{
+          header:true, skipEmptyLines:'greedy', delimiter:',', quoteChar:'"', escapeChar:'"', transformHeader:mapHeader,
+          complete: async (res)=>{
             const raw=res.data||[];
-            if(raw.length===0){ setImport('Arquivo vazio.', 'error'); return; }
-
-            // Confere colunas mínimas
-            const headers = Object.keys(raw[0]);
-            const hasDia = headers.includes('dia') || headers.includes('Data da venda');
+            const headers = Object.keys(raw[0]||{});
+            const hasDia = headers.includes('dia') || headers.some(h=>norm(h).includes('data'));
             const hasUni = headers.includes('unidade');
             const hasFat = headers.includes('fat') || headers.includes('Total');
-            if(!hasDia||!hasUni||!hasFat){ setImport('Nada para importar (colunas obrigatórias não reconhecidas: dia/unidade/fat).','error'); return; }
+            if(!hasDia||!hasUni||!hasFat){ importStatus.textContent='Nada para importar (colunas obrigatórias não reconhecidas: dia/unidade/fat).'; return; }
 
-            // Normaliza registros
-            const reasons = {};
-            const drop=(r)=>{ reasons[r]=(reasons[r]||0)+1; return null; };
-
-            const normRows = raw.map(r=>{
-              let diaValue = r.dia || r['Data da venda'] || r['data'] || r['Data'];
-              let iso=null;
-              if(diaValue){
-                if(String(diaValue).match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/)) iso=ddmmyyyyToISO(diaValue);
-                else iso=onlyDateISO(String(diaValue));
+            const normRows = raw.map((r,idx)=>{
+              let diaValue = r.dia ?? r['Data da venda'] ?? r['data'] ?? r['Data'];
+              let iso = null;
+              if (diaValue){
+                iso = String(diaValue).includes('/') ? ddmmyyyyToISO(diaValue) : toISO(diaValue);
               }
-              if(!iso) return drop('data inválida');
-
-              const hora = ('hora' in r)? (parseInt(r.hora,10) || -1) : hourFromDateText(diaValue);
-              const fat = parseBR(r.fat ?? r['Total'] ?? 0);
-              const des = parseBR(r.des ?? r['Desconto'] ?? 0);
-              const fre = parseBR(r.fre ?? r['Entrega'] ?? r['Frete'] ?? 0);
-              const unidade = String(r.unidade || r.Unidade || '').trim();
-              if(!unidade) return drop('unidade vazia');
-              if(!isFinite(fat)) return drop('fat inválido');
-
+              if(!iso) return null;
+              const hora = ('hora' in r) ? (parseInt(r.hora,10)||-1) : hourFromDateText(diaValue);
+              const fat = parseBR(r.fat ?? r['Total'] ?? r.total ?? 0);
+              const des = parseBR(r.des ?? r['Desconto'] ?? r.desconto ?? 0);
+              const fre = parseBR(r.fre ?? r['Entrega'] ?? r.entrega ?? r.frete ?? 0);
+              const unidade = String(r.unidade ?? r.Unidade ?? '').trim();
+              if(!unidade || !isFinite(fat)) return null;
               return {
                 dia: onlyDateISO(iso),
                 unidade,
-                pedidos: Math.max(1, Number(r.pedidos) || 1),
+                pedidos: Math.max(1, Number(r.pedidos)||1),
                 fat, des, fre,
                 turno: r.turno ?? r.Turno ?? null,
                 pagamento: r.pagamento ?? r.Pagamento ?? null,
-                [KEY_CANAL]: r['Canal de venda'] ?? r.Canal ?? null,
-                [KEY_LOJA]:  r['Nome da loja']  ?? r.Loja  ?? null,
+                "Canal de venda": r["Canal de venda"] ?? r.Canal ?? null,
+                "Nome da loja": r["Nome da loja"] ?? r.Loja ?? null,
                 cancelado: normCancel(r.cancelado ?? r['Está cancelado']),
-                hora: isFinite(hora)? hora : -1
+                hora: isFinite(hora)?hora:-1
               };
             }).filter(Boolean);
 
-            if(normRows.length===0){ setImport('Nada para importar (linhas inválidas).','error'); console.warn('Descartes:',reasons); return; }
+            if(!normRows.length){ importStatus.textContent='Nada para importar (linhas inválidas).'; return; }
 
-            // Dedup client-side
+            // dedup no cliente
             const acc=new Map();
             for(const r of normRows){
-              const key=[r.dia,r.unidade,r[KEY_LOJA],r.hora,r.pagamento,r[KEY_CANAL]].join('|');
+              const key=[r.dia,r.unidade,r["Nome da loja"],r.hora,r.pagamento,r["Canal de venda"]].join('|');
               const v=acc.get(key)||{...r};
               v.pedidos=(v.pedidos||0)+(r.pedidos||0);
               v.fat=(v.fat||0)+(r.fat||0);
@@ -417,62 +367,36 @@
               acc.set(key,v);
             }
             const rows=[...acc.values()];
-            // Intervalo do arquivo
-            const minFile = rows.map(x=>x.dia).sort()[0];
-            const maxFile = rows.map(x=>x.dia).sort().slice(-1)[0];
+            importStatus.textContent=`Enviando ${rows.length.toLocaleString('pt-BR')} registros…`;
 
-            if(!TABLE){ await pickSource(); if(!TABLE){ setImport('Sem tabela no banco.','error'); return; } }
+            if(!TABLE){ await pickSource(); if(!TABLE){ importStatus.textContent='Sem tabela definida no banco.'; return; } }
+            const onC='dia,unidade,"Nome da loja",hora,pagamento,"Canal de venda"';
+            const r=await supa.from(TABLE).upsert(rows,{onConflict:onC});
+            if(r.error){ console.error(r.error); importStatus.textContent='Erro ao inserir.'; return; }
 
-            // 1) Limpa SOMENTE o intervalo de datas do arquivo
-            setImport(`Limpando ${minFile} → ${maxFile}…`,'warn');
-            const del = await supa.from(TABLE).delete().gte('dia', minFile).lte('dia', maxFile);
-            if(del.error){ console.error(del.error); setImport('Erro ao limpar intervalo no banco.','error'); return; }
-
-            // 2) Insere em lotes (evita 500/409)
-            setImport(`Inserindo ${rows.length.toLocaleString('pt-BR')} registros…`,'warn');
-            for(const part of chunk(rows, 1000)){
-              const ins = await supa.from(TABLE).insert(part, { ignoreDuplicates: true });
-              if(ins.error){ console.error(ins.error); setImport('Erro ao inserir (lote).','error'); return; }
-            }
-
-            setImport('Importado.','ok');
-            await fetchMinMax(); await buildOptions(); await reload();
-
-          }catch(err){
-            console.error(err);
-            setImport('Erro inesperado no import.','error');
-          }
-        },
-        error: (e)=>{ console.error(e); setImport('Erro ao ler CSV','error'); }
+            importStatus.textContent='Importado.';
+            await fetchMinMax();
+            await buildOptions();
+            await reload();
+          },
+          error: (e)=>{ console.error(e); importStatus.textContent='Erro ao ler CSV.'; }
+        });
       });
-    });
 
-    function setImport(msg, kind='warn'){
-      importStatus.textContent=msg;
-      importStatus.className='status ' + (kind==='ok'?'ok':kind==='error'?'error':'warn');
+      // ===== LISTENERS =====
+      pr.addEventListener("change", ()=>{ applyQuickDate(); reload(); fx.open=false; });
+      [uni,dini,dfim,turno,canal,pag,canc,loja].forEach(e=> e.addEventListener("change", ()=>{ reload(); fx.open=false; }));
+      btnLimpar.addEventListener('click', ()=>{ uni.value='Todas'; loja.value='Todos'; turno.selectedIndex=-1; canal.selectedIndex=-1; pag.selectedIndex=-1; canc.value='Todos'; applyQuickDate(); reload(); });
+
+      // ===== BOOT =====
+      (async function(){
+        await pickSource();
+        await fetchMinMax();
+        applyQuickDate();
+        await buildOptions();
+        await reload();
+      })();
     }
-
-    // ===== LISTENERS =====
-    pr.addEventListener("change", ()=>{ applyQuickDate(); reload(); });
-    ;[uni,dini,dfim,turno,canal,pag,canc,loja].forEach(e=> e.addEventListener("change", ()=>{ reload(); }));
-
-    btnLimpar.addEventListener('click', ()=>{
-      loja.value='Todos'; uni.value='Todas';
-      turno.selectedIndex=-1; canal.selectedIndex=-1; pag.selectedIndex=-1; canc.value='Todos';
-      applyQuickDate(); reload();
-    });
-
-    // ===== BOOT =====
-    (async function boot(){
-      health.textContent='Checando fonte…'; health.className='status warn';
-      await pickSource();
-      if(!TABLE){ health.textContent='Tabela/View não encontrada'; health.className='status error'; return; }
-      await detectColumnNames();
-      await fetchMinMax();
-      applyQuickDate();
-      await buildOptions();
-      await reload();
-    })();
   })();
   </script>
 </body>
