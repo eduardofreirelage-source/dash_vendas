@@ -5,16 +5,15 @@
   <title>Maestro Food</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- =================== PROMPT MESTRE v18.2.0 ===================
-   - Origem automática: tenta vendas_kpi_daily_v2_data; se vazio/sem acesso,
-     usa vendas_kpi_daily_v2.
-   - Coluna de loja autodetect: "Nome da loja" ou "Nome da Loja".
-   - Datas nunca enviam dia=null; sempre travadas entre min(dia) e max(dia).
-   - Facets (Unidade, Loja, Canal, Pagamento) reconstruídos no período atual.
-   - Import somativo + dedup (dia,unidade,Loja,hora,pagamento,Canal).
-   - UI limpa; status curto em #status; sem console ruidoso.
-   - Nunca retroceder: manter nomes, correções e casing detectado em runtime.
-  =============================================================== -->
+  <!-- ========= PROMPT MESTRE (v18.2.2)
+    - Fonte de dados robusta: tenta vendas_kpi_daily_v2; fallback vendas_kpi_daily_v2_data
+    - Auto detecção da coluna de loja: "Nome da loja" OU "Nome da Loja"
+    - Filtros nunca usam dia=null; sempre limitados a min/max do banco
+    - Facets (Unidade/Loja/Canal/Pagamento) refeitos no período atual
+    - Importação somativa + dedup no arquivo (sem onConflict no server)
+    - UI limpa; status curto; sem logs verbosos
+    - Sem retrocesso: mantém correções e nomes aprovados
+  ======================================= -->
 
   <!-- libs -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
@@ -149,48 +148,179 @@
 
 <script>
 (function(){
-  if (window.__MAESTRO_BOOT__) return; window.__MAESTRO_BOOT__=true;
+  if (window.__MF_BOOT__) return; window.__MF_BOOT__=true;
 
-  // ===== CONFIG ===============================================================
+  // ===== CONFIG =====
   const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
   const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  // Fonte de dados (auto)
-  const SOURCES = ["vendas_kpi_daily_v2_data", "vendas_kpi_daily_v2"];
+  // Tabelas candidatas (ordem de preferência)
+  const SOURCES = ["vendas_kpi_daily_v2", "vendas_kpi_daily_v2_data"];
   let TABLE = null;
 
-  // Colunas (auto para loja)
-  let COL_LOJA_OBJ = "Nome da loja";   // para objetos/eq()
-  let COL_LOJA_SQL = '"Nome da loja"'; // para select()/onConflict
+  // Colunas dinâmicas
+  let COL_LOJA_OBJ = "Nome da loja";   // para r[COL_LOJA_OBJ]
+  let COL_LOJA_SQL = '"Nome da loja"'; // para select()
   const COL_CANAL_OBJ = "Canal de venda";
   const COL_CANAL_SQL = '"Canal de venda"';
 
-  // ===== UI REFS ==============================================================
-  const dini   = document.getElementById("dini");
-  const dfim   = document.getElementById("dfim");
-  const pr     = document.getElementById("pr");
-  const uni    = document.getElementById("uni");
-  const loja   = document.getElementById("loja");
-  const turno  = document.getElementById("turno");
-  const canal  = document.getElementById("canal");
-  const pag    = document.getElementById("pag");
-  const canc   = document.getElementById("canc");
-  const statusEl = document.getElementById("status");
-  const periodoEl= document.getElementById("periodo");
-  const modeBtn  = document.getElementById("modeBtn");
+  // UI refs
+  const dini=document.getElementById("dini"), dfim=document.getElementById("dfim"), pr=document.getElementById("pr");
+  const uni=document.getElementById("uni"), loja=document.getElementById("loja");
+  const turno=document.getElementById("turno"), canal=document.getElementById("canal"), pag=document.getElementById("pag"), canc=document.getElementById("canc");
+  const statusEl=document.getElementById("status"), periodoEl=document.getElementById("periodo"), modeBtn=document.getElementById("modeBtn");
 
-  // ===== STATE & UTILS ========================================================
-  let minISO = null, maxISO = null;
-  let chartLine = null, showAvg = false;
+  // State
+  let minISO=null, maxISO=null, chartLine=null, showAvg=false;
 
+  // Utils
   const fmtBRL = n => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0);
   const fmtINT = n => new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(Number(n)||0);
   const setStatus=(m,ok)=>{ statusEl.textContent=m||""; statusEl.className="status "+(ok===true?"ok":ok===false?"err":""); if(ok===true){ setTimeout(()=>{ statusEl.textContent=""; statusEl.className="status"; },2200);} };
   const safeISO = d=>{ try{ if(!d) return null; const x=new Date(d+"T00:00:00"); return isNaN(x)?null:x.toISOString().slice(0,10);}catch(_){return null;} };
   const addDays=(iso,dd)=>{ const x=new Date((iso||"1970-01-01")+"T00:00:00"); x.setDate(x.getDate()+dd); return x.toISOString().slice(0,10); };
   const numberFromBR = s=>{ if(s===undefined||s===null||s==="") return 0; if(typeof s==="number") return s; s=String(s).trim().replace(/[R$\s]/g,""); if(s.includes(",")) s=s.replace(/\./g,"").replace(",","."); return Number(s)||0; };
+
+  async function pickTable(){
+    for(const t of SOURCES){
+      const q = await supa.from(t).select("dia").limit(1);
+      if(!q.error){ TABLE=t; return true; }
+    }
+    setStatus("Nenhuma tabela acessível (v2 / v2_data).", false);
+    return false;
+  }
+  async function detectLojaColumn(){
+    // tenta "Nome da loja"
+    let q = await supa.from(TABLE).select('"Nome da loja"').limit(1);
+    if(!q.error){ COL_LOJA_OBJ="Nome da loja"; COL_LOJA_SQL='"Nome da loja"'; return; }
+    // tenta "Nome da Loja"
+    q = await supa.from(TABLE).select('"Nome da Loja"').limit(1);
+    if(!q.error){ COL_LOJA_OBJ="Nome da Loja"; COL_LOJA_SQL='"Nome da Loja"'; return; }
+    // sem coluna de loja
+    COL_LOJA_OBJ=null; COL_LOJA_SQL=null;
+  }
+
+  async function refreshLimits(){
+    const a=await supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
+    const b=await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
+    minISO=a.data?.[0]?.dia||null; maxISO=b.data?.[0]?.dia||null;
+    if(minISO && maxISO){
+      dini.min=minISO; dfim.min=minISO; dini.max=maxISO; dfim.max=maxISO;
+      if(!dfim.value) dfim.value=maxISO;
+      if(!dini.value){ const days=(Number(pr.value)||90)-1; dini.value=addDays(maxISO,-days); }
+    }
+  }
+
+  async function loadUnidades(){
+    const set=new Set(); let from=0, page=2000;
+    for(;;){
+      const {data,error}=await supa.from(TABLE).select("unidade").not("unidade","is",null).range(from,from+page-1);
+      if(error) break;
+      (data||[]).forEach(r=>{ const v=(r.unidade??"").toString().trim(); if(v) set.add(v); });
+      if(!data || data.length<page) break; from+=page; if(from>500000) break;
+    }
+    uni.innerHTML=""; const o0=document.createElement("option"); o0.value="Todas"; o0.textContent="Todas"; uni.appendChild(o0);
+    Array.from(set).sort((a,b)=>a.localeCompare(b,"pt-BR")).forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; uni.appendChild(o); });
+    if(!uni.value) uni.value="Todas";
+  }
+
+  async function rebuildFacets(){
+    let s=safeISO(dini.value), e=safeISO(dfim.value);
+    if((!s||!e) && maxISO){ e=maxISO; s=addDays(maxISO,-((Number(pr.value)||90)-1)); if(!dini.value) dini.value=s; if(!dfim.value) dfim.value=e; }
+
+    const setLoja=new Set(), setCanal=new Set(), setPag=new Set();
+    let from=0, page=2000;
+    for(;;){
+      const cols = [COL_CANAL_SQL, "pagamento"].filter(Boolean);
+      if(COL_LOJA_SQL) cols.unshift(COL_LOJA_SQL);
+      let q=supa.from(TABLE).select(cols.join(",")).range(from,from+page-1);
+      if(s) q=q.gte("dia",s); if(e) q=q.lte("dia",e);
+      if(uni.value && uni.value!=="Todas") q=q.eq("unidade",uni.value);
+      if(turno.value && turno.value!=="Todos") q=q.eq("turno",turno.value);
+      if(canc.value && canc.value!=="Todos") q=q.eq("cancelado",canc.value);
+      if(COL_LOJA_OBJ) q=q.not(COL_LOJA_OBJ,"is",null);
+      q=q.not(COL_CANAL_OBJ,"is",null).not("pagamento","is",null);
+      const {data,error}=await q; if(error) break;
+      (data||[]).forEach(r=>{
+        if(COL_LOJA_OBJ){ const L=(r[COL_LOJA_OBJ]??"").toString().trim(); if(L) setLoja.add(L); }
+        const C=(r[COL_CANAL_OBJ]??"").toString().trim(); if(C) setCanal.add(C);
+        const P=(r["pagamento"]??"").toString().trim(); if(P) setPag.add(P);
+      });
+      if(!data || data.length<page) break; from+=page; if(from>500000) break;
+    }
+    const refill=(sel,set,allLbl)=>{
+      const cur=sel.value; sel.innerHTML="";
+      const o0=document.createElement("option"); o0.value=allLbl; o0.textContent=allLbl; sel.appendChild(o0);
+      Array.from(set).sort((a,b)=>a.localeCompare(b,"pt-BR")).forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; sel.appendChild(o); });
+      sel.value=(cur && (cur===o0.value || set.has(cur)))?cur:o0.value;
+    };
+    if(COL_LOJA_OBJ){ refill(loja,setLoja,"Todas"); } else { loja.innerHTML='<option value="Todas">Todas</option>'; }
+    refill(canal,setCanal,"Todos");
+    refill(pag,setPag,"Todos");
+  }
+
+  async function fetchPaged(s,e){
+    let cols=['dia','unidade','pedidos','fat','des','fre','turno',COL_CANAL_SQL,'pagamento','cancelado','hora'];
+    if(COL_LOJA_SQL) cols.splice(6,0,COL_LOJA_SQL);
+    const fields=cols.join(",");
+    let from=0,page=2000,out=[];
+    for(;;){
+      let q=supa.from(TABLE).select(fields).order("dia",{ascending:true}).range(from,from+page-1);
+      if(s) q=q.gte("dia",s); if(e) q=q.lte("dia",e);
+      if(uni.value && uni.value!=="Todas") q=q.eq("unidade",uni.value);
+      if(COL_LOJA_OBJ && loja.value && loja.value!=="Todas") q=q.eq(COL_LOJA_OBJ,loja.value);
+      if(turno.value && turno.value!=="Todos") q=q.eq("turno",turno.value);
+      if(canal.value && canal.value!=="Todos") q=q.eq(COL_CANAL_OBJ,canal.value);
+      if(pag.value && pag.value!=="Todos") q=q.eq("pagamento",pag.value);
+      if(canc.value && canc.value!=="Todos") q=q.eq("cancelado",canc.value);
+      const {data,error}=await q; if(error) throw error;
+      out=out.concat(data||[]); if(!data || data.length<page) break; from+=page; if(from>500000) break;
+    }
+    return out;
+  }
+
+  function drawLine(labels, values){
+    if(chartLine){ try{chartLine.destroy();}catch(_){ } }
+    chartLine=new window.Chart(document.getElementById("cLine").getContext("2d"),{
+      type:"line",
+      data:{labels,datasets:[{data:values,borderWidth:2,pointRadius:0,tension:0.2}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
+    });
+  }
+
+  function render(rows){
+    const byDay=new Map(); let ped=0,fat=0;
+    rows.forEach(r=>{ ped+=Number(r.pedidos||0); fat+=Number(r.fat||0); byDay.set(r.dia,(byDay.get(r.dia)||0)+Number(r.fat||0)); });
+    const days=Array.from(byDay.keys()).sort(); const vals=days.map(d=>byDay.get(d)||0);
+    let series=vals;
+    if(showAvg){
+      let acc=0,out=[]; for(let i=0;i<vals.length;i++){ acc+=vals[i]; if(i>=7) acc-=vals[i-7]; out.push(acc/Math.min(i+1,7)); }
+      series=out;
+    }
+    document.getElementById("k_ped").textContent=fmtINT(ped);
+    document.getElementById("k_tkm").textContent=fmtBRL(ped? fat/ped : 0);
+    document.getElementById("k_fat").textContent=fmtBRL(fat);
+    document.getElementById("k_fmd").textContent=fmtBRL(days.length? fat/days.length : 0);
+    drawLine(days,series);
+  }
+
+  async function reload(){
+    if(!TABLE){ setStatus("Sem tabela definida.",false); return; }
+    let s=safeISO(dini.value), e=safeISO(dfim.value);
+    if((!s||!e) && maxISO){ e=maxISO; s=addDays(maxISO,-((Number(pr.value)||90)-1)); if(!dini.value) dini.value=s; if(!dfim.value) dfim.value=e; }
+    periodoEl.textContent="Período: "+(s||"—")+" → "+(e||"—");
+    try{
+      await rebuildFacets();
+      const rows=await fetchPaged(s,e);
+      render(rows);
+      setStatus("");
+    }catch(err){ setStatus("Falha ao carregar: "+(err.message||err),false); }
+  }
+
+  // ===== IMPORT (somativa + dedup no arquivo) =====
   const sanitizeHeader = h=>String(h||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim().replace(/\s+/g," ");
+  const getVal=(row,key)=> row?.[key] ?? row?.[key?.toLowerCase()] ?? row?.[key?.toUpperCase()];
 
   function guessCols(headers){
     const H=(headers||[]).map(sanitizeHeader);
@@ -211,170 +341,9 @@
     };
   }
 
-  async function columnExists(table, colSql){
-    const { error } = await supa.from(table).select(colSql).limit(1);
-    return !error;
-  }
-
-  async function detectSourceAndColumns(){
-    // escolhe a tabela com dados/acesso
-    for(const name of SOURCES){
-      const { data, error } = await supa.from(name).select("dia").limit(1);
-      if(!error){ TABLE = name; break; }
-    }
-    if(!TABLE){ setStatus("Tabela não encontrada/acessível.", false); return false; }
-
-    // loja: tenta "Nome da loja"; se falhar, usa "Nome da Loja"
-    const lojaLowerOk = await columnExists(TABLE, '"Nome da loja"');
-    const lojaUpperOk = await columnExists(TABLE, '"Nome da Loja"');
-    if(lojaLowerOk){ COL_LOJA_OBJ="Nome da loja"; COL_LOJA_SQL='"Nome da loja"'; }
-    else if(lojaUpperOk){ COL_LOJA_OBJ="Nome da Loja"; COL_LOJA_SQL='"Nome da Loja"'; }
-    else {
-      // sem coluna de loja — segue sem facet de loja
-      COL_LOJA_OBJ=null; COL_LOJA_SQL=null;
-    }
-    return true;
-  }
-
-  // ===== LIMITES & UNIDADES ===================================================
-  async function refreshLimits(){
-    const a=await supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
-    const b=await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
-    minISO=(a.data&&a.data[0]&&a.data[0].dia)||null;
-    maxISO=(b.data&&b.data[0]&&b.data[0].dia)||null;
-    if(minISO && maxISO){
-      dini.min=minISO; dfim.min=minISO; dini.max=maxISO; dfim.max=maxISO;
-      if(!dfim.value) dfim.value=maxISO;
-      if(!dini.value){ const days=(Number(pr.value)||90)-1; dini.value=addDays(maxISO,-days); }
-    }
-  }
-
-  async function loadUnidades(){
-    const set=new Set(); let from=0; const page=2000;
-    for(;;){
-      const {data,error}=await supa.from(TABLE).select("unidade").not("unidade","is",null).range(from,from+page-1);
-      if(error) break;
-      (data||[]).forEach(r=>{ const v=(r.unidade??"").toString().trim(); if(v) set.add(v); });
-      if(!data || data.length<page) break; from+=page; if(from>500000) break;
-    }
-    uni.innerHTML="";
-    const o0=document.createElement("option"); o0.value="Todas"; o0.textContent="Todas"; uni.appendChild(o0);
-    Array.from(set).sort((a,b)=>a.localeCompare(b,"pt-BR")).forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; uni.appendChild(o); });
-    if(!uni.value) uni.value="Todas";
-  }
-
-  // ===== FACETS ===============================================================
-  async function rebuildFacetOptions(){
-    let s=safeISO(dini.value), e=safeISO(dfim.value);
-    if((!s||!e) && maxISO){ e=maxISO; s=addDays(maxISO,-((Number(pr.value)||90)-1)); if(!dini.value) dini.value=s; if(!dfim.value) dfim.value=e; }
-
-    const setLoja=new Set(), setCanal=new Set(), setPag=new Set();
-    let from=0, page=2000;
-
-    for(;;){
-      let cols = [];
-      if(COL_LOJA_SQL) cols.push(COL_LOJA_SQL);
-      cols.push(COL_CANAL_SQL, "pagamento");
-      let q=supa.from(TABLE).select(cols.join(",")).range(from,from+page-1);
-      if(s) q=q.gte("dia",s);
-      if(e) q=q.lte("dia",e);
-      if(uni.value && uni.value!=="Todas") q=q.eq("unidade",uni.value);
-      if(turno.value && turno.value!=="Todos") q=q.eq("turno",turno.value);
-      if(canc.value && canc.value!=="Todos") q=q.eq("cancelado",canc.value);
-      if(COL_LOJA_OBJ) q = q.not(COL_LOJA_OBJ,"is",null);
-      q = q.not(COL_CANAL_OBJ,"is",null).not("pagamento","is",null);
-
-      const {data,error}=await q;
-      if(error) break;
-      (data||[]).forEach(r=>{
-        if(COL_LOJA_OBJ){ const L=(r[COL_LOJA_OBJ]??"").toString().trim(); if(L) setLoja.add(L); }
-        const C=(r[COL_CANAL_OBJ]??"").toString().trim(); if(C) setCanal.add(C);
-        const P=(r["pagamento"]??"").toString().trim(); if(P) setPag.add(P);
-      });
-      if(!data || data.length<page) break; from+=page; if(from>500000) break;
-    }
-
-    const refill=(sel,set,allLbl)=>{
-      const cur=sel.value; sel.innerHTML="";
-      const o0=document.createElement("option"); o0.value=allLbl||"Todos"; o0.textContent=allLbl||"Todos"; sel.appendChild(o0);
-      Array.from(set).sort((a,b)=>a.localeCompare(b,"pt-BR")).forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; sel.appendChild(o); });
-      sel.value=(cur && (cur===o0.value || set.has(cur)))?cur:o0.value;
-    };
-    // Loja pode não existir — mantém select mesmo assim
-    if(COL_LOJA_OBJ){ refill(loja,setLoja,"Todas"); } else { loja.innerHTML='<option value="Todas">Todas</option>'; }
-    refill(canal,setCanal,"Todos");
-    refill(pag,setPag,"Todos");
-  }
-
-  // ===== CONSULTA & RENDER ====================================================
-  async function fetchPaged(startISO,endISO){
-    let cols = ['dia','unidade','pedidos','fat','des','fre','turno',COL_CANAL_SQL,'pagamento','cancelado','hora'];
-    if(COL_LOJA_SQL) cols.splice(6,0,COL_LOJA_SQL); // insere a de loja logo após fre
-    const fields = cols.join(",");
-    let from=0, page=2000, out=[];
-    for(;;){
-      let q=supa.from(TABLE).select(fields).order("dia",{ascending:true}).range(from,from+page-1);
-      if(startISO) q=q.gte("dia",startISO);
-      if(endISO)   q=q.lte("dia",endISO);
-      if(uni.value && uni.value!=="Todas")     q=q.eq("unidade",uni.value);
-      if(COL_LOJA_OBJ && loja.value && loja.value!=="Todas") q=q.eq(COL_LOJA_OBJ,loja.value);
-      if(turno.value && turno.value!=="Todos") q=q.eq("turno",turno.value);
-      if(canal.value && canal.value!=="Todos") q=q.eq(COL_CANAL_OBJ,canal.value);
-      if(pag.value && pag.value!=="Todos")     q=q.eq("pagamento",pag.value);
-      if(canc.value && canc.value!=="Todos")   q=q.eq("cancelado",canc.value);
-      const {data,error}=await q; if(error) throw error;
-      out=out.concat(data||[]); if(!data || data.length<page) break; from+=page; if(from>500000) break;
-    }
-    return out;
-  }
-
-  function drawLine(labels,values){
-    if(chartLine){ try{chartLine.destroy();}catch(_){ } }
-    chartLine=new window.Chart(document.getElementById("cLine").getContext("2d"),{
-      type:"line",
-      data:{labels,datasets:[{data:values,borderWidth:2,pointRadius:0,tension:0.2}]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
-    });
-  }
-
-  function computeAndRender(rows){
-    const byDay=new Map(); let ped=0,fat=0;
-    rows.forEach(r=>{ ped+=Number(r.pedidos||0); fat+=Number(r.fat||0); byDay.set(r.dia,(byDay.get(r.dia)||0)+Number(r.fat||0)); });
-    const days=Array.from(byDay.keys()).sort(); const vals=days.map(d=>byDay.get(d)||0);
-
-    let series=vals;
-    if(showAvg){
-      let acc=0,out=[]; for(let i=0;i<vals.length;i++){ acc+=vals[i]; if(i>=7) acc-=vals[i-7]; out.push(acc/Math.min(i+1,7)); }
-      series=out;
-    }
-
-    document.getElementById("k_ped").textContent=fmtINT(ped);
-    document.getElementById("k_tkm").textContent=fmtBRL(ped? fat/ped : 0);
-    document.getElementById("k_fat").textContent=fmtBRL(fat);
-    document.getElementById("k_fmd").textContent=fmtBRL(days.length? fat/days.length : 0);
-
-    drawLine(days,series);
-  }
-
-  async function reload(){
-    if(!TABLE){ setStatus("Sem origem de dados.", false); return; }
-    let s=safeISO(dini.value), e=safeISO(dfim.value);
-    if((!s||!e) && maxISO){ e=maxISO; s=addDays(maxISO,-((Number(pr.value)||90)-1)); if(!dini.value) dini.value=s; if(!dfim.value) dfim.value=e; }
-    periodoEl.textContent="Período: "+(s||"—")+" → "+(e||"—");
-    try{
-      await rebuildFacetOptions();
-      const rows=await fetchPaged(s,e);
-      computeAndRender(rows);
-    }catch(err){ setStatus("Falha ao carregar: "+(err.message||err),false); }
-  }
-
-  // ===== IMPORTAÇÃO (somativa + dedup local) =================================
-  function getVal(row, key){ return row?.[key] ?? row?.[key?.toLowerCase()] ?? row?.[key?.toUpperCase()]; }
-
-  document.getElementById("import").addEventListener("click", async ()=>{
+  document.getElementById("import").addEventListener("click", ()=>{
     const f=document.getElementById("csv").files[0]; if(!f){ setStatus("Selecione o arquivo.",false); return; }
-    if(!TABLE){ setStatus("Sem origem de dados.", false); return; }
-
+    if(!TABLE){ setStatus("Sem tabela definida.",false); return; }
     setStatus("Lendo arquivo…");
     Papa.parse(f,{
       header:true, skipEmptyLines:true, dynamicTyping:false,
@@ -411,25 +380,26 @@
             };
             if(COL_LOJA_OBJ){ obj[COL_LOJA_OBJ] = cols.loja ? String(getVal(r,cols.loja)||"").trim() : null; }
 
+            // chave composta
             const key=[obj.dia,obj.unidade,(COL_LOJA_OBJ? (obj[COL_LOJA_OBJ]||"") : ""),obj.hora==null?"":obj.hora,obj.pagamento||"",obj[COL_CANAL_OBJ]||""].join("§");
             if(!acc.has(key)) acc.set(key,{...obj});
             else { const a=acc.get(key); a.pedidos+=obj.pedidos; a.fat+=obj.fat; a.des+=obj.des; a.fre+=obj.fre; }
           }
 
-          const payload=Array.from(acc.values()); if(payload.length===0){ setStatus("Nada válido para importar.",false); return; }
+          const payload=Array.from(acc.values()); if(payload.length===0){ setStatus("Nada para importar (colunas não reconhecidas).",false); return; }
           setStatus("Enviando "+payload.length.toLocaleString("pt-BR")+"…");
 
-          const conflict = 'dia,unidade,' + (COL_LOJA_SQL? COL_LOJA_SQL+',' : '') + 'hora,pagamento,'+COL_CANAL_SQL;
+          // Inserção em lotes (sem onConflict no server)
           const chunk=1200;
           for(let i=0;i<payload.length;i+=chunk){
             const slice=payload.slice(i,i+chunk);
-            const { error } = await supa.from(TABLE).upsert(slice,{ onConflict: conflict });
+            const { error } = await supa.from(TABLE).insert(slice);
             if(error){ setStatus("Erro ao inserir: "+error.message,false); return; }
           }
           setStatus("Importado.",true);
           await refreshLimits();
           await loadUnidades();
-          await rebuildFacetOptions();
+          await rebuildFacets();
           await reload();
         }catch(err){ setStatus("Erro: "+(err.message||err),false); }
       },
@@ -437,49 +407,36 @@
     });
   });
 
-  // ===== DIAGNÓSTICO =========================================================
-  async function runDiagnostics(){
-    try{
-      setStatus("Diagnóstico…");
-      const a=await supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
-      const b=await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
-      const minD=a.data?.[0]?.dia||null, maxD=b.data?.[0]?.dia||null;
-      if(!minD || !maxD){ setStatus("Sem dados na fonte: "+TABLE, false); return; }
-      let s=safeISO(dini.value), e=safeISO(dfim.value);
-      if((!s||!e)){ s=addDays(maxD,-((Number(pr.value)||90)-1)); e=maxD; }
+  // Diagnóstico rápido
+  document.getElementById("diag").addEventListener("click", async ()=>{
+    if(!TABLE){ setStatus("Sem tabela definida.",false); return; }
+    const a=await supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
+    const b=await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
+    const mi=a.data?.[0]?.dia||null, ma=b.data?.[0]?.dia||null;
+    if(!mi||!ma){ setStatus("Sem dados na origem: "+TABLE,false); return; }
+    setStatus(`OK — ${mi}→${ma} em ${TABLE}`,true);
+  });
 
-      const cols = ['unidade', COL_LOJA_OBJ, COL_CANAL_OBJ, 'pagamento'].filter(Boolean);
-      for(const c of cols){
-        let q=supa.from(TABLE).select(c).gte("dia",s).lte("dia",e).not(c,"is",null).limit(1);
-        const {error}=await q;
-        if(error){ setStatus("Erro facet "+c+": "+error.message,false); return; }
-      }
-      const test=await supa.from(TABLE).select("dia,fat").gte("dia",s).lte("dia",e).limit(1);
-      if(test.error){ setStatus("Falha consulta: "+test.error.message,false); return; }
-      setStatus(`OK — ${minD}→${maxD} em ${TABLE}`,true);
-    }catch(e){ setStatus("Diag erro: "+(e.message||e),false); }
-  }
-  document.getElementById("diag").addEventListener("click", runDiagnostics);
-
-  // ===== EVENTOS UI ===========================================================
+  // Eventos
   document.getElementById("btnClear").addEventListener("click", async ()=>{
     uni.value="Todas"; loja.value="Todas"; turno.value="Todos"; canal.value="Todos"; pag.value="Todos"; canc.value="Todos";
     if(maxISO){ dfim.value=maxISO; dini.value=addDays(maxISO,-((Number(pr.value)||90)-1)); }
-    await rebuildFacetOptions(); await reload();
+    await rebuildFacets(); await reload();
   });
   [dini,dfim,uni,loja,turno,canal,pag,canc].forEach(el=> el.addEventListener("change", ()=>reload()));
   pr.addEventListener("change", ()=>{ if(maxISO){ dfim.value=maxISO; dini.value=addDays(maxISO,-((Number(pr.value)||90)-1)); } reload(); });
   modeBtn.addEventListener("click", ()=>{ showAvg=!showAvg; modeBtn.textContent=showAvg?"Média (7d)":"Total"; reload(); });
 
-  // ===== BOOT ================================================================
+  // BOOT
   (async function(){
     setStatus("Detectando origem…");
-    const ok = await detectSourceAndColumns();
-    if(!ok) return;
+    const ok = await pickTable();
+    if(!ok){ setStatus("Sem dados na fonte: null", false); return; }
+    await detectLojaColumn();
     await refreshLimits();
     if(!minISO || !maxISO){ setStatus("Sem dados na origem: "+TABLE,false); return; }
     await loadUnidades();
-    await rebuildFacetOptions();
+    await rebuildFacets();
     await reload();
     setStatus("");
   })();
