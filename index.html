@@ -5,25 +5,16 @@
   <title>Maestro Food</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- =================== PROMPT MESTRE v18.1.9 (anti-regressão) ===================
-     - Tabela: public.vendas_kpi_daily_v2_data
-     - Colunas canônicas (exatas): dia, unidade, pedidos, fat, des, fre,
-       "Nome da loja", turno, "Canal de venda", pagamento, cancelado, hora.
-     - Importação: somativa + dedup cliente; upsert onConflict:
-         (dia, unidade, "Nome da loja", hora, pagamento, "Canal de venda").
-       Conversões: data -> YYYY-MM-DD; BRL/pt-BR -> número; hora 0..23/null.
-     - Datas nunca enviam dia=null (sempre caem no período rápido com base no max(dia)).
-     - Facets (Unidade, Nome da loja, Canal, Pagamento):
-         - carregar valores reais, ignorando nulos/vazios
-         - reconstruir ao mudar datas/unidade/turno/cancelado e após importação.
-     - Filtros: dropdown simples (default “Todos” / “Todas”), alinhados e responsivos.
-     - KPIs base (barra superior): Pedidos, Ticket Médio, Faturamento, Faturamento Médio/dia.
-     - Gráfico linha diário: toggle Total/Média(7d).
-     - UI clean: sem logs ruidosos. Mensagens curtas em #status. Favicon inline.
-     - Diagnóstico (Admin): checa limites, facets e 1 consulta com filtros atuais.
-     - Nunca retroceder: manter nomes, não reintroduzir bugs (duplicação de let/const,
-       erros de parêntese, ‘dia=null’, uso de “Nome da Loja” em vez de “Nome da loja”, etc).
-  =============================================================================== -->
+  <!-- =================== PROMPT MESTRE v18.2.0 ===================
+   - Origem automática: tenta vendas_kpi_daily_v2_data; se vazio/sem acesso,
+     usa vendas_kpi_daily_v2.
+   - Coluna de loja autodetect: "Nome da loja" ou "Nome da Loja".
+   - Datas nunca enviam dia=null; sempre travadas entre min(dia) e max(dia).
+   - Facets (Unidade, Loja, Canal, Pagamento) reconstruídos no período atual.
+   - Import somativo + dedup (dia,unidade,Loja,hora,pagamento,Canal).
+   - UI limpa; status curto em #status; sem console ruidoso.
+   - Nunca retroceder: manter nomes, correções e casing detectado em runtime.
+  =============================================================== -->
 
   <!-- libs -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
@@ -133,7 +124,7 @@
             <button class="badge" id="diag">Diagnóstico</button>
             <span class="status" id="status"></span>
           </div>
-          <div class="status">Importação soma e deduplica por (dia, unidade, “Nome da loja”, hora, pagamento, “Canal de venda”).</div>
+          <div class="status">Importação soma e dedup por (dia,unidade,Loja,hora,pagamento,Canal).</div>
         </div>
       </div>
     </div>
@@ -163,8 +154,17 @@
   // ===== CONFIG ===============================================================
   const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
   const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-  const TABLE = "vendas_kpi_daily_v2_data";
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  // Fonte de dados (auto)
+  const SOURCES = ["vendas_kpi_daily_v2_data", "vendas_kpi_daily_v2"];
+  let TABLE = null;
+
+  // Colunas (auto para loja)
+  let COL_LOJA_OBJ = "Nome da loja";   // para objetos/eq()
+  let COL_LOJA_SQL = '"Nome da loja"'; // para select()/onConflict
+  const COL_CANAL_OBJ = "Canal de venda";
+  const COL_CANAL_SQL = '"Canal de venda"';
 
   // ===== UI REFS ==============================================================
   const dini   = document.getElementById("dini");
@@ -177,7 +177,6 @@
   const pag    = document.getElementById("pag");
   const canc   = document.getElementById("canc");
   const statusEl = document.getElementById("status");
-  const diagOut  = document.getElementById("status"); // usa mesma linha de status
   const periodoEl= document.getElementById("periodo");
   const modeBtn  = document.getElementById("modeBtn");
 
@@ -212,6 +211,31 @@
     };
   }
 
+  async function columnExists(table, colSql){
+    const { error } = await supa.from(table).select(colSql).limit(1);
+    return !error;
+  }
+
+  async function detectSourceAndColumns(){
+    // escolhe a tabela com dados/acesso
+    for(const name of SOURCES){
+      const { data, error } = await supa.from(name).select("dia").limit(1);
+      if(!error){ TABLE = name; break; }
+    }
+    if(!TABLE){ setStatus("Tabela não encontrada/acessível.", false); return false; }
+
+    // loja: tenta "Nome da loja"; se falhar, usa "Nome da Loja"
+    const lojaLowerOk = await columnExists(TABLE, '"Nome da loja"');
+    const lojaUpperOk = await columnExists(TABLE, '"Nome da Loja"');
+    if(lojaLowerOk){ COL_LOJA_OBJ="Nome da loja"; COL_LOJA_SQL='"Nome da loja"'; }
+    else if(lojaUpperOk){ COL_LOJA_OBJ="Nome da Loja"; COL_LOJA_SQL='"Nome da Loja"'; }
+    else {
+      // sem coluna de loja — segue sem facet de loja
+      COL_LOJA_OBJ=null; COL_LOJA_SQL=null;
+    }
+    return true;
+  }
+
   // ===== LIMITES & UNIDADES ===================================================
   async function refreshLimits(){
     const a=await supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
@@ -229,7 +253,7 @@
     const set=new Set(); let from=0; const page=2000;
     for(;;){
       const {data,error}=await supa.from(TABLE).select("unidade").not("unidade","is",null).range(from,from+page-1);
-      if(error){ setStatus("Erro unidades: "+error.message,false); break; }
+      if(error) break;
       (data||[]).forEach(r=>{ const v=(r.unidade??"").toString().trim(); if(v) set.add(v); });
       if(!data || data.length<page) break; from+=page; if(from>500000) break;
     }
@@ -239,7 +263,7 @@
     if(!uni.value) uni.value="Todas";
   }
 
-  // ===== FACETS (Nome da loja, Canal, Pagamento) ==============================
+  // ===== FACETS ===============================================================
   async function rebuildFacetOptions(){
     let s=safeISO(dini.value), e=safeISO(dfim.value);
     if((!s||!e) && maxISO){ e=maxISO; s=addDays(maxISO,-((Number(pr.value)||90)-1)); if(!dini.value) dini.value=s; if(!dfim.value) dfim.value=e; }
@@ -248,19 +272,23 @@
     let from=0, page=2000;
 
     for(;;){
-      let q=supa.from(TABLE).select('"Nome da loja","Canal de venda",pagamento').range(from,from+page-1);
+      let cols = [];
+      if(COL_LOJA_SQL) cols.push(COL_LOJA_SQL);
+      cols.push(COL_CANAL_SQL, "pagamento");
+      let q=supa.from(TABLE).select(cols.join(",")).range(from,from+page-1);
       if(s) q=q.gte("dia",s);
       if(e) q=q.lte("dia",e);
       if(uni.value && uni.value!=="Todas") q=q.eq("unidade",uni.value);
       if(turno.value && turno.value!=="Todos") q=q.eq("turno",turno.value);
       if(canc.value && canc.value!=="Todos") q=q.eq("cancelado",canc.value);
-      q = q.not("Nome da loja","is",null).not("Canal de venda","is",null).not("pagamento","is",null);
+      if(COL_LOJA_OBJ) q = q.not(COL_LOJA_OBJ,"is",null);
+      q = q.not(COL_CANAL_OBJ,"is",null).not("pagamento","is",null);
 
       const {data,error}=await q;
-      if(error){ setStatus("Erro filtros: "+error.message,false); break; }
+      if(error) break;
       (data||[]).forEach(r=>{
-        const L=(r["Nome da loja"]??"").toString().trim(); if(L) setLoja.add(L);
-        const C=(r["Canal de venda"]??"").toString().trim(); if(C) setCanal.add(C);
+        if(COL_LOJA_OBJ){ const L=(r[COL_LOJA_OBJ]??"").toString().trim(); if(L) setLoja.add(L); }
+        const C=(r[COL_CANAL_OBJ]??"").toString().trim(); if(C) setCanal.add(C);
         const P=(r["pagamento"]??"").toString().trim(); if(P) setPag.add(P);
       });
       if(!data || data.length<page) break; from+=page; if(from>500000) break;
@@ -268,27 +296,30 @@
 
     const refill=(sel,set,allLbl)=>{
       const cur=sel.value; sel.innerHTML="";
-      const o0=document.createElement("option"); o0.value="Todos"; o0.textContent=allLbl||"Todos"; sel.appendChild(o0);
+      const o0=document.createElement("option"); o0.value=allLbl||"Todos"; o0.textContent=allLbl||"Todos"; sel.appendChild(o0);
       Array.from(set).sort((a,b)=>a.localeCompare(b,"pt-BR")).forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; sel.appendChild(o); });
-      sel.value=(cur && (cur==="Todos" || set.has(cur)))?cur:"Todos";
+      sel.value=(cur && (cur===o0.value || set.has(cur)))?cur:o0.value;
     };
-    refill(loja,setLoja,"Todas");
+    // Loja pode não existir — mantém select mesmo assim
+    if(COL_LOJA_OBJ){ refill(loja,setLoja,"Todas"); } else { loja.innerHTML='<option value="Todas">Todas</option>'; }
     refill(canal,setCanal,"Todos");
     refill(pag,setPag,"Todos");
   }
 
   // ===== CONSULTA & RENDER ====================================================
   async function fetchPaged(startISO,endISO){
-    const fields='dia,unidade,pedidos,fat,des,fre,"Nome da loja",turno,"Canal de venda",pagamento,cancelado,hora';
+    let cols = ['dia','unidade','pedidos','fat','des','fre','turno',COL_CANAL_SQL,'pagamento','cancelado','hora'];
+    if(COL_LOJA_SQL) cols.splice(6,0,COL_LOJA_SQL); // insere a de loja logo após fre
+    const fields = cols.join(",");
     let from=0, page=2000, out=[];
     for(;;){
       let q=supa.from(TABLE).select(fields).order("dia",{ascending:true}).range(from,from+page-1);
       if(startISO) q=q.gte("dia",startISO);
       if(endISO)   q=q.lte("dia",endISO);
-      if(uni.value && uni.value!=="Todas")   q=q.eq("unidade",uni.value);
-      if(loja.value && loja.value!=="Todos") q=q.eq("Nome da loja",loja.value);
+      if(uni.value && uni.value!=="Todas")     q=q.eq("unidade",uni.value);
+      if(COL_LOJA_OBJ && loja.value && loja.value!=="Todas") q=q.eq(COL_LOJA_OBJ,loja.value);
       if(turno.value && turno.value!=="Todos") q=q.eq("turno",turno.value);
-      if(canal.value && canal.value!=="Todos") q=q.eq("Canal de venda",canal.value);
+      if(canal.value && canal.value!=="Todos") q=q.eq(COL_CANAL_OBJ,canal.value);
       if(pag.value && pag.value!=="Todos")     q=q.eq("pagamento",pag.value);
       if(canc.value && canc.value!=="Todos")   q=q.eq("cancelado",canc.value);
       const {data,error}=await q; if(error) throw error;
@@ -326,19 +357,24 @@
   }
 
   async function reload(){
+    if(!TABLE){ setStatus("Sem origem de dados.", false); return; }
     let s=safeISO(dini.value), e=safeISO(dfim.value);
     if((!s||!e) && maxISO){ e=maxISO; s=addDays(maxISO,-((Number(pr.value)||90)-1)); if(!dini.value) dini.value=s; if(!dfim.value) dfim.value=e; }
     periodoEl.textContent="Período: "+(s||"—")+" → "+(e||"—");
     try{
-      await rebuildFacetOptions(); // mantém opções coerentes
+      await rebuildFacetOptions();
       const rows=await fetchPaged(s,e);
       computeAndRender(rows);
     }catch(err){ setStatus("Falha ao carregar: "+(err.message||err),false); }
   }
 
   // ===== IMPORTAÇÃO (somativa + dedup local) =================================
+  function getVal(row, key){ return row?.[key] ?? row?.[key?.toLowerCase()] ?? row?.[key?.toUpperCase()]; }
+
   document.getElementById("import").addEventListener("click", async ()=>{
     const f=document.getElementById("csv").files[0]; if(!f){ setStatus("Selecione o arquivo.",false); return; }
+    if(!TABLE){ setStatus("Sem origem de dados.", false); return; }
+
     setStatus("Lendo arquivo…");
     Papa.parse(f,{
       header:true, skipEmptyLines:true, dynamicTyping:false,
@@ -348,42 +384,46 @@
           const cols=guessCols(res.meta.fields||[]);
           if(!cols.dia || !cols.unidade || !cols.fat){ setStatus("Colunas mínimas não encontradas (dia/unidade/total).",false); return; }
 
-          const acc=new Map(); const get=(r,c)=> r?.[c] ?? r?.[c?.toLowerCase()] ?? r?.[c?.toUpperCase()];
+          const acc=new Map();
           for(const r of rows){
             // data
-            let iso=null; const raw=(get(r,cols.dia)||"").toString().trim();
-            if(/^\d{2}\/\d{2}\/\d{4}/.test(raw)){ const [dd,mm,yy]=raw.slice(0,10).split("/"); iso=safeISO(`${yy}-${mm}-${dd}`); } else { iso=safeISO(raw); }
+            const raw=(getVal(r,cols.dia)||"").toString().trim();
+            let iso=null;
+            if(/^\d{2}\/\d{2}\/\d{4}/.test(raw)){ const [dd,mm,yy]=raw.slice(0,10).split("/"); iso=safeISO(`${yy}-${mm}-${dd}`); }
+            else { iso=safeISO(raw); }
             if(!iso) continue;
 
             // hora
-            let hour=null; if(cols.hora){ const hv=String(get(r,cols.hora)||"").trim(); const m=hv.match(/(\d{1,2})/); hour=m? Math.min(23,Math.max(0,Number(m[1])||0)) : null; }
+            let hour=null; if(cols.hora){ const hv=String(getVal(r,cols.hora)||"").trim(); const m=hv.match(/(\d{1,2})/); hour=m? Math.min(23,Math.max(0,Number(m[1])||0)) : null; }
 
-            const out={
+            const obj={
               dia: iso,
-              unidade: String(get(r,cols.unidade)||"").trim()||"—",
-              pedidos: cols.pedidos ? (Number(get(r,cols.pedidos))||0) : 1,
-              fat: numberFromBR(get(r,cols.fat)),
-              des: cols.des ? numberFromBR(get(r,cols.des)) : 0,
-              fre: cols.fre ? numberFromBR(get(r,cols.fre)) : 0,
-              ["Nome da loja"]: cols.loja ? String(get(r,cols.loja)||"").trim() : null,
-              turno: cols.turno ? String(get(r,cols.turno)||"").trim() : null,
-              ["Canal de venda"]: cols.canal ? String(get(r,cols.canal)||"").trim() : null,
-              pagamento: cols.pagamento ? String(get(r,cols.pagamento)||"").trim() : null,
-              cancelado: (function(){ if(!cols.cancelado) return "Não"; const v=String(get(r,cols.cancelado)||"").toLowerCase(); return /sim|true|1|cancel/i.test(v)?"Sim":"Não"; })(),
+              unidade: String(getVal(r,cols.unidade)||"").trim()||"—",
+              pedidos: cols.pedidos ? (Number(getVal(r,cols.pedidos))||0) : 1,
+              fat: numberFromBR(getVal(r,cols.fat)),
+              des: cols.des ? numberFromBR(getVal(r,cols.des)) : 0,
+              fre: cols.fre ? numberFromBR(getVal(r,cols.fre)) : 0,
+              turno: cols.turno ? String(getVal(r,cols.turno)||"").trim() : null,
+              [COL_CANAL_OBJ]: cols.canal ? String(getVal(r,cols.canal)||"").trim() : null,
+              pagamento: cols.pagamento ? String(getVal(r,cols.pagamento)||"").trim() : null,
+              cancelado: (function(){ if(!cols.cancelado) return "Não"; const v=String(getVal(r,cols.cancelado)||"").toLowerCase(); return /sim|true|1|cancel/i.test(v)?"Sim":"Não"; })(),
               hora: hour
             };
+            if(COL_LOJA_OBJ){ obj[COL_LOJA_OBJ] = cols.loja ? String(getVal(r,cols.loja)||"").trim() : null; }
 
-            const key=[out.dia,out.unidade,out["Nome da loja"]||"",out.hora==null?"":out.hora,out.pagamento||"",out["Canal de venda"]||""].join("§");
-            if(!acc.has(key)) acc.set(key,{...out});
-            else { const a=acc.get(key); a.pedidos+=out.pedidos; a.fat+=out.fat; a.des+=out.des; a.fre+=out.fre; }
+            const key=[obj.dia,obj.unidade,(COL_LOJA_OBJ? (obj[COL_LOJA_OBJ]||"") : ""),obj.hora==null?"":obj.hora,obj.pagamento||"",obj[COL_CANAL_OBJ]||""].join("§");
+            if(!acc.has(key)) acc.set(key,{...obj});
+            else { const a=acc.get(key); a.pedidos+=obj.pedidos; a.fat+=obj.fat; a.des+=obj.des; a.fre+=obj.fre; }
           }
 
           const payload=Array.from(acc.values()); if(payload.length===0){ setStatus("Nada válido para importar.",false); return; }
           setStatus("Enviando "+payload.length.toLocaleString("pt-BR")+"…");
+
+          const conflict = 'dia,unidade,' + (COL_LOJA_SQL? COL_LOJA_SQL+',' : '') + 'hora,pagamento,'+COL_CANAL_SQL;
           const chunk=1200;
           for(let i=0;i<payload.length;i+=chunk){
             const slice=payload.slice(i,i+chunk);
-            const { error } = await supa.from(TABLE).upsert(slice,{ onConflict:'dia,unidade,"Nome da loja",hora,pagamento,"Canal de venda"' });
+            const { error } = await supa.from(TABLE).upsert(slice,{ onConflict: conflict });
             if(error){ setStatus("Erro ao inserir: "+error.message,false); return; }
           }
           setStatus("Importado.",true);
@@ -397,33 +437,33 @@
     });
   });
 
-  // ===== DIAGNÓSTICO (Admin) =================================================
+  // ===== DIAGNÓSTICO =========================================================
   async function runDiagnostics(){
     try{
       setStatus("Diagnóstico…");
       const a=await supa.from(TABLE).select("dia").order("dia",{ascending:true}).limit(1);
       const b=await supa.from(TABLE).select("dia").order("dia",{ascending:false}).limit(1);
       const minD=a.data?.[0]?.dia||null, maxD=b.data?.[0]?.dia||null;
-      if(!minD || !maxD){ setStatus("Sem dados na tabela.",false); return; }
+      if(!minD || !maxD){ setStatus("Sem dados na fonte: "+TABLE, false); return; }
       let s=safeISO(dini.value), e=safeISO(dfim.value);
       if((!s||!e)){ s=addDays(maxD,-((Number(pr.value)||90)-1)); e=maxD; }
 
-      const cols = ['unidade','"Nome da loja"','"Canal de venda"','pagamento'];
+      const cols = ['unidade', COL_LOJA_OBJ, COL_CANAL_OBJ, 'pagamento'].filter(Boolean);
       for(const c of cols){
         let q=supa.from(TABLE).select(c).gte("dia",s).lte("dia",e).not(c,"is",null).limit(1);
-        const {data,error}=await q;
+        const {error}=await q;
         if(error){ setStatus("Erro facet "+c+": "+error.message,false); return; }
       }
       const test=await supa.from(TABLE).select("dia,fat").gte("dia",s).lte("dia",e).limit(1);
       if(test.error){ setStatus("Falha consulta: "+test.error.message,false); return; }
-      setStatus(`OK — ${minD}→${maxD}`,true);
+      setStatus(`OK — ${minD}→${maxD} em ${TABLE}`,true);
     }catch(e){ setStatus("Diag erro: "+(e.message||e),false); }
   }
   document.getElementById("diag").addEventListener("click", runDiagnostics);
 
   // ===== EVENTOS UI ===========================================================
   document.getElementById("btnClear").addEventListener("click", async ()=>{
-    uni.value="Todas"; loja.value="Todos"; turno.value="Todos"; canal.value="Todos"; pag.value="Todos"; canc.value="Todos";
+    uni.value="Todas"; loja.value="Todas"; turno.value="Todos"; canal.value="Todos"; pag.value="Todos"; canc.value="Todos";
     if(maxISO){ dfim.value=maxISO; dini.value=addDays(maxISO,-((Number(pr.value)||90)-1)); }
     await rebuildFacetOptions(); await reload();
   });
@@ -433,10 +473,15 @@
 
   // ===== BOOT ================================================================
   (async function(){
+    setStatus("Detectando origem…");
+    const ok = await detectSourceAndColumns();
+    if(!ok) return;
     await refreshLimits();
+    if(!minISO || !maxISO){ setStatus("Sem dados na origem: "+TABLE,false); return; }
     await loadUnidades();
     await rebuildFacetOptions();
     await reload();
+    setStatus("");
   })();
 
 })();
