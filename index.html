@@ -54,7 +54,7 @@
 
       <div class="row cols-2" style="margin-top:12px;">
         <div><label>Unidade</label><select id="fUnidade"></select></div>
-        <div><label>Nome da loja (Top 10)</label><select id="fLoja"></select></div>
+        <div><label>Nome da loja</label><select id="fLoja"></select></div>
       </div>
 
       <div class="row cols-4" style="margin-top:8px;">
@@ -98,7 +98,7 @@
           <button id="btnImport" class="btn" type="button">Importar CSV (incremental)</button>
         </div>
         <p class="hint" style="margin-top:8px;">
-          Importação é somativa com <b>deduplicação por chave</b> (dia, unidade, "Nome da loja", hora, pagamento, "Canal de venda").  
+          Importação somativa com <b>deduplicação por chave</b> (dia, unidade, "Nome da loja", hora, pagamento, "Canal de venda").  
           Obrigatório no CSV: <b>Data da venda</b> (dia) • <b>unidade</b> • <b>Total</b> (fat). Aceita “Entrega”, “Desconto”, etc.
         </p>
       </div>
@@ -124,7 +124,6 @@
     </div>
   </div>
 
-  <!-- libs ANTES do seu código -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -133,14 +132,13 @@
   (function(){
     // ====== CONFIG ======
     const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-    // sua anon key (você me enviou):
     const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-    const TABLE         = "vendas_kpi_daily_v2_data"; // fixo
+    const TABLE         = "vendas_kpi_daily_v2_data";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {auth:{persistSession:true,autoRefreshToken:true}});
 
     // ====== DOM ======
     const $ = (id)=>document.getElementById(id);
-    const periodoEl = $("periodo"), srcInfo = $("srcInfo"), fx=$("fx");
+    const periodoEl=$("periodo"), srcInfo=$("srcInfo"), fx=$("fx");
     const uni=$("fUnidade"), loja=$("fLoja"), dini=$("fDini"), dfim=$("fDfim"),
           pr=$("fQuick"), turno=$("fTurno"), canal=$("fCanal"), pag=$("fPag"), canc=$("fCanc");
     const btnLimpar=$("btnLimpar"), csv=$("csv"), btnImport=$("btnImport"), importStatus=$("importStatus");
@@ -148,10 +146,8 @@
           kDes=$("kDes"), kDesPct=$("kDesPct"), kFre=$("kFre"), kFatLiq=$("kFatLiq");
     const chartEl=$("chart"); let chart;
 
-    // ====== STATE ======
+    // ====== STATE / UTILS ======
     let minISO=null, maxISO=null, totalLinhas=0;
-
-    // ====== UTILS ======
     const fmtBRL=(v)=> (isFinite(v)? v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : "—");
     const fmtPct=(v)=> (isFinite(v)? (v*100).toFixed(1).replace('.',',')+'%' : "—");
     const onlyDate=(iso)=> iso && iso.slice ? iso.slice(0,10) : null;
@@ -159,6 +155,7 @@
     const norm=(s)=> String(s??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
     const normCancel=(v)=>{const s=String(v??"").trim().toLowerCase(); if(v===true||s==="sim"||s==="s"||s==="1"||s==="true")return"Sim"; return"Não";};
     const stripBOM=(h)=> h.replace(/^\uFEFF/,'');
+
     function ddmmyyyyToISO(s){
       if(!s) return null; s=String(s).trim();
       const [datePart,timePart]=s.split(' ');
@@ -181,7 +178,7 @@
       dfim.value = new Date(end).toISOString().slice(0,10);
     }
 
-    // ====== SOURCE & OPTIONS ======
+    // ====== Fonte / opções ======
     async function fetchMinMax(){
       const a=await supa.from(TABLE).select('dia').order('dia',{ascending:true}).limit(1);
       const b=await supa.from(TABLE).select('dia').order('dia',{ascending:false}).limit(1);
@@ -199,34 +196,52 @@
     }
 
     async function buildOptions(){
-      // Unidade
-      {
-        const r=await supa.from(TABLE).select('unidade').not('unidade','is',null).order('unidade',{ascending:true}).range(0,9999);
-        const arr=[...new Set((r.data||[]).map(x=>x.unidade).filter(v=>v!=='' && v!=null))];
-        uni.innerHTML = `<option>Todas</option>` + arr.map(v=>`<option>${v}</option>`).join('');
-      }
-      // Pagamento
-      {
-        const r=await supa.from(TABLE).select('pagamento').not('pagamento','is',null).order('pagamento',{ascending:true}).range(0,9999);
-        const arr=[...new Set((r.data||[]).map(x=>x.pagamento).filter(Boolean))];
-        pag.innerHTML = arr.map(v=>`<option>${v}</option>`).join('');
-      }
-      // Canal (com aspas)
-      {
-        const r=await supa.from(TABLE).select('"Canal de venda"').order('Canal de venda',{ascending:true}).range(0,9999);
-        const arr=[...new Set((r.data||[]).map(x=>x["Canal de venda"]).filter(Boolean))];
-        canal.innerHTML = arr.map(v=>`<option>${v}</option>`).join('');
-      }
-      // Lojas Top 10
-      {
-        const q=await supa.from(TABLE).select('"Nome da loja",fat').not('fat','is',null).not('Nome da loja','is',null).range(0,20000);
-        const acc=new Map(); (q.data||[]).forEach(r=>{ const k=r["Nome da loja"]; acc.set(k,(acc.get(k)||0)+(Number(r.fat)||0)); });
-        const top=Array.from(acc.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k])=>k);
-        loja.innerHTML = `<option>Todos</option>` + top.map(v=>`<option>${v}</option>`).join('');
-      }
+      // valores distintos direto no servidor
+      const f1 = supa.from(TABLE).select('unidade', { distinct: true }).order('unidade',{ascending:true});
+      const f2 = supa.from(TABLE).select('pagamento', { distinct: true }).order('pagamento',{ascending:true});
+      const f3 = supa.from(TABLE).select('"Canal de venda"', { distinct: true }).order('Canal de venda',{ascending:true});
+      const f4 = supa.from(TABLE).select('"Nome da loja"', { distinct: true }).order('Nome da loja',{ascending:true});
+
+      const [r1,r2,r3,r4] = await Promise.all([f1,f2,f3,f4]);
+
+      const u = [...new Set((r1.data||[]).map(x=>x.unidade).filter(v=>v!=='' && v!=null))];
+      const p = [...new Set((r2.data||[]).map(x=>x.pagamento).filter(Boolean))];
+      const c = [...new Set((r3.data||[]).map(x=>x["Canal de venda"]).filter(Boolean))];
+      const l = [...new Set((r4.data||[]).map(x=>x["Nome da loja"]).filter(Boolean))];
+
+      uni.innerHTML  = `<option>Todas</option>` + u.map(v=>`<option>${v}</option>`).join('');
+      pag.innerHTML  = p.map(v=>`<option>${v}</option>`).join('');
+      canal.innerHTML= c.map(v=>`<option>${v}</option>`).join('');
+      loja.innerHTML = `<option>Todos</option>` + l.slice(0,50).map(v=>`<option>${v}</option>`).join(''); // até 50 pra não poluir
     }
 
-    // ====== RELOAD (filtra no servidor) ======
+    // ====== Paginação server-side ======
+    async function fetchAllFiltered(a,b,uniSel,lojaSel,turnSel,canSel,pagSel,cancSel,pageSize=5000){
+      const out=[]; let from=0;
+      while(true){
+        let qb = supa.from(TABLE)
+          .select('dia,unidade,pedidos,fat,des,fre,"Nome da loja",turno,"Canal de venda",pagamento,cancelado,hora')
+          .gte('dia', a).lte('dia', b)
+          .order('dia',{ascending:true})
+          .range(from, from+pageSize-1);
+
+        if(uniSel !== 'Todas') qb = qb.eq('unidade', uniSel);
+        if(lojaSel !== 'Todos') qb = qb.eq('Nome da loja', lojaSel);
+        if(turnSel.length) qb = qb.in('turno', turnSel);
+        if(canSel.length)  qb = qb.in('Canal de venda', canSel);
+        if(pagSel.length)  qb = qb.in('pagamento', pagSel);
+        if(cancSel !== 'Todos') qb = qb.eq('cancelado', cancSel);
+
+        const { data, error } = await qb;
+        if(error){ console.error(error); break; }
+        out.push(...(data||[]));
+        if(!data || data.length < pageSize) break;
+        from += pageSize;
+      }
+      return out;
+    }
+
+    // ====== Reload ======
     async function reload(){
       if(!minISO||!maxISO){ periodoEl.textContent='Sem dados.'; return; }
       const a = dini.value || minISO;
@@ -238,31 +253,16 @@
       const pagSel  = Array.from(pag.selectedOptions).map(o=>o.value);
       const cancSel = canc.value || 'Todos';
 
-      let q = supa.from(TABLE)
-        .select('dia,unidade,pedidos,fat,des,fre,"Nome da loja",turno,"Canal de venda",pagamento,cancelado,hora')
-        .gte('dia', a).lte('dia', b)
-        .order('dia',{ascending:true});
-
-      if(uniSel !== 'Todas') q = q.eq('unidade', uniSel);
-      if(lojaSel !== 'Todos') q = q.eq('Nome da loja', lojaSel);
-      if(turnSel.length) q = q.in('turno', turnSel);
-      if(canSel.length)  q = q.in('Canal de venda', canSel);
-      if(pagSel.length)  q = q.in('pagamento', pagSel);
-      if(cancSel !== 'Todos') q = q.eq('cancelado', cancSel);
-
-      const r = await q.range(0, 150000); // segurança
-      if(r.error){ console.error(r.error); periodoEl.textContent='Erro ao carregar dados'; return; }
-
-      const rows = (r.data||[]).map(x=>({
+      const data = await fetchAllFiltered(a,b,uniSel,lojaSel,turnSel,canSel,pagSel,cancSel,5000);
+      const rows = (data||[]).map(x=>({
         ...x,
-        dia: onlyDate(x.dia),
+        dia: (x.dia||'').slice(0,10),
         cancelado: normCancel(x.cancelado),
         fat: Number(x.fat)||0, des:Number(x.des)||0, fre:Number(x.fre)||0, pedidos:Number(x.pedidos)||0
       }));
 
       periodoEl.textContent = `Período: ${a} → ${b} · registros filtrados: ${rows.length}`;
 
-      // KPIs
       const pedidos = rows.reduce((s,r)=>s+r.pedidos,0);
       const fat     = rows.reduce((s,r)=>s+r.fat,0);
       const des     = rows.reduce((s,r)=>s+r.des,0);
@@ -278,7 +278,6 @@
       kFre.textContent     = fmtBRL(fre);
       kFatLiq.textContent  = fmtBRL(fat-des-fre);
 
-      // Gráfico
       const byDay=new Map(); rows.forEach(r=>byDay.set(r.dia,(byDay.get(r.dia)||0)+r.fat));
       const labels=Array.from(byDay.keys()).sort(); const values=labels.map(d=>byDay.get(d));
       if(chart) chart.destroy();
@@ -296,10 +295,9 @@
       });
     }
 
-    // ====== IMPORT CSV (incremental) ======
+    // ====== Import CSV (incremental) ======
     function mapHeader(h){
-      h = stripBOM(String(h||''));
-      const key = norm(h);
+      h = stripBOM(String(h||'')); const key = (h.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim());
       const cand = [
         {std:'dia', list:['dia','data','data da venda','data de venda','data_venda','datadavenda','date']},
         {std:'unidade', list:['unidade','filial','unidades','uni','store']},
@@ -313,14 +311,13 @@
         {std:'pagamento', list:['pagamento','forma de pagamento','meio de pagamento','payment','payment_method']},
         {std:'cancelado', list:['esta cancelado','está cancelado','cancelado','cancelada','cancelled','canceled']},
         {std:'hora', list:['hora','horario','horário','hour','time']},
-        // campos da Pasta2.csv
         {std:'Data da venda', list:['data da venda']},
         {std:'Entrega', list:['entrega']},
         {std:'Desconto', list:['desconto']},
         {std:'Total', list:['total']},
       ];
       for (const c of cand) if (c.list.includes(key)) return c.std;
-      return stripBOM(h);
+      return h;
     }
 
     btnImport.addEventListener('click', async ()=>{
@@ -341,7 +338,7 @@
             importStatus.style.color='#c0392b'; return;
           }
 
-          const normRows = raw.map((r,idx)=>{
+          const normRows = raw.map((r)=>{
             let dval = r.dia ?? r['Data da venda'];
             let iso  = null;
             if(dval){ iso = (String(dval).includes('/')) ? ddmmyyyyToISO(dval) : dval; }
@@ -352,11 +349,10 @@
             const des  = parseBR(r.des ?? r['Desconto'] ?? 0);
             const fre  = parseBR(r.fre ?? r['Entrega']  ?? 0);
             const unidade = String(r.unidade||'').trim();
-
             if(!unidade || !isFinite(fat)) return null;
 
             return {
-              dia: onlyDate(iso),
+              dia: (iso||'').slice(0,10),
               unidade,
               pedidos: Math.max(1, Number(r.pedidos)||1),
               fat, des, fre,
@@ -371,7 +367,7 @@
 
           if(!normRows.length){ importStatus.textContent='Nada para importar (linhas inválidas).'; importStatus.style.color='#c0392b'; return; }
 
-          // agrega por chave para evitar 409 em linha duplicada dentro do próprio arquivo
+          // agrega por chave para evitar 409
           const acc=new Map();
           for(const r of normRows){
             const key=[r.dia,r.unidade,r["Nome da loja"],r.hora,r.pagamento,r["Canal de venda"]].join('|');
@@ -386,7 +382,6 @@
           const rows=[...acc.values()];
           importStatus.textContent=`Enviando ${rows.length.toLocaleString('pt-BR')} registros…`; importStatus.style.color='#667085';
 
-          // upsert em lotes
           const onC='dia,unidade,"Nome da loja",hora,pagamento,"Canal de venda"';
           const chunk=1000;
           for(let i=0;i<rows.length;i+=chunk){
@@ -402,12 +397,12 @@
       });
     });
 
-    // ====== LISTENERS ======
+    // ====== Listeners ======
     pr.addEventListener("change", ()=>{ applyQuickDate(); reload(); fx.open=false; });
     [uni,dini,dfim,turno,canal,pag,canc,loja].forEach(e=> e.addEventListener("change", ()=>{ reload(); fx.open=false; }));
     btnLimpar.addEventListener('click', ()=>{ uni.value='Todas'; loja.value='Todos'; turno.selectedIndex=-1; canal.selectedIndex=-1; pag.selectedIndex=-1; canc.value='Todos'; applyQuickDate(); reload(); });
 
-    // ====== BOOT ======
+    // ====== Boot ======
     (async function boot(){
       await fetchMinMax();
       applyQuickDate();
