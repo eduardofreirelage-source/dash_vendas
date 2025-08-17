@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Maestro Food</title>
+  <!-- Favicon inline para evitar 404 -->
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="62" fill="%231a73e8"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="64" fill="white">M</text></svg>'/>
   <link rel="stylesheet" href="https://unpkg.com/modern-css-reset/dist/reset.min.css">
   <style>
@@ -19,7 +20,7 @@
     .card{background:var(--card);border:1px solid var(--stroke);border-radius:var(--radius);padding:14px}
     .card.dashed{border-style:dashed}
     label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
-    input,select,button,textarea{appearance:none;border:1px solid var(--stroke);background:#fff;color:var(--text);border-radius:10px;padding:10px 12px;width:100%}
+    input,select,button{appearance:none;border:1px solid var(--stroke);background:#fff;color:var(--text);border-radius:10px;padding:10px 12px;width:100%}
     select[multiple]{height:140px}
     .inline{display:flex;gap:10px;align-items:center}
     .btn{background:var(--blue);color:#fff;border:none;padding:10px 14px;border-radius:10px;cursor:pointer}
@@ -30,6 +31,8 @@
     .pill{display:inline-block;padding:4px 10px;border-radius:999px;background:#eef3ff;color:#1747b7;font-weight:600}
     .right{text-align:right}
     .hint{color:var(--muted);font-size:12px}
+    #diag{margin-top:6px;color:var(--muted);font-size:12px}
+    #diag b{color:#0f172a}
     @media (max-width:960px){.grid-kpi{grid-template-columns:repeat(2,1fr)}.cols-4,.cols-3,.cols-2{grid-template-columns:1fr}}
   </style>
 </head>
@@ -38,6 +41,7 @@
     <h1>Maestro Food</h1>
     <small id="periodo" class="muted">Período: —</small>
     <div id="fonte" class="muted" style="margin-top:6px;"></div>
+    <div id="diag"></div>
 
     <details id="fx" class="card" open>
       <summary class="inline" style="justify-content:space-between;">
@@ -90,8 +94,8 @@
           <button id="btnImport" class="btn" type="button">Importar CSV (incremental)</button>
         </div>
         <p class="hint" style="margin-top:8px;">
-          Importação é somativa com deduplicação por <b>dia, unidade, "Nome da loja", hora, pagamento, "Canal de venda"</b>.  
-          Obrigatório no CSV: <b>Data da venda</b> (dia, dd/mm/aaaa ou dd/mm/aaaa hh:mm) • <b>unidade</b> • <b>Total</b> (fat).
+          Importação somativa com deduplicação por <b>dia, unidade, "Nome da loja", hora, pagamento, "Canal de venda"</b>.  
+          Obrigatórios no CSV: <b>Data da venda</b> (dd/mm/aaaa ou dd/mm/aaaa hh:mm) • <b>unidade</b> • <b>Total</b> (fat).
         </p>
       </div>
     </details>
@@ -119,6 +123,7 @@
     </div>
   </div>
 
+  <!-- libs SEM defer -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -130,14 +135,14 @@
     const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
     const TABLE_PREF = "vendas_kpi_daily_v2_data";
     const VIEW_FALL  = "vendas_kpi_daily_v2";
-    const PAGE = 1000;               // <= limite por request no Supabase
-    const UPSERT_CHUNK = 5000;
+    const PAGE = 1000;            // limite do PostgREST
+    const UPSERT_CHUNK = 5000;    // lote de upsert
 
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {auth:{persistSession:true,autoRefreshToken:true}});
 
     // ===== DOM =====
     const $ = (id)=>document.getElementById(id);
-    const periodo=$("periodo"), fonte=$("fonte"), fx=$("fx");
+    const periodo=$("periodo"), fonte=$("fonte"), diag=$("diag"), fx=$("fx");
     const fUni=$("fUnidade"), fLoja=$("fLoja"), fDini=$("fDini"), fDfim=$("fDfim"),
           fQuick=$("fQuick"), fTurno=$("fTurno"), fCanal=$("fCanal"), fPag=$("fPag"), fCanc=$("fCanc");
     const btnLimpar=$("btnLimpar"), csv=$("csv"), btnImport=$("btnImport"), importStatus=$("importStatus");
@@ -168,25 +173,27 @@
       if(!r.error){TABLE=VIEW_FALL;return;}
       TABLE=null;
     }
+
     async function fetchMinMax(){
       if(!TABLE){minISO=maxISO=null;fonte.textContent='Sem dados na fonte.';return;}
       const a=await supa.from(TABLE).select('dia').order('dia',{ascending:true}).limit(1);
       const b=await supa.from(TABLE).select('dia').order('dia',{ascending:false}).limit(1);
+      let count='—';
+      const c=await supa.from(TABLE).select('dia',{count:'exact',head:true}); if(!c.error) count=c.count;
       if(!a.error&&a.data?.length&&!b.error&&b.data?.length){
-        minISO=onlyDate(a.data[0].dia);maxISO=onlyDate(b.data[0].dia);
-        const c=await supa.from(TABLE).select('dia',{count:'exact',head:true});
-        fonte.textContent=`Fonte OK (${minISO} → ${maxISO}) · linhas: ${c.count||'—'} · origem: ${TABLE}`;
+        minISO=onlyDate(a.data[0].dia); maxISO=onlyDate(b.data[0].dia);
+        fonte.textContent=`Fonte OK (${minISO} → ${maxISO}) · linhas: ${count} · origem: ${TABLE}`;
       }else{minISO=maxISO=null;fonte.textContent='Sem dados na fonte.';}
     }
 
     async function fetchPagedColumnDistinct(col, quoted=false){
       const set=new Set(); let off=0;
       while(true){
-        let sel = quoted ? `"${col}"` : col;
-        let q = supa.from(TABLE).select(sel).not(col,'is',null).order(col,{ascending:true}).range(off, off+PAGE-1);
-        const r=await q; if(r.error) break;
+        const sel = quoted ? `"${col}"` : col;
+        let q=supa.from(TABLE).select(sel).not(col,'is',null).order(col,{ascending:true}).range(off, off+PAGE-1);
+        const r=await q; if(r.error){diag.textContent=`Erro listando ${col}: ${r.error.message}`; break;}
         const arr=r.data||[];
-        for(const row of arr){ const v=quoted?row[col]:row[col]; if(v) set.add(v); }
+        for(const row of arr){ const v=quoted?row[col]:row[col]; if(v!=null && v!=='') set.add(v); }
         const got=arr.length; if(got===0) break; off+=got;
       }
       return Array.from(set).sort((a,b)=>String(a).localeCompare(String(b),'pt-BR'));
@@ -194,8 +201,10 @@
 
     async function buildOptions(){
       if(!TABLE) return;
+      diag.textContent='Carregando opções…';
       // unidade
-      fUni.innerHTML = `<option>Todas</option>` + (await fetchPagedColumnDistinct('unidade')).map(v=>`<option>${v}</option>`).join('');
+      fUni.innerHTML = `<option>Todas</option>` +
+        (await fetchPagedColumnDistinct('unidade')).map(v=>`<option>${v}</option>`).join('');
       // pagamento
       fPag.innerHTML = (await fetchPagedColumnDistinct('pagamento')).map(v=>`<option>${v}</option>`).join('');
       // canal (coluna com espaço)
@@ -204,18 +213,20 @@
       const acc=new Map(); let off=0;
       while(true){
         const r=await supa.from(TABLE).select('"Nome da loja",fat').range(off, off+PAGE-1);
-        if(r.error) break; const arr=r.data||[];
+        if(r.error){diag.textContent=`Erro somando lojas: ${r.error.message}`; break;}
+        const arr=r.data||[];
         for(const row of arr){ const k=row["Nome da loja"]; if(!k) continue; acc.set(k,(acc.get(k)||0)+N(row.fat)); }
         const got=arr.length; if(got===0) break; off+=got;
       }
       const top=Array.from(acc.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k])=>k);
       fLoja.innerHTML = `<option>Todos</option>` + top.map(v=>`<option>${v}</option>`).join('');
+      diag.textContent='Opções carregadas.';
     }
 
     async function fetchRowsByDate(a,b){
       if(!TABLE) return [];
       const from=a||minISO,to=b||maxISO;
-      let bag=[]; let off=0;
+      const bag=[]; let off=0, total=0;
       while(true){
         let q=supa.from(TABLE)
           .select('dia,unidade,pedidos,fat,des,fre,"Nome da loja",turno,"Canal de venda",pagamento,cancelado,hora')
@@ -223,19 +234,24 @@
           .range(off, off+PAGE-1);
         if(from) q=q.gte('dia',from);
         if(to)   q=q.lte('dia',to);
-        const r=await q; if(r.error) break;
-        const arr=r.data||[]; bag=bag.concat(arr);
+        const r=await q; if(r.error){diag.textContent=`Erro carregando dados: ${r.error.message}`; break;}
+        const arr=r.data||[]; total+=arr.length;
+        for(const row of arr){
+          const d=onlyDate(row.dia); if(!d) continue;
+          bag.push({
+            ...row,
+            dia:d,
+            pedidos:N(row.pedidos),
+            fat:N(row.fat),
+            des:N(row.des),
+            fre:N(row.fre),
+            cancelado:normCancel(row.cancelado)
+          });
+        }
         const got=arr.length; if(got===0) break; off+=got;
       }
-      return bag.map(r=>({
-        ...r,
-        dia: onlyDate(r.dia),
-        pedidos: N(r.pedidos),
-        fat: N(r.fat),
-        des: N(r.des),
-        fre: N(r.fre),
-        cancelado: normCancel(r.cancelado)
-      })).filter(x=>x.dia && Number.isFinite(x.fat));
+      diag.textContent=`Linhas lidas no período: ${bag.length.toLocaleString('pt-BR')}`;
+      return bag.filter(x=>Number.isFinite(x.fat));
     }
 
     function computeKPIs(rows){
@@ -243,25 +259,25 @@
       for(const r of rows){ pedidos+=N(r.pedidos); fat+=N(r.fat); des+=N(r.des); fre+=N(r.fre); }
       const dias=Math.max(1,new Set(rows.map(r=>r.dia)).size);
       const ticket=pedidos?fat/pedidos:0, fatDia=fat/dias, fatLiq=fat-des-fre, desPct=fat?des/fat:0;
-      $("kPedidos").textContent=pedidos.toLocaleString('pt-BR');
-      $("kTicket").textContent=fmtBRL(ticket);
-      $("kFat").textContent=fmtBRL(fat);
-      $("kFatDia").textContent=fmtBRL(fatDia);
-      $("kDes").textContent=fmtBRL(des);
-      $("kDesPct").textContent=fmtPct(desPct);
-      $("kFre").textContent=fmtBRL(fre);
-      $("kFatLiq").textContent=fmtBRL(fatLiq);
+      kPedidos.textContent=pedidos.toLocaleString('pt-BR');
+      kTicket.textContent=fmtBRL(ticket);
+      kFat.textContent=fmtBRL(fat);
+      kFatDia.textContent=fmtBRL(fatDia);
+      kDes.textContent=fmtBRL(des);
+      kDesPct.textContent=fmtPct(desPct);
+      kFre.textContent=fmtBRL(fre);
+      kFatLiq.textContent=fmtBRL(fatLiq);
     }
 
     function drawChart(rows){
       const map=new Map();
       for(const r of rows){
-        const d=r.dia, v=N(r.fat);
-        if(!Number.isFinite(v) || Math.abs(v)>1e12) continue; // clamp p/ evitar “infinito”
-        map.set(d,(map.get(d)||0)+v);
+        const v=N(r.fat);
+        if(!Number.isFinite(v) || Math.abs(v)>1e12) continue; // corta absurdos
+        map.set(r.dia,(map.get(r.dia)||0)+v);
       }
       const labels=Array.from(map.keys()).sort();
-      const values=labels.map(d=>map.get(d)).filter(v=>Number.isFinite(v));
+      const values=labels.map(d=>map.get(d)).map(v=>Number.isFinite(v)?v:null);
 
       const ctx=chartEl.getContext('2d');
       if(chart) chart.destroy();
@@ -293,7 +309,7 @@
         return true;
       });
 
-      periodo.textContent=`Período: ${a??'—'} → ${b??'—'} · registros filtrados: ${rows.length}`;
+      periodo.textContent=`Período: ${a??'—'} → ${b??'—'} · registros filtrados: ${rows.length.toLocaleString('pt-BR')}`;
       computeKPIs(rows); drawChart(rows);
     }
 
@@ -332,24 +348,30 @@
       const file=csv.files?.[0]; if(!file){importStatus.textContent='Selecione um CSV.';return;}
       importStatus.textContent='Lendo arquivo…';
       window.Papa.parse(file,{
-        header:true,skipEmptyLines:'greedy',delimiter:";",quoteChar:'"',escapeChar:'"',transformHeader:mapHeader,
+        header:true,
+        skipEmptyLines:'greedy',
+        delimiter:"",          // autodetect
+        transformHeader:mapHeader,
         complete: async (res)=>{
-          const raw=res.data||[]; const headers=Object.keys(raw[0]||{});
+          const raw=res.data||[];
+          const headers=Object.keys(raw[0]||{});
           const hasDia=headers.includes('dia')||headers.some(h=>String(h).toLowerCase().includes('data'));
           const hasUni=headers.includes('unidade');
           const hasFat=headers.includes('fat')||headers.includes('Total');
           if(!hasDia||!hasUni||!hasFat){ importStatus.textContent='Nada para importar (colunas obrigatórias não reconhecidas: dia/unidade/fat).'; return; }
 
+          let lidas=0, validas=0;
           const normRows=raw.map(r=>{
+            lidas++;
             const diaVal=r.dia||r['Data da venda']||r['data']||r['Data'];
-            const diaIso=diaVal?(String(diaVal).includes('/')?ddmmyyyyToISO(diaVal):(diaVal.includes('T')?diaVal:diaVal+'T00:00:00')):null;
+            const diaIso=diaVal?(String(diaVal).includes('/')?ddmmyyyyToISO(diaVal):(String(diaVal).includes('T')?diaVal:diaVal+'T00:00:00')):null;
             if(!diaIso) return null;
             const uni=String(r.unidade||r.Unidade||'').trim(); if(!uni) return null;
             const hora=('hora'in r)?(parseInt(r.hora,10)||-1):hourFromDateText(diaVal);
             const fat=parseBR(r.fat||r['Total']||r.total||0);
             const des=parseBR(r.des||r['Desconto']||r.desconto||0);
             const fre=parseBR(r.fre||r['Entrega']||r.entrega||r.frete||0);
-            return {
+            const obj={
               dia: onlyDate(diaIso),
               unidade: uni,
               pedidos: Math.max(1, Number(r.pedidos)||1),
@@ -361,18 +383,20 @@
               cancelado:normCancel(r.cancelado||r['Está cancelado']),
               hora:Number.isFinite(hora)?hora:-1
             };
+            if(!(obj.dia && obj.unidade && Number.isFinite(obj.fat))) return null;
+            validas++; return obj;
           }).filter(Boolean);
 
+          // Deduplicação por chave composta
           const acc=new Map();
           for(const r of normRows){
-            if(!(r.dia&&r.unidade&&Number.isFinite(r.fat))) continue;
             const key=[r.dia,r.unidade,r["Nome da loja"]||'',r.hora,r.pagamento||'',r["Canal de venda"]||''].join('|');
             const v=acc.get(key)||{...r,pedidos:0,fat:0,des:0,fre:0};
             v.pedidos+=N(r.pedidos); v.fat+=N(r.fat); v.des+=N(r.des); v.fre+=N(r.fre);
             v.cancelado=r.cancelado||v.cancelado; acc.set(key,v);
           }
           const rows=[...acc.values()];
-          importStatus.textContent=`Enviando ${rows.length.toLocaleString('pt-BR')} registros…`;
+          importStatus.textContent=`Lidas ${lidas.toLocaleString('pt-BR')} · válidas ${validas.toLocaleString('pt-BR')} · enviando ${rows.length.toLocaleString('pt-BR')}…`;
 
           try{
             if(!TABLE) await pickSource();
@@ -380,14 +404,15 @@
             await upsertInChunks(rows);
             importStatus.textContent='Importado.';
             await fetchMinMax(); await buildOptions(); await reload();
-          }catch(e){ console.error(e); importStatus.textContent='Erro ao inserir.'; }
+          }catch(e){ importStatus.textContent='Erro ao inserir.'; diag.textContent=`Falha no upsert: ${e.message||e}`; }
         },
         error:()=>{ importStatus.textContent='Erro ao ler CSV.'; }
       });
     });
 
     // ===== LISTENERS =====
-    fQuick.addEventListener('change', ()=>{ const end=new Date(); let start; const opt=fQuick.value;
+    fQuick.addEventListener('change', ()=>{
+      const end=new Date(); let start; const opt=fQuick.value;
       if(opt.startsWith("Últimos ")){ const n=parseInt(opt.split(' ')[1],10); start=new Date(); start.setDate(end.getDate()-(n-1)); }
       else if(opt==="Este mês"){ start=new Date(end.getFullYear(),end.getMonth(),1); }
       else if(opt==="Último mês"){ start=new Date(end.getFullYear(),end.getMonth()-1,1); const e=new Date(end.getFullYear(),end.getMonth(),0); fDini.value=toISO(start); fDfim.value=toISO(e); reload(); fx.open=false; return; }
@@ -396,7 +421,11 @@
       fDini.value=toISO(start); fDfim.value=toISO(end); reload(); fx.open=false;
     });
     [fUni,fLoja,fDini,fDfim,fTurno,fCanal,fPag,fCanc].forEach(el=>el.addEventListener('change',()=>{ reload(); fx.open=false; }));
-    btnLimpar.addEventListener('click',()=>{ fUni.value='Todas'; fLoja.value='Todos'; fTurno.selectedIndex=-1; fCanal.selectedIndex=-1; fPag.selectedIndex=-1; fCanc.value='Todos'; const end=new Date(); const start=new Date(); start.setDate(end.getDate()-89); fDini.value=toISO(start); fDfim.value=toISO(end); reload(); });
+    btnLimpar.addEventListener('click',()=>{
+      fUni.value='Todas'; fLoja.value='Todos'; fTurno.selectedIndex=-1; fCanal.selectedIndex=-1; fPag.selectedIndex=-1; fCanc.value='Todos';
+      const end=new Date(); const start=new Date(); start.setDate(end.getDate()-89); fDini.value=toISO(start); fDfim.value=toISO(end);
+      reload();
+    });
 
     // ===== BOOT =====
     (async function(){
