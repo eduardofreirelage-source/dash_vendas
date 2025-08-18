@@ -3,55 +3,67 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Maestro Food — Importador XLSX → Supabase</title>
+<title>Maestro Food — Importador XLSX (Grande Volume)</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="62" fill="%231a73e8"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="64" fill="white">M</text></svg>'/>
 <style>
   :root{--bg:#0f172a;--card:#111827;--muted:#9ca3af;--text:#e5e7eb;--blue:#60a5fa;--green:#34d399;--red:#f87171;--border:#1f2937}
   body{background:var(--bg);color:var(--text);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu;margin:0;padding:24px}
-  .wrap{max-width:940px;margin:0 auto}
-  h1{margin:0 0 4px;font-size:24px}
+  .wrap{max-width:980px;margin:0 auto}
+  h1{margin:0 0 6px;font-size:24px}
   p.muted{color:var(--muted);margin:0 0 16px}
   .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin:12px 0}
   .row{display:grid;gap:12px}
   .cols-2{grid-template-columns:repeat(2,1fr)}
-  input[type=file],button,progress{width:100%}
-  input[type=file],button{background:#0b1220;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+  .cols-3{grid-template-columns:repeat(3,1fr)}
+  input[type=file],input[type=text],input[type=number],button,progress{width:100%}
+  input,button{background:#0b1220;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
   button.primary{background:var(--blue);border:none;color:#0b1220;font-weight:700;cursor:pointer}
   .ok{color:var(--green)} .warn{color:#fbbf24} .err{color:var(--red)}
-  pre{background:#0b1220;border:1px solid var(--border);border-radius:10px;padding:10px;white-space:pre-wrap;max-height:260px;overflow:auto}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .k{color:var(--muted)}
+  pre{background:#0b1220;border:1px solid var(--border);border-radius:10px;padding:10px;white-space:pre-wrap;max-height:280px;overflow:auto}
+  label small{color:var(--muted)}
+  .inline{display:flex;align-items:center;gap:8px}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Maestro Food — Importador XLSX</h1>
-  <p class="muted">Lê planilhas <b>.xlsx</b> no navegador e envia em lotes para <code>public.vendas_upload</code>. Depois roda <code>ingest_upload()</code> e preenche <code>public.vendas_xlsx</code> com <b>dia</b> e <b>hora</b> separados.</p>
+  <h1>Maestro Food — Importador XLSX (Grande Volume)</h1>
+  <p class="muted">Leitura paginada e envio em lotes para <code>public.vendas_upload</code>. Depois rode <code>ingest_upload()</code> para preencher <code>public.vendas_xlsx</code> (com <b>dia</b> e <b>hora</b> separados; 1 registro = 1 pedido).</p>
 
   <div class="card">
     <div class="row cols-2">
       <div>
-        <label class="k">Supabase URL</label>
+        <label>Supabase URL</label>
         <input id="sbUrl" value="https://uahmcfzerofhzjvlzrqc.supabase.co">
       </div>
       <div>
-        <label class="k">Supabase anon key</label>
+        <label>Supabase anon key</label>
         <input id="sbKey" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU">
       </div>
     </div>
-    <div class="row cols-2">
+
+    <div class="row cols-3">
       <div>
-        <label class="k">Arquivo .xlsx</label>
+        <label>Arquivo .xlsx</label>
         <input id="file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
       </div>
       <div>
-        <label class="k">Tamanho do lote (linhas por envio)</label>
-        <input id="batch" type="number" min="100" max="2000" value="500">
+        <label>Linhas por janela de leitura<br><small>(XLSX → memória, recomendado 5000–10000)</small></label>
+        <input id="readWindow" type="number" min="1000" max="20000" value="5000">
+      </div>
+      <div>
+        <label>Lotes por envio ao Supabase<br><small>(recomendado 300–600, reduz 413/timeout)</small></label>
+        <input id="batch" type="number" min="100" max="1000" value="400">
       </div>
     </div>
+
+    <div class="inline" style="margin:8px 0">
+      <input id="skipCentro" type="checkbox">
+      <label for="skipCentro">Ignorar linhas com <b>Nome da loja</b> vazio ou igual a <b>“Loja Centro”</b></label>
+    </div>
+
     <div class="row cols-2">
-      <button id="btnStart" class="primary">Validar & Enviar XLSX → vendas_upload</button>
-      <button id="btnIngest">Executar ingest_upload() → preencher vendas_xlsx</button>
+      <button id="btnStart" class="primary">Validar & Importar XLSX → vendas_upload</button>
+      <button id="btnIngest">Executar ingest_upload() → vendas_xlsx</button>
     </div>
     <div class="row">
       <progress id="pb" max="100" value="0"></progress>
@@ -60,11 +72,11 @@
   </div>
 
   <div class="card">
-    <b>Identificador de colunas (detectadas → staging)</b>
+    <b>Mapeamento de cabeçalhos (detectados → staging)</b>
     <pre id="headers">—</pre>
-    <div class="grid">
+    <div class="row cols-2">
       <div>
-        <b>Preview (5 linhas)</b>
+        <b>Preview (até 5 linhas)</b>
         <pre id="preview">—</pre>
       </div>
       <div>
@@ -86,20 +98,25 @@
 
 <script>
 (() => {
-  // ---------- Config ----------
+  // ---- Config obrigatória da staging ----
+  // public.vendas_upload COM ESTES CAMPOS (TEXT):
+  // 'Data da venda','unidade','Nome da loja','Canal de venda','Pagamento','Está cancelado','Total','Desconto','Entrega'
   const REQUIRED = [
     'Data da venda','unidade','Nome da loja','Canal de venda',
     'Pagamento','Está cancelado','Total','Desconto','Entrega'
   ];
+
+  // ---- DOM ----
   const pb = document.getElementById('pb');
   const statusEl = document.getElementById('status');
   const headersEl = document.getElementById('headers');
   const previewEl = document.getElementById('preview');
   const resumeEl = document.getElementById('resume');
   const dbEl = document.getElementById('db');
+  const skipCentro = document.getElementById('skipCentro');
   let supa = null;
 
-  // ---------- Helpers ----------
+  // ---- Utils ----
   const norm = s => String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
   const fmt = n => n.toLocaleString('pt-BR');
 
@@ -117,14 +134,14 @@
       {std:'Entrega', list:['entrega','frete','shipping','delivery']}
     ];
     for (const m of M) if (m.list.includes(k)) return m.std;
-    return h; // mantém desconhecido
+    return h;
   }
 
-  function formatDateBRfromXLSX(v){
-    // Gera "dd/mm/yyyy hh:mm" a partir de Date, número Excel ou string
+  function ddmmYYYY_HHMM_fromAny(v){
+    // Gera "dd/mm/yyyy hh:mm" a partir de Date, número Excel (serial) ou ISO/string
     try{
       if (v instanceof Date){
-        const d = v, dd=String(d.getDate()).padStart(2,'0'), mm=String(d.getMonth()+1).padStart(2,'0'), yy=d.getFullYear();
+        const d=v, dd=String(d.getDate()).padStart(2,'0'), mm=String(d.getMonth()+1).padStart(2,'0'), yy=d.getFullYear();
         const hh=String(d.getHours()).padStart(2,'0'), mi=String(d.getMinutes()).padStart(2,'0');
         return `${dd}/${mm}/${yy} ${hh}:${mi}`;
       }
@@ -133,39 +150,32 @@
       }
       const s = String(v??'').trim();
       if (!s) return '';
-      // já no formato dd/mm/yyyy?
       if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)){
-        // garante hh:mm
         if (/\d{1,2}:\d{2}/.test(s)) return s;
         return s + ' 00:00';
       }
-      // ISO -> dd/mm/yyyy hh:mm
       const d = new Date(s);
-      if (!isNaN(d.getTime())){
-        const dd=String(d.getDate()).padStart(2,'0'), mm=String(d.getMonth()+1).padStart(2,'0'), yy=d.getFullYear();
-        const hh=String(d.getHours()).padStart(2,'0'), mi=String(d.getMinutes()).padStart(2,'0');
-        return `${dd}/${mm}/${yy} ${hh}:${mi}`;
-      }
+      if (!isNaN(d.getTime())) return ddmmYYYY_HHMM_fromAny(d);
       return '';
     }catch{ return ''; }
   }
 
-  function buildRowStaging(r, map){
-    // Monta exatamente as colunas de public.vendas_upload (tudo texto)
+  function buildRowStagingFromAoA(rowAoA, indexMap){
+    // rowAoA = array de células da linha; indexMap: std -> idx da coluna
     const out = {};
     for (const std of REQUIRED){
-      const src = map[std]; // nome original da coluna que mapeia pra std
-      let val = src ? r[src] : '';
-      if (std === 'Data da venda') val = formatDateBRfromXLSX(val);
-      if (val == null) val = '';
-      out[std] = String(val);
+      const idx = indexMap[std];
+      let v = (idx!=null) ? rowAoA[idx] : '';
+      if (std === 'Data da venda') v = ddmmYYYY_HHMM_fromAny(v);
+      if (v == null) v = '';
+      out[std] = String(v);
     }
     return out;
   }
 
-  function show(obj, el){
-    el.textContent = (typeof obj === 'string') ? obj : JSON.stringify(obj, null, 2);
-  }
+  function show(obj, el){ el.textContent = (typeof obj === 'string') ? obj : JSON.stringify(obj, null, 2); }
+
+  async function yieldUI(){ return new Promise(r=>setTimeout(r,0)); }
 
   async function health(){
     if (!supa) return;
@@ -177,70 +187,108 @@
       const max = (!b.error && b.data?.[0]?.dia) ? b.data[0].dia : null;
       const total = c.count ?? 0;
       show({ tabela:'vendas_xlsx', intervalo:`${min??'—'} → ${max??'—'}`, total }, dbEl);
-    }catch(e){
-      show({erro:String(e)}, dbEl);
-    }
+    }catch(e){ show({erro:String(e)}, dbEl); }
   }
 
-  // ---------- XLSX -> staging ----------
+  // ---- Importador paginado ----
   async function start(){
     const file = document.getElementById('file').files?.[0];
     const url  = document.getElementById('sbUrl').value.trim();
     const key  = document.getElementById('sbKey').value.trim();
-    const batchSize = Math.max(100, Math.min(2000, Number(document.getElementById('batch').value)||500));
-
+    const readWindow = Math.max(2000, Math.min(20000, Number(document.getElementById('readWindow').value)||5000));
+    const batchSize  = Math.max(100,  Math.min(1000,  Number(document.getElementById('batch').value)||400));
     if (!file){ statusEl.innerHTML = 'Selecione um <b>.xlsx</b>.'; return; }
     if (!url || !key){ statusEl.innerHTML = '<span class="err">Configure URL/anon key.</span>'; return; }
+
     supa = window.supabase.createClient(url, key, {auth:{persistSession:true,autoRefreshToken:true}});
 
-    statusEl.textContent = 'Lendo planilha…';
+    statusEl.textContent = 'Lendo cabeçalhos…';
     pb.value = 0;
 
-    // Ler arquivo
+    // Lê workbook (dense = menos memória)
     const data = await file.arrayBuffer();
-    const wb = XLSX.read(data, {type:'array', cellDates:true});
+    const wb = XLSX.read(data, { type:'array', cellDates:true, dense:true });
     const wsname = wb.SheetNames[0];
     const ws = wb.Sheets[wsname];
-    const rows = XLSX.utils.sheet_to_json(ws, {defval:'', raw:true});
+    if (!ws || !ws['!ref']){ statusEl.innerHTML = '<span class="err">Aba vazia ou !ref ausente.</span>'; return; }
 
-    if (!rows.length){ statusEl.innerHTML = '<span class="err">Planilha vazia.</span>'; return; }
+    // Descobre range total
+    const ref = XLSX.utils.decode_range(ws['!ref']);
+    const firstRow = ref.s.r;      // geralmente 0
+    const lastRow  = ref.e.r;      // índice final
+    const firstCol = ref.s.c;
+    const lastCol  = ref.e.c;
 
-    // Mapear cabeçalhos
-    const rawHeaders = Object.keys(rows[0]);
-    const headerMap = {};
-    for (const h of rawHeaders){
+    // Header (linha do cabeçalho = firstRow)
+    const headerAoA = XLSX.utils.sheet_to_json(ws, { header:1, range: {s:{r:firstRow,c:firstCol}, e:{r:firstRow,c:lastCol}}, defval:'' });
+    const headers = (headerAoA[0] || []).map(h=>String(h));
+    if (!headers.length){ statusEl.innerHTML = '<span class="err">Cabeçalho não encontrado.</span>'; return; }
+
+    // Mapeia cabeçalhos → std
+    const headerMap = {};   // std -> header original
+    const indexMap  = {};   // std -> índice da coluna na planilha
+    headers.forEach((h, idx) => {
       const std = mapHeader(h);
-      if (!headerMap[std]) headerMap[std] = h; // 1ª ocorrência
-    }
+      if (!headerMap[std]){ headerMap[std] = h; indexMap[std] = idx; }
+    });
 
-    // Verificar obrigatórias
-    const missing = REQUIRED.filter(k => !headerMap[k]);
+    const missing = REQUIRED.filter(k => indexMap[k]==null);
     show({detectado: headerMap, faltando: missing}, headersEl);
     if (missing.length){
       statusEl.innerHTML = `<span class="err">Colunas obrigatórias ausentes: ${missing.join(', ')}</span>`;
       return;
     }
 
-    // Montar linhas para staging
-    const staging = rows.map(r => buildRowStaging(r, headerMap));
+    // Preview de até 5 linhas (lendo próxima linha em diante)
+    const previewRange = { s:{r:firstRow+1, c:firstCol}, e:{r:Math.min(firstRow+5, lastRow), c:lastCol} };
+    const prevAoA = XLSX.utils.sheet_to_json(ws, { header:1, range: previewRange, defval:'' });
+    const previewRows = prevAoA.map(r => buildRowStagingFromAoA(r, indexMap));
+    show(previewRows, previewEl);
 
-    // Preview/Resumo
-    show(staging.slice(0,5), previewEl);
-    show({linhas_total: staging.length, sheet: wsname, arquivo: file.name, lote: batchSize}, resumeEl);
+    // Resumo
+    const totalRows = Math.max(0, lastRow - firstRow); // sem contar header, aprox
+    show({arquivo:file.name, sheet:wsname, linhas_aproximadas: totalRows, janela_leitura: readWindow, lote_envio: batchSize}, resumeEl);
 
-    // Enviar em lotes
-    statusEl.innerHTML = 'Enviando para <code>public.vendas_upload</code>…';
-    let ok=0, fail=0;
-    for (let i=0;i<staging.length;i+=batchSize){
-      const chunk = staging.slice(i, i+batchSize);
-      const { error } = await supa.from('vendas_upload').insert(chunk);
-      if (error){ fail += chunk.length; console.error('Lote com erro:', error); }
-      else ok += chunk.length;
-      const pct = Math.round(((i+chunk.length)/staging.length)*100);
-      pb.value = pct; statusEl.textContent = `Upload: ${fmt(i+chunk.length)} / ${fmt(staging.length)} (${pct}%)`;
+    statusEl.innerHTML = 'Importando por janelas…';
+    let sentOK=0, sentErr=0, processed=0;
+
+    // Percorre em janelas de leitura (ex.: 5000 linhas por janela)
+    for (let start = firstRow + 1; start <= lastRow; start += readWindow){
+      const end = Math.min(start + readWindow - 1, lastRow);
+      const chunkAoA = XLSX.utils.sheet_to_json(ws, { header:1, range: {s:{r:start,c:firstCol}, e:{r:end,c:lastCol}}, defval:'' });
+      // Converte para objetos staging on-the-fly e filtra “Loja Centro”/vazios se marcado
+      const chunkObjs = [];
+      for (let i=0;i<chunkAoA.length;i++){
+        const row = chunkAoA[i];
+        const obj = buildRowStagingFromAoA(row, indexMap);
+        if (skipCentro.checked){
+          const loja = (obj['Nome da loja']||'').trim();
+          if (!loja || loja === 'Loja Centro') continue;
+        }
+        chunkObjs.push(obj);
+      }
+
+      // Envia esse “chunk” em sublotes menores (ex.: 400)
+      for (let i=0;i<chunkObjs.length;i+=batchSize){
+        const lot = chunkObjs.slice(i, i+batchSize);
+        try{
+          const { error } = await supa.from('vendas_upload').insert(lot, { returning:'minimal' });
+          if (error){ sentErr += lot.length; console.error('Erro no lote:', error); }
+          else { sentOK += lot.length; }
+        }catch(e){
+          sentErr += lot.length; console.error('Falha no request:', e);
+        }
+        processed += lot.length;
+        const pct = Math.min(100, Math.round( (processed / totalRows) * 100 ));
+        pb.value = pct;
+        statusEl.textContent = `Upload: ${fmt(processed)} / ~${fmt(totalRows)} (${pct}%)`;
+        await yieldUI(); // evita travar a UI
+      }
+      // libere memória da janela atual
+      await yieldUI();
     }
 
-    statusEl.innerHTML = `Upload concluído: <span class="ok">${fmt(ok)} ok</span>${fail?`, <span class="err">${fmt(fail)} erros</span>`:''}`;
+    statusEl.innerHTML = `Upload concluído: <span class="ok">${fmt(sentOK)} ok</span>${sentErr?`, <span class="err">${fmt(sentErr)} erros</span>`:''}`;
     await health();
   }
 
@@ -249,7 +297,7 @@
     const key  = document.getElementById('sbKey').value.trim();
     if (!supa) supa = window.supabase.createClient(url, key, {auth:{persistSession:true,autoRefreshToken:true}});
     statusEl.textContent = 'Executando ingest_upload()…';
-    const r = await supa.rpc('ingest_upload');
+    const r = await supa.rpc('ingest_upload'); // esta função faz: 1 linha = 1 pedido, separa dia/hora, numéricos etc.
     if (r.error){ statusEl.innerHTML = `<span class="err">Erro na ingestão: ${r.error.message}</span>`; console.error(r.error); }
     else { statusEl.innerHTML = `<span class="ok">Ingestão concluída.</span>`; }
     await health();
