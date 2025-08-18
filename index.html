@@ -4,19 +4,17 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Maestro Food</title>
-  <!-- Favicon inline para evitar 404 -->
+  <!-- Favicon inline (evita 404) -->
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="62" fill="%231a73e8"/><text x="64" y="82" text-anchor="middle" font-family="Inter,Arial" font-size="72" fill="white">M</text></svg>'/>
   <link rel="stylesheet" href="https://unpkg.com/modern-css-reset/dist/reset.min.css">
   <style>
     :root{
       --bg:#f6f7fb; --card:#fff; --ink:#0f172a; --muted:#667085;
-      --brand:#1a73e8; --ok:#0ea5e9; --warn:#d97706; --err:#dc2626;
-      --border:#e6eaf2; --radius:14px;
+      --brand:#1a73e8; --border:#e6eaf2; --radius:14px; --err:#dc2626; --ok:#0d9488;
     }
-    html,body{height:100%}
-    body{background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Inter,Ubuntu}
+    body{background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Inter,Roboto}
     .wrap{max-width:1200px; margin:28px auto 64px; padding:0 16px}
-    h1{font-size:26px; font-weight:800; letter-spacing:.2px}
+    h1{font-size:26px; font-weight:800}
     small.muted{color:var(--muted)}
     .status{margin:4px 0 14px; color:#0f766e}
     .row{display:grid; gap:12px}
@@ -30,16 +28,14 @@
     select[multiple]{height:144px}
     .inline{display:flex; align-items:center; gap:10px}
     .right{text-align:right}
-    .btn{background:var(--brand); color:#fff; border:none; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:600}
-    .btn.ghost{background:#eef3ff; color:#1747b7}
-    .btn.gray{background:#f1f5f9; color:#0f172a}
+    .btn{background:var(--brand); color:#fff; border:none; padding:10px 14px; border-radius:10px; font-weight:600; cursor:pointer}
+    .btn.gray{background:#eef3ff; color:#1747b7}
     .grid-kpi{display:grid; gap:12px; grid-template-columns:repeat(4,1fr)}
     .kpi h3{font-size:12px; color:var(--muted); margin-bottom:6px}
     .kpi b{font-size:22px}
     .pill{display:inline-block; padding:4px 10px; border-radius:999px; background:#eef3ff; color:#1747b7; font-weight:700}
-    .danger{color:var(--err)}
-    .ok{color:#0d9488}
-    .chartBox{height:320px} /* evita gráfico “infinito” */
+    .chartBox{height:320px}
+    .danger{color:var(--err)} .ok{color:var(--ok)}
     @media (max-width:980px){.cols-4,.cols-3,.cols-2,.grid-kpi{grid-template-columns:1fr}}
   </style>
 </head>
@@ -52,7 +48,7 @@
   <details id="fx" class="card" open>
     <summary class="inline" style="justify-content:space-between;">
       <b>FILTROS</b>
-      <button id="btnLimpar" type="button" class="btn gray">Limpar</button>
+      <button id="btnLimpar" class="btn gray" type="button">Limpar</button>
     </summary>
 
     <div class="row cols-2" style="margin-top:12px;">
@@ -66,12 +62,8 @@
       <div>
         <label>Período rápido</label>
         <select id="fQuick">
-          <option>Últimos 30</option>
-          <option>Últimos 60</option>
-          <option selected>Últimos 90</option>
-          <option>Este mês</option>
-          <option>Último mês</option>
-          <option>Este ano</option>
+          <option>Últimos 30</option><option>Últimos 60</option><option selected>Últimos 90</option>
+          <option>Este mês</option><option>Último mês</option><option>Este ano</option>
         </select>
       </div>
       <div>
@@ -120,365 +112,329 @@
 
   <div class="card chartBox" style="margin-top:14px;">
     <div class="inline" style="justify-content:space-between;">
-      <b>Receita diária (R$)</b>
-      <span class="pill">Total</span>
+      <b>Receita diária (R$)</b><span class="pill">Total</span>
     </div>
     <canvas id="chart" style="margin-top:8px; height:100%"></canvas>
   </div>
 </div>
 
-<!-- Libs necessárias antes do app -->
+<!-- libs -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 
 <script>
 (function(){
-  // =============== CONFIG ===============
+  // ===== CONFIG =====
   const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-  // (chave fornecida por você; troque aqui se precisar)
   const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
   const PREFER_TABLE  = "vendas_kpi_daily_v2_data";
   const FALLBACK_VIEW = "vendas_kpi_daily_v2";
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {auth:{persistSession:true,autoRefreshToken:true}});
 
-  // =============== DOM ===============
-  const $ = (id)=>document.getElementById(id);
-  const periodoEl = $("periodo"), statusFonte = $("statusFonte");
-  const uni = $("fUnidade"), loja = $("fLoja"), dini = $("fDini"), dfim = $("fDfim"),
-        pr = $("fQuick"), turno = $("fTurno"), canal = $("fCanal"), pag = $("fPag"), canc = $("fCanc");
-  const btnLimpar = $("btnLimpar"), csv = $("csv"), btnImport = $("btnImport"), importStatus = $("importStatus");
-  const kPedidos = $("kPedidos"), kTicket = $("kTicket"), kFat = $("kFat"), kFatDia = $("kFatDia"),
-        kDes = $("kDes"), kDesPct = $("kDesPct"), kFre = $("kFre"), kFatLiq = $("kFatLiq");
-  const chartEl = $("chart");
-  let chart;
+  // ===== DOM =====
+  const $ = id => document.getElementById(id);
+  const periodoEl=$("periodo"), statusFonte=$("statusFonte");
+  const uni=$("fUnidade"), loja=$("fLoja"), dini=$("fDini"), dfim=$("fDfim"),
+        pr=$("fQuick"), turno=$("fTurno"), canal=$("fCanal"), pag=$("fPag"), canc=$("fCanc");
+  const btnLimpar=$("btnLimpar"), csv=$("csv"), btnImport=$("btnImport"), importStatus=$("importStatus");
+  const kPedidos=$("kPedidos"), kTicket=$("kTicket"), kFat=$("kFat"), kFatDia=$("kFatDia"),
+        kDes=$("kDes"), kDesPct=$("kDesPct"), kFre=$("kFre"), kFatLiq=$("kFatLiq");
+  const chartEl=$("chart"); let chart;
 
-  // =============== STATE ===============
-  let TABLE = null, minISO = null, maxISO = null, lastData = [];
+  // ===== STATE =====
+  let TABLE=null, minISO=null, maxISO=null, lastData=[];
 
-  // =============== UTILS ===============
-  const fmtBRL = v => (isFinite(v)? v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : "—");
-  const fmtPct = v => (isFinite(v)? (v*100).toFixed(1).replace('.',',')+'%' : "—");
-  const norm = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
-  const normCancel = v => {
-    const s = String(v ?? "").trim().toLowerCase();
-    if (v===true || s==="sim" || s==="s" || s==="1" || s==="true") return "Sim";
-    return "Não";
-  };
-  const toISO = d => { if(!d) return null; const dt=new Date(d); return isNaN(dt)? null : dt.toISOString().slice(0,10); };
-  const parseBR = x => { if(x==null||x==='')return 0; if(typeof x==='number')return x; const s=String(x).trim().replace(/\./g,'').replace(',','.'); const n=Number(s); return isFinite(n)?n:0; };
-  const onlyDateISO = iso => iso && iso.length>=10 ? iso.slice(0,10) : iso;
+  // ===== UTILS =====
+  const fmtBRL=v=> (isFinite(v)? v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : "—");
+  const fmtPct=v=> (isFinite(v)? (v*100).toFixed(1).replace('.',',')+'%' : "—");
+  const norm=s=> String(s??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+  const normCancel=v=>{const s=String(v??"").trim().toLowerCase(); if(v===true||s==="sim"||s==="s"||s==="1"||s==="true")return"Sim"; return"Não";}
+  const toISO=d=>{if(!d)return null; const dt=new Date(d); return isNaN(dt)?null:dt.toISOString().slice(0,10);}
+  const onlyDateISO=iso=> iso&&iso.length>=10? iso.slice(0,10):iso;
+  const parseBR=x=>{ if(x==null||x==='')return 0; if(typeof x==='number')return x; const s=String(x).replace(/\./g,'').replace(',','.'); const n=Number(s); return isFinite(n)?n:0; }
   function ddmmyyyyToISO(s){
-    if(!s) return null; const str=String(s).trim();
-    const [datePart,timePart] = str.split(' ');
-    if(!datePart) return null; const [d,m,y] = datePart.split('/');
-    const day=+d, month=+m, year=+y; if(!day||!month||!year) return null;
-    const iso = `${String(year).padStart(4,'0')}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    const dt = new Date(iso); if(dt.getFullYear()!=year || dt.getMonth()+1!=month || dt.getDate()!=day) return null;
-    return `${iso}${timePart ? 'T'+timePart+':00' : 'T00:00:00'}`;
+    if(!s) return null; const str=String(s).trim(); const [datePart,timePart]=str.split(' ');
+    if(!datePart) return null; const [d,m,y]=datePart.split('/');
+    const day=+d,month=+m,year=+y; if(!day||!month||!year) return null;
+    const iso=`${String(year).padStart(4,'0')}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const dt=new Date(iso); if(dt.getFullYear()!=year||dt.getMonth()+1!=month||dt.getDate()!=day) return null;
+    return `${iso}${timePart?'T'+timePart+':00':'T00:00:00'}`;
   }
-  function hourFromDateText(s){
-    const str = String(s??''); const parts = str.split(' ');
-    if(parts[1] && parts[1].includes(':')){ const [hh]=parts[1].split(':'); const h=parseInt(hh,10); return isFinite(h)?h:-1 }
-    return -1;
-  }
+  function hourFromDateText(s){ const str=String(s??''); const p=str.split(' '); if(p[1]&&p[1].includes(':')){const [hh]=p[1].split(':'); const h=parseInt(hh,10); return isFinite(h)?h:-1} return -1; }
+
+  // header mapping (mais sinônimos p/ unidade & fat)
   function mapHeader(h){
     const key = norm(h);
     const cand = [
-      {std:'dia', list:['dia','data','data da venda','data de venda','data_venda','datadavenda','date']},
-      {std:'unidade', list:['unidade','filial','unidades','uni','store','loja']},
+      {std:'dia', list:['dia','data','data da venda','data de venda','data_venda','datadavenda','date','dt venda','dt_venda']},
+      {std:'unidade', list:['unidade','unid','uni','filial','loja','store','unidade de venda','unidade do pedido','empresa']},
       {std:'pedidos', list:['pedidos','pedido','qtd','qtde','quantidade','orders','qty']},
-      {std:'fat', list:['fat','faturamento','total','valor total','valor','total geral','revenue','sales']},
+      {std:'fat', list:['fat','faturamento','total','vl total','vlr total','valor total','valor','total geral','vr_total','vl_total','revenue','sales']},
       {std:'des', list:['des','desconto','discount']},
       {std:'fre', list:['fre','frete','entrega','delivery','shipping']},
       {std:'turno', list:['turno','shift','periodo','período']},
-      {std:'Nome da loja', list:['nome da loja','nome loja','loja','nomedaloja','nome_da_loja','store_name']},
+      {std:'Nome da loja', list:['nome da loja','nome loja','loja nome','nomedaloja','nome_da_loja','store_name']},
       {std:'Canal de venda', list:['canal de venda','canal','canal de vendas','canal_venda','channel','sales_channel']},
       {std:'pagamento', list:['pagamento','forma de pagamento','meio de pagamento','payment','payment_method']},
       {std:'cancelado', list:['esta cancelado','está cancelado','cancelado','cancelada','cancelled','canceled']},
-      {std:'hora', list:['hora','horario','horário','hour','time']},
+      {std:'hora', list:['hora','horario','horário','hour','time']}
     ];
     for(const c of cand){ if(c.list.includes(key)) return c.std; }
     return h;
   }
+
   function applyQuickDate(){
-    const opt = pr.value; const end = new Date(); let start;
-    if(opt.startsWith("Últimos ")){ const n=parseInt(opt.split(' ')[1],10); start=new Date(); start.setDate(end.getDate()-(n-1)); }
-    else if(opt==="Este mês"){ start=new Date(end.getFullYear(),end.getMonth(),1); }
-    else if(opt==="Último mês"){ start=new Date(end.getFullYear(),end.getMonth()-1,1); const e=new Date(end.getFullYear(),end.getMonth(),0); dini.value=toISO(start); dfim.value=toISO(e); return; }
-    else if(opt==="Este ano"){ start=new Date(end.getFullYear(),0,1); }
-    else { start=new Date(end.getFullYear(),end.getMonth(),end.getDate()-29); }
+    const opt=pr.value; const end=new Date(); let start;
+    if(opt.startsWith("Últimos ")){const n=parseInt(opt.split(' ')[1],10); start=new Date(); start.setDate(end.getDate()-(n-1));}
+    else if(opt==="Este mês"){start=new Date(end.getFullYear(),end.getMonth(),1);}
+    else if(opt==="Último mês"){start=new Date(end.getFullYear(),end.getMonth()-1,1); const e=new Date(end.getFullYear(),end.getMonth(),0); dini.value=toISO(start); dfim.value=toISO(e); return;}
+    else if(opt==="Este ano"){start=new Date(end.getFullYear(),0,1);}
+    else {start=new Date(end.getFullYear(),end.getMonth(),end.getDate()-29);}
     dini.value=toISO(start); dfim.value=toISO(end);
   }
+
   async function fetchAll(qb, step=1000, hardCap=2_000_000){
     const out=[]; let from=0;
     while(true){
-      const to = from+step-1;
-      const { data, error } = await qb.range(from,to);
+      const to=from+step-1;
+      const {data,error}=await qb.range(from,to);
       if(error){ console.error(error); break; }
-      if(!data || !data.length){ break; }
+      if(!data||!data.length) break;
       out.push(...data);
-      if(data.length < step || out.length >= hardCap) break;
-      from += step;
+      if(data.length<step || out.length>=hardCap) break;
+      from+=step;
     }
     return out;
   }
 
-  // =============== DATA PIPELINE ===============
+  // ===== data source =====
   async function pickSource(){
     let r = await supa.from(PREFER_TABLE).select('dia').limit(1);
-    if(!r.error){ TABLE = PREFER_TABLE; return; }
+    if(!r.error){ TABLE=PREFER_TABLE; return; }
     r = await supa.from(FALLBACK_VIEW).select('dia').limit(1);
-    if(!r.error){ TABLE = FALLBACK_VIEW; return; }
-    TABLE = null;
+    if(!r.error){ TABLE=FALLBACK_VIEW; return; }
+    TABLE=null;
   }
   async function fetchMinMax(){
-    if(!TABLE){ minISO=maxISO=null; return; }
-    const a = await supa.from(TABLE).select('dia').order('dia',{ascending:true}).limit(1);
-    const b = await supa.from(TABLE).select('dia').order('dia',{ascending:false}).limit(1);
-    if(!a.error && a.data?.length && !b.error && b.data?.length){
-      minISO = onlyDateISO(a.data[0].dia);
-      maxISO = onlyDateISO(b.data[0].dia);
-    }else{ minISO=maxISO=null; }
+    if(!TABLE){minISO=maxISO=null; return;}
+    const a=await supa.from(TABLE).select('dia').order('dia',{ascending:true}).limit(1);
+    const b=await supa.from(TABLE).select('dia').order('dia',{ascending:false}).limit(1);
+    if(!a.error&&a.data?.length&&!b.error&&b.data?.length){minISO=onlyDateISO(a.data[0].dia); maxISO=onlyDateISO(b.data[0].dia);} else {minISO=maxISO=null;}
   }
   async function buildOptions(){
     if(!TABLE) return;
-
-    // Unidades
+    // Unidade
     {
-      const base = supa.from(TABLE).select('unidade').not('unidade','is',null).order('unidade',{ascending:true});
-      const rows = await fetchAll(base, 1000);
-      const arr = [...new Set((rows||[]).map(x=>x.unidade).filter(Boolean))];
+      const rows = await fetchAll(supa.from(TABLE).select('unidade').not('unidade','is',null).order('unidade',{ascending:true}), 1000);
+      const arr=[...new Set((rows||[]).map(x=>x.unidade).filter(Boolean))];
       uni.innerHTML = `<option>Todas</option>` + arr.map(v=>`<option>${v}</option>`).join('');
     }
-
     // Pagamento
     {
-      const base = supa.from(TABLE).select('pagamento').not('pagamento','is',null).order('pagamento',{ascending:true});
-      const rows = await fetchAll(base, 1000);
-      const arr = [...new Set((rows||[]).map(x=>x.pagamento).filter(Boolean))];
+      const rows = await fetchAll(supa.from(TABLE).select('pagamento').not('pagamento','is',null).order('pagamento',{ascending:true}), 1000);
+      const arr=[...new Set((rows||[]).map(x=>x.pagamento).filter(Boolean))];
       pag.innerHTML = arr.map(v=>`<option>${v}</option>`).join('');
     }
-
-    // Canal de venda (ASPAS!)
+    // Canal (com aspas)
     {
-      const base = supa.from(TABLE).select('"Canal de venda"').order('Canal de venda',{ascending:true});
-      const rows = await fetchAll(base, 1000);
-      const arr = [...new Set((rows||[]).map(x=>x["Canal de venda"]).filter(Boolean))];
+      const rows = await fetchAll(supa.from(TABLE).select('"Canal de venda"').order('Canal de venda',{ascending:true}), 1000);
+      const arr=[...new Set((rows||[]).map(x=>x["Canal de venda"]).filter(Boolean))];
       canal.innerHTML = arr.map(v=>`<option>${v}</option>`).join('');
     }
-
-    // Top 10 lojas (agregando no cliente sobre todo dataset paginado)
+    // Top 10 lojas
     {
-      const base = supa.from(TABLE).select('"Nome da loja",fat').not('fat','is',null).not('Nome da loja','is',null);
-      const rows = await fetchAll(base, 5000); // grande, mas roda uma vez
-      const acc = new Map();
-      (rows||[]).forEach(r=>{
-        const k = r["Nome da loja"];
-        acc.set(k, (acc.get(k)||0) + (Number(r.fat)||0));
-      });
-      const top = Array.from(acc.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k])=>k);
+      const rows = await fetchAll(supa.from(TABLE).select('"Nome da loja",fat').not('fat','is',null).not('Nome da loja','is',null), 5000);
+      const acc=new Map(); (rows||[]).forEach(r=>{const k=r["Nome da loja"]; acc.set(k,(acc.get(k)||0)+(Number(r.fat)||0));});
+      const top=Array.from(acc.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k])=>k);
       loja.innerHTML = `<option>Todos</option>` + top.map(v=>`<option>${v}</option>`).join('');
     }
   }
 
   function computeKPIs(rows){
-    const pedidos = rows.reduce((s,r)=>s+(Number(r.pedidos)||0),0);
-    const fat     = rows.reduce((s,r)=>s+(Number(r.fat)||0),0);
-    const des     = rows.reduce((s,r)=>s+(Number(r.des)||0),0);
-    const fre     = rows.reduce((s,r)=>s+(Number(r.fre)||0),0);
-    const fatliq  = fat - des - fre;
-    const dias    = new Set(rows.map(r=>r.dia)).size || 1;
-    const ticket  = pedidos ? fat/pedidos : 0;
-    const fatDia  = fat/dias;
-
-    kPedidos.textContent = pedidos.toLocaleString('pt-BR');
-    kTicket.textContent  = fmtBRL(ticket);
-    kFat.textContent     = fmtBRL(fat);
-    kFatDia.textContent  = fmtBRL(fatDia);
-    kDes.textContent     = fmtBRL(des);
-    kDesPct.textContent  = fmtPct(fat ? (des/fat) : 0);
-    kFre.textContent     = fmtBRL(fre);
-    kFatLiq.textContent  = fmtBRL(fatliq);
+    const pedidos=rows.reduce((s,r)=>s+(Number(r.pedidos)||0),0);
+    const fat=rows.reduce((s,r)=>s+(Number(r.fat)||0),0);
+    const des=rows.reduce((s,r)=>s+(Number(r.des)||0),0);
+    const fre=rows.reduce((s,r)=>s+(Number(r.fre)||0),0);
+    const fatliq=fat-des-fre;
+    const dias=new Set(rows.map(r=>r.dia)).size||1;
+    const ticket=pedidos?fat/pedidos:0; const fatDia=fat/dias;
+    kPedidos.textContent=pedidos.toLocaleString('pt-BR');
+    kTicket.textContent=fmtBRL(ticket);
+    kFat.textContent=fmtBRL(fat);
+    kFatDia.textContent=fmtBRL(fatDia);
+    kDes.textContent=fmtBRL(des);
+    kDesPct.textContent=fmtPct(fat?(des/fat):0);
+    kFre.textContent=fmtBRL(fre);
+    kFatLiq.textContent=fmtBRL(fatliq);
   }
 
   function drawChart(rows){
-    const byDay = new Map();
-    rows.forEach(r=>{
-      if(!r.dia) return;
-      byDay.set(r.dia, (byDay.get(r.dia)||0) + (Number(r.fat)||0));
-    });
-    const labels = Array.from(byDay.keys()).sort();
-    const values = labels.map(d=>byDay.get(d));
-
-    const ctx = chartEl.getContext('2d');
-    if(chart) chart.destroy();
-    chart = new Chart(ctx,{
-      type:'line',
-      data:{ labels, datasets:[{ label:'Receita', data:values, tension:.25, pointRadius:0 }]},
-      options:{
-        responsive:true, maintainAspectRatio:false,
-        animation:false,
-        scales:{ y:{ beginAtZero:true } },
-        plugins:{ legend:{ display:false }, tooltip:{ mode:'index', intersect:false } }
-      }
-    });
+    const byDay=new Map();
+    rows.forEach(r=>{ if(!r.dia) return; byDay.set(r.dia,(byDay.get(r.dia)||0)+(Number(r.fat)||0)); });
+    const labels=Array.from(byDay.keys()).sort();
+    const values=labels.map(d=>byDay.get(d));
+    const ctx=chartEl.getContext('2d'); if(chart) chart.destroy();
+    chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'Receita',data:values,tension:.25,pointRadius:0}]},options:{responsive:true,maintainAspectRatio:false,animation:false,scales:{y:{beginAtZero:true}},plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}}}});
   }
 
   async function reload(){
-    if(!minISO || !maxISO){
-      periodoEl.textContent = 'Sem dados.';
-      statusFonte.textContent = 'Fonte: —';
-      computeKPIs([]); if(chart) chart.destroy(); return;
-    }
+    if(!minISO||!maxISO){ periodoEl.textContent='Sem dados.'; statusFonte.textContent='Fonte: —'; computeKPIs([]); if(chart) chart.destroy(); return; }
+    const a=dini.value||minISO, b=dfim.value||maxISO;
+    const uniSel=uni.value||'Todas', lojaSel=loja.value||'Todos';
+    const turnSel=Array.from(turno.selectedOptions).map(o=>o.value);
+    const canSel=Array.from(canal.selectedOptions).map(o=>o.value);
+    const pagSel=Array.from(pag.selectedOptions).map(o=>o.value);
+    const cancSel=canc.value||'Todos';
 
-    const a = dini.value || minISO;
-    const b = dfim.value || maxISO;
-    const uniSel  = uni.value  || 'Todas';
-    const lojaSel = loja.value || 'Todos';
-    const turnSel = Array.from(turno.selectedOptions).map(o=>o.value);
-    const canSel  = Array.from(canal.selectedOptions).map(o=>o.value);
-    const pagSel  = Array.from(pag.selectedOptions).map(o=>o.value);
-    const cancSel = canc.value || 'Todos';
+    let qb=supa.from(TABLE).select('dia,unidade,pedidos,fat,des,fre,"Nome da loja",turno,"Canal de venda",pagamento,cancelado,hora').gte('dia',a).lte('dia',b).order('dia',{ascending:true});
+    if(uniSel!=='Todas')  qb=qb.eq('unidade',uniSel);
+    if(lojaSel!=='Todos') qb=qb.eq('"Nome da loja"',lojaSel);
+    if(turnSel.length)    qb=qb.in('turno',turnSel);
+    if(canSel.length)     qb=qb.in('"Canal de venda"',canSel);
+    if(pagSel.length)     qb=qb.in('pagamento',pagSel);
 
-    // Filtros no servidor
-    let qb = supa.from(TABLE)
-      .select('dia,unidade,pedidos,fat,des,fre,"Nome da loja",turno,"Canal de venda",pagamento,cancelado,hora')
-      .gte('dia', a).lte('dia', b)
-      .order('dia', { ascending:true });
-
-    if(uniSel !== 'Todas')  qb = qb.eq('unidade', uniSel);
-    if(lojaSel !== 'Todos') qb = qb.eq('"Nome da loja"', lojaSel);        // aspas
-    if(turnSel.length)      qb = qb.in('turno', turnSel);
-    if(canSel.length)       qb = qb.in('"Canal de venda"', canSel);       // aspas
-    if(pagSel.length)       qb = qb.in('pagamento', pagSel);
-
-    const data = await fetchAll(qb, 1000);
-    let rows = (data||[]).map(r=>({
-      dia: r?.dia ? r.dia.slice(0,10) : null,
-      unidade: r?.unidade ?? null,
-      pedidos: Number(r?.pedidos)||0,
-      fat: Number(r?.fat)||0,
-      des: Number(r?.des)||0,
-      fre: Number(r?.fre)||0,
-      turno: r?.turno ?? null,
-      pagamento: r?.pagamento ?? null,
-      "Canal de venda": r?.["Canal de venda"] ?? null,
-      "Nome da loja": r?.["Nome da loja"] ?? null,
-      cancelado: normCancel(r?.cancelado),
-      hora: (Number(r?.hora) % 24 + 24) % 24
+    const data=await fetchAll(qb,1000);
+    let rows=(data||[]).map(r=>({
+      dia:r?.dia?r.dia.slice(0,10):null,
+      unidade:r?.unidade??null,
+      pedidos:Number(r?.pedidos)||0,
+      fat:Number(r?.fat)||0,
+      des:Number(r?.des)||0,
+      fre:Number(r?.fre)||0,
+      turno:r?.turno??null,
+      pagamento:r?.pagamento??null,
+      "Canal de venda":r?.["Canal de venda"]??null,
+      "Nome da loja":r?.["Nome da loja"]??null,
+      cancelado:normCancel(r?.cancelado),
+      hora:(Number(r?.hora)%24+24)%24
     }));
+    if(cancSel!=='Todos') rows=rows.filter(r=>r.cancelado===cancSel);
 
-    if(cancSel !== 'Todos'){
-      rows = rows.filter(r=> r.cancelado === cancSel);
-    }
-
-    lastData = rows;
-
-    periodoEl.textContent = `Período: ${a} → ${b} (${rows.length.toLocaleString('pt-BR')} linhas)`;
-    statusFonte.textContent = `Fonte OK (${minISO} → ${maxISO}) • origem: ${TABLE}`;
-
-    computeKPIs(rows);
-    drawChart(rows);
+    lastData=rows;
+    periodoEl.textContent=`Período: ${a} → ${b} (${rows.length.toLocaleString('pt-BR')} linhas)`;
+    statusFonte.textContent=`Fonte OK (${minISO} → ${maxISO}) • origem: ${TABLE}`;
+    computeKPIs(rows); drawChart(rows);
   }
 
-  // =============== IMPORTAÇÃO ===============
-  btnImport.addEventListener('click', async ()=>{
-    const file = csv.files?.[0];
-    if(!file){ importStatus.textContent = 'Selecione um CSV.'; importStatus.className='muted danger'; return; }
-
-    importStatus.textContent = 'Lendo arquivo…'; importStatus.className='muted';
-
-    Papa.parse(file,{
-      header:true, skipEmptyLines:'greedy', delimiter:',', quoteChar:'"', escapeChar:'"', transformHeader: mapHeader,
-      complete: async (res)=>{
-        const raw = res.data || [];
-        if(!raw.length){ importStatus.textContent='Arquivo vazio.'; importStatus.className='muted danger'; return; }
-
-        // Após mapear, verifique se colunas mínimas existem
-        const headers = Object.keys(raw[0]||{});
-        const hasDia = headers.includes('dia') || headers.some(h=>norm(h).includes('data'));
-        const hasUni = headers.includes('unidade');
-        const hasFat = headers.includes('fat') || headers.includes('Total');
-        if(!hasDia || !hasUni || !hasFat){
-          const miss=[]; if(!hasDia)miss.push('dia'); if(!hasUni)miss.push('unidade'); if(!hasFat)miss.push('fat');
-          importStatus.textContent = `Nada para importar (colunas obrigatórias não reconhecidas: ${miss.join('/')}).`;
-          importStatus.className='muted danger'; return;
-        }
-
-        // Normaliza linhas
-        const normRows = raw.map((r,i)=>{
-          let diaValue = r.dia || r['Data da venda'] || r.data || r['Data'];
-          let diaIso = null;
-          if(diaValue){
-            if(String(diaValue).includes('/')) diaIso = ddmmyyyyToISO(diaValue);
-            else diaIso = toISO(diaValue);
-          }
-          if(!diaIso) return null;
-
-          const hora = ('hora' in r) ? (parseInt(r.hora,10)||-1) : hourFromDateText(diaValue);
-          const fat = parseBR(r.fat || r['Total'] || r.total || 0);
-          const des = parseBR(r.des || r['Desconto'] || r.desconto || 0);
-          const fre = parseBR(r.fre || r['Entrega'] || r.entrega || r.frete || 0);
-          const unidade = String(r.unidade || r.Unidade || '').trim();
-          if(!unidade) return null;
-
-          return {
-            dia: onlyDateISO(diaIso),
-            unidade,
-            pedidos: Math.max(1, Number(r.pedidos)||1),
-            fat: Math.max(0, fat),
-            des: Math.max(0, des),
-            fre: Math.max(0, fre),
-            turno: r.turno || r.Turno || null,
-            pagamento: r.pagamento || r.Pagamento || null,
-            "Canal de venda": r["Canal de venda"] || r.Canal || null,
-            "Nome da loja": r["Nome da loja"] || r.Loja || null,
-            cancelado: normCancel(r.cancelado || r['Está cancelado']),
-            hora: isFinite(hora)?hora:-1
-          };
-        }).filter(Boolean);
-
-        if(!normRows.length){ importStatus.textContent='Nada para importar (linhas inválidas).'; importStatus.className='muted danger'; return; }
-
-        // Deduplicação client-side antes do upsert
-        const acc = new Map();
-        for(const r of normRows){
-          const key = [r.dia,r.unidade,r["Nome da loja"],r.hora,r.pagamento,r["Canal de venda"]].join('|');
-          const v = acc.get(key) || {...r};
-          v.pedidos = (v.pedidos||0) + (r.pedidos||0);
-          v.fat     = (v.fat||0)     + (r.fat||0);
-          v.des     = (v.des||0)     + (r.des||0);
-          v.fre     = (v.fre||0)     + (r.fre||0);
-          v.cancelado = r.cancelado || v.cancelado;
-          acc.set(key,v);
-        }
-        const rows = [...acc.values()];
-
-        if(!TABLE){ await pickSource(); if(!TABLE){ importStatus.textContent='Sem tabela definida no banco.'; importStatus.className='muted danger'; return; } }
-        importStatus.textContent = `Enviando ${rows.length.toLocaleString('pt-BR')} registros…`;
-
-        const onC = 'dia,unidade,"Nome da loja",hora,pagamento,"Canal de venda"';
-        const { error } = await supa.from(TABLE).upsert(rows,{ onConflict:onC });
-        if(error){ console.error(error); importStatus.textContent='Erro ao inserir.'; importStatus.className='muted danger'; return; }
-
-        importStatus.textContent='Importado.'; importStatus.className='muted ok';
-        await fetchMinMax(); await buildOptions(); await reload();
-      },
-      error:(e)=>{ console.error(e); importStatus.textContent='Erro ao ler CSV.'; importStatus.className='muted danger'; }
+  // ===== CSV IMPORT: tenta múltiplos delimitadores =====
+  function parseCSVWith(delimiter){
+    return new Promise((resolve,reject)=>{
+      Papa.parse(csv.files[0],{
+        header:true,
+        skipEmptyLines:'greedy',
+        delimiter: delimiter===undefined ? "" : delimiter, // "" = autodetect
+        quoteChar:'"', escapeChar:'"',
+        transformHeader: mapHeader,
+        complete: res => resolve(res),
+        error: err => reject(err)
+      });
     });
+  }
+
+  function validateHeaders(res){
+    const headers = Object.keys(res.data?.[0] || {});
+    const hasDia = headers.includes('dia') || headers.some(h=>norm(h).includes('data'));
+    const hasUni = headers.includes('unidade');
+    const hasFat = headers.includes('fat');
+    return {ok: hasDia && hasUni && hasFat, headers, hasDia, hasUni, hasFat};
+  }
+
+  btnImport.addEventListener('click', async ()=>{
+    const file=csv.files?.[0];
+    if(!file){ importStatus.textContent='Selecione um CSV.'; importStatus.className='muted danger'; return; }
+    importStatus.textContent='Lendo arquivo…'; importStatus.className='muted';
+
+    const candidates=[undefined, ',', ';', '\t', '|']; // undefined => autodetect
+    let parsed=null, valid=null, usedDelim=null;
+
+    for(const d of candidates){
+      try{
+        const res = await parseCSVWith(d);
+        const v = validateHeaders(res);
+        if(v.ok){ parsed=res; valid=v; usedDelim=(d??'auto'); break; }
+      }catch(e){ /* segue p/ próximo */ }
+    }
+
+    if(!parsed){
+      importStatus.textContent='Nada para importar (colunas obrigatórias não reconhecidas: dia/unidade/fat).';
+      importStatus.className='muted danger';
+      return;
+    }
+
+    // Normaliza linhas
+    const raw = parsed.data || [];
+    const normRows = raw.map((r,i)=>{
+      let diaValue = r.dia || r['Data da venda'] || r.data || r['Data'];
+      let diaIso = null;
+      if(diaValue){ diaIso = String(diaValue).includes('/') ? ddmmyyyyToISO(diaValue) : toISO(diaValue); }
+      if(!diaIso) return null;
+
+      const hora = ('hora' in r) ? (parseInt(r.hora,10)||-1) : hourFromDateText(diaValue);
+      const fat = parseBR(r.fat || r['Total'] || r.total || 0);
+      const des = parseBR(r.des || r['Desconto'] || r.desconto || 0);
+      const fre = parseBR(r.fre || r['Entrega'] || r.entrega || r.frete || 0);
+      const unidade = String(r.unidade || r.Unidade || '').trim();
+      if(!unidade) return null;
+
+      return {
+        dia: onlyDateISO(diaIso),
+        unidade,
+        pedidos: Math.max(1, Number(r.pedidos)||1),
+        fat: Math.max(0, fat),
+        des: Math.max(0, des),
+        fre: Math.max(0, fre),
+        turno: r.turno || r.Turno || null,
+        pagamento: r.pagamento || r.Pagamento || null,
+        "Canal de venda": r["Canal de venda"] || r.Canal || null,
+        "Nome da loja": r["Nome da loja"] || r.Loja || null,
+        cancelado: normCancel(r.cancelado || r['Está cancelado']),
+        hora: isFinite(hora)?hora:-1
+      };
+    }).filter(Boolean);
+
+    if(!normRows.length){
+      importStatus.textContent='Nada para importar (linhas inválidas).';
+      importStatus.className='muted danger';
+      return;
+    }
+
+    // Dedup local
+    const acc=new Map();
+    for(const r of normRows){
+      const key=[r.dia,r.unidade,r["Nome da loja"],r.hora,r.pagamento,r["Canal de venda"]].join('|');
+      const v=acc.get(key)||{...r};
+      v.pedidos=(v.pedidos||0)+(r.pedidos||0);
+      v.fat=(v.fat||0)+(r.fat||0);
+      v.des=(v.des||0)+(r.des||0);
+      v.fre=(v.fre||0)+(r.fre||0);
+      v.cancelado=r.cancelado||v.cancelado;
+      acc.set(key,v);
+    }
+    const rows=[...acc.values()];
+
+    if(!TABLE){ await pickSource(); if(!TABLE){ importStatus.textContent='Sem tabela definida no banco.'; importStatus.className='muted danger'; return; } }
+    importStatus.textContent=`Enviando ${rows.length.toLocaleString('pt-BR')} registros… (delimitador: ${usedDelim})`;
+
+    const onC='dia,unidade,"Nome da loja",hora,pagamento,"Canal de venda"';
+    const {error}=await supa.from(TABLE).upsert(rows,{onConflict:onC});
+    if(error){ console.error(error); importStatus.textContent='Erro ao inserir.'; importStatus.className='muted danger'; return; }
+
+    importStatus.textContent=`Importado. Headers: ${valid.headers.join(' | ')} (delimitador: ${usedDelim})`;
+    importStatus.className='muted ok';
+    await fetchMinMax(); await buildOptions(); await reload();
   });
 
-  // =============== LISTENERS ===============
+  // ===== listeners =====
   pr.addEventListener('change', ()=>{ applyQuickDate(); reload(); $("fx").open=false; });
   [uni,dini,dfim,turno,canal,pag,canc,loja].forEach(el=> el.addEventListener('change', ()=>{ reload(); $("fx").open=false; }));
   btnLimpar.addEventListener('click', ()=>{ uni.value='Todas'; loja.value='Todos'; turno.selectedIndex=-1; canal.selectedIndex=-1; pag.selectedIndex=-1; canc.value='Todos'; applyQuickDate(); reload(); });
 
-  // =============== BOOT ===============
+  // ===== boot =====
   (async function(){
     await pickSource();
     await fetchMinMax();
-    if(minISO && maxISO){ applyQuickDate(); }
+    if(minISO&&maxISO) applyQuickDate();
     await buildOptions();
     await reload();
   })();
