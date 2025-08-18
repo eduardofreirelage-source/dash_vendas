@@ -3,264 +3,195 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Importador XLSX — Maestro (sem hora)</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<title>Maestro Food — KPIs</title>
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="%232ea779"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="64" fill="white">MF</text></svg>'/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <style>
-  :root{--bg:#0b1220;--panel:#111827;--muted:#9ca3af;--bd:#1f2937;--txt:#e5e7eb;--btn:#2563eb}
-  body{font:14px system-ui;background:var(--bg);color:var(--txt);margin:0;padding:24px}
-  .wrap{max-width:980px;margin:0 auto}
-  .card{background:var(--panel);border:1px solid var(--bd);border-radius:12px;padding:16px}
-  h1{margin:0 0 8px;font-size:20px}
+  :root{--bg:#f6f8fb;--card:#fff;--muted:#6b7280;--text:#0f172a;--acc:#2563eb;--ok:#10b981;--warn:#f59e0b;--err:#ef4444;--border:#e5e7eb}
+  html,body{background:var(--bg);color:var(--text);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu;margin:0}
+  .container{max-width:1180px;margin:16px auto 64px;padding:0 16px}
+  h1{font-size:22px;margin:6px 0 4px}
   .muted{color:var(--muted)}
-  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
-  input,select,button{padding:10px 12px;border-radius:8px;border:1px solid #374151;background:#0b1220;color:var(--txt)}
-  button{background:var(--btn);border-color:var(--btn);cursor:pointer}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px}
-  #log{white-space:pre-wrap;background:#0b1220;border:1px dashed #374151;border-radius:8px;padding:12px;margin-top:12px;max-height:280px;overflow:auto}
-  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px}
-  th,td{border:1px solid #374151;padding:6px}
-  th{background:#0b1220;position:sticky;top:0}
-  .ok{color:#22c55e}.bad{color:#ef4444}
+  .row{display:grid;gap:12px}
+  .cols-4{grid-template-columns:repeat(4,1fr)}
+  .cols-3{grid-template-columns:repeat(3,1fr)}
+  .cols-2{grid-template-columns:repeat(2,1fr)}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px}
+  input,select,button{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#111827}
+  .btn{background:var(--acc);border:1px solid var(--acc);color:#fff;cursor:pointer}
+  .kpi{display:flex;align-items:flex-end;gap:8px}
+  .kpi b{font-size:30px}
+  .kpi small{color:var(--muted)}
+  canvas{background:#fff;border:1px solid var(--border);border-radius:12px}
+  .pill{padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:#fff}
+  .title{font-size:16px;margin-bottom:6px}
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="container">
+  <h1>Maestro Food</h1>
+  <div class="muted">Período: <span id="periodo">—</span></div>
+
+  <!-- Filtros -->
   <div class="card">
-    <h1>Importador XLSX — Maestro (sem hora)</h1>
-    <p class="muted">
-      Envia para <b>public.vendas_xlsx</b>. O horário é ignorado: <i>ts_venda</i> será <b>00:00:00Z</b> do dia.
-    </p>
-
-    <div class="row">
-      <input id="file" type="file" accept=".xlsx,.xls"/>
-      <button id="btnTest">Prévia (50)</button>
-      <button id="btnImport">Importar</button>
-      <button id="btnHealth">Healthcheck</button>
+    <div class="row cols-4">
+      <div>
+        <label>Período rápido</label>
+        <select id="quick">
+          <option value="30">Últimos 30</option>
+          <option value="7">Últimos 7</option>
+          <option value="14">Últimos 14</option>
+          <option value="mes">Mês atual</option>
+          <option value="ano">Ano atual</option>
+        </select>
+      </div>
+      <div>
+        <label>De</label>
+        <input id="dini" type="date"/>
+      </div>
+      <div>
+        <label>Até</label>
+        <input id="dfim" type="date"/>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button id="btnApply" class="btn">Aplicar</button>
+      </div>
     </div>
 
-    <div class="grid">
-      <div><label>Aba:</label><select id="sheet"></select></div>
-      <div><label>Data (obrigatória):</label><select id="colData"></select></div>
-      <div><label>Unidade:</label><select id="colUn"></select></div>
-      <div><label>Loja:</label><select id="colLoja"></select></div>
-      <div><label>Canal:</label><select id="colCanal"></select></div>
-      <div><label>Pagamento:</label><select id="colPag"></select></div>
-      <div><label>Total (R$):</label><select id="colTot"></select></div>
-      <div><label>Desconto (R$):</label><select id="colDes"></select></div>
-      <div><label>Entrega/Frete (R$):</label><select id="colFre"></select></div>
-      <div><label>Cancelado (S/N):</label><select id="colCanc"></select></div>
+    <div class="row cols-4" style="margin-top:10px">
+      <div><label>Unidade</label><input id="unidade" placeholder="ex.: Uni.Raja"/></div>
+      <div><label>Nome da loja</label><input id="loja" placeholder="contém…"/></div>
+      <div><label>Cancelado?</label>
+        <select id="cancelado">
+          <option value="">Todos</option>
+          <option value="Não">Não</option>
+          <option value="Sim">Sim</option>
+        </select>
+      </div>
+      <div><label>Pagamento (contém)</label><input id="pagamento" placeholder="ex.: Online, Crédito…"/></div>
     </div>
+    <div class="row cols-2" style="margin-top:10px">
+      <div><label>Canal (contém)</label><input id="canal" placeholder="ex.: iFood, Telefone, VideoSoft…"/></div>
+      <div class="muted pill">Base: <code>public.kpi_vendas()</code> ← <code>public.vendas_canon</code></div>
+    </div>
+  </div>
 
-    <div id="log"></div>
-    <div id="preview"></div>
+  <!-- KPIs -->
+  <div class="row cols-4" style="margin-top:12px">
+    <div class="card"><div class="title">Pedidos</div><div class="kpi"><b id="k_ped">0</b></div></div>
+    <div class="card"><div class="title">Faturamento</div><div class="kpi"><b id="k_fat">R$ 0,00</b></div></div>
+    <div class="card"><div class="title">Ticket Médio</div><div class="kpi"><b id="k_tkt">R$ 0,00</b><small>(fat/pedidos)</small></div></div>
+    <div class="card"><div class="title">Faturamento Líquido</div><div class="kpi"><b id="k_liq">R$ 0,00</b><small>(fat − des)</small></div></div>
+  </div>
+
+  <!-- Gráfico -->
+  <div class="card" style="margin-top:12px">
+    <div class="title">Receita</div>
+    <canvas id="chart" height="110"></canvas>
+    <div class="muted" id="pontos" style="margin-top:4px">Pontos: 0</div>
   </div>
 </div>
 
+<!-- libs -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+
 <script>
-/** ============ CONFIG SUPABASE ============ */
-const SUPABASE_URL = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
+const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-/** ============ UI HELPERS ============ */
-const $ = id => document.getElementById(id);
-const log = msg => { const el=$("log"); el.textContent += msg + "\n"; el.scrollTop = el.scrollHeight; };
-const clearLog = ()=> $("log").textContent = "";
+const $ = (id)=>document.getElementById(id);
+const quick=$('quick'), dini=$('dini'), dfim=$('dfim'), periodo=$('periodo');
+const unidade=$('unidade'), loja=$('loja'), cancelado=$('cancelado'), pagamento=$('pagamento'), canal=$('canal');
+const k_ped=$('k_ped'), k_fat=$('k_fat'), k_tkt=$('k_tkt'), k_liq=$('k_liq'), pontos=$('pontos');
 
-/** ============ XLSX STATE ============ */
-let WB=null, SHEETNAMES=[], HEADERS=[], ROWS=[];
-
-$("file").addEventListener("change", async (ev)=>{
-  clearLog(); $("preview").innerHTML="";
-  const f = ev.target.files[0]; if(!f) return;
-  log(`Lendo planilha: ${f.name}`);
-  const buf = await f.arrayBuffer();
-  WB = XLSX.read(buf, { type:'array', raw:true });
-  SHEETNAMES = WB.SheetNames;
-  fillSelect($("sheet"), SHEETNAMES);
-  loadSheet(SHEETNAMES[0]);
-});
-$("sheet").addEventListener("change", ()=> loadSheet($("sheet").value));
-
-function fillSelect(sel, options){
-  sel.innerHTML="";
-  (options||[]).forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o); });
-}
-function withNone(sel, options){
-  sel.innerHTML="";
-  const o0=document.createElement('option'); o0.value=""; o0.textContent="(não usar)"; sel.appendChild(o0);
-  (options||[]).forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o); });
-}
-function loadSheet(name){
-  const ws = WB.Sheets[name];
-  ROWS = XLSX.utils.sheet_to_json(ws, { defval:null, raw:true });
-  HEADERS = Object.keys(ROWS[0]||{});
-  log(`Aba "${name}" com ${ROWS.length} linhas. Colunas: ${HEADERS.join(", ")}`);
-  // preencher selects com palpites
-  withNone($("colUn"), HEADERS); withNone($("colLoja"), HEADERS);
-  withNone($("colCanal"), HEADERS); withNone($("colPag"), HEADERS);
-  withNone($("colTot"), HEADERS); withNone($("colDes"), HEADERS);
-  withNone($("colFre"), HEADERS); withNone($("colCanc"), HEADERS);
-  // Data é obrigatória
-  $("colData").innerHTML="";
-  HEADERS.forEach(h=>{ const o=document.createElement('option'); o.value=h; o.textContent=h; $("colData").appendChild(o); });
-  // Sugestões comuns
-  const tryPick=(cands)=> HEADERS.find(h=>cands.some(c=>c.toLowerCase()===String(h).toLowerCase())) || "";
-  const CAND_DATA=["Data da venda","Data","Data Venda","Data do pedido","Data/Hora"];
-  const CAND_CANAL=["Canal de venda","Canal","Tipo do pedido"];
-  const CAND_PAG=["Pagamento","Forma de pagamento"];
-  const CAND_LOJA=["Nome da loja","Loja","Estabelecimento"];
-  const CAND_UN=["unidade","Código da loja","Codigo da loja","Filial"];
-  const CAND_TOT=["Total","Valor total","Total do pedido"];
-  const CAND_DES=["Desconto"];
-  const CAND_FRE=["Entrega","Frete","Taxa de entrega"];
-  const CAND_CANC=["Está cancelado","Cancelado","Pedido Cancelado"];
-
-  $("colData").value = tryPick(CAND_DATA) || HEADERS[0] || "";
-  $("colCanal").value = tryPick(CAND_CANAL) || "";
-  $("colPag").value   = tryPick(CAND_PAG)   || "";
-  $("colLoja").value  = tryPick(CAND_LOJA)  || "";
-  $("colUn").value    = tryPick(CAND_UN)    || "";
-  $("colTot").value   = tryPick(CAND_TOT)   || "";
-  $("colDes").value   = tryPick(CAND_DES)   || "";
-  $("colFre").value   = tryPick(CAND_FRE)   || "";
-  $("colCanc").value  = tryPick(CAND_CANC)  || "";
+const brl = new Intl.NumberFormat('pt-BR', {style:'currency', currency:'BRL'});
+function fmtBRL(n){ return brl.format(n || 0); }
+function todayISO(d=new Date()){ d.setHours(0,0,0,0); return d.toISOString().slice(0,10); }
+function addDays(iso, delta){
+  const d = new Date(iso); d.setDate(d.getDate()+delta); return d.toISOString().slice(0,10);
 }
 
-/** ============ NORMALIZAÇÕES (sem hora) ============ */
-function parseDateISO(v){
-  if(v==null || v==="") return null;
-  if (v instanceof Date) {
-    const y=v.getFullYear(), m=String(v.getMonth()+1).padStart(2,"0"), d=String(v.getDate()).padStart(2,"0");
-    return `${y}-${m}-${d}`;
+function applyQuick(){
+  const now = todayISO();
+  let a = quick.value;
+  let start, end = now;
+  if(a==='mes'){
+    const d=new Date(); const y=d.getFullYear(), m=d.getMonth();
+    start = new Date(y,m,1).toISOString().slice(0,10);
+  }else if(a==='ano'){
+    const d=new Date(); const y=d.getFullYear();
+    start = new Date(y,0,1).toISOString().slice(0,10);
+  }else{
+    const n = parseInt(a,10) || 30;
+    start = addDays(now, -(n-1));
   }
-  if (typeof v==="number") { // serial Excel
-    const o = XLSX.SSF.parse_date_code(v); if(!o) return null;
-    const y=o.y, m=String(o.m).padStart(2,"0"), d=String(o.d).padStart(2,"0");
-    return `${y}-${m}-${d}`;
-  }
-  const s=String(v).trim();
-  // dd/mm/yyyy
-  const m1 = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-  if(m1){ const dd=m1[1].padStart(2,"0"), mm=m1[2].padStart(2,"0"); let yy=m1[3]; if(yy.length===2) yy=`20${yy}`; return `${yy}-${mm}-${dd}`; }
-  // yyyy-mm-dd
-  const m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if(m2) return `${m2[1]}-${m2[2]}-${m2[3]}`;
-  return null;
-}
-function parseBRNumber(v){
-  if(v==null || v==="") return 0;
-  if (typeof v==="number") return v;
-  const s=String(v).replace(/\./g,"").replace(",",".").replace(/[^\d\.\-]/g,"");
-  const n=parseFloat(s); return isNaN(n)?0:n;
-}
-function normCancel(v){
-  const s = String(v??"").trim().toLowerCase();
-  if (["s","sim","y","yes","true","1"].includes(s)) return "Sim";
-  if (["n","nao","não","no","false","0",""].includes(s)) return "Não";
-  return "Não";
+  dini.value = start;
+  dfim.value = end;
 }
 
-/** ============ PRÉVIA ============ */
-$("btnTest").addEventListener("click", ()=>{
-  clearLog();
-  if(!WB) return log("Selecione um arquivo.");
-  const map = getMapping(); if(!map.dataCol) return log("Selecione a coluna de Data.");
-  const sample = normalizeRows(ROWS.slice(0,50), map);
-  log(`Prévia de 50 (ou menos).`);
-  renderPreview(sample);
-});
-
-function getMapping(){
-  return {
-    dataCol: $("colData").value || "",
-    unCol: $("colUn").value || "",
-    lojaCol: $("colLoja").value || "",
-    canalCol: $("colCanal").value || "",
-    pagCol: $("colPag").value || "",
-    totCol: $("colTot").value || "",
-    desCol: $("colDes").value || "",
-    freCol: $("colFre").value || "",
-    cancCol: $("colCanc").value || ""
-  };
-}
-
-function normalizeRows(rows, map){
-  return rows.map(r=>{
-    const iso = parseDateISO(r[map.dataCol]);
-    const ts  = iso ? `${iso}T00:00:00Z` : null; // SEM HORA
-    const unidade = map.unCol ? (r[map.unCol]??"").toString().trim() : "";
-    const loja    = map.lojaCol ? (r[map.lojaCol]??"").toString().trim() : "";
-    const canal   = map.canalCol ? (r[map.canalCol]??"").toString().trim() : "";
-    const pag     = map.pagCol ? (r[map.pagCol]??"").toString().trim() : "";
-    const fat     = parseBRNumber(map.totCol ? r[map.totCol] : 0);
-    const des     = parseBRNumber(map.desCol ? r[map.desCol] : 0);
-    const fre     = parseBRNumber(map.freCol ? r[map.freCol] : 0);
-    const canc    = normCancel(map.cancCol ? r[map.cancCol] : "Não");
-    const originalData = r[map.dataCol];
-
-    // row_key simples (string determinística). Se sua tabela tiver UNIQUE(row_key), upsert evita duplicata.
-    const row_key = [iso,unidade,loja,canal,pag,fat.toFixed(2),des.toFixed(2),fre.toFixed(2),canc].join("|");
-
-    return {
-      "Data da venda": String(originalData??""),
-      ts_venda: ts,
-      dia: iso,              // opcional; o banco pode gerar a partir de ts_venda
-      unidade, "Nome da loja": loja, "Canal de venda": canal, pagamento: pag,
-      cancelado: canc, pedidos: 1,
-      fat, des, fre,
-      row_key
-    };
-  }).filter(x=>x.ts_venda && x.dia); // só entra quem tem data válida
-}
-
-function renderPreview(rows){
-  if(rows.length===0){ $("preview").innerHTML=""; return; }
-  const headers = ["Data da venda","dia","unidade","Nome da loja","Canal de venda","pagamento","cancelado","fat","des","fre","row_key"];
-  let html = "<table><thead><tr>"+headers.map(h=>`<th>${h}</th>`).join("")+"</tr></thead><tbody>";
-  rows.forEach(r=>{
-    html += "<tr>"+headers.map(h=>`<td>${(r[h]??"")}</td>`).join("")+"</tr>";
+let chart;
+function renderChart(labels, values){
+  if(chart){ chart.destroy(); }
+  const ctx = document.getElementById('chart');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets: [{ label:'Receita', data: values, tension:0.25 }]},
+    options: { responsive:true, scales:{ y:{ ticks:{ callback:v=>brl.format(v).replace('R$','') }}}}
   });
-  html+="</tbody></table>";
-  $("preview").innerHTML = html;
+  pontos.textContent = 'Pontos: ' + values.length;
 }
 
-/** ============ IMPORTAÇÃO ============ */
-$("btnImport").addEventListener("click", async ()=>{
-  clearLog();
-  if(!WB) return log("Selecione um arquivo.");
-  const map = getMapping(); if(!map.dataCol) return log("Selecione a coluna de Data.");
-  const validAll = normalizeRows(ROWS, map);
-  if(validAll.length===0) return log("Nada válido para importar (datas inválidas?).");
+async function loadKPIs(){
+  // prepara filtros
+  const p_dini = dini.value || todayISO();
+  const p_dfim = dfim.value || p_dini;
+  const p_unids = unidade.value ? [unidade.value] : null;
+  const p_canais = canal.value ? [canal.value] : null;
+  const p_pags = pagamento.value ? [pagamento.value] : null;
+  const p_loja = loja.value || null;
+  const p_cancelado = cancelado.value || null;
 
-  log(`Linhas na planilha: ${ROWS.length}`);
-  log(`Válidas para importação: ${validAll.length}`);
+  periodo.textContent = p_dini + ' → ' + p_dfim;
 
-  // Lotes
-  const BATCH=400;
-  let ok=0, fail=0;
-  for(let i=0;i<validAll.length;i+=BATCH){
-    const slice = validAll.slice(i,i+BATCH);
-    const { error } = await supa.from("vendas_xlsx")
-      .upsert(slice, { onConflict: "row_key" });
-    if(error){ fail+=slice.length; log(`Erro no lote ${i/BATCH+1}: ${error.message}`); }
-    else{ ok+=slice.length; log(`Lote ${i/BATCH+1}: OK ${slice.length}`); }
-  }
-  log(`Concluído. OK=${ok}, FALHOS=${fail}`);
-});
+  // chama RPC
+  const { data, error } = await supa.rpc('kpi_vendas', {
+    p_dini, p_dfim, p_unids, p_canais, p_pags, p_loja, p_cancelado
+  });
+  if(error){ console.error(error); alert('Erro ao carregar KPIs'); return; }
 
-/** ============ HEALTHCHECK ============ */
-$("btnHealth").addEventListener("click", async ()=>{
-  clearLog();
-  const q1 = await supa.from("vendas_xlsx").select("dia", { head:false, count:"exact" }).limit(1);
-  if(q1.error){ return log("Erro count: "+q1.error.message); }
-  const { data: minrow, error:minErr } = await supa.from("vendas_xlsx").select("dia").order("dia",{ascending:true}).limit(1);
-  const { data: maxrow, error:maxErr } = await supa.from("vendas_xlsx").select("dia").order("dia",{ascending:false}).limit(1);
-  const min = (minrow&&minrow[0])?minrow[0].dia:null;
-  const max = (maxrow&&maxrow[0])?maxrow[0].dia:null;
-  log(`Intervalo no banco: ${min||"-"} → ${max||"-"} | total: ${q1.count||0}`);
-});
+  // agrega totais e série
+  let pedidos=0, fat=0, des=0, fre=0;
+  const labels=[], values=[];
+  (data||[]).forEach(r=>{
+    pedidos += Number(r.pedidos||0);
+    fat     += Number(r.fat||0);
+    des     += Number(r.des||0);
+    fre     += Number(r.fre||0);
+    labels.push(String(r.dia));
+    values.push(Number(r.fat||0));
+  });
+  const tkt = pedidos>0 ? (fat/pedidos) : 0;
+  const liq = fat - des; // ↩️ se quiser abater frete também, use: fat - des - fre
+
+  // KPIs
+  k_ped.textContent = pedidos.toLocaleString('pt-BR');
+  k_fat.textContent = fmtBRL(fat);
+  k_tkt.textContent = fmtBRL(tkt);
+  k_liq.textContent = fmtBRL(liq);
+
+  // gráfico
+  renderChart(labels, values);
+}
+
+$('btnApply').addEventListener('click', loadKPIs);
+quick.addEventListener('change', applyQuick);
+
+// inicializa
+applyQuick();
+loadKPIs();
 </script>
 </body>
 </html>
