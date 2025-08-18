@@ -25,7 +25,7 @@ button.primary{background:var(--blue);border-color:var(--blue);color:#fff;cursor
 .kpi h3{font-size:12px;color:var(--muted);margin:0 0 8px}
 .kpi b{font-size:22px}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.bad{color:#b91c1c}.ok{color:#16a34a}
+.ok{color:#16a34a}
 .canvasBox{height:320px}
 @media(max-width:960px){.grid.cols-4,.grid.cols-3,.grid.cols-2,.kpis{grid-template-columns:1fr}}
 </style>
@@ -105,20 +105,19 @@ button.primary{background:var(--blue);border-color:var(--blue);color:#fff;cursor
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 <script>
 (function(){
-  // ================= PROMPT MESTRE (invariantes) =================
-  // - Nunca limitar a 1000: toda leitura é paginada até acabar (step=50k)
-  // - Cada linha no banco = 1 pedido (não somar campo pedidos)
-  // - KPIs: pedidos = rows.length; ticket = fat/pedidos; fat médio = fat/dias distintos
-  // - "Cancelado" normalizado (Sim/Não/boolean/0/1)
-  // - Gráfico: destruir antes de recriar; valores numéricos válidos; animação off
+  // ===== Regras fixas =====
+  // - Paginação de 1.000 em 1.000 até acabar (sem limite total)
+  // - Cada linha = 1 pedido (KPIs não somam "pedidos")
+  // - Gráfico seguro (destroy + sem animação + checagem de números)
 
-  // --------- CONFIG ---------
+  // ---- CONFIG ----
   const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
   const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
   const TABLE = "vendas_kpi_daily_v2_data";
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  const PAGE = 1000; // *** tamanho de página do PostgREST ***
 
-  // --------- DOM ---------
+  // ---- DOM ----
   const $ = id => document.getElementById(id);
   const headerInfo = $("headerInfo"), srcInfo = $("srcInfo");
   const uni=$("fUnidade"), loja=$("fLoja"), dini=$("fDini"), dfim=$("fDfim");
@@ -128,12 +127,15 @@ button.primary{background:var(--blue);border-color:var(--blue);color:#fff;cursor
         kDes=$("kDes"), kDesPct=$("kDesPct"), kFre=$("kFre"), kFatLiq=$("kFatLiq");
   const chartEl=$("chart"); let chart;
 
-  // --------- UTILS ---------
+  // ---- UTILS ----
   const fmtBRL=v=> (Number.isFinite(+v)? (+v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):"—");
   const fmtPct=v=> (Number.isFinite(+v)? ((+v)*100).toFixed(1).replace('.',',')+'%':"—");
   const onlyDate=iso=> iso && String(iso).length>=10 ? String(iso).slice(0,10) : iso;
   const norm=s=> String(s??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
   const normCancel=v=>{const s=norm(v); if(v===true||s==='sim'||s==='s'||s==='1'||s==='true')return'Sim'; return'Não';};
+  const toISO=d=> new Date(d).toISOString().slice(0,10);
+  const getSel = sel => sel.multiple ? Array.from(sel.selectedOptions).map(o=>o.value).filter(Boolean) : sel.value;
+
   function applyQuick(){
     const end=new Date(); let start=new Date(end);
     const opt=pr.value;
@@ -143,63 +145,65 @@ button.primary{background:var(--blue);border-color:var(--blue);color:#fff;cursor
     else if(opt==="Este ano"){ start=new Date(end.getFullYear(),0,1); }
     dini.value=toISO(start); dfim.value=toISO(end);
   }
-  const toISO=d=> new Date(d).toISOString().slice(0,10);
-  const getSel = sel => sel.multiple ? Array.from(sel.selectedOptions).map(o=>o.value).filter(Boolean) : sel.value;
 
-  // --------- PAGED QUERIES (SEM LIMITE) ---------
+  // ---- PAGINATION (SEM LIMITE TOTAL) ----
   async function fetchPaged(filters, selectCols){
-    const size=50000; let from=0, out=[];
+    let from=0, out=[];
     for(;;){
-      let q = supa.from(TABLE).select(selectCols).order('dia',{ascending:true}).range(from, from+size-1);
-      q = q.gte('dia', filters.dini).lte('dia', filters.dfim);
+      let q = supa.from(TABLE).select(selectCols).order('dia',{ascending:true})
+        .gte('dia', filters.dini).lte('dia', filters.dfim)
+        .range(from, from+PAGE-1);
       if (filters.uni && filters.uni!=='Todas') q = q.eq('unidade', filters.uni);
       if (filters.loja && filters.loja!=='Todos') q = q.eq('Nome da loja', filters.loja);
       if (filters.turnos?.length) q = q.in('turno', filters.turnos);
       if (filters.canais?.length) q = q.in('Canal de venda', filters.canais);
       if (filters.pags?.length) q = q.in('pagamento', filters.pags);
       if (filters.canc !== 'Todos') q = q.eq('cancelado', filters.canc);
+
       const { data, error } = await q;
       if (error){ console.error(error); break; }
       const arr = data||[];
       out.push(...arr);
-      if (arr.length < size) break;
-      from += size;
+      if (arr.length < PAGE) break;
+      from += arr.length; // avança exatamente o que o PostgREST devolveu
     }
     return out;
   }
 
   async function distinctPaged(col, diniISO, dfimISO){
-    const size=50000; let from=0, set=new Set();
+    let from=0, set=new Set();
     for(;;){
-      let q = supa.from(TABLE).select(col).not(col,'is',null).gte('dia',diniISO).lte('dia',dfimISO).order(col,{ascending:true}).range(from, from+size-1);
-      const { data, error } = await q;
+      const { data, error } = await supa.from(TABLE)
+        .select(col).not(col,'is',null)
+        .gte('dia',diniISO).lte('dia',dfimISO)
+        .order(col,{ascending:true})
+        .range(from, from+PAGE-1);
       if (error){ console.error(error); break; }
       const arr = (data||[]).map(x=>x[col]).filter(v=>v!==null && v!==undefined && v!=='');
       for(const v of arr) set.add(v);
-      if ((data||[]).length < size) break;
-      from += size;
+      if ((data||[]).length < PAGE) break;
+      from += arr.length || PAGE;
     }
     return Array.from(set);
   }
 
   async function top10Lojas(diniISO, dfimISO){
-    // pega loja + fat, pagina e soma local
-    const size=50000; let from=0; const acc=new Map();
+    let from=0; const acc=new Map();
     for(;;){
       const { data, error } = await supa.from(TABLE)
         .select('"Nome da loja", fat')
         .not('Nome da loja','is',null)
         .not('fat','is',null)
         .gte('dia',diniISO).lte('dia',dfimISO)
-        .range(from, from+size-1);
+        .range(from, from+PAGE-1);
       if (error){ console.error(error); break; }
       for(const r of (data||[])){ const k=r["Nome da loja"]; const v=Number(r.fat)||0; acc.set(k,(acc.get(k)||0)+v); }
-      if ((data||[]).length < size) break; from+=size;
+      if ((data||[]).length < PAGE) break; from += (data||[]).length;
     }
     return Array.from(acc.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k])=>k);
   }
 
-  // --------- KPIs & CHART ---------
+  // ---- KPIs & CHART ----
   function computeKPIs(rows){
     const pedidos = rows.length;
     const fat = rows.reduce((s,r)=> s + (Number(r.fat)||0), 0);
@@ -219,102 +223,83 @@ button.primary{background:var(--blue);border-color:var(--blue);color:#fff;cursor
   }
 
   function drawChart(rows){
-    // agrupa fat por dia
     const byDay = new Map();
     for(const r of rows){
       const d = r.dia;
-      const v = Number(r.fat)||0;
+      const v = Number(r.fat);
+      if (!Number.isFinite(v)) continue;
       byDay.set(d, (byDay.get(d)||0) + v);
     }
     const labels = Array.from(byDay.keys()).sort();
     const values = labels.map(d=> byDay.get(d));
+    if (chart){ chart.destroy(); chart=null; }
 
-    // segurança contra infinito
-    const safeVals = values.map(v=> Number.isFinite(v) ? v : 0);
+    if (labels.length === 0){
+      const ctx = chartEl.getContext('2d');
+      ctx.clearRect(0,0,chartEl.width,chartEl.height);
+      return;
+    }
 
-    if (chart) { chart.destroy(); chart = null; }
     const ctx = chartEl.getContext('2d');
     chart = new Chart(ctx, {
       type: 'line',
-      data: { labels, datasets: [{ label:'Receita', data: safeVals, tension: 0.2 }] },
+      data: { labels, datasets: [{ label:'Receita', data: values, tension:0.2 }] },
       options: {
-        responsive:true, maintainAspectRatio:false, animation:false, parsing:false,
+        responsive:true, maintainAspectRatio:false, animation:false, parsing:false, spanGaps:true, normalized:true,
+        elements:{ point:{ radius:0 } },
         scales:{ y:{ beginAtZero:true } },
-        plugins:{ legend:{ display:false } }
+        plugins:{ legend:{ display:false } },
+        interaction:{ mode:'index', intersect:false }
       }
     });
   }
 
-  // --------- OPTIONS ---------
+  // ---- OPTIONS ----
   async function buildOptions(diniISO, dfimISO){
-    // Unidade
     const unidades = await distinctPaged('unidade', diniISO, dfimISO);
     uni.innerHTML = `<option>Todas</option>` + unidades.map(v=>`<option>${v}</option>`).join('');
-
-    // Canal
     const canais = await distinctPaged('Canal de venda', diniISO, dfimISO);
     canal.innerHTML = canais.map(v=>`<option>${v}</option>`).join('');
-
-    // Pagamento
     const pags = await distinctPaged('pagamento', diniISO, dfimISO);
     pag.innerHTML = pags.map(v=>`<option>${v}</option>`).join('');
-
-    // Lojas Top10 por fat
     const lojas = await top10Lojas(diniISO, dfimISO);
     loja.innerHTML = `<option>Todos</option>` + lojas.map(v=>`<option>${v}</option>`).join('');
   }
 
-  // --------- RELOAD ---------
+  // ---- RELOAD ----
   async function reload(){
     const diniISO = dini.value, dfimISO = dfim.value;
     const filters = {
       dini: diniISO, dfim: dfimISO,
       uni: getSel(uni), loja: getSel(loja),
       turnos: getSel(turno), canais: getSel(canal), pags: getSel(pag),
-      canc: canc.value || 'Todos'
+      canc: (canc.value||'Todos')
     };
-
-    // carrega linhas paginadas
     const rows = await fetchPaged(filters, 'dia,unidade,fat,des,fre,"Nome da loja","Canal de venda",pagamento,turno,cancelado');
     const rowsNorm = rows.map(r=> ({...r, dia: onlyDate(r.dia), cancelado: normCancel(r.cancelado)}));
     computeKPIs(rowsNorm);
     drawChart(rowsNorm);
-
     headerInfo.textContent = `Período: ${filters.dini} → ${filters.dfim} (${rowsNorm.length.toLocaleString('pt-BR')} linhas)`;
   }
 
-  // --------- LIMITES DO BANCO + BOOT ---------
+  // ---- BOOT ----
   async function boot(){
-    // limites do banco
     const a = await supa.from(TABLE).select('dia').order('dia',{ascending:true}).limit(1);
     const b = await supa.from(TABLE).select('dia').order('dia',{ascending:false}).limit(1);
     const min = (a.data&&a.data[0])? onlyDate(a.data[0].dia):null;
     const max = (b.data&&b.data[0])? onlyDate(b.data[0].dia):null;
     const cnt = await supa.from(TABLE).select('dia',{count:'exact',head:true});
-
     srcInfo.innerHTML = `<span class="ok">Fonte OK</span> (${min||'—'} → ${max||'—'}) · linhas: ${cnt.count?.toLocaleString('pt-BR')}`;
-
-    // datas iniciais
     applyQuick();
-
-    // opções de filtros (no período selecionado)
     await buildOptions(dini.value, dfim.value);
-
-    // listeners
     pr.addEventListener('change', ()=>{ applyQuick(); reload(); });
     [uni,loja,dini,dfim,turno,canal,pag,canc].forEach(el=> el.addEventListener('change', ()=>{ reload(); }));
-
     btnLimpar.addEventListener('click', async ()=>{
       uni.value='Todas'; loja.value='Todos'; turno.selectedIndex=-1; canal.selectedIndex=-1; pag.selectedIndex=-1; canc.value='Todos';
-      applyQuick();
-      await buildOptions(dini.value, dfim.value);
-      reload();
+      applyQuick(); await buildOptions(dini.value, dfim.value); reload();
     });
-
-    // primeira carga
     reload();
   }
-
   boot();
 })();
 </script>
