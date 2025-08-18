@@ -24,6 +24,7 @@
   table{width:100%;border-collapse:collapse}
   th,td{border:1px solid var(--border);padding:8px 10px;text-align:left}
   th{background:#f2f5fa}
+  canvas{background:#fff;border:1px solid var(--border);border-radius:12px}
 </style>
 </head>
 <body>
@@ -72,7 +73,7 @@
     </div>
     <div class="row cols-2" style="margin-top:10px">
       <div><label>Canal (exato)</label><input id="canal" placeholder="iFood, Telefone, VideoSoft…"/></div>
-      <div class="muted">Fonte: <code>vendas_canon</code> (dedupe por hash) | RPCs: <code>kpi_vendas</code> & <code>resumo_vendas</code></div>
+      <div class="muted">Fonte: <code>vendas_xlsx</code> · RPCs: <code>kpi_vendas</code>, <code>resumo_vendas</code>, <code>amostra_vendas</code> (dedupe dentro do recorte)</div>
     </div>
   </div>
 
@@ -181,21 +182,13 @@ async function loadResumo(){
 }
 
 async function loadAmostra(){
-  const { p_dini, p_dfim, p_unids, p_canais, p_pags, p_loja, p_cancelado } = params();
-  // consulta diretamente a view canônica
-  let q = supa.from('vendas_canon').select('dia,hora,turno,unidade,loja,canal,pagamento_base,fat,des,fre,pedido_id').gte('dia', p_dini).lte('dia', p_dfim).order('dia',{ascending:false});
-  if(p_unids) q = q.in('unidade', p_unids);
-  if(p_canais) q = q.in('canal', p_canais);
-  if(p_pags)   q = q.in('pagamento_base', p_pags);
-  if(p_loja)   q = q.ilike('loja', `%${p_loja}%`);
-  if(p_cancelado) q = q.eq('cancelado', p_cancelado);
-  const r = await q.limit(10);
+  const args = params();
+  const r = await supa.rpc('amostra_vendas', args);
   amostra.textContent = r.error ? JSON.stringify(r.error,null,2) : JSON.stringify(r.data||[],null,2);
 }
 
 async function loadKPIs(){
   const args = params();
-  // KPIs por dia
   const { data, error } = await supa.rpc('kpi_vendas', args);
   if(error){ console.error(error); alert('Erro ao carregar KPIs'); return; }
 
@@ -210,9 +203,8 @@ async function loadKPIs(){
     values.push(Number(r.fat||0));
   });
   const tkt = pedidos>0 ? (fat/pedidos) : 0;
-  const liq = fat - des; // se desejar: - fre
+  const liq = fat - des; // se desejar, use (fat - des - fre)
 
-  // KPIs
   k_ped.textContent = pedidos.toLocaleString('pt-BR');
   k_fat.textContent = fmtBRL(fat);
   k_tkt.textContent = fmtBRL(tkt);
