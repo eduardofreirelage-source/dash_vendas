@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Dashboard Vendas — CFO (v2.5 Light)</title>
+<title>Dashboard Vendas — CFO (v2.5.1 Light)</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%233b82f6"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
 <style>
   :root{
@@ -23,7 +23,6 @@
   .badge{display:inline-block;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;font-size:12px;margin-left:8px;color:#334155}
   .small{font-size:12px}
   .status{font-size:12px;color:var(--muted)}
-  /* KPIs */
   .kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
   .box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px}
   .label{font-size:12px;color:#475569}
@@ -31,7 +30,6 @@
   .big{font-size:20px;font-weight:800}
   .delta{font-size:12px}
   .up{color:var(--ok)} .down{color:var(--err)} .flat{color:var(--neutral)}
-  /* Multiselect */
   .msel{position:relative}
   .msel-btn{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:#111827;text-align:left;cursor:pointer}
   .msel-btn:after{content:"▾";float:right;color:#334155}
@@ -47,14 +45,13 @@
 </head>
 <body>
 <div class="container">
-  <h1>Dashboard Vendas — CFO <span class="badge">v2.5 Light</span></h1>
+  <h1>Dashboard Vendas — CFO <span class="badge">v2.5.1 Light</span></h1>
 
   <div class="card" style="margin-top:12px; position:relative;">
     <div style="position:absolute; right:16px; top:12px;">
       <button id="btnClear" class="link">Limpar filtros</button>
     </div>
 
-    <!-- Linha 1: Unidade · Loja · Turno -->
     <div class="row cols-3">
       <div>
         <label class="label">Unidade(s)</label>
@@ -70,7 +67,6 @@
       </div>
     </div>
 
-    <!-- Linha 2: Datas OU Período rápido -->
     <div class="row cols-2" style="margin-top:10px;">
       <div>
         <label class="label">Período (De / Até)</label>
@@ -93,7 +89,6 @@
       </div>
     </div>
 
-    <!-- Linha 3: Canal · Pagamento · Cancelado -->
     <div class="row cols-3" style="margin-top:10px;">
       <div>
         <label class="label">Canal(is)</label>
@@ -112,7 +107,6 @@
     <div class="status" id="status"></div>
   </div>
 
-  <!-- RESUMO -->
   <div class="card">
     <b>Quadro Resumo — Linhas filtradas</b>
     <div class="row cols-4" style="margin-top:8px;">
@@ -123,7 +117,6 @@
     </div>
   </div>
 
-  <!-- KPIs -->
   <div class="card">
     <b>KPIs (comparados ao período anterior)</b>
     <div class="kpi" style="margin-top:8px;">
@@ -173,14 +166,12 @@
     </div>
   </div>
 
-  <!-- GRÁFICO -->
   <div class="card">
     <b>Receita por hora</b>
     <canvas id="chartHora" height="220"></canvas>
   </div>
 </div>
 
-<!-- libs -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 
@@ -265,7 +256,7 @@ const ms = {
   cancel:   MultiSelect('ms-cancel','Não')
 };
 let lastDay='', firstDay='';
-const STORAGE_KEY='cfo_light_v25';
+const STORAGE_KEY='cfo_light_v251';
 
 function saveState(){
   const S = {
@@ -292,12 +283,10 @@ async function loadOptionsAndPeriod(){
   const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
   if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; } else { lastDay=dateToISO(new Date()); }
 
-  // unidades, canais, pagamentos (views já existentes)
   const u = await supa.from('vw_vendas_unidades').select('unidade');
   const c = await supa.from('vw_vendas_canais').select('canal');
   const p = await supa.from('vw_vendas_pagamentos').select('pagamento_base');
 
-  // lojas e turnos diretamente da base canônica (evita 404 de views opcionais)
   const lojasRes = await supa.from('vendas_canon').select('loja').neq('loja',null).limit(100000);
   const turnRes  = await supa.from('vendas_canon').select('turno').neq('turno',null).limit(100000);
   const lojas = Array.from(new Set((lojasRes.data||[]).map(r=>r.loja))).sort((a,b)=>a?.localeCompare(b||'','pt-BR'));
@@ -343,9 +332,9 @@ function rangePrev(dini, n){
 }
 
 /* ===== BUILD FILTERS ===== */
-function applyCommonFilters(q, isCanon){
-  const {dini, dfim} = rangeFromPeriodo();
-  q = q.gte('dia', dini).lte('dia', dfim);
+function applyCommonFilters(q, isCanon, range=null){
+  const RR = range || rangeFromPeriodo();
+  q = q.gte('dia', RR.dini).lte('dia', RR.dfim);
   const unids = ms.unidades.get(); if(unids.length) q = q.in('unidade', unids);
   const lojas = ms.lojas.get();
   if(lojas.length){
@@ -364,12 +353,10 @@ function applyCommonFilters(q, isCanon){
 
 /* ===== RESUMO + KPIs (sem RPC) ===== */
 async function fetchResumoSemRPC(){
-  // brutas (vendas_xlsx)
   let qx = supa.from('vendas_xlsx').select('*', {count:'exact', head:true});
   qx = applyCommonFilters(qx, false);
   const brutas = (await qx).count || 0;
 
-  // canônicas (vendas_canon)
   let qc = supa.from('vendas_canon').select('*', {count:'exact', head:true});
   qc = applyCommonFilters(qc, true);
   const canon = (await qc).count || 0;
@@ -380,18 +367,21 @@ async function fetchResumoSemRPC(){
 }
 
 async function fetchKPIsSemRPC(dini, dfim){
-  // atual
-  let qa = supa.from('vendas_canon');
-  qa = applyCommonFilters(qa, true);
-  const nowAgg = await qa.select('ped_sum:pedidos.sum(), fat_sum:fat.sum(), des_sum:des.sum(), fre_sum:fre.sum()').single();
-  const ped = +((nowAgg.data||{}).ped_sum||0), fat=+((nowAgg.data||{}).fat_sum||0), des=+((nowAgg.data||{}).des_sum||0), fre=+((nowAgg.data||{}).fre_sum||0);
-
-  // anterior
   const R = rangeFromPeriodo();
   const P = rangePrev(R.dini, R.n);
-  let qb = supa.from('vendas_canon').gte('dia', P.dini).lte('dia', P.dfim);
-  qb = applyCommonFilters(qb, true); // aplica mesmos filtros (unid/loja/…)
-  const prevAgg = await qb.select('ped_sum:pedidos.sum(), fat_sum:fat.sum(), des_sum:des.sum(), fre_sum:fre.sum()').single();
+
+  // atual (select vem ANTES dos filtros -> evita "gte is not a function")
+  let qa = supa.from('vendas_canon')
+       .select('ped_sum:pedidos.sum(), fat_sum:fat.sum(), des_sum:des.sum(), fre_sum:fre.sum()');
+  qa = applyCommonFilters(qa, true, {dini, dfim});
+  const nowAgg = await qa.single();
+  const ped = +((nowAgg.data||{}).ped_sum||0), fat=+((nowAgg.data||{}).fat_sum||0), des=+((nowAgg.data||{}).des_sum||0), fre=+((nowAgg.data||{}).fre_sum||0);
+
+  // anterior (mesma lógica)
+  let qb = supa.from('vendas_canon')
+       .select('ped_sum:pedidos.sum(), fat_sum:fat.sum(), des_sum:des.sum(), fre_sum:fre.sum()');
+  qb = applyCommonFilters(qb, true, P);
+  const prevAgg = await qb.single();
   const p_ped=+((prevAgg.data||{}).ped_sum||0), p_fat=+((prevAgg.data||{}).fat_sum||0), p_des=+((prevAgg.data||{}).des_sum||0), p_fre=+((prevAgg.data||{}).fre_sum||0);
 
   return { ped,fat,des,fre, p_ped,p_fat,p_des,p_fre };
@@ -402,7 +392,6 @@ let chartHora=null;
 async function renderHora(dini, dfim){
   try{
     if(chartHora){ chartHora.destroy(); chartHora=null; }
-    // tenta RPC (se existir, ótimo; senão, silenciosamente fica vazio)
     const r = await supa.rpc('kpi_vendas_hora', buildParams(dini, dfim));
     if(r.error) return;
     const rows = (r.data||[]).sort((a,b)=>(+a.hora)-(+b.hora));
@@ -414,10 +403,10 @@ async function renderHora(dini, dfim){
       data:{labels, datasets:[{label:'Receita (R$)', data: valores}]},
       options:{responsive:true, plugins:{legend:{display:true}}, scales:{y:{beginAtZero:true}}}
     });
-  }catch{ /* silencioso */ }
+  }catch{}
 }
 
-/* ===== PARAMS PARA RPC (se houver) ===== */
+/* ===== PARAMS RPC ===== */
 function buildParams(dini, dfim){
   const canc = ms.cancel.get();
   const p_cancelado = canc.includes('Todos') ? null : (canc[0]||'Não');
@@ -439,16 +428,13 @@ async function applyAll(){
   try{
     setStatus('Atualizando…');
     const {dini, dfim, n} = rangeFromPeriodo();
-    const prev = rangePrev(dini, n);
 
-    // RESUMO
     const R = await fetchResumoSemRPC();
     $('q_brutas').textContent = fmt(R.brutas);
     $('q_canon').textContent  = fmt(R.canon);
     $('q_dups').textContent   = fmt(R.dups);
     $('q_perc').textContent   = (R.perc==null? '-' : (Number(R.perc).toFixed(2)+' %'));
 
-    // KPIs
     const K = await fetchKPIsSemRPC(dini, dfim);
     const tkt_liq = K.ped>0 ? ((K.fat-K.des-K.fre)/K.ped) : 0;
     const fat_med = K.ped>0 ? (K.fat/K.ped) : 0;
@@ -470,13 +456,11 @@ async function applyAll(){
     $('k_fre').textContent = money(K.fre);    setDelta('d_fre','p_fre', K.fre, K.p_fre, money);
     $('k_fremed').textContent = money(fre_med); setDelta('d_fremed','p_fremed', fre_med, p_fre_med, money);
 
-    // GRÁFICO (silencioso se RPC não existir)
     renderHora(dini, dfim);
-
     setStatus('');
   }catch(e){
     console.error(e);
-    setStatus(''); // silencioso
+    setStatus('');
   }
 }
 
