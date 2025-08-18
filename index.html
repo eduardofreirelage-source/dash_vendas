@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Maestro Food — KPIs + Importador v0.8</title>
+<title>Maestro Food — KPIs + Importador v0.9</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="%232ea779"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="64" fill="white">MF</text></svg>'/>
 <style>
   :root{--bg:#f6f8fb;--card:#fff;--muted:#6b7280;--text:#0f172a;--acc:#2563eb;--border:#e5e7eb;--ok:#16a34a;--warn:#f59e0b;--err:#ef4444}
@@ -39,16 +39,15 @@
 </head>
 <body>
 <div class="container">
-  <h1>Maestro Food — KPIs + Importador <span class="muted">v0.8</span></h1>
+  <h1>Maestro Food — KPIs + Importador <span class="muted">v0.9</span></h1>
   <div class="tabs">
     <button id="btnTabDash" class="tabbtn active">📈 Dashboard</button>
     <button id="btnTabImp" class="tabbtn">📤 Importador (upload diário)</button>
   </div>
 
-  <!-- ============ DASHBOARD ============ -->
+  <!-- DASHBOARD -->
   <section id="tabDash">
     <div class="muted">Período: <span id="periodo">—</span></div>
-
     <div class="card">
       <div class="row cols-4">
         <div>
@@ -61,27 +60,15 @@
             <option value="ano">Ano atual</option>
           </select>
         </div>
-        <div>
-          <label>De</label>
-          <input id="dini" type="date"/>
-        </div>
-        <div>
-          <label>Até</label>
-          <input id="dfim" type="date"/>
-        </div>
+        <div><label>De</label><input id="dini" type="date"/></div>
+        <div><label>Até</label><input id="dfim" type="date"/></div>
         <div><label>&nbsp;</label><button id="btnApply" class="btn">Aplicar</button></div>
       </div>
-
       <div class="row cols-4" style="margin-top:10px">
         <div><label>Unidade</label><input id="unidade" placeholder="ex.: Uni.Raja"/></div>
         <div><label>Nome da loja</label><input id="loja" placeholder="contém…"/></div>
-        <div>
-          <label>Cancelado?</label>
-          <select id="cancelado">
-            <option value="">Todos</option>
-            <option value="Não">Não</option>
-            <option value="Sim">Sim</option>
-          </select>
+        <div><label>Cancelado?</label>
+          <select id="cancelado"><option value="">Todos</option><option value="Não">Não</option><option value="Sim">Sim</option></select>
         </div>
         <div><label>Pagamento (exato)</label><input id="pagamento" placeholder="Crédito, Pago Online…"/></div>
       </div>
@@ -116,8 +103,7 @@
         <div class="title">Amostra filtrada (até 10)</div>
         <pre id="amostra">(vazio)</pre>
         <div class="row cols-2">
-          <button id="btnDups" class="btn">Ver duplicatas (top 30)</button>
-          <div></div>
+          <button id="btnDups" class="btn">Ver duplicatas (top 30)</button><div></div>
         </div>
         <div class="title" style="margin-top:10px">Duplicatas (hash → ocorrências)</div>
         <pre id="dups">(vazio)</pre>
@@ -125,20 +111,14 @@
     </div>
   </section>
 
-  <!-- ============ IMPORTADOR ============ -->
+  <!-- IMPORTADOR -->
   <section id="tabImp" class="hidden">
     <div class="muted">Lê Excel, separa <b>dia/hora</b>, valida e grava com <b>UPSERT</b> (idempotente por <code>row_key</code>) em <code>public.vendas_xlsx</code>.</div>
 
     <div class="card">
       <div class="row cols-2">
-        <div>
-          <label>Arquivo XLSX</label>
-          <input id="file" type="file" accept=".xlsx"/>
-        </div>
-        <div>
-          <label>Aba (sheet)</label>
-          <select id="sheet"></select>
-        </div>
+        <div><label>Arquivo XLSX</label><input id="file" type="file" accept=".xlsx"/></div>
+        <div><label>Aba (sheet)</label><select id="sheet"></select></div>
       </div>
       <div class="row cols-3" style="margin-top:10px">
         <button id="btnRead" class="btn">1) Ler planilha</button>
@@ -181,12 +161,9 @@ const file=$('file'), sheetSel=$('sheet'), btnRead=$('btnRead'), btnSend=$('btnS
 const mappingEl=$('mapping'), reportEl=$('report'), previewEl=$('preview'), healthEl=$('health'), statusEl=$('status'), bar=$('bar');
 
 /* ====== TABS ====== */
-const tabDash = $('tabDash'), tabImp = $('tabImp'), btnTabDash=$('btnTabDash'), btnTabImp=$('btnTabImp');
-btnTabDash.onclick = ()=>{tabDash.classList.remove('hidden');tabImp.classList.add('hidden');btnTabDash.classList.add('active');btnTabImp.classList.remove('active');};
-btnTabImp.onclick  = ()=>{tabImp.classList.remove('hidden');tabDash.classList.add('hidden');btnTabImp.classList.add('active');btnTabDash.classList.remove('active');};
-
-/* ====== STATE (importador) ====== */
-let wb=null, wbSheets=[], rowsRaw=[], rowsValid=[], headerMap=null;
+const tabDash=$('tabDash'), tabImp=$('tabImp'), btnTabDash=$('btnTabDash'), btnTabImp=$('btnTabImp');
+btnTabDash.onclick=()=>{tabDash.classList.remove('hidden');tabImp.classList.add('hidden');btnTabDash.classList.add('active');btnTabImp.classList.remove('active');};
+btnTabImp.onclick =()=>{tabImp.classList.remove('hidden');tabDash.classList.add('hidden');btnTabImp.classList.add('active');btnTabDash.classList.remove('active');};
 
 /* ====== UTILS ====== */
 const brl = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
@@ -195,34 +172,91 @@ function todayISO(d=new Date()){d.setHours(0,0,0,0);return d.toISOString().slice
 function addDays(iso,delta){const d=new Date(iso);d.setDate(d.getDate()+delta);return d.toISOString().slice(0,10)}
 const norm=(s)=>String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 const onlyDateISO=(iso)=> iso && iso.length>=10 ? iso.slice(0,10) : null;
+
+/* Excel serial -> Date */
+function excelSerialToDate(n){
+  if(!isFinite(n)) return null;
+  // Excel epoch 1899-12-30
+  const ms = Math.round((n - 25569) * 86400 * 1000);
+  return new Date(ms);
+}
+
+/* Parsing robusto de Data/Hora */
+function parseDateLike(v){
+  if(v==null || v==='') return {iso:null, dia:null, hora:-1};
+
+  // 1) Date object
+  if(Object.prototype.toString.call(v)==='[object Date]' && !isNaN(v)) {
+    const d = new Date(v.getTime());
+    const iso = d.toISOString().slice(0,19);
+    return {iso, dia:onlyDateISO(iso), hora:d.getHours()};
+  }
+
+  // 2) Number (serial Excel)
+  if(typeof v==='number'){
+    const d=excelSerialToDate(v);
+    if(d){
+      const iso=d.toISOString().slice(0,19);
+      return {iso, dia:onlyDateISO(iso), hora:d.getHours()};
+    }
+  }
+
+  // 3) String dd/mm/aaaa hh:mm | dd/mm/aaaa
+  const s=String(v).trim();
+  const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if(m){
+    const d=m[1].padStart(2,'0'), M=m[2].padStart(2,'0'), y=m[3];
+    const hh = m[4]? m[4].padStart(2,'0') : '00';
+    const mm = m[5]? m[5] : '00';
+    const iso = `${y}-${M}-${d}T${hh}:${mm}:00`;
+    return {iso, dia:`${y}-${M}-${d}`, hora:parseInt(hh,10)};
+  }
+
+  // 4) ISO yyyy-mm-dd[Thh:mm]
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)){
+    const iso = s.length>10 ? s.slice(0,19) : (s+'T00:00:00');
+    const hh = (iso.match(/T(\d{2}):/)||[])[1];
+    return {iso, dia:onlyDateISO(iso), hora: hh? parseInt(hh,10) : 0};
+  }
+
+  // 5) Tenta Date(navegador)
+  const d2=new Date(s);
+  if(!isNaN(d2)){
+    const iso=d2.toISOString().slice(0,19);
+    return {iso, dia:onlyDateISO(iso), hora:d2.getHours()};
+  }
+
+  return {iso:null, dia:null, hora:-1};
+}
+
 function parseMoney(v){
   if(v==null||v==='') return 0;
   if(typeof v==='number') return v;
-  let s=String(v).trim().replace(/[^0-9,.\-]/g,'');
+  let s=String(v).trim();
+  // trata "(123,45)" como negativo
+  if(/^\(.*\)$/.test(s)){ s='-'+s.replace(/[()]/g,''); }
+  s=s.replace(/[^0-9,.\-]/g,'');
   const lastComma=s.lastIndexOf(','), lastDot=s.lastIndexOf('.');
   if(lastComma>lastDot){ s=s.replace(/\./g,'').replace(',','.'); } else { s=s.replace(/,/g,''); }
   const n=Number(s); return isFinite(n)? n:0;
 }
-function toISOfromBrOrISO(s){
-  if(!s) return null;
-  const str=String(s).trim();
-  const m=str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
-  if(m){const d=m[1].padStart(2,'0'),M=m[2].padStart(2,'0'),y=m[3];const hh=m[4]?m[4].padStart(2,'0'):'00';const mm=m[5]?m[5]:'00';return `${y}-${M}-${d}T${hh}:${mm}:00`;}
-  if(/^\d{4}-\d{2}-\d{2}/.test(str)) return str.length>10?str:(str+'T00:00:00');
-  return null;
+function turnoFromHour(h){
+  if(h<0) return null;
+  if(h>=6 && h<12) return 'Dia';
+  if(h>=12 && h<18) return 'Dia';
+  if(h>=18 && h<24) return 'Noite';
+  return 'Madrugada';
 }
-function hourFromDateText(s){const m=String(s??'').match(/(\d{1,2}):(\d{2})/); if(!m) return -1; const h=parseInt(m[1],10); return isFinite(h)?h:-1;}
-function turnoFromHour(h){ if(h<0) return null; if(h>=6&&h<12) return 'Dia'; if(h>=12&&h<18) return 'Dia'; if(h>=18&&h<24) return 'Noite'; return 'Madrugada';}
-function normCancel(v){const s=norm(v); if(v===true||s==='sim'||s==='s'||s==='1'||s==='true') return 'Sim'; return 'Não';}
+function normCancel(v){const s=norm(v); return (v===true||s==='sim'||s==='s'||s==='1'||s==='true')?'Sim':'Não';}
 function pagamentoBase(p){const s=String(p??'').split(',')[0].trim(); return s||null;}
 function setStatus(txt, cls){statusEl.textContent=txt; statusEl.className='muted status'+(cls?(' '+cls):'');}
 function setBar(pct){bar.style.width=Math.max(0,Math.min(100,pct))+'%';}
 
-/* ====== DASHBOARD FUNCS ====== */
+/* ====== DASHBOARD ====== */
 function applyQuick(){
   const now=todayISO(); let start,end=now;
-  if(quick.value==='mes'){const d=new Date();const y=d.getFullYear(),m=d.getMonth();start=new Date(y,m,1).toISOString().slice(0,10);}
-  else if(quick.value==='ano'){const d=new Date();const y=d.getFullYear();start=new Date(y,0,1).toISOString().slice(0,10);}
+  if(quick.value==='mes'){const d=new Date(); const y=d.getFullYear(), m=d.getMonth(); start=new Date(y,m,1).toISOString().slice(0,10);}
+  else if(quick.value==='ano'){const d=new Date(); const y=d.getFullYear(); start=new Date(y,0,1).toISOString().slice(0,10);}
   else {const n=parseInt(quick.value,10)||30; start=addDays(now,-(n-1));}
   dini.value=start; dfim.value=end;
 }
@@ -236,7 +270,6 @@ function params(){
   periodo.textContent=p_dini+' → '+p_dfim;
   return {p_dini,p_dfim,p_unids,p_canais,p_pags,p_loja,p_cancelado};
 }
-
 let chart;
 function renderChart(labels, values){
   if(chart) chart.destroy();
@@ -244,10 +277,8 @@ function renderChart(labels, values){
   chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'Receita',data:values,tension:.25}]},options:{responsive:true,scales:{y:{ticks:{callback:v=>fmtBRL(v).replace('R$','')}}}}});
   pontos.textContent='Pontos: '+values.length;
 }
-
 async function loadResumo(){
-  const args=params();
-  const {data,error}=await supa.rpc('resumo_vendas',args);
+  const args=params(); const {data,error}=await supa.rpc('resumo_vendas',args);
   const el=$('tbResumo');
   if(error){console.error(error);el.innerHTML='<tr><td colspan="4">Erro no resumo</td></tr>';return;}
   const r=(data&&data[0])||{brutas:0,canon:0,duplicatas:0,perc_dup:0};
@@ -271,16 +302,14 @@ async function loadKPIs(){
   k_ped.textContent=pedidos.toLocaleString('pt-BR'); k_fat.textContent=fmtBRL(fat); k_tkt.textContent=fmtBRL(tkt); k_liq.textContent=fmtBRL(liq);
   renderChart(labels,values);
 }
-async function loadDups(){
-  const args=params(); const r=await supa.rpc('top_dups_vendas', {...args, p_limit:30}); 
-  dups.textContent = r.error ? JSON.stringify(r.error,null,2) : JSON.stringify(r.data||[],null,2);
-}
-async function aplicar(){await loadKPIs(); await loadResumo(); await loadAmostra(); dups.textContent='(clique em "Ver duplicatas" para listar)';}
-$('btnApply').addEventListener('click',aplicar);
-$('btnDups').addEventListener('click',loadDups);
+async function loadDups(){ const args=params(); const r=await supa.rpc('top_dups_vendas',{...args,p_limit:30}); dups.textContent=r.error?JSON.stringify(r.error,null,2):JSON.stringify(r.data||[],null,2); }
+async function aplicar(){ await loadKPIs(); await loadResumo(); await loadAmostra(); dups.textContent='(clique em "Ver duplicatas" para listar)'; }
+document.getElementById('btnApply').addEventListener('click',aplicar);
+document.getElementById('btnDups').addEventListener('click',loadDups);
 quick.addEventListener('change',()=>{applyQuick();aplicar();});
 
-/* ====== IMPORTADOR: HEADER MAP ====== */
+/* ====== IMPORTADOR ====== */
+/* Header map com mais sinônimos */
 function buildHeaderMap(cols){
   const dict=[
     {std:'dia_src', list:['data','data da venda','dt venda','dt_venda','dia']},
@@ -290,69 +319,99 @@ function buildHeaderMap(cols){
     {std:'pagamento', list:['pagamento','forma de pagamento','meio de pagamento']},
     {std:'des', list:['desconto','des']},
     {std:'fre', list:['entrega','frete','valor entregador','taxa de entrega']},
-    {std:'fat', list:['total','valor total','faturamento','total taxa de serviço + total?','vl total']},
+    {std:'fat', list:['total','valor total','faturamento','total taxa de serviço + total?','vl total','valor']},
     {std:'cancelado', list:['esta cancelado','está cancelado','cancelado']},
     {std:'turno', list:['turno']},
     {std:'pedido_id', list:['pedido','numero do pedido','número do pedido','numero do pedido no parceiro','número do pedido no parceiro','id pedido','pedido_id']}
   ];
   const out={}, lower=cols.map(c=>({orig:c,key:norm(c)}));
-  for(const d of dict){
-    for(const cand of d.list){
-      const hit=lower.find(x=>x.key===cand);
-      if(hit){ out[d.std]=hit.orig; break; }
-    }
-  }
-  const required=['dia_src','unidade','fat'];
-  const missing=required.filter(k=>!out[k]);
+  for(const d of dict){ for(const cand of d.list){ const hit=lower.find(x=>x.key===cand); if(hit){ out[d.std]=hit.orig; break; } } }
+  const required=['dia_src','unidade','fat']; const missing=required.filter(k=>!out[k]);
   return {map:out, missing};
 }
 
-/* ====== IMPORTADOR: XLSX LOAD ====== */
+/* Ler XLSX */
 file.addEventListener('change', async ()=>{
-  wb=null; wbSheets=[]; sheetSel.innerHTML=''; rowsRaw=rowsValid=[]; headerMap=null;
-  mappingEl.textContent='(vazio)'; reportEl.textContent='(vazio)'; previewEl.textContent='(vazio)';
+  sheetSel.innerHTML=''; mappingEl.textContent='(vazio)'; reportEl.textContent='(vazio)'; previewEl.textContent='(vazio)';
   setStatus('Lendo arquivo…'); setBar(0);
   const f=file.files?.[0]; if(!f){setStatus('Selecione um .xlsx','warn'); return;}
   try{
-    const buf=await f.arrayBuffer(); wb=XLSX.read(buf,{cellDates:false,cellText:false}); wbSheets=wb.SheetNames||[];
-    if(!wbSheets.length){setStatus('XLSX sem abas.','err'); return;}
-    sheetSel.innerHTML=wbSheets.map(n=>`<option>${n}</option>`).join('');
-    // escolher aba mais longa
-    let best=wbSheets[0],max=-1; for(const name of wbSheets){const sh=wb.Sheets[name]; const json=XLSX.utils.sheet_to_json(sh,{defval:''}); if(json.length>max){max=json.length; best=name;}}
-    sheetSel.value=best; setStatus(`Arquivo carregado. ${wbSheets.length} abas. Selecionada: ${best}.`,'ok');
+    const buf=await f.arrayBuffer();
+    // Habilita cellDates para tentar trazer Date; o fallback cuida do resto
+    const wb=XLSX.read(buf,{cellDates:true, cellText:false});
+    const names=wb.SheetNames||[];
+    if(!names.length){setStatus('XLSX sem abas.','err'); return;}
+    window.__wb = wb; // guarda para uso
+    sheetSel.innerHTML=names.map(n=>`<option>${n}</option>`).join('');
+    // escolhe a aba com mais linhas
+    let best=names[0], max=-1;
+    for(const name of names){
+      const sh=wb.Sheets[name]; const json=XLSX.utils.sheet_to_json(sh,{defval:'', raw:true});
+      if(json.length>max){max=json.length; best=name;}
+    }
+    sheetSel.value=best; setStatus(`Arquivo carregado. ${names.length} abas. Selecionada: ${best}.`,'ok');
   }catch(e){console.error(e); setStatus('Falha ao ler XLSX.','err');}
 });
+
+let rowsRaw=[], rowsValid=[];
 btnRead.addEventListener('click', ()=>{
-  if(!wb){setStatus('Carregue o .xlsx primeiro.','warn'); return;}
-  const name=sheetSel.value||wbSheets[0]; const sh=wb.Sheets[name];
-  const json=XLSX.utils.sheet_to_json(sh,{defval:''}); rowsRaw=json;
+  const wb=window.__wb; if(!wb){setStatus('Carregue o .xlsx primeiro.','warn'); return;}
+  const name=sheetSel.value||wb.SheetNames[0]; const sh=wb.Sheets[name];
+  const json=XLSX.utils.sheet_to_json(sh,{defval:'', raw:true}); rowsRaw=json;
   if(rowsRaw.length===0){setStatus('Nada para importar (planilha vazia).','warn'); reportEl.textContent=JSON.stringify({linhas:0},null,2); return;}
-  const cols=Object.keys(rowsRaw[0]||{}); const hm=buildHeaderMap(cols); headerMap=hm.map;
+  const cols=Object.keys(rowsRaw[0]||{}); const hm=buildHeaderMap(cols); const headerMap=hm.map; window.__headerMap=headerMap;
   mappingEl.textContent=JSON.stringify({detectado:headerMap,faltando:hm.missing},null,2);
   if(hm.missing.length){setStatus('Faltam colunas obrigatórias: '+hm.missing.join(', '),'err'); return;}
   processRows();
 });
+
 function processRows(){
-  rowsValid=[]; let invalid=0; let i=0;
+  rowsValid=[]; const headerMap=window.__headerMap;
+  let invalid=0; const reasons={sem_dia:0,sem_unidade:0,fat_invalido:0,excecao:0};
+  let i=0;
   for(const r of rowsRaw){ i++;
     try{
-      const dsrc=r[headerMap.dia_src]; const iso=toISOfromBrOrISO(dsrc); const dia=onlyDateISO(iso); const hora=hourFromDateText(dsrc);
-      const unidade=r[headerMap.unidade]?String(r[headerMap.unidade]).trim():'';
-      const loja=r[headerMap['Nome da loja']]||null; const canal=r[headerMap['Canal de venda']]||null;
-      const pagamento=r[headerMap['pagamento']]||null; const pagaBase=pagamentoBase(pagamento);
-      const des=parseMoney(r[headerMap['des']]); const fre=parseMoney(r[headerMap['fre']]); const fat=parseMoney(r[headerMap['fat']]);
-      const cancelado=normCancel(r[headerMap['cancelado']]); const turno=r[headerMap['turno']]||turnoFromHour(hora);
-      const pedidoId=r[headerMap['pedido_id']]||null;
-      if(!dia || !unidade || !isFinite(fat)){ invalid++; continue; }
+      const dlike = r[headerMap.dia_src];
+      const {iso,dia,hora} = parseDateLike(dlike);
+      const unidade = r[headerMap.unidade]?String(r[headerMap.unidade]).trim():'';
+      const loja = r[headerMap['Nome da loja']]||null;
+      const canal = r[headerMap['Canal de venda']]||null;
+      const pagamento = r[headerMap['pagamento']]||null;
+      const des = parseMoney(r[headerMap['des']]);
+      const fre = parseMoney(r[headerMap['fre']]);
+      const fat = parseMoney(r[headerMap['fat']]);
+      const cancelado = normCancel(r[headerMap['cancelado']]);
+      const turno = r[headerMap['turno']] || turnoFromHour(hora);
+      const pedidoId = r[headerMap['pedido_id']] || null;
+
+      if(!dia){ invalid++; reasons.sem_dia++; continue; }
+      if(!unidade){ invalid++; reasons.sem_unidade++; continue; }
+      if(!isFinite(fat)){ invalid++; reasons.fat_invalido++; continue; }
+
+      const pagaBase = pagamentoBase(pagamento);
       const rk=[dia,unidade,(loja||''),(isFinite(hora)?hora:-1),(pagaBase||''),(canal||''),(pedidoId||'')].join('|');
-      rowsValid.push({dia,hora:isFinite(hora)?hora:-1,turno:turno||null,unidade,"Nome da loja":loja,"Canal de venda":canal,pagamento,pagamento_base:pagaBase||null,cancelado,pedidos:1,fat,des,fre,pedido_id:pedidoId,row_key:rk});
-    }catch(e){ invalid++; }
+
+      rowsValid.push({
+        dia, hora:isFinite(hora)?hora:-1, turno:turno||null, unidade,
+        "Nome da loja": loja, "Canal de venda": canal,
+        pagamento: pagamento, pagamento_base: pagaBase||null,
+        cancelado, pedidos:1, fat, des, fre, pedido_id:pedidoId, row_key: rk
+      });
+    }catch(e){ invalid++; reasons.excecao++; }
   }
-  reportEl.textContent=JSON.stringify({'Linhas na planilha':rowsRaw.length,'Válidas (importáveis)':rowsValid.length,'Inválidas/ignoradas':invalid},null,2);
-  previewEl.textContent=JSON.stringify(rowsValid.slice(0,10),null,2);
+
+  const rep = {
+    'Linhas na planilha': rowsRaw.length,
+    'Válidas (importáveis)': rowsValid.length,
+    'Inválidas/ignoradas': invalid,
+    'Motivos (top)': reasons
+  };
+  reportEl.textContent = JSON.stringify(rep, null, 2);
+  previewEl.textContent = JSON.stringify(rowsValid.slice(0,10), null, 2);
   setStatus(rowsValid.length?'Validação OK. Pronto para enviar.':'Nada para importar (tudo inválido).', rowsValid.length?'ok':'warn');
 }
-/* ====== ENVIAR (UPSERT por row_key) ====== */
+
+/* ENVIAR (UPSERT por row_key) */
 btnSend.addEventListener('click', async ()=>{
   if(rowsValid.length===0){setStatus('Nada válido para enviar.','warn'); return;}
   setStatus('Iniciando envio (UPSERT)…'); setBar(0);
@@ -363,11 +422,12 @@ btnSend.addEventListener('click', async ()=>{
     if(ins.error){console.error(ins.error); errs += batch.length;} else { sent += batch.length; }
     setBar(((i+batch.length)/rowsValid.length)*100);
     setStatus(`Processado ${i+batch.length}/${rowsValid.length} · enviados ${sent} · erros ${errs}`, errs?'warn':'muted');
-    await new Promise(r=>setTimeout(r,20));
+    await new Promise(r=>setTimeout(r,15));
   }
   setStatus(`Concluído. Processadas ${rowsValid.length}. Erros ${errs}.`, errs?'warn':'ok');
 });
-/* ====== HEALTHCHECK ====== */
+
+/* HEALTHCHECK */
 btnHealth.addEventListener('click', async ()=>{
   healthEl.textContent='Consultando…';
   const a=await supa.from(TABLE).select('dia',{head:false}).order('dia',{ascending:true}).limit(1);
@@ -378,11 +438,9 @@ btnHealth.addEventListener('click', async ()=>{
   healthEl.textContent=JSON.stringify({tabela:TABLE, intervalo:{min_dia:min,max_dia:max}, total},null,2);
 });
 
-/* ====== INIT ====== */
-function init(){
-  applyQuick();
-  aplicar();
-}
+/* INIT */
+function applyQuick(){const now=todayISO();let start,end=now;if(quick.value==='mes'){const d=new Date();const y=d.getFullYear(),m=d.getMonth();start=new Date(y,m,1).toISOString().slice(0,10);}else if(quick.value==='ano'){const d=new Date();const y=d.getFullYear();start=new Date(y,0,1).toISOString().slice(0,10);}else{const n=parseInt(quick.value,10)||30;start=addDays(now,-(n-1));}dini.value=start;dfim.value=end;}
+function init(){applyQuick();aplicar();}
 init();
 </script>
 </body>
