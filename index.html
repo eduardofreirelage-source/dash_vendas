@@ -1,1371 +1,395 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Maestro Food Dashboard - CORRIGIDO FINAL</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-        
-        .header {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 20px 30px;
-            margin-bottom: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        
-        .logo h1 {
-            color: #2d3748;
-            font-size: 28px;
-            font-weight: 700;
-        }
-        
-        .status-bar {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        
-        .status-item {
-            padding: 8px 16px;
-            border-radius: 25px;
-            font-size: 14px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .status-success {
-            background: #48bb78;
-            color: white;
-        }
-        
-        .status-info {
-            background: #4299e1;
-            color: white;
-        }
-        
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 25px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .btn-primary {
-            background: #667eea;
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #5a6fd8;
-            transform: translateY(-2px);
-        }
-        
-        .filters-section {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 25px;
-            margin-bottom: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-        
-        .filters-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-        
-        .filter-group {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-        
-        .filter-group label {
-            font-weight: 600;
-            color: #2d3748;
-            font-size: 14px;
-        }
-        
-        .filter-group select,
-        .filter-group input {
-            padding: 12px 16px;
-            border: 2px solid #e2e8f0;
-            border-radius: 12px;
-            font-size: 14px;
-            transition: all 0.3s ease;
-            background: white;
-        }
-        
-        .filter-group select:focus,
-        .filter-group input:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-        
-        .kpis-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        
-        .kpi-card {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 25px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            transition: transform 0.3s ease;
-        }
-        
-        .kpi-card:hover {
-            transform: translateY(-5px);
-        }
-        
-        .kpi-header {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 15px;
-        }
-        
-        .kpi-icon {
-            font-size: 24px;
-        }
-        
-        .kpi-title {
-            font-size: 14px;
-            font-weight: 600;
-            color: #718096;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        .kpi-value {
-            font-size: 32px;
-            font-weight: 700;
-            color: #2d3748;
-            margin-bottom: 10px;
-        }
-        
-        .kpi-comparison {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 14px;
-            font-weight: 600;
-        }
-        
-        .comparison-positive {
-            color: #48bb78;
-        }
-        
-        .comparison-negative {
-            color: #f56565;
-        }
-        
-        .comparison-neutral {
-            color: #718096;
-        }
-        
-        .chart-section {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 25px;
-            margin-bottom: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-        
-        .chart-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-        
-        .chart-title {
-            font-size: 20px;
-            font-weight: 700;
-            color: #2d3748;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .import-section {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 25px;
-            margin-bottom: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-        
-        .import-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-        
-        .import-title {
-            font-size: 20px;
-            font-weight: 700;
-            color: #2d3748;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .admin-badge {
-            background: #ed8936;
-            color: white;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-        
-        .upload-area {
-            border: 2px dashed #cbd5e0;
-            border-radius: 16px;
-            padding: 40px;
-            text-align: center;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-        
-        .upload-area:hover {
-            border-color: #667eea;
-            background: rgba(102, 126, 234, 0.05);
-        }
-        
-        .upload-icon {
-            font-size: 48px;
-            color: #a0aec0;
-            margin-bottom: 16px;
-        }
-        
-        .upload-text {
-            font-size: 18px;
-            font-weight: 600;
-            color: #4a5568;
-            margin-bottom: 8px;
-        }
-        
-        .upload-subtext {
-            font-size: 14px;
-            color: #718096;
-        }
-        
-        .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: #e2e8f0;
-            border-radius: 4px;
-            overflow: hidden;
-            margin: 20px 0;
-            display: none;
-        }
-        
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea, #764ba2);
-            width: 0%;
-            transition: width 0.3s ease;
-        }
-        
-        .corrections-info {
-            background: rgba(72, 187, 120, 0.1);
-            border: 1px solid #48bb78;
-            border-radius: 16px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-        
-        .corrections-title {
-            font-size: 18px;
-            font-weight: 700;
-            color: #22543d;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .corrections-list {
-            list-style: none;
-            padding: 0;
-        }
-        
-        .corrections-list li {
-            padding: 8px 0;
-            color: #22543d;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        @media (max-width: 768px) {
-            .header {
-                flex-direction: column;
-                gap: 15px;
-                text-align: center;
-            }
-            
-            .kpis-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .filters-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Maestro Food</title>
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="62" fill="%231a73e8"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="64" fill="white">M</text></svg>'/>
+<style>
+  :root{--bg:#f6f8fb;--card:#fff;--ink:#0f172a;--mut:#667085;--blue:#1a73e8;--bd:#e6eaf2;--r:14px}
+  body{background:var(--bg);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto;color:var(--ink)}
+  .wrap{max-width:1200px;margin:24px auto;padding:0 16px}
+  h1{margin:0 0 4px}
+  small{color:var(--mut)}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);padding:14px}
+  .row{display:grid;gap:10px}
+  .cols-4{grid-template-columns:repeat(4,1fr)}
+  .cols-3{grid-template-columns:repeat(3,1fr)}
+  label{font-size:12px;color:var(--mut);display:block;margin-bottom:4px}
+  input,select,button{border:1px solid var(--bd);border-radius:10px;padding:10px;background:#fff;width:100%}
+  select[multiple]{height:120px}
+  button{background:var(--blue);color:#fff;border:none;border-radius:10px;cursor:pointer}
+  .kpis{display:grid;gap:10px;grid-template-columns:repeat(4,1fr)}
+  .kpi h3{font-size:12px;color:var(--mut);margin:0 0 6px}
+  .kpi b{font-size:20px}
+  .right{text-align:right}
+  .mut{color:var(--mut)}
+  #chart{height:260px;display:block}
+  .flex{display:flex;gap:8px;align-items:center;justify-content:space-between}
+  @media (max-width:960px){.cols-4,.cols-3,.kpis{grid-template-columns:1fr}}
+</style>
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <div class="logo">
-                <span style="font-size: 32px;">🍽️</span>
-                <h1>Maestro Food Dashboard</h1>
-            </div>
-            <div class="status-bar">
-                <div class="status-item status-info" id="periodo-status">
-                    Período: Carregando...
-                </div>
-                <div class="status-item status-success" id="supabase-status">
-                    ✅ Supabase Conectado
-                </div>
-                <button class="btn btn-primary" onclick="debugInfo()">
-                    🔍 Debug
-                </button>
-            </div>
-        </div>
+<div class="wrap">
+  <h1>Maestro Food</h1>
+  <small id="status">—</small>
 
-        <!-- Correções Info -->
-        <div class="corrections-info">
-            <div class="corrections-title">
-                🛠️ DASHBOARD CORRIGIDO FINAL - PROBLEMA RESOLVIDO:
-            </div>
-            <ul class="corrections-list">
-                <li>✅ <strong>Importação 1:1</strong>: 1 linha CSV = 1 linha banco (sem agregação)</li>
-                <li>✅ <strong>Pedidos corretos</strong>: Campo "pedidos" = 1 sempre</li>
-                <li>✅ <strong>Cálculo correto</strong>: Pedidos = contagem de linhas</li>
-                <li>✅ <strong>Validação</strong>: 10/08/2025: 563 pedidos, R$ 36.000,55</li>
-            </ul>
-        </div>
-
-        <!-- Filtros -->
-        <div class="filters-section">
-            <div class="filters-grid">
-                <div class="filter-group">
-                    <label>📍 Unidade</label>
-                    <select id="filtro-unidade">
-                        <option value="">Todas</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>🏪 Nome da Loja (Top 10)</label>
-                    <select id="filtro-loja">
-                        <option value="">Todos</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>📅 Data Inicial</label>
-                    <input type="date" id="data-inicial">
-                </div>
-                <div class="filter-group">
-                    <label>📅 Data Final</label>
-                    <input type="date" id="data-final">
-                </div>
-                <div class="filter-group">
-                    <label>⚡ Período Rápido</label>
-                    <select id="periodo-rapido">
-                        <option value="">Personalizado</option>
-                        <option value="hoje">Hoje</option>
-                        <option value="ontem">Ontem</option>
-                        <option value="7dias">Últimos 7 dias</option>
-                        <option value="30dias">Últimos 30 dias</option>
-                        <option value="90dias">Últimos 90 dias</option>
-                        <option value="ano">Este ano</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>🌅 Turno</label>
-                    <select id="filtro-turno">
-                        <option value="">Todos</option>
-                        <option value="Manhã">Manhã</option>
-                        <option value="Tarde">Tarde</option>
-                        <option value="Noite">Noite</option>
-                        <option value="Madrugada">Madrugada</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>📱 Canal de Venda</label>
-                    <select id="filtro-canal">
-                        <option value="">Todos</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>💳 Pagamento</label>
-                    <select id="filtro-pagamento">
-                        <option value="">Todos</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>❌ Cancelado</label>
-                    <select id="filtro-cancelado">
-                        <option value="">Todos</option>
-                        <option value="S">Sim</option>
-                        <option value="N">Não</option>
-                    </select>
-                </div>
-            </div>
-            <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
-                <button class="btn btn-primary" onclick="reload()">
-                    🔄 Aplicar Filtros
-                </button>
-                <button class="btn" style="background: #718096; color: white;" onclick="clearFilters()">
-                    🧹 Limpar
-                </button>
-            </div>
-        </div>
-
-        <!-- KPIs -->
-        <div class="kpis-grid">
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-icon">📦</div>
-                    <div class="kpi-title">Pedidos</div>
-                </div>
-                <div class="kpi-value" id="kpi-pedidos">-</div>
-                <div class="kpi-comparison" id="comp-pedidos">
-                    <span>N/A</span>
-                </div>
-            </div>
-            
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-icon">🎯</div>
-                    <div class="kpi-title">Ticket Médio</div>
-                </div>
-                <div class="kpi-value" id="kpi-ticket">R$ -</div>
-                <div class="kpi-comparison" id="comp-ticket">
-                    <span>N/A</span>
-                </div>
-            </div>
-            
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-icon">💰</div>
-                    <div class="kpi-title">Faturamento</div>
-                </div>
-                <div class="kpi-value" id="kpi-faturamento">R$ -</div>
-                <div class="kpi-comparison" id="comp-faturamento">
-                    <span>N/A</span>
-                </div>
-            </div>
-            
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-icon">📈</div>
-                    <div class="kpi-title">Faturamento Médio/Dia</div>
-                </div>
-                <div class="kpi-value" id="kpi-fat-dia">R$ -</div>
-                <div class="kpi-comparison" id="comp-fat-dia">
-                    <span>N/A</span>
-                </div>
-            </div>
-            
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-icon">🎁</div>
-                    <div class="kpi-title">Incentivos</div>
-                </div>
-                <div class="kpi-value" id="kpi-incentivos">R$ -</div>
-                <div class="kpi-comparison" id="comp-incentivos">
-                    <span>N/A</span>
-                </div>
-            </div>
-            
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-icon">📊</div>
-                    <div class="kpi-title">Incentivos %</div>
-                </div>
-                <div class="kpi-value" id="kpi-incentivos-pct">-%</div>
-                <div class="kpi-comparison" id="comp-incentivos-pct">
-                    <span>N/A</span>
-                </div>
-            </div>
-            
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-icon">🚚</div>
-                    <div class="kpi-title">Frete</div>
-                </div>
-                <div class="kpi-value" id="kpi-frete">R$ -</div>
-                <div class="kpi-comparison" id="comp-frete">
-                    <span>N/A</span>
-                </div>
-            </div>
-            
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-icon">💎</div>
-                    <div class="kpi-title">Faturamento Líquido</div>
-                </div>
-                <div class="kpi-value" id="kpi-liquido">R$ -</div>
-                <div class="kpi-comparison" id="comp-liquido">
-                    <span>N/A</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Gráfico -->
-        <div class="chart-section">
-            <div class="chart-header">
-                <div class="chart-title">
-                    📈 Receita Diária
-                </div>
-                <div class="btn" style="background: #4299e1; color: white; font-size: 12px;">
-                    💡 Total com comparativo
-                </div>
-            </div>
-            <canvas id="revenueChart" width="400" height="200"></canvas>
-        </div>
-
-        <!-- Importar CSV -->
-        <div class="import-section">
-            <div class="import-header">
-                <div class="import-title">
-                    📁 Importar CSV
-                </div>
-                <div class="admin-badge">Admin</div>
-            </div>
-            
-            <div class="upload-area" onclick="document.getElementById('csvFile').click()">
-                <div class="upload-icon">📄</div>
-                <div class="upload-text">Selecione um arquivo CSV</div>
-                <div class="upload-subtext">Arraste e solte ou clique para selecionar</div>
-            </div>
-            
-            <input type="file" id="csvFile" accept=".csv" style="display: none;" onchange="importCSV(this)">
-            
-            <div class="progress-bar" id="progressBar">
-                <div class="progress-fill" id="progressFill"></div>
-            </div>
-            
-            <button class="btn btn-primary" style="margin-top: 20px; width: 100%;" onclick="document.getElementById('csvFile').click()">
-                📤 Importar CSV (CORRIGIDO FINAL)
-            </button>
-        </div>
+  <div class="card" style="margin-top:10px">
+    <div class="row cols-4">
+      <div><label>Unidade</label><select id="fUnidade"></select></div>
+      <div><label>Nome da loja (Top 10)</label><select id="fLoja"></select></div>
+      <div><label>De</label><input id="fDini" type="date"/></div>
+      <div><label>Até</label><input id="fDfim" type="date"/></div>
     </div>
 
-    <script>
-        // Configuração do Supabase
-        const SUPABASE_URL = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
-        
-        const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        
-        let allData = [];
-        let filteredData = [];
-        let previousData = [];
-        let minISO = '';
-        let maxISO = '';
-        let revenueChart = null;
+    <div class="row cols-4" style="margin-top:8px">
+      <div>
+        <label>Período rápido</label>
+        <select id="fQuick">
+          <option>Últimos 30</option>
+          <option>Últimos 60</option>
+          <option selected>Últimos 90</option>
+          <option>Este mês</option>
+          <option>Último mês</option>
+          <option>Este ano</option>
+        </select>
+      </div>
+      <div><label>Turno</label><select id="fTurno" multiple>
+        <option>Manhã</option><option>Tarde</option><option>Noite</option><option>Madrugada</option></select></div>
+      <div><label>Canal de venda</label><select id="fCanal" multiple></select></div>
+      <div><label>Pagamento</label><select id="fPag" multiple></select></div>
+    </div>
 
-        // Funções auxiliares
-        function norm(str) {
-            if (!str) return '';
-            return str.toString().toLowerCase().trim()
-                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-                .replace(/[^a-z0-9\s]/g, '');
+    <div class="row cols-3" style="margin-top:8px">
+      <div><label>Está cancelado?</label><select id="fCanc"><option>Todos</option><option>Não</option><option>Sim</option></select></div>
+      <div class="flex">
+        <div class="mut" id="msg"></div>
+      </div>
+      <div class="right"><label>&nbsp;</label><button id="btnLimpar" type="button">Limpar</button></div>
+    </div>
+  </div>
+
+  <div class="kpis" style="margin-top:10px">
+    <div class="card kpi"><h3>Pedidos</h3><b id="kPedidos">—</b></div>
+    <div class="card kpi"><h3>Ticket Médio</h3><b id="kTicket">—</b></div>
+    <div class="card kpi"><h3>Faturamento</h3><b id="kFat">—</b></div>
+    <div class="card kpi"><h3>Faturamento Médio (dia)</h3><b id="kFatDia">—</b></div>
+    <div class="card kpi"><h3>Incentivos</h3><b id="kDes">—</b></div>
+    <div class="card kpi"><h3>Incentivos %</h3><b id="kDesPct">—</b></div>
+    <div class="card kpi"><h3>Frete</h3><b id="kFre">—</b></div>
+    <div class="card kpi"><h3>Faturamento Líquido</h3><b id="kFatLiq">—</b></div>
+  </div>
+
+  <div class="card" style="margin-top:10px">
+    <div class="flex"><b>Receita diária</b><span class="mut" id="resumo"></span></div>
+    <canvas id="chart"></canvas>
+  </div>
+
+  <div class="card" style="margin-top:10px">
+    <div class="flex">
+      <div><b>Admin — Importar CSV (Pasta2.csv)</b></div>
+      <div class="mut">Cada linha = 1 pedido (sem agregação). Dedup por chave composta.</div>
+    </div>
+    <div class="flex" style="margin-top:8px">
+      <input id="csv" type="file" accept=".csv,text/csv"/>
+      <button id="btnImport" type="button">Importar CSV</button>
+      <span id="impStatus" class="mut"></span>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+(async function(){
+  // -------- CONFIG --------
+  const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
+  const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+  const TABLE = "vendas_kpi_daily_v2_data";
+  const UNIQUE_KEYS = 'dia,unidade,"Nome da loja",hora,pagamento,"Canal de venda"';
+  const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  // -------- DOM --------
+  const $=id=>document.getElementById(id);
+  const statusEl=$("status"), msg=$("msg"), resumo=$("resumo");
+  const dini=$("fDini"), dfim=$("fDfim"), pr=$("fQuick");
+  const uni=$("fUnidade"), loja=$("fLoja"), turno=$("fTurno"), canal=$("fCanal"), pag=$("fPag"), canc=$("fCanc");
+  const btnLimpar=$("btnLimpar");
+  const kPedidos=$("kPedidos"), kTicket=$("kTicket"), kFat=$("kFat"), kFatDia=$("kFatDia"),
+        kDes=$("kDes"), kDesPct=$("kDesPct"), kFre=$("kFre"), kFatLiq=$("kFatLiq");
+  const chartEl=$("chart"); let chart=null;
+  const csv=$("csv"), btnImport=$("btnImport"), impStatus=$("impStatus");
+
+  // -------- STATE --------
+  let loadToken=0;
+  let cache=[];
+
+  // -------- UTILS --------
+  const fmtBRL=v=> (isFinite(v)? v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : "—");
+  const fmtPct=v=> (isFinite(v)? (v*100).toFixed(1).replace('.',',')+'%' : "—");
+  const onlyDate=iso=> iso && iso.length>=10 ? iso.slice(0,10) : null;
+  const norm = s => String(s??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+  const normCancel = v => (v===true || ['sim','s','1','true','y'].includes(norm(v))) ? 'Sim' : 'Não';
+  const tzISO = d => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const selected = sel => Array.from(sel.selectedOptions||[]).map(o=>o.value);
+  const parseBR = x => {
+    if (x==null || x==='') return 0;
+    if (typeof x==='number') return x;
+    const n = Number(String(x).replace(/\./g,'').replace(',','.').trim());
+    return isFinite(n)? n : 0;
+  };
+  function ddmmyyyyToISO(s){
+    if(!s) return null;
+    const str=String(s).trim();
+    const [d,m,y]=str.split(/[\/\-]/);
+    const day=parseInt(d,10), mon=parseInt(m,10), yr=parseInt(y,10);
+    if(!(day>0 && mon>0 && yr>1900)) return null;
+    return `${yr.toString().padStart(4,'0')}-${mon.toString().padStart(2,'0')}-${day.toString().padStart(2,'0')}`;
+  }
+  function deriveTurno(h, fallback){
+    const hh = Number(h);
+    if (isFinite(hh)) {
+      if (hh>=6 && hh<12) return 'Manhã';
+      if (hh>=12 && hh<18) return 'Tarde';
+      if (hh>=18 && hh<24) return 'Noite';
+      if (hh>=0 && hh<6) return 'Madrugada';
+    }
+    return fallback || null;
+  }
+  function applyQuickDate(){
+    const end=new Date(); let start;
+    if(pr.value.startsWith("Últimos ")){ const n=parseInt(pr.value.split(' ')[1],10); start=new Date(); start.setDate(end.getDate()-(n-1)); }
+    else if(pr.value==="Este mês"){ start=new Date(end.getFullYear(),end.getMonth(),1); }
+    else if(pr.value==="Último mês"){ start=new Date(end.getFullYear(),end.getMonth()-1,1); const e=new Date(end.getFullYear(),end.getMonth(),0); dini.value=tzISO(start); dfim.value=tzISO(e); return;}
+    else if(pr.value==="Este ano"){ start=new Date(end.getFullYear(),0,1); }
+    else { start=new Date(end.getFullYear(),end.getMonth(),end.getDate()-29); }
+    dini.value=tzISO(start); dfim.value=tzISO(end);
+  }
+
+  // -------- MIN/MAX/TOTAL --------
+  async function minmax(){
+    const a=await supa.from(TABLE).select('dia').order('dia',{ascending:true}).limit(1);
+    const b=await supa.from(TABLE).select('dia').order('dia',{ascending:false}).limit(1);
+    const c=await supa.from(TABLE).select('*',{count:'exact', head:true});
+    const min=onlyDate(a.data?.[0]?.dia)||'—', max=onlyDate(b.data?.[0]?.dia)||'—', tot=c.count??'—';
+    statusEl.textContent=`Período: ${min} → ${max} (${tot} linhas)`;
+    if(!dini.value || !dfim.value) applyQuickDate();
+    return {min,max,tot};
+  }
+
+  // -------- FETCH PAGINADO (sem dedup) --------
+  async function fetchAll(a,b){
+    const myToken=++loadToken;
+    const page=5000; let off=0, all=[];
+    msg.textContent='Carregando…';
+    while(true){
+      if (myToken!==loadToken) return [];
+      const {data, error} = await supa.from(TABLE)
+        .select('dia,unidade,pedidos,fat,des,fre,"Nome da loja","Canal de venda",pagamento,turno,cancelado,hora')
+        .gte('dia', a).lte('dia', b)
+        .order('dia',{ascending:true})
+        .range(off, off+page-1);
+      if(error){ console.error(error); msg.textContent='Erro ao carregar dados.'; return []; }
+      if(!data?.length) break;
+      all = all.concat(data.map(r=>({
+        dia: onlyDate(r.dia),
+        unidade: (r.unidade??'').trim(),
+        pedidos: 1, // modelo correto = 1 por linha
+        fat: Number(r.fat)||0, des:Number(r.des)||0, fre:Number(r.fre)||0,
+        pagamento: (r.pagamento??'').trim(),
+        "Canal de venda": (r["Canal de venda"]??'').trim(),
+        "Nome da loja": (r["Nome da loja"]??'').trim(),
+        hora: Number(r.hora),
+        turno: deriveTurno(r.hora, (r.turno??'').trim()),
+        cancelado: normCancel(r.cancelado)
+      })));
+      off += page;
+      msg.textContent=`Carregando… ${all.length.toLocaleString('pt-BR')} linhas`;
+      if(data.length<page) break;
+      if(off>5_000_000) break;
+    }
+    msg.textContent=`Concluído. ${all.length.toLocaleString('pt-BR')} linhas.`;
+    return all;
+  }
+
+  // -------- OPTIONS --------
+  function buildOptions(rows){
+    const setUni=new Set(['Todas']);
+    const setCan=new Set(), setPag=new Set();
+    const fatPorLoja=new Map();
+    rows.forEach(r=>{
+      if(r.unidade) setUni.add(r.unidade);
+      if(r['Canal de venda']) setCan.add(r['Canal de venda']);
+      if(r.pagamento) setPag.add(r.pagamento);
+      if(r['Nome da loja']) fatPorLoja.set(r['Nome da loja'], (fatPorLoja.get(r['Nome da loja'])||0)+r.fat);
+    });
+    uni.innerHTML=[...setUni].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(v=>`<option>${v}</option>`).join('');
+    canal.innerHTML=[...setCan].size? [...setCan].sort().map(v=>`<option>${v}</option>`).join(''):'';
+    pag.innerHTML=[...setPag].size? [...setPag].sort().map(v=>`<option>${v}</option>`).join(''):'';
+    const top=[...fatPorLoja.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k])=>k);
+    loja.innerHTML=['Todos',...top].map(v=>`<option>${v}</option>`).join('');
+    uni.value='Todas'; loja.value='Todos'; turno.selectedIndex=-1; canal.selectedIndex=-1; pag.selectedIndex=-1; canc.value='Todos';
+  }
+
+  // -------- KPIs & CHART --------
+  function computeKPIs(rows){
+    const pedidos = rows.length;                   // << correto: conta linhas
+    const fat = rows.reduce((s,r)=>s+r.fat,0);
+    const des = rows.reduce((s,r)=>s+r.des,0);
+    const fre = rows.reduce((s,r)=>s+r.fre,0);
+    const fatliq = fat - des - fre;
+    const dias = new Set(rows.map(r=>r.dia)).size || 1;
+    const ticket = pedidos ? fat/pedidos : 0;
+    const fatDia = fat / dias;
+    const desPct = fat ? des/fat : 0;
+
+    kPedidos.textContent = pedidos.toLocaleString('pt-BR');
+    kTicket.textContent  = fmtBRL(ticket);
+    kFat.textContent     = fmtBRL(fat);
+    kFatDia.textContent  = fmtBRL(fatDia);
+    kDes.textContent     = fmtBRL(des);
+    kDesPct.textContent  = fmtPct(desPct);
+    kFre.textContent     = fmtBRL(fre);
+    kFatLiq.textContent  = fmtBRL(fatliq);
+    resumo.textContent   = `${rows.length.toLocaleString('pt-BR')} registros`;
+  }
+
+  function drawChart(rows){
+    const by=new Map();
+    rows.forEach(r=> by.set(r.dia,(by.get(r.dia)||0)+r.fat));
+    const labels=[...by.keys()].sort();
+    const values=labels.map(d=>by.get(d));
+    if(chart){ chart.destroy(); chart=null; }
+    if(!labels.length) return;
+    const ctx=chartEl.getContext('2d');
+    chart=new Chart(ctx,{
+      type:'line',
+      data:{labels,datasets:[{label:'Receita',data:values,tension:0.2}]},
+      options:{
+        responsive:true, maintainAspectRatio:false, animation:false, resizeDelay:150,
+        interaction:{mode:'index',intersect:false},
+        scales:{y:{beginAtZero:true}}
+      }
+    });
+  }
+
+  function applyFiltersAndRender(){
+    const uniSel=uni.value||'Todas', lojaSel=loja.value||'Todos';
+    const tSel=selected(turno).map(norm);
+    const cSel=selected(canal).map(norm);
+    const pSel=selected(pag).map(norm);
+    const cancSel=canc.value||'Todos';
+
+    const rows = cache.filter(r=>{
+      if(uniSel!=='Todas' && norm(r.unidade)!==norm(uniSel)) return false;
+      if(lojaSel!=='Todos' && norm(r["Nome da loja"])!==norm(lojaSel)) return false;
+      if(tSel.length && !tSel.includes(norm(r.turno))) return false;
+      if(cSel.length && !cSel.includes(norm(r["Canal de venda"]))) return false;
+      if(pSel.length && !pSel.includes(norm(r.pagamento))) return false;
+      if(cancSel!=='Todos' && normCancel(r.cancelado)!==cancSel) return false;
+      return true;
+    });
+
+    computeKPIs(rows);
+    drawChart(rows);
+  }
+
+  async function reload(){
+    const a=dini.value, b=dfim.value;
+    cache = await fetchAll(a,b);
+    buildOptions(cache);
+    applyFiltersAndRender();
+  }
+
+  // -------- IMPORTAÇÃO (cada linha = 1 pedido) --------
+  btnImport.addEventListener('click', ()=>{
+    const file=csv.files?.[0];
+    if(!file){ impStatus.textContent='Selecione um CSV.'; return; }
+    impStatus.textContent='Lendo…';
+
+    const batchSize=4000;
+    const buffer=[];
+
+    function toRow(r){
+      // mapeamentos mínimos:
+      const diaRaw = r.dia ?? r['Data da venda'] ?? r['data'] ?? r['Data'];
+      const diaISO = diaRaw ? (String(diaRaw).includes('/')? ddmmyyyyToISO(diaRaw) : String(diaRaw).slice(0,10)) : null;
+      const unidade = r.unidade ?? r.Unidade ?? '';
+      const fat = parseBR(r.fat ?? r.Total ?? r.total);
+      const des = parseBR(r.des ?? r['Desconto']);
+      const fre = parseBR(r.fre ?? r['Entrega'] ?? r['Frete']);
+      const canal = r['Canal de venda'] ?? r.Canal ?? r['canal'];
+      const pagto = r['pagamento'] ?? r['Pagamento'] ?? r['Forma de pagamento'];
+      const loja = r['Nome da loja'] ?? r['Loja'];
+      let hora = r.hora ?? r['Hora'];
+      if (hora==null && typeof diaRaw==='string' && diaRaw.includes(':')) {
+        const hh = parseInt(diaRaw.split(' ')[1]?.split(':')[0],10); hora = isFinite(hh)? hh : -1;
+      }
+      hora = isFinite(Number(hora)) ? Number(hora) : -1;
+
+      return diaISO ? {
+        dia: diaISO,
+        unidade: String(unidade||'').trim(),
+        pedidos: 1,                 // << sempre 1 por linha
+        fat, des, fre,
+        turno: deriveTurno(hora, r.turno ?? r.Turno ?? null),
+        pagamento: pagto ?? null,
+        "Canal de venda": canal ?? null,
+        "Nome da loja": loja ?? null,
+        cancelado: normCancel(r.cancelado ?? r['Está cancelado']),
+        hora
+      } : null;
+    }
+
+    function flush = async (final=false) => {
+      if(!buffer.length) return;
+      impStatus.textContent = `Enviando… ${buffer.length.toLocaleString('pt-BR')} linhas`;
+      const { error } = await supa.from(TABLE).upsert(buffer,{ onConflict: UNIQUE_KEYS });
+      buffer.length=0;
+      if(error){ console.error(error); impStatus.textContent='Erro ao inserir.'; return false; }
+      if(final) impStatus.textContent='Importado.';
+      return true;
+    };
+
+    Papa.parse(file,{
+      header:true,
+      skipEmptyLines:'greedy',
+      delimiter:",", // padrão
+      transformHeader: h => String(h).trim(),
+      chunk: async (res, parser)=>{
+        for(const r of res.data){
+          const row = toRow(r);
+          if(row) buffer.push(row);
+          if(buffer.length>=batchSize){
+            parser.pause();
+            const ok = await flush();
+            if(!ok) { parser.abort(); return; }
+            parser.resume();
+          }
         }
+        impStatus.textContent=`Lendo… ${res.meta.cursor.toLocaleString('pt-BR')} bytes`;
+      },
+      complete: async ()=>{
+        await flush(true);
+        await minmax();
+        await reload();
+      },
+      error: (e)=>{ console.error(e); impStatus.textContent='Erro no parse do CSV.'; }
+    });
+  });
 
-        function stripBOM(str) {
-            if (str.charCodeAt(0) === 0xFEFF) {
-                return str.slice(1);
-            }
-            return str;
-        }
+  // -------- LISTENERS --------
+  pr.addEventListener('change', ()=>{ applyQuickDate(); reload(); });
+  [dini,dfim].forEach(e=> e.addEventListener('change', ()=> reload()));
+  [uni,loja,turno,canal,pag,canc].forEach(e=> e.addEventListener('change', ()=> applyFiltersAndRender()));
+  btnLimpar.addEventListener('click', ()=>{ applyQuickDate(); reload(); });
 
-        function onlyDate(isoStr) {
-            return isoStr ? isoStr.split('T')[0] : '';
-        }
-
-        function ddmmyyyyToISO(dateStr) {
-            if (!dateStr) return '';
-            try {
-                const parts = dateStr.split(' ')[0].split('/');
-                if (parts.length === 3) {
-                    const day = parts[0].padStart(2, '0');
-                    const month = parts[1].padStart(2, '0');
-                    const year = parts[2];
-                    return `${year}-${month}-${day}`;
-                }
-            } catch (error) {
-                console.warn('⚠️ Erro ao converter data:', dateStr, error);
-            }
-            return '';
-        }
-
-        function parseBR(value) {
-            if (!value) return 0;
-            try {
-                const cleaned = value.toString().replace(/[^\d,-]/g, '').replace(',', '.');
-                return parseFloat(cleaned) || 0;
-            } catch (error) {
-                return 0;
-            }
-        }
-
-        function normCancel(value) {
-            if (!value) return 'N';
-            const v = value.toString().toLowerCase().trim();
-            return (v === 'sim' || v === 's' || v === 'true' || v === '1') ? 'S' : 'N';
-        }
-
-        function getTurno(dateStr) {
-            try {
-                const timePart = dateStr.split(' ')[1] || '12:00';
-                const hour = parseInt(timePart.split(':')[0]);
-                if (hour >= 6 && hour < 12) return 'Manhã';
-                if (hour >= 12 && hour < 18) return 'Tarde';
-                if (hour >= 18 && hour < 24) return 'Noite';
-                return 'Madrugada';
-            } catch (error) {
-                return 'Dia';
-            }
-        }
-
-        function getHour(dateStr) {
-            try {
-                const timePart = dateStr.split(' ')[1] || '12:00';
-                return parseInt(timePart.split(':')[0]);
-            } catch (error) {
-                return 12;
-            }
-        }
-
-        // Função para carregar dados com paginação
-        async function loadAllData(filters = {}) {
-            console.log('📊 Carregando todos os dados com paginação...');
-            
-            let allRecords = [];
-            let page = 1;
-            const pageSize = 1000;
-            
-            while (true) {
-                console.log(`📄 Carregando página ${page}...`);
-                
-                let query = supa
-                    .from('vendas_kpi_daily_v2_data')
-                    .select('*')
-                    .range((page - 1) * pageSize, page * pageSize - 1)
-                    .order('dia', { ascending: true });
-                
-                // Aplicar filtros
-                if (filters.startDate) {
-                    query = query.gte('dia', filters.startDate);
-                }
-                if (filters.endDate) {
-                    query = query.lte('dia', filters.endDate);
-                }
-                if (filters.unidade && filters.unidade !== 'Todas') {
-                    query = query.eq('unidade', filters.unidade);
-                }
-                if (filters.loja && filters.loja !== 'Todos') {
-                    query = query.eq('Nome da loja', filters.loja);
-                }
-                if (filters.turno && filters.turno !== 'Todos') {
-                    query = query.eq('turno', filters.turno);
-                }
-                if (filters.canal && filters.canal !== 'Todos') {
-                    query = query.eq('Canal de venda', filters.canal);
-                }
-                if (filters.pagamento && filters.pagamento !== 'Todos') {
-                    query = query.eq('pagamento', filters.pagamento);
-                }
-                if (filters.cancelado && filters.cancelado !== 'Todos') {
-                    query = query.eq('cancelado', filters.cancelado);
-                }
-                
-                const { data, error } = await query;
-                
-                if (error) {
-                    console.error('❌ Erro ao carregar página:', error);
-                    break;
-                }
-                
-                console.log(`📊 Página ${page}: ${data.length} registros (total: ${allRecords.length + data.length})`);
-                
-                if (data.length === 0) {
-                    console.log('✅ Carregamento completo - última página');
-                    break;
-                }
-                
-                allRecords = allRecords.concat(data);
-                
-                if (data.length < pageSize) {
-                    console.log('✅ Carregamento completo - última página');
-                    break;
-                }
-                
-                page++;
-                
-                // Limite de segurança
-                if (page > 100) {
-                    console.warn('⚠️ Limite de páginas atingido');
-                    break;
-                }
-            }
-            
-            // Remover duplicatas
-            const uniqueRecords = [];
-            const seen = new Set();
-            
-            allRecords.forEach(record => {
-                const key = `${record.dia}-${record.unidade}-${record['Nome da loja']}-${record.fat}-${record.des}-${record.fre}`;
-                if (!seen.has(key)) {
-                    seen.add(key);
-                    uniqueRecords.push(record);
-                }
-            });
-            
-            console.log(`✅ Total de dados carregados: ${uniqueRecords.length} registros únicos`);
-            return uniqueRecords;
-        }
-
-        // Função para obter período dos dados
-        async function getDateRange() {
-            try {
-                const { data, error } = await supa
-                    .from('vendas_kpi_daily_v2_data')
-                    .select('dia')
-                    .order('dia', { ascending: true })
-                    .limit(1);
-                
-                if (error) throw error;
-                if (!data || data.length === 0) throw new Error('Sem dados disponíveis');
-                
-                const minDate = data[0].dia;
-                
-                const { data: maxData, error: maxError } = await supa
-                    .from('vendas_kpi_daily_v2_data')
-                    .select('dia')
-                    .order('dia', { ascending: false })
-                    .limit(1);
-                
-                if (maxError) throw maxError;
-                if (!maxData || maxData.length === 0) throw new Error('Sem dados disponíveis');
-                
-                const maxDate = maxData[0].dia;
-                
-                minISO = minDate;
-                maxISO = maxDate;
-                
-                return { minDate, maxDate };
-            } catch (error) {
-                console.error('❌ Erro ao buscar período:', error);
-                throw error;
-            }
-        }
-
-        // Função para carregar opções dos filtros
-        async function loadFilterOptions() {
-            console.log('🔄 Carregando opções dos filtros...');
-            
-            try {
-                // Unidades
-                const { data: unidades } = await supa
-                    .from('vendas_kpi_daily_v2_data')
-                    .select('unidade')
-                    .not('unidade', 'is', null);
-                
-                const uniqueUnidades = [...new Set(unidades?.map(item => item.unidade) || [])];
-                const unidadeSelect = document.getElementById('filtro-unidade');
-                unidadeSelect.innerHTML = '<option value="">Todas</option>';
-                uniqueUnidades.forEach(unidade => {
-                    unidadeSelect.innerHTML += `<option value="${unidade}">${unidade}</option>`;
-                });
-                console.log('✅ Unidades carregadas:', uniqueUnidades.length);
-                
-                // Top 10 Lojas por faturamento
-                const { data: lojas } = await supa
-                    .from('vendas_kpi_daily_v2_data')
-                    .select('Nome da loja, fat')
-                    .not('Nome da loja', 'is', null);
-                
-                const lojasFat = {};
-                lojas?.forEach(item => {
-                    const loja = item['Nome da loja'];
-                    if (loja) {
-                        lojasFat[loja] = (lojasFat[loja] || 0) + (parseFloat(item.fat) || 0);
-                    }
-                });
-                
-                const topLojas = Object.entries(lojasFat)
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 10)
-                    .map(item => item[0]);
-                
-                const lojaSelect = document.getElementById('filtro-loja');
-                lojaSelect.innerHTML = '<option value="">Todos</option>';
-                topLojas.forEach(loja => {
-                    lojaSelect.innerHTML += `<option value="${loja}">${loja}</option>`;
-                });
-                console.log('✅ Top lojas carregadas:', topLojas.length);
-                
-                // Canais
-                const { data: canais } = await supa
-                    .from('vendas_kpi_daily_v2_data')
-                    .select('Canal de venda')
-                    .not('Canal de venda', 'is', null);
-                
-                const uniqueCanais = [...new Set(canais?.map(item => item['Canal de venda']) || [])];
-                const canalSelect = document.getElementById('filtro-canal');
-                canalSelect.innerHTML = '<option value="">Todos</option>';
-                uniqueCanais.forEach(canal => {
-                    canalSelect.innerHTML += `<option value="${canal}">${canal}</option>`;
-                });
-                console.log('✅ Canais carregados:', uniqueCanais.length);
-                
-                // Pagamentos
-                const { data: pagamentos } = await supa
-                    .from('vendas_kpi_daily_v2_data')
-                    .select('pagamento')
-                    .not('pagamento', 'is', null);
-                
-                const uniquePagamentos = [...new Set(pagamentos?.map(item => item.pagamento) || [])];
-                const pagamentoSelect = document.getElementById('filtro-pagamento');
-                pagamentoSelect.innerHTML = '<option value="">Todos</option>';
-                uniquePagamentos.forEach(pagamento => {
-                    pagamentoSelect.innerHTML += `<option value="${pagamento}">${pagamento}</option>`;
-                });
-                console.log('✅ Pagamentos carregados:', uniquePagamentos.length);
-                
-            } catch (error) {
-                console.error('❌ Erro ao carregar opções dos filtros:', error);
-            }
-        }
-
-        // Função para calcular KPIs
-        function calculateKPIs(data, previousData = []) {
-            // CORREÇÃO PRINCIPAL: Pedidos = número de linhas (não somar campo "pedidos")
-            const totalPedidos = data.length; // 1 linha = 1 pedido
-            const totalFat = data.reduce((sum, row) => sum + (parseFloat(row.fat) || 0), 0);
-            const totalFre = data.reduce((sum, row) => sum + (parseFloat(row.fre) || 0), 0);
-            const totalDes = data.reduce((sum, row) => sum + (parseFloat(row.des) || 0), 0);
-            const totalFatLiq = totalFat - totalDes;
-            
-            const ticketMedio = totalPedidos > 0 ? totalFat / totalPedidos : 0;
-            
-            // Calcular dias únicos
-            const diasUnicos = new Set(data.map(row => row.dia)).size;
-            const fatMedioDia = diasUnicos > 0 ? totalFat / diasUnicos : 0;
-            
-            const incentivosPct = totalFat > 0 ? (totalDes / totalFat) * 100 : 0;
-            
-            // KPIs atuais
-            const currentKPIs = {
-                totalPedidos,
-                totalFat,
-                totalFre,
-                totalDes,
-                totalFatLiq,
-                ticketMedio,
-                fatMedioDia,
-                incentivosPct
-            };
-            
-            // KPIs anteriores
-            const prevTotalPedidos = previousData.length; // 1 linha = 1 pedido
-            const prevTotalFat = previousData.reduce((sum, row) => sum + (parseFloat(row.fat) || 0), 0);
-            const prevTotalFre = previousData.reduce((sum, row) => sum + (parseFloat(row.fre) || 0), 0);
-            const prevTotalDes = previousData.reduce((sum, row) => sum + (parseFloat(row.des) || 0), 0);
-            const prevTotalFatLiq = prevTotalFat - prevTotalDes;
-            
-            const prevTicketMedio = prevTotalPedidos > 0 ? prevTotalFat / prevTotalPedidos : 0;
-            
-            const prevDiasUnicos = new Set(previousData.map(row => row.dia)).size;
-            const prevFatMedioDia = prevDiasUnicos > 0 ? prevTotalFat / prevDiasUnicos : 0;
-            
-            const prevIncentivosPct = prevTotalFat > 0 ? (prevTotalDes / prevTotalFat) * 100 : 0;
-            
-            const previousKPIs = {
-                totalPedidos: prevTotalPedidos,
-                totalFat: prevTotalFat,
-                totalFre: prevTotalFre,
-                totalDes: prevTotalDes,
-                totalFatLiq: prevTotalFatLiq,
-                ticketMedio: prevTicketMedio,
-                fatMedioDia: prevFatMedioDia,
-                incentivosPct: prevIncentivosPct
-            };
-            
-            return { currentKPIs, previousKPIs };
-        }
-
-        // Função para atualizar KPIs na interface
-        function updateKPIs(currentKPIs, previousKPIs) {
-            // Função para calcular variação
-            function getVariation(current, previous) {
-                if (previous === 0) return { percent: 0, isPositive: null };
-                const percent = ((current - previous) / previous) * 100;
-                return { percent, isPositive: percent > 0 };
-            }
-            
-            // Função para formatar comparação
-            function formatComparison(current, previous, isPercent = false, isReverse = false) {
-                const variation = getVariation(current, previous);
-                
-                if (variation.isPositive === null) {
-                    return '<span class="comparison-neutral">N/A</span>';
-                }
-                
-                const isActuallyPositive = isReverse ? !variation.isPositive : variation.isPositive;
-                const arrow = isActuallyPositive ? '↗' : '↘';
-                const className = isActuallyPositive ? 'comparison-positive' : 'comparison-negative';
-                const sign = variation.percent > 0 ? '+' : '';
-                const suffix = isPercent ? 'pp' : '%';
-                
-                return `<span class="${className}">${arrow} ${sign}${Math.abs(variation.percent).toFixed(1)}${suffix}</span>`;
-            }
-            
-            // Atualizar valores
-            document.getElementById('kpi-pedidos').textContent = currentKPIs.totalPedidos.toLocaleString('pt-BR');
-            document.getElementById('kpi-ticket').textContent = `R$ ${currentKPIs.ticketMedio.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-            document.getElementById('kpi-faturamento').textContent = `R$ ${currentKPIs.totalFat.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-            document.getElementById('kpi-fat-dia').textContent = `R$ ${currentKPIs.fatMedioDia.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-            document.getElementById('kpi-incentivos').textContent = `R$ ${currentKPIs.totalDes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-            document.getElementById('kpi-incentivos-pct').textContent = `${currentKPIs.incentivosPct.toFixed(1)}%`;
-            document.getElementById('kpi-frete').textContent = `R$ ${currentKPIs.totalFre.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-            document.getElementById('kpi-liquido').textContent = `R$ ${currentKPIs.totalFatLiq.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-            
-            // Atualizar comparações
-            document.getElementById('comp-pedidos').innerHTML = formatComparison(currentKPIs.totalPedidos, previousKPIs.totalPedidos);
-            document.getElementById('comp-ticket').innerHTML = formatComparison(currentKPIs.ticketMedio, previousKPIs.ticketMedio);
-            document.getElementById('comp-faturamento').innerHTML = formatComparison(currentKPIs.totalFat, previousKPIs.totalFat);
-            document.getElementById('comp-fat-dia').innerHTML = formatComparison(currentKPIs.fatMedioDia, previousKPIs.fatMedioDia);
-            document.getElementById('comp-incentivos').innerHTML = formatComparison(currentKPIs.totalDes, previousKPIs.totalDes);
-            document.getElementById('comp-incentivos-pct').innerHTML = formatComparison(currentKPIs.incentivosPct, previousKPIs.incentivosPct, true);
-            document.getElementById('comp-frete').innerHTML = formatComparison(currentKPIs.totalFre, previousKPIs.totalFre);
-            document.getElementById('comp-liquido').innerHTML = formatComparison(currentKPIs.totalFatLiq, previousKPIs.totalFatLiq);
-        }
-
-        // Função para calcular período anterior
-        function calculatePreviousPeriod(startDate, endDate) {
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-            const diffTime = end - start;
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-            
-            const prevEnd = new Date(start);
-            prevEnd.setDate(prevEnd.getDate() - 1);
-            
-            const prevStart = new Date(prevEnd);
-            prevStart.setDate(prevStart.getDate() - diffDays + 1);
-            
-            return {
-                startDate: prevStart.toISOString().split('T')[0],
-                endDate: prevEnd.toISOString().split('T')[0]
-            };
-        }
-
-        // Função para atualizar gráfico
-        function updateChart(data, previousData) {
-            const ctx = document.getElementById('revenueChart').getContext('2d');
-            
-            // Agrupar dados por dia
-            const dailyRevenue = {};
-            const dailyRevenuePrev = {};
-            
-            data.forEach(row => {
-                const date = row.dia;
-                dailyRevenue[date] = (dailyRevenue[date] || 0) + (parseFloat(row.fat) || 0);
-            });
-            
-            previousData.forEach(row => {
-                const date = row.dia;
-                dailyRevenuePrev[date] = (dailyRevenuePrev[date] || 0) + (parseFloat(row.fat) || 0);
-            });
-            
-            // Preparar dados para o gráfico
-            const allDates = [...new Set([...Object.keys(dailyRevenue), ...Object.keys(dailyRevenuePrev)])].sort();
-            
-            const currentData = allDates.map(date => dailyRevenue[date] || 0);
-            const previousDataPoints = allDates.map(date => dailyRevenuePrev[date] || 0);
-            
-            if (revenueChart) {
-                revenueChart.destroy();
-            }
-            
-            revenueChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: allDates,
-                    datasets: [
-                        {
-                            label: 'Receita Atual (R$)',
-                            data: currentData,
-                            borderColor: '#667eea',
-                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                            fill: true,
-                            tension: 0.4
-                        },
-                        {
-                            label: 'Receita Anterior (R$)',
-                            data: previousDataPoints,
-                            borderColor: '#a0aec0',
-                            backgroundColor: 'rgba(160, 174, 192, 0.1)',
-                            borderDash: [5, 5],
-                            fill: false,
-                            tension: 0.4
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'top',
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function(value) {
-                                    return 'R$ ' + value.toLocaleString('pt-BR');
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        }
-
-        // Função para aplicar período rápido
-        function applyQuickPeriod() {
-            const periodo = document.getElementById('periodo-rapido').value;
-            const hoje = new Date();
-            let startDate, endDate;
-            
-            switch (periodo) {
-                case 'hoje':
-                    startDate = endDate = hoje.toISOString().split('T')[0];
-                    break;
-                case 'ontem':
-                    const ontem = new Date(hoje);
-                    ontem.setDate(ontem.getDate() - 1);
-                    startDate = endDate = ontem.toISOString().split('T')[0];
-                    break;
-                case '7dias':
-                    endDate = hoje.toISOString().split('T')[0];
-                    const sete = new Date(hoje);
-                    sete.setDate(sete.getDate() - 6);
-                    startDate = sete.toISOString().split('T')[0];
-                    break;
-                case '30dias':
-                    endDate = hoje.toISOString().split('T')[0];
-                    const trinta = new Date(hoje);
-                    trinta.setDate(trinta.getDate() - 29);
-                    startDate = trinta.toISOString().split('T')[0];
-                    break;
-                case '90dias':
-                    endDate = hoje.toISOString().split('T')[0];
-                    const noventa = new Date(hoje);
-                    noventa.setDate(noventa.getDate() - 89);
-                    startDate = noventa.toISOString().split('T')[0];
-                    break;
-                case 'ano':
-                    startDate = `${hoje.getFullYear()}-01-01`;
-                    endDate = hoje.toISOString().split('T')[0];
-                    break;
-                default:
-                    return;
-            }
-            
-            document.getElementById('data-inicial').value = startDate;
-            document.getElementById('data-final').value = endDate;
-        }
-
-        // Função para limpar filtros
-        function clearFilters() {
-            document.getElementById('filtro-unidade').value = '';
-            document.getElementById('filtro-loja').value = '';
-            document.getElementById('data-inicial').value = '';
-            document.getElementById('data-final').value = '';
-            document.getElementById('periodo-rapido').value = '';
-            document.getElementById('filtro-turno').value = '';
-            document.getElementById('filtro-canal').value = '';
-            document.getElementById('filtro-pagamento').value = '';
-            document.getElementById('filtro-cancelado').value = '';
-            
-            reload();
-        }
-
-        // Função para recarregar dados
-        async function reload() {
-            try {
-                console.log('🔄 Recarregando dados com comparativos...');
-                
-                // Obter filtros
-                const filters = {
-                    startDate: document.getElementById('data-inicial').value || minISO,
-                    endDate: document.getElementById('data-final').value || maxISO,
-                    unidade: document.getElementById('filtro-unidade').value,
-                    loja: document.getElementById('filtro-loja').value,
-                    turno: document.getElementById('filtro-turno').value,
-                    canal: document.getElementById('filtro-canal').value,
-                    pagamento: document.getElementById('filtro-pagamento').value,
-                    cancelado: document.getElementById('filtro-cancelado').value
-                };
-                
-                console.log('📊 Filtros aplicados:', filters);
-                
-                // Carregar dados do período atual
-                console.log(`📊 Carregando dados para período: ${filters.startDate} → ${filters.endDate}`);
-                filteredData = await loadAllData(filters);
-                
-                // Calcular período anterior
-                const previousPeriod = calculatePreviousPeriod(filters.startDate, filters.endDate);
-                console.log(`📅 Período anterior calculado: ${previousPeriod.startDate} → ${previousPeriod.endDate}`);
-                
-                // Carregar dados do período anterior
-                const previousFilters = { ...filters, startDate: previousPeriod.startDate, endDate: previousPeriod.endDate };
-                previousData = await loadAllData(previousFilters);
-                
-                console.log('✅ Dados carregados com sucesso!');
-                
-                // Calcular KPIs
-                const { currentKPIs, previousKPIs } = calculateKPIs(filteredData, previousData);
-                console.log('📊 KPIs atuais:', currentKPIs);
-                console.log('📊 KPIs anteriores:', previousKPIs);
-                
-                // Atualizar interface
-                updateKPIs(currentKPIs, previousKPIs);
-                updateChart(filteredData, previousData);
-                
-                // Atualizar status do período
-                document.getElementById('periodo-status').textContent = 
-                    `Período: ${filters.startDate} → ${filters.endDate} · ${filteredData.length} registros`;
-                
-            } catch (error) {
-                console.error('❌ Erro ao recarregar dados:', error);
-                document.getElementById('periodo-status').textContent = 'Período: Erro ao carregar';
-            }
-        }
-
-        // Função de debug
-        function debugInfo() {
-            console.log('🔍 DEBUG INFO - Dashboard Maestro Food');
-            console.log('📊 Dados filtrados:', filteredData.length, 'registros');
-            console.log('📊 Dados anteriores:', previousData.length, 'registros');
-            console.log('📅 Período mín/máx:', minISO, '→', maxISO);
-            console.log('🔗 Supabase URL:', SUPABASE_URL);
-            console.log('✅ Status: Dashboard funcionando');
-            
-            if (filteredData.length > 0) {
-                console.log('📋 Exemplo de dados:', filteredData[0]);
-            }
-        }
-
-        // Função para importar CSV (CORRIGIDA)
-        async function importCSV(input) {
-            const file = input.files[0];
-            if (!file) return;
-            
-            console.log('📁 Iniciando importação CSV CORRIGIDA (1:1)...');
-            
-            const progressBar = document.getElementById('progressBar');
-            const progressFill = document.getElementById('progressFill');
-            
-            progressBar.style.display = 'block';
-            progressFill.style.width = '0%';
-            
-            let processedCount = 0;
-            let errorCount = 0;
-            
-            Papa.parse(file, {
-                header: true,
-                delimiter: ';',
-                skipEmptyLines: true,
-                chunk: async function(results) {
-                    try {
-                        const rows = results.data;
-                        const validRows = [];
-                        
-                        rows.forEach(row => {
-                            // Mapear campos
-                            const mappedRow = {
-                                dia: ddmmyyyyToISO(row['Data da venda']),
-                                unidade: row['unidade'] || '',
-                                'Nome da loja': row['Nome da loja'] || '',
-                                'Canal de venda': row['Canal de venda'] || '',
-                                pagamento: row['Pagamento'] || '',
-                                cancelado: normCancel(row['Está cancelado']),
-                                turno: getTurno(row['Data da venda']),
-                                pedidos: 1, // CORREÇÃO: SEMPRE 1 PEDIDO POR LINHA
-                                fat: parseBR(row['Total']),
-                                des: parseBR(row['Desconto']),
-                                fre: parseBR(row['Entrega']),
-                                hora: getHour(row['Data da venda'])
-                            };
-                            
-                            // Validar dados essenciais
-                            if (mappedRow.dia && mappedRow.fat > 0) {
-                                validRows.push(mappedRow);
-                            }
-                        });
-                        
-                        if (validRows.length > 0) {
-                            // Inserir dados (sem UPSERT para evitar erro 409)
-                            const { error } = await supa
-                                .from('vendas_kpi_daily_v2_data')
-                                .insert(validRows);
-                            
-                            if (error) {
-                                console.error('❌ Erro ao inserir lote:', error);
-                                errorCount += validRows.length;
-                            } else {
-                                processedCount += validRows.length;
-                                console.log(`✅ Lote inserido: ${validRows.length} registros`);
-                            }
-                        }
-                        
-                        // Atualizar progresso
-                        const progress = Math.min((processedCount + errorCount) / 1000 * 100, 90);
-                        progressFill.style.width = progress + '%';
-                        
-                    } catch (error) {
-                        console.error('❌ Erro no processamento:', error);
-                        errorCount += results.data.length;
-                    }
-                },
-                complete: function() {
-                    progressFill.style.width = '100%';
-                    
-                    setTimeout(() => {
-                        progressBar.style.display = 'none';
-                        
-                        const message = `Importação concluída!\n${processedCount} registros importados\n${errorCount} erros`;
-                        alert(message);
-                        console.log('✅', message);
-                        
-                        // Recarregar dados
-                        reload();
-                    }, 500);
-                },
-                error: function(error) {
-                    console.error('❌ Erro no parsing CSV:', error);
-                    alert('Erro ao processar arquivo CSV');
-                    progressBar.style.display = 'none';
-                }
-            });
-        }
-
-        // Event listeners
-        document.getElementById('periodo-rapido').addEventListener('change', applyQuickPeriod);
-
-        // Inicialização
-        document.addEventListener('DOMContentLoaded', async function() {
-            console.log('🚀 Iniciando Maestro Food Dashboard (CORRIGIDO FINAL - 1:1)...');
-            console.log('🔗 Testando conexão com Supabase...');
-            
-            try {
-                // Testar conexão
-                const { data, error } = await supa.from('vendas_kpi_daily_v2_data').select('dia').limit(1);
-                if (error) throw error;
-                
-                console.log('✅ Conexão Supabase estabelecida com sucesso');
-                
-                // Obter período dos dados
-                console.log('📅 Verificando dados disponíveis...');
-                const { minDate, maxDate } = await getDateRange();
-                console.log(`📅 Período: ${minDate} → ${maxDate}`);
-                
-                // Definir datas padrão (últimos 30 dias)
-                const hoje = new Date();
-                const trintaDiasAtras = new Date(hoje);
-                trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 29);
-                
-                document.getElementById('data-inicial').value = trintaDiasAtras.toISOString().split('T')[0];
-                document.getElementById('data-final').value = hoje.toISOString().split('T')[0];
-                
-                // Carregar opções dos filtros
-                await loadFilterOptions();
-                
-                // Carregar dados iniciais
-                await reload();
-                
-                console.log('✅ Dashboard inicializado com dados!');
-                console.log('🎯 CORREÇÕES APLICADAS:');
-                console.log('   • Importação 1:1: 1 linha CSV = 1 linha banco ✅');
-                console.log('   • Pedidos = 1 sempre ✅');
-                console.log('   • Cálculo correto: Pedidos = contagem de linhas ✅');
-                console.log('   • Validação: 10/08/2025: 563 pedidos, R$ 36.000,55 ✅');
-                
-            } catch (error) {
-                console.error('❌ Erro na inicialização:', error);
-                document.getElementById('supabase-status').textContent = '❌ Erro de Conexão';
-                document.getElementById('supabase-status').className = 'status-item';
-                document.getElementById('supabase-status').style.background = '#f56565';
-                document.getElementById('periodo-status').textContent = 'Período: Erro ao carregar';
-            }
-        });
-    </script>
+  // -------- BOOT --------
+  await minmax();
+  applyQuickDate();
+  await reload();
+})();
+</script>
 </body>
 </html>
-
