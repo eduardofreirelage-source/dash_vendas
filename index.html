@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Maestro Food — KPIs</title>
+<title>Maestro Food — KPIs v0.6</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="%232ea779"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="64" fill="white">MF</text></svg>'/>
 <style>
   :root{--bg:#f6f8fb;--card:#fff;--muted:#6b7280;--text:#0f172a;--acc:#2563eb;--border:#e5e7eb}
@@ -25,11 +25,12 @@
   th,td{border:1px solid var(--border);padding:8px 10px;text-align:left}
   th{background:#f2f5fa}
   canvas{background:#fff;border:1px solid var(--border);border-radius:12px}
+  .right{ text-align:right }
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>Maestro Food</h1>
+  <h1>Maestro Food — KPIs <span class="muted">v0.6</span></h1>
   <div class="muted">Período: <span id="periodo">—</span></div>
 
   <!-- Filtros -->
@@ -73,7 +74,7 @@
     </div>
     <div class="row cols-2" style="margin-top:10px">
       <div><label>Canal (exato)</label><input id="canal" placeholder="iFood, Telefone, VideoSoft…"/></div>
-      <div class="muted">Fonte: <code>vendas_xlsx</code> · RPCs: <code>kpi_vendas</code>, <code>resumo_vendas</code>, <code>amostra_vendas</code> (dedupe dentro do recorte)</div>
+      <div class="muted">Fonte: <code>vendas_xlsx</code> · RPCs: <code>kpi_vendas</code>, <code>resumo_vendas</code>, <code>amostra_vendas</code>, <code>top_dups_vendas</code></div>
     </div>
   </div>
 
@@ -94,7 +95,7 @@
     </table>
   </div>
 
-  <!-- Gráfico + amostra -->
+  <!-- Gráfico + amostra + duplicatas -->
   <div class="row cols-2" style="margin-top:12px">
     <div class="card">
       <div class="title">Receita diária</div>
@@ -104,6 +105,12 @@
     <div class="card">
       <div class="title">Amostra filtrada (até 10)</div>
       <pre id="amostra">(vazio)</pre>
+      <div class="row cols-2">
+        <button id="btnDups" class="btn">Ver duplicatas (top 30)</button>
+        <div></div>
+      </div>
+      <div class="title" style="margin-top:10px">Duplicatas (hash → ocorrências)</div>
+      <pre id="dups">(vazio)</pre>
     </div>
   </div>
 </div>
@@ -120,7 +127,7 @@ const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 const $ = (id)=>document.getElementById(id);
 const quick=$('quick'), dini=$('dini'), dfim=$('dfim'), periodo=$('periodo');
 const unidade=$('unidade'), loja=$('loja'), cancelado=$('cancelado'), pagamento=$('pagamento'), canal=$('canal');
-const k_ped=$('k_ped'), k_fat=$('k_fat'), k_tkt=$('k_tkt'), k_liq=$('k_liq'), pontos=$('pontos'), amostra=$('amostra');
+const k_ped=$('k_ped'), k_fat=$('k_fat'), k_tkt=$('k_tkt'), k_liq=$('k_liq'), pontos=$('pontos'), amostra=$('amostra'), dups=$('dups');
 
 const brl = new Intl.NumberFormat('pt-BR', {style:'currency', currency:'BRL'});
 function fmtBRL(n){ return brl.format(n || 0); }
@@ -174,10 +181,10 @@ async function loadResumo(){
   if(error){ console.error(error); el.innerHTML = '<tr><td colspan="4">Erro no resumo</td></tr>'; return; }
   const r = (data&&data[0])||{brutas:0,canon:0,duplicatas:0,perc_dup:0};
   el.innerHTML = `<tr>
-    <td>${Number(r.brutas||0).toLocaleString('pt-BR')}</td>
-    <td>${Number(r.canon||0).toLocaleString('pt-BR')}</td>
-    <td>${Number(r.duplicatas||0).toLocaleString('pt-BR')}</td>
-    <td>${Number(r.perc_dup||0).toLocaleString('pt-BR')}%</td>
+    <td class="right">${Number(r.brutas||0).toLocaleString('pt-BR')}</td>
+    <td class="right">${Number(r.canon||0).toLocaleString('pt-BR')}</td>
+    <td class="right">${Number(r.duplicatas||0).toLocaleString('pt-BR')}</td>
+    <td class="right">${Number(r.perc_dup||0).toLocaleString('pt-BR')}%</td>
   </tr>`;
 }
 
@@ -203,23 +210,31 @@ async function loadKPIs(){
     values.push(Number(r.fat||0));
   });
   const tkt = pedidos>0 ? (fat/pedidos) : 0;
-  const liq = fat - des; // se quiser: - fre
+  const liq = fat - des;
 
-  k_ped.textContent = pedidos.toLocaleString('pt-BR');
-  k_fat.textContent = fmtBRL(fat);
-  k_tkt.textContent = fmtBRL(tkt);
-  k_liq.textContent = fmtBRL(liq);
+  document.getElementById('k_ped').textContent = pedidos.toLocaleString('pt-BR');
+  document.getElementById('k_fat').textContent = fmtBRL(fat);
+  document.getElementById('k_tkt').textContent = fmtBRL(tkt);
+  document.getElementById('k_liq').textContent = fmtBRL(liq);
 
   renderChart(labels, values);
+}
+
+async function loadDups(){
+  const args = params();
+  const r = await supa.rpc('top_dups_vendas', {...args, p_limit: 30});
+  dups.textContent = r.error ? JSON.stringify(r.error,null,2) : JSON.stringify(r.data||[],null,2);
 }
 
 async function aplicar(){
   await loadKPIs();
   await loadResumo();
   await loadAmostra();
+  dups.textContent = '(clique em "Ver duplicatas" para listar)';
 }
 
 $('btnApply').addEventListener('click', aplicar);
+$('btnDups').addEventListener('click', loadDups);
 quick.addEventListener('change', ()=>{applyQuick(); aplicar();});
 
 // Inicializa
