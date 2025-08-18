@@ -2,383 +2,350 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Maestro Food — XLSX (validação + KPIs)</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Maestro Food — Importador XLSX (foco em upload)</title>
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="62" fill="%231a73e8"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="64" fill="white">M</text></svg>'/>
 <style>
-  :root{--bg:#0f172a;--card:#111827;--ink:#e5e7eb;--ink2:#cbd5e1;--mut:#9ca3af;--b:#1f2937;--brand:#3b82f6}
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,Segoe UI,Roboto}
-  .wrap{max-width:1200px;margin:20px auto;padding:0 16px}
-  h1{margin:0 0 10px;font-size:22px}
-  .grid{display:grid;gap:12px}
-  .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
-  .card{background:var(--card);border:1px solid var(--b);border-radius:14px;padding:14px}
-  label{display:block;color:var(--ink2);margin-bottom:6px}
-  select,input[type=date],input[type=file]{width:100%;padding:10px;border-radius:10px;border:1px solid var(--b);background:#0b1220;color:var(--ink)}
-  button{padding:10px 14px;border-radius:10px;border:1px solid var(--b);background:#1f2937;color:#fff;cursor:pointer}
-  .primary{background:var(--brand)}
-  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  .kpi{display:flex;flex-direction:column;gap:6px}.kpi .t{color:var(--ink2);font-size:12px}.kpi .v{font-size:22px;font-weight:700}
-  .mut{color:var(--mut)}
-  .hr{height:1px;background:var(--b);margin:10px 0}
+  :root{--bg:#0b1220;--card:#121a2b;--muted:#92a0b6;--text:#e9eef6;--acc:#2ea779;--err:#e5484d;--warn:#f0b429;--stroke:#23304a}
+  html,body{background:var(--bg);color:var(--text);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu;margin:0}
+  .container{max-width:1100px;margin:24px auto;padding:0 16px}
+  h1{font-size:22px;margin:0 0 4px}
+  .muted{color:var(--muted)}
+  .card{background:var(--card);border:1px solid var(--stroke);border-radius:14px;padding:14px;margin-top:12px}
+  .row{display:grid;gap:12px}
+  .cols-2{grid-template-columns:repeat(2,1fr)}
+  label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
+  input,select,button{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--stroke);background:#0f172a;color:var(--text)}
+  .btn{background:var(--acc);border:none;color:#fff;cursor:pointer}
+  .btn.ghost{background:#1c263d;color:#b7c4d9}
+  .inline{display:flex;gap:8px;align-items:center}
+  .right{text-align:right}
+  pre{white-space:pre-wrap;background:#0f172a;color:#d6e3ff;border-radius:10px;padding:10px;overflow:auto;border:1px solid var(--stroke)}
+  .ok{color:#1dd1a1}.warn{color:var(--warn)}.err{color:var(--err)}
+  .progress{height:10px;background:#0f172a;border:1px solid var(--stroke);border-radius:999px;overflow:hidden}
+  .bar{height:10px;background:var(--acc);width:0%}
   table{width:100%;border-collapse:collapse}
-  th,td{border-bottom:1px solid var(--b);padding:8px 10px;white-space:nowrap;text-align:left}
-  .progress{height:10px;background:#111827;border-radius:10px;overflow:hidden}
-  .bar{height:100%;width:0;background:linear-gradient(90deg,#10b981,#22c55e)}
-  pre{white-space:pre-wrap;word-break:break-word;background:#0b1220;border:1px solid var(--b);padding:10px;border-radius:10px}
+  th,td{border:1px solid var(--stroke);padding:6px 8px}
+  th{background:#0f172a}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Maestro Food — XLSX (validação + KPIs)</h1>
+<div class="container">
+  <h1>Maestro Food — Importador XLSX</h1>
+  <div class="muted">Lê Excel, separa <b>dia/hora</b>, valida e grava em <code>public.vendas_xlsx</code>.</div>
 
-  <!-- Health -->
   <div class="card">
-    <div class="row">
-      <button id="btnHealth" class="primary">Health</button>
-      <div id="health" class="mut">—</div>
-      <div class="mut">Fonte: vendas_xlsx · URL: uahmcfzerofhzjvlzrqc.supabase.co</div>
-    </div>
-  </div>
-
-  <!-- Filtros -->
-  <div class="card grid g4">
-    <div><label>De</label><input type="date" id="dini"></div>
-    <div><label>Até</label><input type="date" id="dfim"></div>
-    <div><label>Unidade</label><select id="unidade"><option value="">Todas</option></select></div>
-    <div><label>Loja (sem vazias/“Loja Centro”)</label><select id="loja"><option value="">Todas</option></select></div>
-    <div><label>Canal</label><select id="canal"><option value="">Todos</option></select></div>
-    <div><label>Pagamento</label><select id="pag"><option value="">Todos</option></select></div>
-    <div><label>Cancelado?</label><select id="canc"><option>Não</option><option>Sim</option><option>Todos</option></select></div>
-    <div style="display:flex;align-items:flex-end;gap:8px">
-      <button id="apply" class="primary">Aplicar</button>
-      <button id="clear">Limpar</button>
-    </div>
-  </div>
-
-  <!-- KPIs -->
-  <div class="grid g4">
-    <div class="card kpi"><div class="t">Pedidos</div><div id="k_ped" class="v">—</div></div>
-    <div class="card kpi"><div class="t">Faturamento</div><div id="k_fat" class="v">—</div></div>
-    <div class="card kpi"><div class="t">Ticket Médio</div><div id="k_tick" class="v">—</div></div>
-    <div class="card kpi"><div class="t">Faturamento Líquido</div><div id="k_fatl" class="v">—</div></div>
-  </div>
-  <div class="grid g3" style="margin-top:10px">
-    <div class="card kpi"><div class="t">Incentivos</div><div id="k_des" class="v">—</div></div>
-    <div class="card kpi"><div class="t">Frete</div><div id="k_fre" class="v">—</div></div>
-    <div class="card kpi"><div class="t">Período</div><div id="k_per" class="v mut">—</div></div>
-  </div>
-
-  <!-- Resumo + Prévia -->
-  <div class="card">
-    <div id="resumo" class="mut">Resumo do filtro…</div>
-    <div class="hr"></div>
-    <div style="overflow:auto;max-height:420px">
-      <table id="tprev">
-        <thead><tr>
-          <th>dia</th><th>hora</th><th>unidade</th><th>Nome da loja</th><th>Canal</th>
-          <th>pagamento</th><th>cancelado</th><th>pedidos</th><th>fat</th><th>des</th><th>fre</th><th>turno</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Import XLSX + Validação -->
-  <div class="card">
-    <div class="grid g3">
+    <div class="row cols-2">
       <div>
-        <label>Arquivo .xlsx</label>
-        <input type="file" id="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"/>
+        <label>Arquivo XLSX</label>
+        <input id="file" type="file" accept=".xlsx"/>
       </div>
       <div>
-        <label>Planilha (aba)</label>
-        <select id="sheetSel"><option value="">(carregue o arquivo…)</option></select>
-      </div>
-      <div style="display:flex;align-items:flex-end;gap:8px">
-        <button id="validate" class="">Validar</button>
-        <button id="exportErrors">Exportar erros (CSV)</button>
-        <button id="import" class="primary">Importar (upsert)</button>
+        <label>Aba (sheet)</label>
+        <select id="sheet"></select>
       </div>
     </div>
-    <div class="hr"></div>
-    <div class="progress"><div id="ibar" class="bar"></div></div>
-    <div id="istatus" class="mut" style="margin-top:8px">—</div>
-    <div class="hr"></div>
-    <div><b>Relatório de validação</b></div>
-    <pre id="vreport">—</pre>
+    <div class="inline" style="margin-top:10px;">
+      <button id="btnRead" class="btn">1) Ler planilha</button>
+      <button id="btnSend" class="btn">2) Enviar ao Supabase</button>
+      <button id="btnHealth" class="btn ghost">Healthcheck</button>
+    </div>
+    <div class="card" style="margin-top:12px;">
+      <div class="progress"><div id="bar" class="bar"></div></div>
+      <div id="status" class="muted" style="margin-top:6px;"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <b>Mapeamento detectado</b>
+    <pre id="mapping">(vazio)</pre>
+  </div>
+
+  <div class="card">
+    <b>Relatório de validação</b>
+    <pre id="report">(vazio)</pre>
+  </div>
+
+  <div class="card">
+    <b>Preview (até 10 linhas válidas)</b>
+    <pre id="preview">(vazio)</pre>
+  </div>
+
+  <div class="card">
+    <b>Healthcheck do banco</b>
+    <pre id="health">(clique em Healthcheck)</pre>
   </div>
 </div>
 
+<!-- libs -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
+
 <script>
-/* ==========================
-   CONFIG SUPABASE
-========================== */
+/** ====== CONFIG ====== **/
 const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-const TABLE='vendas_xlsx';
-const BATCH=800; // menor p/ evitar payload grande
+const TABLE = 'vendas_xlsx';
+const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-/* ==========================
-   HELPERS
-========================== */
-const $ = id => document.getElementById(id);
-function money(n){ return 'R$ '+Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
-function br(n){ return Number(n||0).toLocaleString('pt-BR'); }
-function parseNum(v){ if(v==null||v==='') return 0; if(typeof v==='number') return v; const s=String(v).replace(/\s/g,'').replace(/\./g,'').replace(',','.'); const n=Number(s); return isFinite(n)?n:0; }
-function norm(s){ return String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); }
-function onlyHour(hms){
-  if(hms==null) return null;
-  const m=String(hms).match(/(\d{1,2})(?::\d{2}(?::\d{2})?)?/);
-  return m?Math.max(0,Math.min(23,parseInt(m[1],10))):null;
+/** ====== DOM ====== **/
+const $ = (id)=>document.getElementById(id);
+const file = $('file'), sheetSel = $('sheet');
+const btnRead = $('btnRead'), btnSend = $('btnSend'), btnHealth = $('btnHealth');
+const statusEl = $('status'), bar = $('bar');
+const mappingEl = $('mapping'), reportEl = $('report'), previewEl = $('preview'), healthEl = $('health');
+
+/** ====== STATE ====== **/
+let wb = null, wbSheets = [], rowsRaw = [], rowsValid = [], rowsInvalid = [], headerMap = null;
+
+/** ====== UTILS ====== **/
+const norm = (s)=> String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+const onlyDateISO = (iso)=> iso && iso.length>=10 ? iso.slice(0,10) : null;
+function parseMoney(v){
+  if(v==null || v==='') return 0;
+  if(typeof v==='number') return v;
+  let s = String(v).trim();
+  // remove tudo exceto dígitos, vírgula, ponto e sinal
+  s = s.replace(/[^0-9,.\-]/g,'');
+  // se tem mais de um separador, assume último como decimal
+  const lastComma = s.lastIndexOf(',');
+  const lastDot   = s.lastIndexOf('.');
+  if (lastComma > lastDot) { // vírgula é decimal
+    s = s.replace(/\./g,'').replace(',','.');
+  } else { // ponto é decimal
+    s = s.replace(/,/g,'');
+  }
+  const n = Number(s);
+  return isFinite(n)? n : 0;
 }
-function parseDateFlexible(s){
+function toISOfromBrOrISO(s){
   if(!s) return null;
-  const str=String(s).trim();
-  // ISO yyyy-mm-dd[ hh:mm[:ss]]
-  let m=str.match(/^(\d{4})[-/\.](\d{1,2})[-/\.](\d{1,2})(?:[ T](\d{1,2})(?::(\d{2})(?::\d{2})?)?)?$/);
+  const str = String(s).trim();
+  // dd/mm/yyyy hh:mm
+  const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
   if(m){
-    const [_,Y,M,D,H='00',I='00']=m; return {dia:`${Y}-${M.padStart(2,'0')}-${D.padStart(2,'0')}`,hora: Number(H)};
+    const d = m[1].padStart(2,'0'), M = m[2].padStart(2,'0'), y = m[3];
+    const hh = m[4]? m[4].padStart(2,'0') : '00';
+    const mm = m[5]? m[5] : '00';
+    return `${y}-${M}-${d}T${hh}:${mm}:00`;
   }
-  // dd/mm/yyyy[ hh:mm[:ss]]
-  m=str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})(?:\s+(\d{1,2})(?::(\d{2})(?::\d{2})?)?)?$/);
-  if(m){
-    const [_,D,M,Y,H='00',I='00']=m; return {dia:`${Y}-${M.padStart(2,'0')}-${D.padStart(2,'0')}`,hora: Number(H)};
-  }
+  // yyyy-mm-dd...
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.length>10 ? str : (str+'T00:00:00');
   return null;
 }
-function turnoFromHour(h){ if(h==null) return null; if(h>=6&&h<12) return 'Manhã'; if(h>=12&&h<18) return 'Tarde'; if(h>=18&&h<24) return 'Noite'; return 'Madrugada'; }
-function basePayment(p){
-  const s=norm(p).toLowerCase();
-  if(!s) return null;
-  if(s.includes('pix')) return 'PIX';
-  if(s.includes('dinheiro')) return 'Dinheiro';
-  if(s.includes('cartao')||s.includes('cartão')) return 'Cartão';
-  if(s.includes('online')) return 'Pago Online';
-  if(s.includes('nao cadastrado')||s.includes('não cadastrado')) return 'Pagamento não cadastrado';
-  if(s.includes('consumo funcionario')) return 'Consumo Funcionário';
-  return p;
+function hourFromDateText(s){
+  const m = String(s??'').match(/(\d{1,2}):(\d{2})/);
+  if(!m) return -1;
+  const h = parseInt(m[1],10);
+  return isFinite(h)? h : -1;
 }
-function makeKey(n){
-  const parts=[n.dia,n.unidade,(n["Nome da loja"]||''),n.hora,(n.pagamento||''),(n["Canal de venda"]||''),n.pedidos,n.fat.toFixed(2),n.des.toFixed(2),n.fre.toFixed(2),(n.cancelado||'')];
-  const s=parts.join('|'); let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))|0;
-  return 'rk_'+(h>>>0).toString(16);
+function turnoFromHour(h){
+  if(h<0) return null;
+  if(h>=6 && h<12) return 'Manhã';
+  if(h>=12 && h<18) return 'Tarde';
+  if(h>=18 && h<24) return 'Noite';
+  return 'Madrugada';
 }
-
-/* ==========================
-   HEADERS (inclui variações 2024/2025)
-========================== */
-const HDR={
-  pedido:['Pedido','Nº do pedido','Numero do pedido','Número do pedido'],
-  data:['Data da venda','Data','Venda','Data Pedido'],
-  unidade:['Unidade','unidade','Código da loja','Codigo da loja','cod loja','Loja (cód)'],
-  loja:['Nome da loja','Loja','Filial','Ponto de venda'],
-  canal:['Canal de venda','Canal','Origem'],
-  pagamento:['Pagamento','Forma de pagamento','Meio de pagamento'],
-  cancelado:['Está cancelado','Está cancelado?','Cancelado','Status cancelamento'],
-  total:['Total','Total do pedido','Valor Total','Valor'],
-  desconto:['Desconto','Descontos'],
-  entrega:['Entrega','Frete','Taxa de entrega','Taxa de envio'],
-  turno:['Turno'],
-};
-function pick(row, keys){ for(const k of keys) if(k in row && String(row[k]).trim()!=='') return row[k]; return ''; }
-function guessUnidade(row){
-  const u=pick(row,HDR.unidade); if(u) return String(u).trim();
-  const loja=pick(row,HDR.loja); const s=norm(loja).toLowerCase();
-  if(!s) return null; if(s.includes('savassi')) return 'Uni.Savassi'; if(s.includes('raja')) return 'Uni.Raja'; if(s.includes('centro')) return 'Uni.Raja';
-  return null;
+function normCancel(v){
+  const s = norm(v);
+  if (v===true || s==='sim' || s==='s' || s==='1' || s==='true') return 'Sim';
+  return 'Não';
+}
+function pagamentoBase(p){
+  const s = String(p??'').split(',')[0].trim();
+  return s || null;
+}
+function setStatus(txt, cls){
+  statusEl.textContent = txt;
+  statusEl.className = cls? cls : 'muted';
+}
+function setBar(pct){
+  bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
 }
 
-/* ==========================
-   XLSX UI
-========================== */
-let workbook=null, sheetName=null, lastErrors=[];
-$('file').addEventListener('change', async (e)=>{
-  resetValidation();
-  const file=e.target.files[0]; if(!file) return;
-  workbook = await file.arrayBuffer().then(b=>XLSX.read(b,{type:'array'}));
-  $('sheetSel').innerHTML='';
-  workbook.SheetNames.forEach((nm,i)=>{
-    const o=document.createElement('option'); o.value=nm; o.textContent=`${i+1}. ${nm}`; $('sheetSel').appendChild(o);
-  });
-  $('sheetSel').value=workbook.SheetNames[0];
-  sheetName=workbook.SheetNames[0];
-});
-$('sheetSel').addEventListener('change', e=>{ sheetName=e.target.value; resetValidation(); });
-
-function resetValidation(){
-  $('vreport').textContent='—';
-  $('istatus').textContent='—';
-  $('ibar').style.width='0%';
-  lastErrors=[];
-}
-
-$('validate').onclick = async ()=>{
-  const rows=getRows(); if(!rows) return;
-  const res=validateRows(rows);
-  $('vreport').textContent = formatReport(res);
-  lastErrors=res.errors;
-};
-
-$('exportErrors').onclick = ()=>{
-  if(!lastErrors.length){ alert('Sem erros para exportar.'); return; }
-  const header=Object.keys(lastErrors[0]);
-  const csv=[header.join(';')].concat(lastErrors.map(o=>header.map(k=>String(o[k]??'').replace(/;/g,',')).join(';'))).join('\n');
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob);
-  const a=document.createElement('a'); a.href=url; a.download='erros_validacao.csv'; a.click(); URL.revokeObjectURL(url);
-};
-
-$('import').onclick = async ()=>{
-  const rows=getRows(); if(!rows) return;
-  const {valid, errors} = validateRows(rows);
-  $('vreport').textContent = formatReport({valid,errors});
-  lastErrors=errors;
-
-  if(valid.length===0){ $('istatus').textContent='Nada para importar (tudo inválido/ignorado).'; return; }
-
-  $('istatus').textContent='Enviando para o Supabase…';
-  let ok=0, fail=0;
-  for(let i=0;i<valid.length;i+=BATCH){
-    const pack = valid.slice(i,i+BATCH).map(n=>({...n, row_key: makeKey(n)}));
-    const up = await sb.from(TABLE).upsert(pack, { onConflict:'row_key' });
-    if(up.error){ console.error(up.error); fail+=pack.length; $('istatus').textContent=`Erro: ${up.error.message}`; }
-    else ok+=pack.length;
-    const p=Math.min(100,Math.round(((i+BATCH)/valid.length)*100)); $('ibar').style.width=p+'%';
-    $('istatus').textContent=`Importando… ${Math.min(i+BATCH,valid.length)} / ${valid.length} (ok: ${ok}, erros: ${fail})`;
-    await new Promise(r=>setTimeout(r,0));
+/** ====== HEADER MAP ====== **/
+function buildHeaderMap(cols){
+  // mapa de sinônimos -> destino
+  const dict = [
+    {std:'dia_src', list:['data da venda','data','dt venda','dt_venda']},
+    {std:'unidade', list:['unidade','codigo da loja','código da loja','cod loja','cod_loja','filial']},
+    {std:'Nome da loja', list:['nome da loja','loja','nome_loja']},
+    {std:'Canal de venda', list:['canal de venda','canal','canal de vendas','canal_venda']},
+    {std:'pagamento', list:['pagamento','forma de pagamento','meio de pagamento']},
+    {std:'des', list:['desconto','des']},
+    {std:'fre', list:['entrega','frete','valor entregador']},
+    {std:'fat', list:['total','valor total','faturamento','total taxa de serviço + total?']},
+    {std:'cancelado', list:['esta cancelado','está cancelado','cancelado']},
+    {std:'turno', list:['turno']},
+    {std:'pedido_id', list:['pedido','numero do pedido','número do pedido','numero do pedido no parceiro']},
+  ];
+  const out = {};
+  const lower = cols.map(c=>({orig:c, key:norm(c)}));
+  for(const d of dict){
+    for(const cand of d.list){
+      const hit = lower.find(x=> x.key===cand);
+      if(hit){ out[d.std] = hit.orig; break; }
+    }
   }
-  $('istatus').textContent=`Concluído. OK: ${ok}, Erros: ${fail}`;
-  await loadOptionsAndHealth(); await applyFilters();
-};
-
-/* validação e normalização */
-function getRows(){
-  if(!workbook){ alert('Selecione o arquivo .xlsx'); return null; }
-  sheetName = sheetName || workbook.SheetNames[0];
-  const ws = workbook.Sheets[sheetName]; if(!ws){ alert('Aba não encontrada'); return null; }
-  return XLSX.utils.sheet_to_json(ws,{defval:''});
+  // faltantes
+  const required = ['dia_src','unidade','fat'];
+  const missing = required.filter(k=> !out[k]);
+  return {map: out, missing};
 }
-function validateRows(rows){
-  const valid=[], errors=[];
-  for(const r of rows){
-    // ignora linhas “TOTAL”, vazias ou sem data
-    const rawDate = pick(r,HDR.data);
-    if(!rawDate || /total/i.test(String(r[HDR.pedido?.[0]]||''))) { continue; }
 
-    const dt = parseDateFlexible(rawDate);
-    if(!dt){ errors.push({...r, __motivo:'Data inválida'}); continue; }
-
-    const loja = String(pick(r,HDR.loja)||'').trim();
-    if(loja==='' || loja==='Loja Centro'){ /* ignorado por regra */ continue; }
-
-    const unidade = guessUnidade(r);
-    const fat = parseNum(pick(r,HDR.total));
-    const des = parseNum(pick(r,HDR.desconto));
-    const fre = parseNum(pick(r,HDR.entrega));
-    const canal = String(pick(r,HDR.canal)||'').trim()||null;
-    const pagamento = String(pick(r,HDR.pagamento)||'').trim()||null;
-    let cancelado = String(pick(r,HDR.cancelado)||'').trim();
-    cancelado = cancelado ? (/(^s|sim|true|1)/i.test(cancelado)?'Sim':'Não') : 'Não';
-    const turno = String(pick(r,HDR.turno)||'').trim() || turnoFromHour(dt.hora) || null;
-
-    if(!fat && !des && !fre){ errors.push({...r, __motivo:'Valores numéricos vazios (Total/Desconto/Entrega)'}); continue; }
-
-    valid.push({
-      dia: dt.dia,
-      hora: onlyHour(dt.hora),
-      unidade,
-      "Nome da loja": loja,
-      "Canal de venda": canal,
-      pagamento,
-      pagamento_base: basePayment(pagamento),
-      cancelado,
-      pedidos: 1,
-      fat, des, fre,
-      turno
-    });
+/** ====== XLSX LOAD ====== **/
+file.addEventListener('change', async ()=>{
+  wb = null; wbSheets = []; sheetSel.innerHTML = '';
+  rowsRaw = rowsValid = rowsInvalid = []; headerMap = null;
+  mappingEl.textContent = '(vazio)'; reportEl.textContent='(vazio)'; previewEl.textContent='(vazio)';
+  setStatus('Lendo arquivo…','muted'); setBar(0);
+  const f = file.files?.[0];
+  if(!f){ setStatus('Selecione um .xlsx', 'warn'); return; }
+  try{
+    const buf = await f.arrayBuffer();
+    wb = XLSX.read(buf, {cellDates:false, cellText:false});
+    wbSheets = wb.SheetNames || [];
+    if(!wbSheets.length){ setStatus('XLSX sem abas.', 'err'); return; }
+    // popular select de abas
+    sheetSel.innerHTML = wbSheets.map(n=>`<option>${n}</option>`).join('');
+    // escolher a aba com mais linhas
+    let best = wbSheets[0], maxRows = -1;
+    for(const name of wbSheets){
+      const sh = wb.Sheets[name];
+      const json = XLSX.utils.sheet_to_json(sh, {defval:''});
+      if(json.length > maxRows){ maxRows=json.length; best=name; }
+    }
+    sheetSel.value = best;
+    setStatus(`Arquivo carregado. ${wbSheets.length} abas. Selecionada: ${best}.`, 'ok');
+  }catch(e){
+    console.error(e);
+    setStatus('Falha ao ler XLSX.', 'err');
   }
-  return {valid, errors};
-}
-function formatReport({valid,errors}){
-  return [
-    `Linhas na planilha: ${br((valid.length||0)+(errors.length||0))}`,
-    `Válidas (importáveis): ${br(valid.length)}`,
-    `Inválidas/ignoradas: ${br(errors.length)}`,
-    '',
-    errors.length?`Amostra de erros (até 5):\n${errors.slice(0,5).map(e=>`• ${e.__motivo} | Data: ${pick(e,HDR.data)} | Loja: ${pick(e,HDR.loja)}`).join('\n')}`:'Sem erros.'
-  ].join('\n');
-}
-
-/* ==========================
-   KPIs + Prévia (RPCs)
-========================== */
-const getF = ()=>({
-  _dini: $('dini').value||null,
-  _dfim: $('dfim').value||null,
-  _unidade: $('unidade').value||null,
-  _loja: $('loja').value||null,
-  _canais: $('canal').value?[$('canal').value]:null,
-  _pagamentos: $('pag').value?[$('pag').value]:null,
-  _cancelado: $('canc').value||'Não'
 });
 
-$('apply').onclick = ()=>applyFilters();
-$('clear').onclick = ()=>{ ['unidade','loja','canal','pag'].forEach(i=>$(i).value=''); $('canc').value='Não'; applyFilters(); };
-
-async function applyFilters(){
-  const f=getF();
-  const k=await sb.rpc('dash_kpis_xlsx_v1', f);
-  if(k.error){ console.error(k.error); return; }
-  const d=(k.data||[])[0]||{};
-  $('k_ped').textContent = br(d.pedidos||0);
-  $('k_fat').textContent = money(d.fat||0);
-  $('k_tick').textContent= money(d.ticket_medio||0);
-  $('k_fatl').textContent= money(d.fat_liquido||0);
-  $('k_des').textContent = money(d.descontos||0);
-  $('k_fre').textContent = money(d.fretes||0);
-  $('k_per').textContent = `${f._dini||'—'} → ${f._dfim||'—'}`;
-
-  const r=await sb.rpc('dash_rows_xlsx_v1',{...f,_limit:200,_offset:0});
-  const tb=$('tprev').querySelector('tbody'); tb.innerHTML='';
-  (r.data||[]).forEach(x=>{
-    const tr=document.createElement('tr');
-    [x.dia,x.hora,x.unidade,x["Nome da loja"],x["Canal de venda"],x.pagamento,x.cancelado,x.pedidos,
-     Number(x.fat).toFixed(2),Number(x.des).toFixed(2),Number(x.fre).toFixed(2),x.turno]
-    .forEach(v=>{ const td=document.createElement('td'); td.textContent=v; tr.appendChild(td); });
-    tb.appendChild(tr);
-  });
-
-  $('resumo').textContent = `Período: ${f._dini||'—'} → ${f._dfim||'—'} | Unidade: ${f._unidade||'Todas'} | Loja: ${f._loja||'Todas'} | Canal: ${f._canais?f._canais.join(', '):'Todos'} | Pagamento: ${f._pagamentos?f._pagamentos.join(', '):'Todos'} | Cancelado: ${f._cancelado}`;
-}
-
-/* ==========================
-   OPTIONS + HEALTH
-========================== */
-$('btnHealth').onclick = runHealth;
-async function runHealth(){
-  const h=await sb.rpc('dash_health_xlsx_v1');
-  if(h.error){ $('health').textContent='Erro: '+h.error.message; return; }
-  const r=(h.data||[])[0]||{};
-  $('health').textContent = `Min: ${r.min_dia||'—'} · Max: ${r.max_dia||'—'} · Total: ${br(r.total||0)} · Cancelado — Sim: ${br(r.cancelado_sim||0)}, Não: ${br(r.cancelado_nao||0)}`;
-}
-(async function boot(){
-  const op=await sb.rpc('dash_options_xlsx_v1');
-  if(!op.error && op.data){
-    const d=op.data;
-    fillSel('unidade', d.unidades||[]);
-    fillSel('loja', d.lojas||[]);
-    fillSel('canal', d.canais||[]);
-    fillSel('pag', d.pagamentos||[]);
-    if(d.periodo){ $('dini').value=d.periodo.min||''; $('dfim').value=d.periodo.max||''; }
+btnRead.addEventListener('click', ()=>{
+  if(!wb){ setStatus('Carregue o .xlsx primeiro.', 'warn'); return; }
+  const name = sheetSel.value || wbSheets[0];
+  const sh = wb.Sheets[name];
+  const json = XLSX.utils.sheet_to_json(sh, {defval:''}); // cabeçalho na 1ª linha
+  rowsRaw = json;
+  if(rowsRaw.length===0){
+    setStatus('Nada para importar (planilha vazia).', 'warn');
+    reportEl.textContent = JSON.stringify({linhas:0}, null, 2);
+    return;
   }
-  await runHealth();
-  await applyFilters();
-})();
-function fillSel(id,arr){ const el=$(id); const cur=el.value; el.innerHTML=`<option value="">${id==='pag'?'Todos':'Todas'}</option>`; (arr||[]).forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; el.appendChild(o); }); if(cur) el.value=cur; }
+  // header map
+  const cols = Object.keys(rowsRaw[0]||{});
+  const hm = buildHeaderMap(cols);
+  headerMap = hm.map;
+  mappingEl.textContent = JSON.stringify({detectado: headerMap, faltando: hm.missing}, null, 2);
+  if(hm.missing.length){
+    setStatus('Faltam colunas obrigatórias no XLSX: '+hm.missing.join(', '), 'err');
+  } else {
+    // validar/processar
+    processRows();
+  }
+});
+
+function processRows(){
+  rowsValid=[]; rowsInvalid=[];
+  let i=0;
+  for(const r of rowsRaw){
+    i++;
+    try{
+      const dsrc = r[headerMap.dia_src];
+      const iso = toISOfromBrOrISO(dsrc);
+      const dia = onlyDateISO(iso);
+      const hora = hourFromDateText(dsrc);
+      const unidade = String(r[headerMap.unidade]??'').trim();
+      const loja = r[headerMap['Nome da loja']];
+      const canal = r[headerMap['Canal de venda']];
+      const pagamento = r[headerMap['pagamento']];
+      const des = parseMoney(r[headerMap['des']]);
+      const fre = parseMoney(r[headerMap['fre']]);
+      const fat = parseMoney(r[headerMap['fat']]);
+      const cancelado = normCancel(r[headerMap['cancelado']]);
+      const turno = r[headerMap['turno']] || turnoFromHour(hora);
+      const pedidoId = r[headerMap['pedido_id']] || null;
+
+      if(!dia || !unidade || !isFinite(fat)){
+        rowsInvalid.push({linha:i, motivo:'campos obrigatórios ausentes/invalidos', dia, unidade, fat_raw:r[headerMap['fat']]});
+        continue;
+      }
+      const pagaBase = pagamentoBase(pagamento);
+      const rk = [dia, unidade, (loja||''), (isFinite(hora)?hora:-1), (pagaBase||''), (canal||''), (pedidoId||'')].join('|');
+      rowsValid.push({
+        dia, hora: isFinite(hora)?hora:-1, unidade,
+        "Nome da loja": loja||null,
+        "Canal de venda": canal||null,
+        pagamento: pagamento||null,
+        pagamento_base: pagaBase||null,
+        cancelado, turno: turno||null,
+        pedidos: 1,
+        fat, des, fre,
+        row_key: rk
+      });
+    }catch(e){
+      rowsInvalid.push({linha:i, motivo:'exceção no parse', erro: String(e)});
+    }
+  }
+
+  const rep = {
+    'Linhas na planilha': rowsRaw.length,
+    'Válidas (importáveis)': rowsValid.length,
+    'Inválidas/ignoradas': rowsInvalid.length
+  };
+  reportEl.textContent = JSON.stringify(rep, null, 2);
+  previewEl.textContent = JSON.stringify(rowsValid.slice(0,10), null, 2);
+  if(rowsValid.length===0){
+    setStatus('Nada para importar (tudo inválido/ignorado).', 'warn');
+  } else {
+    setStatus('Validação OK. Pronto para enviar.', 'ok');
+  }
+}
+
+/** ====== ENVIAR AO SUPABASE (chunked) ====== **/
+btnSend.addEventListener('click', async ()=>{
+  if(rowsValid.length===0){ setStatus('Nada válido para enviar.', 'warn'); return; }
+  setStatus('Iniciando envio…', 'muted'); setBar(0);
+  const chunk = 1000;
+  let sent=0, deleted=0, errs=0;
+  for(let i=0;i<rowsValid.length;i+=chunk){
+    const batch = rowsValid.slice(i, i+chunk);
+    // dedup manual: delete por row_key antes
+    const keys = [...new Set(batch.map(x=>x.row_key))];
+    let del = await supa.from(TABLE).delete().in('row_key', keys);
+    if(del.error){ console.warn('Delete falhou', del.error); } else { deleted += del.count||0; }
+
+    const ins = await supa.from(TABLE).insert(batch);
+    if(ins.error){ console.error(ins.error); errs += batch.length; }
+    else { sent += batch.length; }
+    setBar(((i+batch.length)/rowsValid.length)*100);
+    setStatus(`Enviado ${sent}/${rowsValid.length} · erros ${errs}`, errs? 'warn':'muted');
+    // yield
+    await new Promise(r=>setTimeout(r, 30));
+  }
+  setStatus(`Concluído. Enviadas ${sent} linhas. Erros ${errs}.`, errs? 'warn':'ok');
+});
+
+/** ====== HEALTHCHECK ====== **/
+btnHealth.addEventListener('click', async ()=>{
+  healthEl.textContent = 'Consultando…';
+  const a = await supa.from(TABLE).select('dia', {count:'exact', head:false}).order('dia',{ascending:true}).limit(1);
+  const b = await supa.from(TABLE).select('dia', {count:'exact', head:false}).order('dia',{ascending:false}).limit(1);
+  if(a.error || b.error){
+    healthEl.textContent = JSON.stringify({error_a:a.error, error_b:b.error}, null, 2);
+    return;
+  }
+  const min = a.data?.[0]?.dia || null;
+  const c = await supa.from(TABLE).select('count', {count:'exact', head:true});
+  const max = b.data?.[0]?.dia || null;
+  healthEl.textContent = JSON.stringify({
+    tabela: TABLE,
+    intervalo: {min_dia: min, max_dia: max},
+    total: c.count ?? null
+  }, null, 2);
+});
 </script>
 </body>
 </html>
