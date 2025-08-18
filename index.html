@@ -3,105 +3,162 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Importador XLSX — Maestro</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<title>Dash Vendas — ETAPA 2 (Filtros)</title>
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="62" fill="%231a73e8"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="64" fill="white">V</text></svg>'/>
 <style>
-  body{font:14px/1.4 system-ui;background:#0b1220;color:#e5e7eb;margin:0;padding:24px}
-  .box{max-width:860px;margin:0 auto;background:#111827;border:1px solid #1f2937;border-radius:12px;padding:16px}
-  h1{margin:0 0 8px;font-size:20px}
-  .muted{color:#9ca3af}
-  input,button{padding:10px 12px;border-radius:8px;border:1px solid #374151;background:#0b1220;color:#e5e7eb}
-  button{background:#2563eb;border-color:#2563eb;cursor:pointer}
-  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  #log{white-space:pre-wrap;background:#0b1220;border:1px dashed #374151;border-radius:8px;padding:12px;margin-top:12px;max-height:260px;overflow:auto}
+  :root{--bg:#0b1220;--card:#121a2b;--muted:#92a0b6;--text:#e9eef6;--acc:#2ea779;--err:#e5484d;--stroke:#23304a}
+  html,body{background:var(--bg);color:var(--text);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu;margin:0}
+  .container{max-width:1180px;margin:24px auto;padding:0 16px}
+  h1{font-size:22px;margin:0 0 6px}
+  .card{background:#11192b;border:1px solid var(--stroke);border-radius:14px;padding:14px;margin-top:12px}
+  label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
+  input,select,button{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--stroke);background:#0f172a;color:#e9eef6}
+  .grid{display:grid;gap:12px}
+  .cols-4{grid-template-columns:repeat(4,1fr)}
+  .cols-3{grid-template-columns:repeat(3,1fr)}
+  .btn{background:var(--acc);border:none;color:#fff;cursor:pointer}
+  .muted{color:var(--muted)}
+  pre{white-space:pre-wrap;background:#0f172a;border:1px solid var(--stroke);border-radius:10px;padding:10px;overflow:auto}
+  .err{color:var(--err)}
 </style>
 </head>
 <body>
-<div class="box">
-  <h1>Importador XLSX — Maestro</h1>
-  <p class="muted">Envia linhas para <b>public.vendas_xlsx</b>. O banco deriva <i>dia/hora/minuto/turno</i> do <i>ts_venda</i> (ou de "Data da venda").</p>
-  <div class="row" style="margin-top:8px">
-    <input id="file" type="file" accept=".xlsx,.xls"/>
-    <button id="go">Importar</button>
+<div class="container">
+  <h1>Dash Vendas — ETAPA 2 (Filtros)</h1>
+  <div class="muted">Base: <code>public.vendas_canon</code> (sem duplicatas, turno normalizado).</div>
+
+  <div class="card grid cols-4">
+    <div>
+      <label>Data inicial</label>
+      <input id="dini" type="date"/>
+      <div class="muted" id="minmax"></div>
+    </div>
+    <div>
+      <label>Data final</label>
+      <input id="dfim" type="date"/>
+    </div>
+    <div>
+      <label>Unidade(s)</label>
+      <select id="unids" multiple size="6"></select>
+    </div>
+    <div>
+      <label>Canal(is)</label>
+      <select id="canais" multiple size="6"></select>
+    </div>
   </div>
-  <div id="log"></div>
+
+  <div class="card grid cols-3">
+    <div>
+      <label>Pagamento(s)</label>
+      <select id="pags" multiple size="6"></select>
+    </div>
+    <div>
+      <label>Turno</label>
+      <select id="turno">
+        <option value="">Ambos</option>
+        <option>Dia</option>
+        <option>Noite</option>
+      </select>
+    </div>
+    <div>
+      <label>Cancelado</label>
+      <select id="cancelado">
+        <option value="">Todos</option>
+        <option>Não</option>
+        <option>Sim</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="card grid cols-3">
+    <button class="btn" id="btnAplicar">Aplicar filtros</button>
+    <div>
+      <b>Total (filtro):</b> <span id="total" class="muted">—</span>
+      <span id="msg" class="muted"></span>
+    </div>
+    <div><button id="btnAmostra" class="btn">Ver amostra</button></div>
+  </div>
+
+  <div class="card">
+    <b>Amostra (máx. 20)</b>
+    <pre id="out">(vazio)</pre>
+  </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
 <script>
-const SUPABASE_URL = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-const log = (m)=>{ const el=document.getElementById('log'); el.textContent += m + "\n"; el.scrollTop=el.scrollHeight; };
+const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
+const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-function parseBrToISOts(s){
-  if(!s) return null;
-  s = String(s).trim().replace(/\s+/g,' ');
-  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
-  if(m) return `${m[1]}-${m[2]}-${m[3]} ${m[4]||'00'}:${m[5]||'00'}:${m[6]||'00'}`;
-  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
-  if(m){
-    const dd = m[1].padStart(2,'0'), mm = m[2].padStart(2,'0'), yy = m[3];
-    const hh = (m[4]||'00').padStart(2,'0'), mi=(m[5]||'00').padStart(2,'0'), ss=(m[6]||'00').padStart(2,'0');
-    return `${yy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
-  }
-  return null;
+const $ = (id)=>document.getElementById(id);
+const dini=$('dini'), dfim=$('dfim'), minmax=$('minmax');
+const unids=$('unids'), canais=$('canais'), pags=$('pags');
+const turno=$('turno'), cancelado=$('cancelado');
+const total=$('total'), out=$('out'), msg=$('msg');
+
+function selectedValues(sel){
+  return Array.from(sel.selectedOptions).map(o=>o.value).filter(Boolean);
+}
+function applyFilters(q){
+  if(dini.value) q = q.gte('dia', dini.value);
+  if(dfim.value) q = q.lte('dia', dfim.value);
+  const u = selectedValues(unids); if(u.length) q = q.in('unidade', u);
+  const c = selectedValues(canais); if(c.length) q = q.in('canal', c);
+  const p = selectedValues(pags);   if(p.length) q = q.in('pagamento_base', p);
+  if(turno.value)     q = q.eq('turno', turno.value);
+  if(cancelado.value) q = q.eq('cancelado', cancelado.value);
+  return q;
 }
 
-document.getElementById('go').onclick = async ()=>{
-  const f = document.getElementById('file').files[0];
-  if(!f){ log("Selecione um .xlsx"); return; }
-  log(`Lendo planilha: ${f.name}`);
-
-  const data = await f.arrayBuffer();
-  const wb = XLSX.read(data, { type:'array' });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  let rows = XLSX.utils.sheet_to_json(ws, { defval:null, raw:false });
-
-  log(`Linhas na planilha: ${rows.length}`);
-
-  // Mapeia colunas esperadas
-  const map = (obj, k)=> Object.keys(obj).find(h => h.toLowerCase().trim() === k.toLowerCase());
-  const mData     = map(rows[0]||{}, 'Data da venda');
-  const mUnidade  = map(rows[0]||{}, 'unidade') || map(rows[0]||{}, 'Código da loja');
-  const mLoja     = map(rows[0]||{}, 'Nome da loja');
-  const mCanal    = map(rows[0]||{}, 'Canal de venda');
-  const mPag      = map(rows[0]||{}, 'Pagamento');
-  const mCancel   = map(rows[0]||{}, 'Está cancelado');
-  const mTotal    = map(rows[0]||{}, 'Total');
-  const mDes      = map(rows[0]||{}, 'Desconto');
-  const mFre      = map(rows[0]||{}, 'Entrega');
-
-  let ok=0, bad=0;
-  const batch=500;
-  for(let i=0;i<rows.length;i+=batch){
-    const slice = rows.slice(i,i+batch).map(r=>{
-      const dataTxt = mData ? r[mData] : null;
-      const isoTs   = parseBrToISOts(dataTxt);
-      if(!isoTs) { bad++; return null; }
-      return {
-        ts_venda: isoTs,                                  // canônico
-        "Data da venda": dataTxt,                         // guarda original (se sua tabela tiver essa coluna)
-        unidade: r[mUnidade] || null,
-        "Nome da loja": r[mLoja] || null,
-        "Canal de venda": r[mCanal] || null,
-        pagamento: r[mPag] || null,
-        cancelado: (String(r[mCancel]||'').trim().toLowerCase() in {'s':1,'sim':1,'true':1,'1':1}) ? 'Sim' : 'Não',
-        fat: Number(String(r[mTotal]||'0').replace('.','').replace(',','.'))||0,
-        des: Number(String(r[mDes]  ||'0').replace('.','').replace(',','.'))||0,
-        fre: Number(String(r[mFre]  ||'0').replace('.','').replace(',','.'))||0,
-        pedidos: 1
-      };
-    }).filter(Boolean);
-
-    if(!slice.length){ continue; }
-    const { error } = await supa.from('vendas_xlsx').insert(slice);
-    if(error){ log(`Erro batch ${i}-${i+slice.length}: ${error.message}`); bad += slice.length; }
-    else { ok += slice.length; log(`OK ${ok} (erros acumulados: ${bad})`); }
+async function loadOptions(){
+  // daterange
+  const r0 = await supa.from('vw_vendas_daterange').select('*').single();
+  if(r0.error){ msg.textContent = 'Erro carregar daterange'; console.error(r0.error); }
+  const min = r0.data?.min_dia, max = r0.data?.max_dia;
+  if(min && max){
+    minmax.textContent = `min ${min} · max ${max}`;
+    dini.value = min; dfim.value = max;
+    dini.min = min; dfim.min = min; dini.max = max; dfim.max = max;
   }
+  // unidades
+  const r1 = await supa.from('vw_vendas_unidades').select('unidade');
+  if(r1.error){ console.error(r1.error); } else {
+    unids.innerHTML = (r1.data||[]).map(x=>`<option>${x.unidade}</option>`).join('');
+  }
+  // canais
+  const r2 = await supa.from('vw_vendas_canais').select('canal');
+  if(r2.error){ console.error(r2.error); } else {
+    canais.innerHTML = (r2.data||[]).map(x=>`<option>${x.canal}</option>`).join('');
+  }
+  // pagamentos
+  const r3 = await supa.from('vw_vendas_pagamentos').select('pagamento_base');
+  if(r3.error){ console.error(r3.error); } else {
+    pags.innerHTML = (r3.data||[]).map(x=>`<option>${x.pagamento_base}</option>`).join('');
+  }
+}
 
-  log(`Importação concluída. OK=${ok}, ERROS=${bad}`);
-};
+async function contar(){
+  // contador leve (sem carregar linhas): HEAD + count: 'estimated'
+  let q = supa.from('vendas_canon').select('dia', { count: 'estimated', head: true });
+  q = applyFilters(q);
+  const r = await q;
+  if(r.error){ total.textContent = '—'; msg.textContent = ' (erro ao contar)'; console.error(r.error); return; }
+  total.textContent = r.count ?? '—';
+  msg.textContent = r.count !== null ? ' (estimado)' : '';
+}
+
+async function amostra(){
+  let q = supa.from('vendas_canon').select('dia,hora,turno,unidade,canal,pagamento_base,fat,des,fre,pedido_id',{ count: null }).order('dia',{ascending:false});
+  q = applyFilters(q);
+  const r = await q.limit(20);
+  out.textContent = r.error ? JSON.stringify(r.error, null, 2) : JSON.stringify(r.data||[], null, 2);
+}
+
+$('btnAplicar').addEventListener('click', contar);
+$('btnAmostra').addEventListener('click', amostra);
+
+loadOptions().then(contar);
 </script>
 </body>
 </html>
