@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Maestro Food</title>
 
-  <!-- Favicons inline (ícone funciona mesmo sem arquivo físico) -->
+  <!-- Favicon inline + svg -->
   <link rel="icon" type="image/x-icon"
         href="data:image/x-icon;base64,AAABAAEAEBAAAAAAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8="/>
   <link rel="icon"
@@ -100,9 +100,8 @@
           <button id="btnImport" class="btn" type="button">Importar CSV (incremental)</button>
         </div>
         <p class="hint" style="margin-top:8px;">
-          Limpa apenas a janela de datas do arquivo e insere com deduplicação por chave composta
-          (<b>dia + unidade + "Nome da loja" + hora + pagamento + "Canal de venda"</b>).
-          Mínimo no CSV: <b>Data/Dia</b>, <b>unidade</b>, <b>Total/fat</b>.
+          Deduplicação pela chave (<b>dia + unidade + "Nome da loja" + hora + pagamento + "Canal de venda"</b>).  
+          CSV mínimo: <b>Data/Dia</b>, <b>unidade</b>, <b>Total/fat</b>.
         </p>
       </div>
     </details>
@@ -202,36 +201,35 @@
         dini.value=toISO(start); dfim.value=toISO(end);
       }
 
-      async function buildOptions(a,b){
-        if(!a||!b) return;
+      // ==== NOVO: opções SEM restringir por data (pega tudo do banco) ====
+      async function buildOptionsAll(){
         updating = true;
         try{
-          // Unidade
-          { let q=supa.from(TABLE).select('unidade').gte('dia',a).lte('dia',b).not('unidade','is',null).order('unidade',{ascending:true});
+          // Unidade (todas)
+          { let q=supa.from(TABLE).select('unidade').not('unidade','is',null).order('unidade',{ascending:true});
             const arr=(await fetchAll(q)).map(x=>x.unidade).filter(Boolean);
             const uniq=[...new Set(arr)];
-            const cur=uni.value; uni.innerHTML=`<option>Todas</option>`+uniq.map(v=>`<option${v===cur?' selected':''}>${v}</option>`).join('');
+            uni.innerHTML=`<option>Todas</option>`+uniq.map(v=>`<option>${v}</option>`).join('');
+            uni.value='Todas';
           }
-          // Pagamento
-          { let q=supa.from(TABLE).select('pagamento').gte('dia',a).lte('dia',b).not('pagamento','is',null).order('pagamento',{ascending:true});
+          // Pagamento (todos)
+          { let q=supa.from(TABLE).select('pagamento').not('pagamento','is',null).order('pagamento',{ascending:true});
             const arr=(await fetchAll(q)).map(x=>x.pagamento).filter(Boolean);
             const uniq=[...new Set(arr)];
-            const sel=new Set(Array.from(pag.selectedOptions).map(o=>o.value));
-            pag.innerHTML=uniq.map(v=>`<option${sel.has(v)?' selected':''}>${v}</option>`).join('');
+            pag.innerHTML=uniq.map(v=>`<option>${v}</option>`).join('');
           }
-          // Canal
-          { let q=supa.from(TABLE).select('"Canal de venda"').gte('dia',a).lte('dia',b).order('Canal de venda',{ascending:true});
+          // Canal (todos) — precisa de aspas
+          { let q=supa.from(TABLE).select('"Canal de venda"').order('Canal de venda',{ascending:true});
             const arr=(await fetchAll(q)).map(x=>x["Canal de venda"]).filter(Boolean);
             const uniq=[...new Set(arr)];
-            const sel=new Set(Array.from(canal.selectedOptions).map(o=>o.value));
-            canal.innerHTML=uniq.map(v=>`<option${sel.has(v)?' selected':''}>${v}</option>`).join('');
+            canal.innerHTML=uniq.map(v=>`<option>${v}</option>`).join('');
           }
-          // Lojas
-          { let q=supa.from(TABLE).select('"Nome da loja"').gte('dia',a).lte('dia',b).order('Nome da loja',{ascending:true});
+          // Lojas (todas)
+          { let q=supa.from(TABLE).select('"Nome da loja"').order('Nome da loja',{ascending:true});
             const arr=(await fetchAll(q)).map(x=>x["Nome da loja"]).filter(Boolean);
             const uniq=[...new Set(arr)];
-            const cur=loja.value;
-            loja.innerHTML=`<option>Todos</option>`+uniq.map(v=>`<option${v===cur?' selected':''}>${v}</option>`).join('');
+            loja.innerHTML=`<option>Todos</option>`+uniq.map(v=>`<option>${v}</option>`).join('');
+            loja.value='Todos';
           }
         } finally { updating = false; }
       }
@@ -285,8 +283,6 @@
         const canSel  = Array.from(canal.selectedOptions).map(o=>o.value);
         const pagSel  = Array.from(pag.selectedOptions).map(o=>o.value);
         const cancSel = (canc.value || 'Todos');
-
-        await buildOptions(a,b);
 
         let q = supa.from(TABLE)
           .select('dia,unidade,pedidos,fat,des,fre,"Nome da loja",turno,"Canal de venda",pagamento,cancelado,hora')
@@ -411,20 +407,20 @@
               if(r.error){ importStatus.textContent='Erro ao inserir (RLS/índice único).'; importStatus.style.color='#b91c1c'; return; }
             }
             importStatus.textContent=`Importado: ${rows.length.toLocaleString('pt-BR')} linhas (janela ${minFileISO} → ${maxFileISO}).`; importStatus.style.color='#16a34a';
-            await fetchMinMax(); pr.value="Tudo"; applyQuickDate(); await reload();
+            await fetchMinMax(); pr.value="Tudo"; applyQuickDate(); await buildOptionsAll(); await reload();
           },
           error: function(){ importStatus.textContent='Erro ao ler arquivo CSV'; importStatus.style.color='#b91c1c'; }
         });
       });
 
-      pr.addEventListener("change", ()=>{ applyQuickDate(); reload(); fx.open=false; });
+      pr.addEventListener("change", async ()=>{ applyQuickDate(); await reload(); fx.open=false; });
       [uni,loja,dini,dfim,turno,canal,pag,canc].forEach(e=> e.addEventListener("change", ()=>{ reload(); fx.open=false; }));
-      btnLimpar.addEventListener('click', ()=>{ uni.value='Todas'; loja.value='Todos'; turno.selectedIndex=-1; canal.selectedIndex=-1; pag.selectedIndex=-1; canc.value='Todos'; pr.value="Tudo"; applyQuickDate(); reload(); });
+      btnLimpar.addEventListener('click', async ()=>{ uni.value='Todas'; loja.value='Todos'; turno.selectedIndex=-1; canal.selectedIndex=-1; pag.selectedIndex=-1; canc.value='Todos'; pr.value="Tudo"; applyQuickDate(); await reload(); });
 
       (async function(){
         await fetchMinMax();
         pr.value="Tudo"; applyQuickDate();
-        await buildOptions(dini.value, dfim.value);
+        await buildOptionsAll();      // <— monta opções do banco inteiro
         await reload();
       })();
     }
