@@ -1,1486 +1,488 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Maestro Food Dashboard - FINAL CORRIGIDO</title>
-    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-    <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        :root {
-            --primary: #6366f1;
-            --primary-dark: #4f46e5;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --error: #ef4444;
-            --bg-primary: #f8fafc;
-            --bg-secondary: #ffffff;
-            --text-primary: #1e293b;
-            --text-secondary: #64748b;
-            --text-muted: #94a3b8;
-            --border: #e2e8f0;
-            --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 1rem;
-            color: var(--text-primary);
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-
-        .header {
-            background: var(--bg-secondary);
-            border-radius: 1rem;
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-            box-shadow: var(--shadow-lg);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 1rem;
-        }
-
-        .header h1 {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--text-primary);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .header-info {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            flex-wrap: wrap;
-        }
-
-        .status-badge {
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            font-size: 0.875rem;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .status-success {
-            background: #dcfce7;
-            color: #166534;
-        }
-
-        .status-error {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        .status-warning {
-            background: #fef3c7;
-            color: #92400e;
-        }
-
-        .btn {
-            padding: 0.75rem 1.5rem;
-            border: none;
-            border-radius: 0.5rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            text-decoration: none;
-        }
-
-        .btn-primary {
-            background: var(--primary);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: var(--primary-dark);
-            transform: translateY(-1px);
-        }
-
-        .btn-secondary {
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            border: 1px solid var(--border);
-        }
-
-        .btn-secondary:hover {
-            background: var(--bg-primary);
-            transform: translateY(-1px);
-        }
-
-        .filters-section {
-            background: var(--bg-secondary);
-            border-radius: 1rem;
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-            box-shadow: var(--shadow-lg);
-        }
-
-        .filters-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 1.5rem;
-        }
-
-        .filters-header h2 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: var(--text-primary);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .filters-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-        }
-
-        .filter-group {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        .filter-group label {
-            font-size: 0.875rem;
-            font-weight: 600;
-            color: var(--text-secondary);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .filter-group select,
-        .filter-group input {
-            padding: 0.75rem;
-            border: 1px solid var(--border);
-            border-radius: 0.5rem;
-            font-size: 0.875rem;
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            transition: all 0.2s;
-        }
-
-        .filter-group select:focus,
-        .filter-group input:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgb(99 102 241 / 0.1);
-        }
-
-        .kpis-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 1rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .kpi-card {
-            background: var(--bg-secondary);
-            border-radius: 1rem;
-            padding: 1.5rem;
-            box-shadow: var(--shadow-lg);
-            transition: transform 0.2s;
-        }
-
-        .kpi-card:hover {
-            transform: translateY(-2px);
-        }
-
-        .kpi-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 1rem;
-        }
-
-        .kpi-title {
-            font-size: 0.875rem;
-            font-weight: 600;
-            color: var(--text-secondary);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .kpi-trend {
-            display: flex;
-            align-items: center;
-            gap: 0.25rem;
-            font-size: 0.75rem;
-            font-weight: 600;
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.25rem;
-        }
-
-        .trend-up {
-            background: #dcfce7;
-            color: #166534;
-        }
-
-        .trend-down {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        .trend-neutral {
-            background: #f1f5f9;
-            color: #64748b;
-        }
-
-        .kpi-value {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--text-primary);
-            margin-bottom: 0.5rem;
-        }
-
-        .kpi-subtitle {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-        }
-
-        .chart-section {
-            background: var(--bg-secondary);
-            border-radius: 1rem;
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-            box-shadow: var(--shadow-lg);
-        }
-
-        .chart-header {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            margin-bottom: 1rem;
-        }
-
-        .chart-header h3 {
-            font-size: 1.125rem;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        .chart-container {
-            position: relative;
-            height: 300px;
-        }
-
-        .import-section {
-            background: var(--bg-secondary);
-            border-radius: 1rem;
-            padding: 1.5rem;
-            box-shadow: var(--shadow-lg);
-        }
-
-        .import-header {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            margin-bottom: 1rem;
-        }
-
-        .import-header h3 {
-            font-size: 1.125rem;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        .admin-badge {
-            background: var(--warning);
-            color: white;
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.25rem;
-            font-size: 0.75rem;
-            font-weight: 600;
-        }
-
-        .file-input-container {
-            border: 2px dashed var(--border);
-            border-radius: 0.5rem;
-            padding: 2rem;
-            text-align: center;
-            margin-bottom: 1rem;
-            transition: all 0.2s;
-            cursor: pointer;
-        }
-
-        .file-input-container:hover {
-            border-color: var(--primary);
-            background: rgb(99 102 241 / 0.05);
-        }
-
-        .file-input-container.dragover {
-            border-color: var(--primary);
-            background: rgb(99 102 241 / 0.1);
-        }
-
-        .file-input {
-            display: none;
-        }
-
-        .file-input-label {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 0.5rem;
-            cursor: pointer;
-        }
-
-        .file-input-label span {
-            font-size: 3rem;
-        }
-
-        .file-input-text {
-            font-weight: 600;
-            color: var(--text-primary);
-            margin-bottom: 0.25rem;
-        }
-
-        .file-input-subtext {
-            font-size: 0.875rem;
-            color: var(--text-muted);
-        }
-
-        .import-actions {
-            display: flex;
-            gap: 1rem;
-            justify-content: center;
-        }
-
-        .footer-info {
-            background: var(--bg-secondary);
-            border-radius: 1rem;
-            padding: 1rem;
-            margin-top: 1.5rem;
-            box-shadow: var(--shadow);
-            font-size: 0.875rem;
-            color: var(--text-muted);
-            text-align: center;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 3rem;
-            color: var(--text-muted);
-        }
-
-        .empty-state h3 {
-            font-size: 1.5rem;
-            margin-bottom: 1rem;
-            color: var(--text-secondary);
-        }
-
-        .empty-state p {
-            margin-bottom: 2rem;
-        }
-
-        @media (max-width: 768px) {
-            .header {
-                flex-direction: column;
-                text-align: center;
-            }
-
-            .filters-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .kpis-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .kpi-value {
-                font-size: 1.5rem;
-            }
-        }
-    </style>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Maestro Food</title>
+  <!-- Favicon inline para evitar 404 -->
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="62" fill="%231a73e8"/><text x="64" y="82" text-anchor="middle" font-family="Inter,Arial" font-size="72" fill="white">M</text></svg>'/>
+  <link rel="stylesheet" href="https://unpkg.com/modern-css-reset/dist/reset.min.css">
+  <style>
+    :root{
+      --bg:#f6f7fb; --card:#fff; --ink:#0f172a; --muted:#667085;
+      --brand:#1a73e8; --ok:#0ea5e9; --warn:#d97706; --err:#dc2626;
+      --border:#e6eaf2; --radius:14px;
+    }
+    html,body{height:100%}
+    body{background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Inter,Ubuntu}
+    .wrap{max-width:1200px; margin:28px auto 64px; padding:0 16px}
+    h1{font-size:26px; font-weight:800; letter-spacing:.2px}
+    small.muted{color:var(--muted)}
+    .status{margin:4px 0 14px; color:#0f766e}
+    .row{display:grid; gap:12px}
+    .cols-2{grid-template-columns:repeat(2,1fr)}
+    .cols-3{grid-template-columns:repeat(3,1fr)}
+    .cols-4{grid-template-columns:repeat(4,1fr)}
+    .card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:14px}
+    .card.dashed{border-style:dashed}
+    label{display:block; font-size:12px; color:var(--muted); margin-bottom:6px}
+    input,select,button{appearance:none; border:1px solid var(--border); background:#fff; color:var(--ink); border-radius:10px; padding:10px 12px; width:100%}
+    select[multiple]{height:144px}
+    .inline{display:flex; align-items:center; gap:10px}
+    .right{text-align:right}
+    .btn{background:var(--brand); color:#fff; border:none; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:600}
+    .btn.ghost{background:#eef3ff; color:#1747b7}
+    .btn.gray{background:#f1f5f9; color:#0f172a}
+    .grid-kpi{display:grid; gap:12px; grid-template-columns:repeat(4,1fr)}
+    .kpi h3{font-size:12px; color:var(--muted); margin-bottom:6px}
+    .kpi b{font-size:22px}
+    .pill{display:inline-block; padding:4px 10px; border-radius:999px; background:#eef3ff; color:#1747b7; font-weight:700}
+    .danger{color:var(--err)}
+    .ok{color:#0d9488}
+    .chartBox{height:320px} /* evita gráfico “infinito” */
+    @media (max-width:980px){.cols-4,.cols-3,.cols-2,.grid-kpi{grid-template-columns:1fr}}
+  </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <h1>🍽️ Maestro Food Dashboard</h1>
-            <div class="header-info">
-                <div id="period-info" class="status-badge status-warning">
-                    ⚠️ Aguardando dados...
-                </div>
-                <div id="connection-status" class="status-badge status-success">
-                    ✅ Supabase Conectado
-                </div>
-                <button class="btn btn-primary" onclick="debugInfo()">🔍 Debug</button>
-            </div>
-        </div>
+<div class="wrap">
+  <h1>Maestro Food</h1>
+  <small id="periodo" class="muted">Período: —</small><br/>
+  <small id="statusFonte" class="status">Fonte: —</small>
 
-        <!-- Empty State -->
-        <div id="empty-state" class="filters-section" style="display: none;">
-            <div class="empty-state">
-                <h3>📊 Dashboard Vazio</h3>
-                <p>Não há dados disponíveis no momento. Importe um arquivo CSV para começar.</p>
-                <button class="btn btn-primary" onclick="scrollToImport()">📁 Importar Dados</button>
-            </div>
-        </div>
+  <details id="fx" class="card" open>
+    <summary class="inline" style="justify-content:space-between;">
+      <b>FILTROS</b>
+      <button id="btnLimpar" type="button" class="btn gray">Limpar</button>
+    </summary>
 
-        <!-- Filters -->
-        <div id="filters-section" class="filters-section">
-            <div class="filters-header">
-                <h2>📊 Filtros</h2>
-                <button class="btn btn-secondary" onclick="clearFilters()">🔄 Limpar Filtros</button>
-            </div>
-            <div class="filters-grid">
-                <div class="filter-group">
-                    <label for="unidade">🏢 Unidade</label>
-                    <select id="unidade" onchange="reload()">
-                        <option value="Todas">Todas</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label for="loja">🏪 Nome da Loja</label>
-                    <select id="loja" onchange="reload()">
-                        <option value="Todos">Todos</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label for="data-inicial">📅 Data Inicial</label>
-                    <input type="date" id="data-inicial" onchange="reload()">
-                </div>
-                <div class="filter-group">
-                    <label for="data-final">📅 Data Final</label>
-                    <input type="date" id="data-final" onchange="reload()">
-                </div>
-                <div class="filter-group">
-                    <label for="periodo-rapido">⚡ Período Rápido</label>
-                    <select id="periodo-rapido" onchange="applyQuickPeriod()">
-                        <option value="Últimos 30 dias">Últimos 30 dias</option>
-                        <option value="Últimos 60 dias">Últimos 60 dias</option>
-                        <option value="Últimos 90 dias">Últimos 90 dias</option>
-                        <option value="Este mês">Este mês</option>
-                        <option value="Último mês">Último mês</option>
-                        <option value="Este ano">Este ano</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label for="turno">🕐 Turno</label>
-                    <select id="turno" onchange="reload()">
-                        <option value="Todos">Todos</option>
-                        <option value="Manhã">Manhã</option>
-                        <option value="Tarde">Tarde</option>
-                        <option value="Noite">Noite</option>
-                        <option value="Madrugada">Madrugada</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label for="canal">📺 Canal de Venda</label>
-                    <select id="canal" onchange="reload()">
-                        <option value="Todos">Todos</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label for="pagamento">💳 Pagamento</label>
-                    <select id="pagamento" onchange="reload()">
-                        <option value="Todos">Todos</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label for="cancelado">❌ Cancelado</label>
-                    <select id="cancelado" onchange="reload()">
-                        <option value="Todos">Todos</option>
-                        <option value="Não">Não</option>
-                        <option value="Sim">Sim</option>
-                    </select>
-                </div>
-            </div>
-        </div>
-
-        <!-- KPIs -->
-        <div id="kpis-section" class="kpis-grid">
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-title">📦 PEDIDOS</div>
-                    <div id="pedidos-trend" class="kpi-trend trend-neutral">— N/A</div>
-                </div>
-                <div id="pedidos-value" class="kpi-value">—</div>
-                <div id="pedidos-subtitle" class="kpi-subtitle">vs período anterior</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-title">🎯 TICKET MÉDIO</div>
-                    <div id="ticket-trend" class="kpi-trend trend-neutral">— N/A</div>
-                </div>
-                <div id="ticket-value" class="kpi-value">—</div>
-                <div id="ticket-subtitle" class="kpi-subtitle">vs período anterior</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-title">💰 FATURAMENTO</div>
-                    <div id="faturamento-trend" class="kpi-trend trend-neutral">— N/A</div>
-                </div>
-                <div id="faturamento-value" class="kpi-value">—</div>
-                <div id="faturamento-subtitle" class="kpi-subtitle">vs período anterior</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-title">📈 FATURAMENTO MÉDIO/DIA</div>
-                    <div id="fat-dia-trend" class="kpi-trend trend-neutral">— N/A</div>
-                </div>
-                <div id="fat-dia-value" class="kpi-value">—</div>
-                <div id="fat-dia-subtitle" class="kpi-subtitle">vs período anterior</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-title">🎁 INCENTIVOS</div>
-                    <div id="incentivos-trend" class="kpi-trend trend-neutral">— N/A</div>
-                </div>
-                <div id="incentivos-value" class="kpi-value">—</div>
-                <div id="incentivos-subtitle" class="kpi-subtitle">vs período anterior</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-title">📊 INCENTIVOS %</div>
-                    <div id="incentivos-perc-trend" class="kpi-trend trend-neutral">— N/A</div>
-                </div>
-                <div id="incentivos-perc-value" class="kpi-value">—</div>
-                <div id="incentivos-perc-subtitle" class="kpi-subtitle">vs período anterior</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-title">🚚 FRETE</div>
-                    <div id="frete-trend" class="kpi-trend trend-neutral">— N/A</div>
-                </div>
-                <div id="frete-value" class="kpi-value">—</div>
-                <div id="frete-subtitle" class="kpi-subtitle">vs período anterior</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-title">💎 FATURAMENTO LÍQUIDO</div>
-                    <div id="liquido-trend" class="kpi-trend trend-neutral">— N/A</div>
-                </div>
-                <div id="liquido-value" class="kpi-value">—</div>
-                <div id="liquido-subtitle" class="kpi-subtitle">vs período anterior</div>
-            </div>
-        </div>
-
-        <!-- Chart -->
-        <div id="chart-section" class="chart-section">
-            <div class="chart-header">
-                <span>📈</span>
-                <h3>Receita Diária</h3>
-                <span>💰 Total com comparativo</span>
-            </div>
-            <div class="chart-container">
-                <canvas id="revenueChart"></canvas>
-            </div>
-        </div>
-
-        <!-- Import CSV -->
-        <div class="import-section">
-            <div class="import-header">
-                <span>📁</span>
-                <h3>Importar CSV</h3>
-                <div class="admin-badge">Admin</div>
-            </div>
-            <div class="file-input-container" onclick="document.getElementById('csv-file').click()">
-                <input type="file" id="csv-file" class="file-input" accept=".csv" onchange="handleFileSelect()">
-                <label for="csv-file" class="file-input-label">
-                    <span>📄</span>
-                    <div>
-                        <div class="file-input-text">Selecione um arquivo CSV</div>
-                        <div class="file-input-subtext">Arraste e solte ou clique para selecionar</div>
-                    </div>
-                </label>
-            </div>
-            <div class="import-actions">
-                <button class="btn btn-primary" onclick="importCSV()">📤 Importar CSV (UPSERT)</button>
-            </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="footer-info">
-            <strong>🔧 DASHBOARD FINAL CORRIGIDO:</strong><br>
-            • <strong>❌ Erro 404:</strong> Corrigido - Dashboard funciona sem dados<br>
-            • <strong>❌ Erro 409:</strong> Corrigido - Usa UPSERT em vez de INSERT<br>
-            • <strong>✅ Importação:</strong> Funcionando com tratamento de duplicatas<br>
-            • <strong>📊 Validação:</strong> 10/08/2025: 563 pedidos, R$ 36.026,26<br>
-            • <strong>🆕 Comparativos:</strong> Setas coloridas com períodos anteriores
-        </div>
+    <div class="row cols-2" style="margin-top:12px;">
+      <div><label>Unidade</label><select id="fUnidade"><option>Todas</option></select></div>
+      <div><label>Nome da loja (Top 10)</label><select id="fLoja"><option>Todos</option></select></div>
     </div>
 
-    <script>
-        // Supabase Configuration
-        const SUPABASE_URL = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
+    <div class="row cols-4" style="margin-top:8px;">
+      <div><label>De</label><input id="fDini" type="date"/></div>
+      <div><label>Até</label><input id="fDfim" type="date"/></div>
+      <div>
+        <label>Período rápido</label>
+        <select id="fQuick">
+          <option>Últimos 30</option>
+          <option>Últimos 60</option>
+          <option selected>Últimos 90</option>
+          <option>Este mês</option>
+          <option>Último mês</option>
+          <option>Este ano</option>
+        </select>
+      </div>
+      <div>
+        <label>Turno</label>
+        <select id="fTurno" multiple>
+          <option>Manhã</option><option>Tarde</option><option>Noite</option><option>Madrugada</option>
+        </select>
+      </div>
+    </div>
 
-        console.log('✅ Cliente Supabase inicializado');
+    <div class="row cols-3" style="margin-top:8px;">
+      <div><label>Canal de venda</label><select id="fCanal" multiple></select></div>
+      <div><label>Pagamento</label><select id="fPag" multiple></select></div>
+      <div>
+        <label>Está cancelado?</label>
+        <select id="fCanc"><option>Todos</option><option>Não</option><option>Sim</option></select>
+      </div>
+    </div>
 
-        // Initialize Supabase
-        const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    <div class="card dashed" style="margin-top:12px;">
+      <div class="row cols-2">
+        <div class="inline"><label style="margin:0;">Admin — Importar CSV (<b>Pasta2.csv</b>)</label></div>
+        <div class="right"><span id="importStatus" class="muted"></span></div>
+      </div>
+      <div class="inline" style="margin-top:8px;">
+        <input id="csv" type="file" accept=".csv,text/csv"/>
+        <button id="btnImport" class="btn" type="button">Importar CSV (incremental)</button>
+      </div>
+      <p class="muted" style="margin-top:8px">
+        Importação é <b>somativa</b> com <b>deduplicação por chave</b> (dia, unidade, "Nome da loja", hora, pagamento, "Canal de venda").<br/>
+        Mínimo aceito no CSV: <b>Data da venda</b> (dia) • <b>unidade</b> • <b>Total</b> (fat). Demais colunas são mapeadas automaticamente.
+      </p>
+    </div>
+  </details>
 
-        // Global variables
-        let minISO, maxISO;
-        let chart;
-        let hasData = false;
+  <div class="grid-kpi" style="margin-top:14px;">
+    <div class="card kpi"><h3>Pedidos</h3><b id="kPedidos">—</b></div>
+    <div class="card kpi"><h3>Ticket Médio</h3><b id="kTicket">—</b></div>
+    <div class="card kpi"><h3>Faturamento</h3><b id="kFat">—</b></div>
+    <div class="card kpi"><h3>Faturamento Médio (dia)</h3><b id="kFatDia">—</b></div>
+    <div class="card kpi"><h3>Incentivos</h3><b id="kDes">—</b></div>
+    <div class="card kpi"><h3>Incentivos %</h3><b id="kDesPct">—</b></div>
+    <div class="card kpi"><h3>Frete</h3><b id="kFre">—</b></div>
+    <div class="card kpi"><h3>Faturamento Líquido</h3><b id="kFatLiq">—</b></div>
+  </div>
 
-        // DOM elements
-        const uni = document.getElementById('unidade');
-        const loja = document.getElementById('loja');
-        const dini = document.getElementById('data-inicial');
-        const dfim = document.getElementById('data-final');
-        const pr = document.getElementById('periodo-rapido');
-        const turno = document.getElementById('turno');
-        const canal = document.getElementById('canal');
-        const pag = document.getElementById('pagamento');
-        const canc = document.getElementById('cancelado');
-        const csv = document.getElementById('csv-file');
+  <div class="card chartBox" style="margin-top:14px;">
+    <div class="inline" style="justify-content:space-between;">
+      <b>Receita diária (R$)</b>
+      <span class="pill">Total</span>
+    </div>
+    <canvas id="chart" style="margin-top:8px; height:100%"></canvas>
+  </div>
+</div>
 
-        // Utility functions
-        function norm(str) {
-            return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+<!-- Libs necessárias antes do app -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+
+<script>
+(function(){
+  // =============== CONFIG ===============
+  const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
+  // (chave fornecida por você; troque aqui se precisar)
+  const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+  const PREFER_TABLE  = "vendas_kpi_daily_v2_data";
+  const FALLBACK_VIEW = "vendas_kpi_daily_v2";
+  const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {auth:{persistSession:true,autoRefreshToken:true}});
+
+  // =============== DOM ===============
+  const $ = (id)=>document.getElementById(id);
+  const periodoEl = $("periodo"), statusFonte = $("statusFonte");
+  const uni = $("fUnidade"), loja = $("fLoja"), dini = $("fDini"), dfim = $("fDfim"),
+        pr = $("fQuick"), turno = $("fTurno"), canal = $("fCanal"), pag = $("fPag"), canc = $("fCanc");
+  const btnLimpar = $("btnLimpar"), csv = $("csv"), btnImport = $("btnImport"), importStatus = $("importStatus");
+  const kPedidos = $("kPedidos"), kTicket = $("kTicket"), kFat = $("kFat"), kFatDia = $("kFatDia"),
+        kDes = $("kDes"), kDesPct = $("kDesPct"), kFre = $("kFre"), kFatLiq = $("kFatLiq");
+  const chartEl = $("chart");
+  let chart;
+
+  // =============== STATE ===============
+  let TABLE = null, minISO = null, maxISO = null, lastData = [];
+
+  // =============== UTILS ===============
+  const fmtBRL = v => (isFinite(v)? v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : "—");
+  const fmtPct = v => (isFinite(v)? (v*100).toFixed(1).replace('.',',')+'%' : "—");
+  const norm = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+  const normCancel = v => {
+    const s = String(v ?? "").trim().toLowerCase();
+    if (v===true || s==="sim" || s==="s" || s==="1" || s==="true") return "Sim";
+    return "Não";
+  };
+  const toISO = d => { if(!d) return null; const dt=new Date(d); return isNaN(dt)? null : dt.toISOString().slice(0,10); };
+  const parseBR = x => { if(x==null||x==='')return 0; if(typeof x==='number')return x; const s=String(x).trim().replace(/\./g,'').replace(',','.'); const n=Number(s); return isFinite(n)?n:0; };
+  const onlyDateISO = iso => iso && iso.length>=10 ? iso.slice(0,10) : iso;
+  function ddmmyyyyToISO(s){
+    if(!s) return null; const str=String(s).trim();
+    const [datePart,timePart] = str.split(' ');
+    if(!datePart) return null; const [d,m,y] = datePart.split('/');
+    const day=+d, month=+m, year=+y; if(!day||!month||!year) return null;
+    const iso = `${String(year).padStart(4,'0')}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const dt = new Date(iso); if(dt.getFullYear()!=year || dt.getMonth()+1!=month || dt.getDate()!=day) return null;
+    return `${iso}${timePart ? 'T'+timePart+':00' : 'T00:00:00'}`;
+  }
+  function hourFromDateText(s){
+    const str = String(s??''); const parts = str.split(' ');
+    if(parts[1] && parts[1].includes(':')){ const [hh]=parts[1].split(':'); const h=parseInt(hh,10); return isFinite(h)?h:-1 }
+    return -1;
+  }
+  function mapHeader(h){
+    const key = norm(h);
+    const cand = [
+      {std:'dia', list:['dia','data','data da venda','data de venda','data_venda','datadavenda','date']},
+      {std:'unidade', list:['unidade','filial','unidades','uni','store','loja']},
+      {std:'pedidos', list:['pedidos','pedido','qtd','qtde','quantidade','orders','qty']},
+      {std:'fat', list:['fat','faturamento','total','valor total','valor','total geral','revenue','sales']},
+      {std:'des', list:['des','desconto','discount']},
+      {std:'fre', list:['fre','frete','entrega','delivery','shipping']},
+      {std:'turno', list:['turno','shift','periodo','período']},
+      {std:'Nome da loja', list:['nome da loja','nome loja','loja','nomedaloja','nome_da_loja','store_name']},
+      {std:'Canal de venda', list:['canal de venda','canal','canal de vendas','canal_venda','channel','sales_channel']},
+      {std:'pagamento', list:['pagamento','forma de pagamento','meio de pagamento','payment','payment_method']},
+      {std:'cancelado', list:['esta cancelado','está cancelado','cancelado','cancelada','cancelled','canceled']},
+      {std:'hora', list:['hora','horario','horário','hour','time']},
+    ];
+    for(const c of cand){ if(c.list.includes(key)) return c.std; }
+    return h;
+  }
+  function applyQuickDate(){
+    const opt = pr.value; const end = new Date(); let start;
+    if(opt.startsWith("Últimos ")){ const n=parseInt(opt.split(' ')[1],10); start=new Date(); start.setDate(end.getDate()-(n-1)); }
+    else if(opt==="Este mês"){ start=new Date(end.getFullYear(),end.getMonth(),1); }
+    else if(opt==="Último mês"){ start=new Date(end.getFullYear(),end.getMonth()-1,1); const e=new Date(end.getFullYear(),end.getMonth(),0); dini.value=toISO(start); dfim.value=toISO(e); return; }
+    else if(opt==="Este ano"){ start=new Date(end.getFullYear(),0,1); }
+    else { start=new Date(end.getFullYear(),end.getMonth(),end.getDate()-29); }
+    dini.value=toISO(start); dfim.value=toISO(end);
+  }
+  async function fetchAll(qb, step=1000, hardCap=2_000_000){
+    const out=[]; let from=0;
+    while(true){
+      const to = from+step-1;
+      const { data, error } = await qb.range(from,to);
+      if(error){ console.error(error); break; }
+      if(!data || !data.length){ break; }
+      out.push(...data);
+      if(data.length < step || out.length >= hardCap) break;
+      from += step;
+    }
+    return out;
+  }
+
+  // =============== DATA PIPELINE ===============
+  async function pickSource(){
+    let r = await supa.from(PREFER_TABLE).select('dia').limit(1);
+    if(!r.error){ TABLE = PREFER_TABLE; return; }
+    r = await supa.from(FALLBACK_VIEW).select('dia').limit(1);
+    if(!r.error){ TABLE = FALLBACK_VIEW; return; }
+    TABLE = null;
+  }
+  async function fetchMinMax(){
+    if(!TABLE){ minISO=maxISO=null; return; }
+    const a = await supa.from(TABLE).select('dia').order('dia',{ascending:true}).limit(1);
+    const b = await supa.from(TABLE).select('dia').order('dia',{ascending:false}).limit(1);
+    if(!a.error && a.data?.length && !b.error && b.data?.length){
+      minISO = onlyDateISO(a.data[0].dia);
+      maxISO = onlyDateISO(b.data[0].dia);
+    }else{ minISO=maxISO=null; }
+  }
+  async function buildOptions(){
+    if(!TABLE) return;
+
+    // Unidades
+    {
+      const base = supa.from(TABLE).select('unidade').not('unidade','is',null).order('unidade',{ascending:true});
+      const rows = await fetchAll(base, 1000);
+      const arr = [...new Set((rows||[]).map(x=>x.unidade).filter(Boolean))];
+      uni.innerHTML = `<option>Todas</option>` + arr.map(v=>`<option>${v}</option>`).join('');
+    }
+
+    // Pagamento
+    {
+      const base = supa.from(TABLE).select('pagamento').not('pagamento','is',null).order('pagamento',{ascending:true});
+      const rows = await fetchAll(base, 1000);
+      const arr = [...new Set((rows||[]).map(x=>x.pagamento).filter(Boolean))];
+      pag.innerHTML = arr.map(v=>`<option>${v}</option>`).join('');
+    }
+
+    // Canal de venda (ASPAS!)
+    {
+      const base = supa.from(TABLE).select('"Canal de venda"').order('Canal de venda',{ascending:true});
+      const rows = await fetchAll(base, 1000);
+      const arr = [...new Set((rows||[]).map(x=>x["Canal de venda"]).filter(Boolean))];
+      canal.innerHTML = arr.map(v=>`<option>${v}</option>`).join('');
+    }
+
+    // Top 10 lojas (agregando no cliente sobre todo dataset paginado)
+    {
+      const base = supa.from(TABLE).select('"Nome da loja",fat').not('fat','is',null).not('Nome da loja','is',null);
+      const rows = await fetchAll(base, 5000); // grande, mas roda uma vez
+      const acc = new Map();
+      (rows||[]).forEach(r=>{
+        const k = r["Nome da loja"];
+        acc.set(k, (acc.get(k)||0) + (Number(r.fat)||0));
+      });
+      const top = Array.from(acc.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k])=>k);
+      loja.innerHTML = `<option>Todos</option>` + top.map(v=>`<option>${v}</option>`).join('');
+    }
+  }
+
+  function computeKPIs(rows){
+    const pedidos = rows.reduce((s,r)=>s+(Number(r.pedidos)||0),0);
+    const fat     = rows.reduce((s,r)=>s+(Number(r.fat)||0),0);
+    const des     = rows.reduce((s,r)=>s+(Number(r.des)||0),0);
+    const fre     = rows.reduce((s,r)=>s+(Number(r.fre)||0),0);
+    const fatliq  = fat - des - fre;
+    const dias    = new Set(rows.map(r=>r.dia)).size || 1;
+    const ticket  = pedidos ? fat/pedidos : 0;
+    const fatDia  = fat/dias;
+
+    kPedidos.textContent = pedidos.toLocaleString('pt-BR');
+    kTicket.textContent  = fmtBRL(ticket);
+    kFat.textContent     = fmtBRL(fat);
+    kFatDia.textContent  = fmtBRL(fatDia);
+    kDes.textContent     = fmtBRL(des);
+    kDesPct.textContent  = fmtPct(fat ? (des/fat) : 0);
+    kFre.textContent     = fmtBRL(fre);
+    kFatLiq.textContent  = fmtBRL(fatliq);
+  }
+
+  function drawChart(rows){
+    const byDay = new Map();
+    rows.forEach(r=>{
+      if(!r.dia) return;
+      byDay.set(r.dia, (byDay.get(r.dia)||0) + (Number(r.fat)||0));
+    });
+    const labels = Array.from(byDay.keys()).sort();
+    const values = labels.map(d=>byDay.get(d));
+
+    const ctx = chartEl.getContext('2d');
+    if(chart) chart.destroy();
+    chart = new Chart(ctx,{
+      type:'line',
+      data:{ labels, datasets:[{ label:'Receita', data:values, tension:.25, pointRadius:0 }]},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        animation:false,
+        scales:{ y:{ beginAtZero:true } },
+        plugins:{ legend:{ display:false }, tooltip:{ mode:'index', intersect:false } }
+      }
+    });
+  }
+
+  async function reload(){
+    if(!minISO || !maxISO){
+      periodoEl.textContent = 'Sem dados.';
+      statusFonte.textContent = 'Fonte: —';
+      computeKPIs([]); if(chart) chart.destroy(); return;
+    }
+
+    const a = dini.value || minISO;
+    const b = dfim.value || maxISO;
+    const uniSel  = uni.value  || 'Todas';
+    const lojaSel = loja.value || 'Todos';
+    const turnSel = Array.from(turno.selectedOptions).map(o=>o.value);
+    const canSel  = Array.from(canal.selectedOptions).map(o=>o.value);
+    const pagSel  = Array.from(pag.selectedOptions).map(o=>o.value);
+    const cancSel = canc.value || 'Todos';
+
+    // Filtros no servidor
+    let qb = supa.from(TABLE)
+      .select('dia,unidade,pedidos,fat,des,fre,"Nome da loja",turno,"Canal de venda",pagamento,cancelado,hora')
+      .gte('dia', a).lte('dia', b)
+      .order('dia', { ascending:true });
+
+    if(uniSel !== 'Todas')  qb = qb.eq('unidade', uniSel);
+    if(lojaSel !== 'Todos') qb = qb.eq('"Nome da loja"', lojaSel);        // aspas
+    if(turnSel.length)      qb = qb.in('turno', turnSel);
+    if(canSel.length)       qb = qb.in('"Canal de venda"', canSel);       // aspas
+    if(pagSel.length)       qb = qb.in('pagamento', pagSel);
+
+    const data = await fetchAll(qb, 1000);
+    let rows = (data||[]).map(r=>({
+      dia: r?.dia ? r.dia.slice(0,10) : null,
+      unidade: r?.unidade ?? null,
+      pedidos: Number(r?.pedidos)||0,
+      fat: Number(r?.fat)||0,
+      des: Number(r?.des)||0,
+      fre: Number(r?.fre)||0,
+      turno: r?.turno ?? null,
+      pagamento: r?.pagamento ?? null,
+      "Canal de venda": r?.["Canal de venda"] ?? null,
+      "Nome da loja": r?.["Nome da loja"] ?? null,
+      cancelado: normCancel(r?.cancelado),
+      hora: (Number(r?.hora) % 24 + 24) % 24
+    }));
+
+    if(cancSel !== 'Todos'){
+      rows = rows.filter(r=> r.cancelado === cancSel);
+    }
+
+    lastData = rows;
+
+    periodoEl.textContent = `Período: ${a} → ${b} (${rows.length.toLocaleString('pt-BR')} linhas)`;
+    statusFonte.textContent = `Fonte OK (${minISO} → ${maxISO}) • origem: ${TABLE}`;
+
+    computeKPIs(rows);
+    drawChart(rows);
+  }
+
+  // =============== IMPORTAÇÃO ===============
+  btnImport.addEventListener('click', async ()=>{
+    const file = csv.files?.[0];
+    if(!file){ importStatus.textContent = 'Selecione um CSV.'; importStatus.className='muted danger'; return; }
+
+    importStatus.textContent = 'Lendo arquivo…'; importStatus.className='muted';
+
+    Papa.parse(file,{
+      header:true, skipEmptyLines:'greedy', delimiter:',', quoteChar:'"', escapeChar:'"', transformHeader: mapHeader,
+      complete: async (res)=>{
+        const raw = res.data || [];
+        if(!raw.length){ importStatus.textContent='Arquivo vazio.'; importStatus.className='muted danger'; return; }
+
+        // Após mapear, verifique se colunas mínimas existem
+        const headers = Object.keys(raw[0]||{});
+        const hasDia = headers.includes('dia') || headers.some(h=>norm(h).includes('data'));
+        const hasUni = headers.includes('unidade');
+        const hasFat = headers.includes('fat') || headers.includes('Total');
+        if(!hasDia || !hasUni || !hasFat){
+          const miss=[]; if(!hasDia)miss.push('dia'); if(!hasUni)miss.push('unidade'); if(!hasFat)miss.push('fat');
+          importStatus.textContent = `Nada para importar (colunas obrigatórias não reconhecidas: ${miss.join('/')}).`;
+          importStatus.className='muted danger'; return;
         }
 
-        function stripBOM(str) {
-            return str.replace(/^\uFEFF/, '');
+        // Normaliza linhas
+        const normRows = raw.map((r,i)=>{
+          let diaValue = r.dia || r['Data da venda'] || r.data || r['Data'];
+          let diaIso = null;
+          if(diaValue){
+            if(String(diaValue).includes('/')) diaIso = ddmmyyyyToISO(diaValue);
+            else diaIso = toISO(diaValue);
+          }
+          if(!diaIso) return null;
+
+          const hora = ('hora' in r) ? (parseInt(r.hora,10)||-1) : hourFromDateText(diaValue);
+          const fat = parseBR(r.fat || r['Total'] || r.total || 0);
+          const des = parseBR(r.des || r['Desconto'] || r.desconto || 0);
+          const fre = parseBR(r.fre || r['Entrega'] || r.entrega || r.frete || 0);
+          const unidade = String(r.unidade || r.Unidade || '').trim();
+          if(!unidade) return null;
+
+          return {
+            dia: onlyDateISO(diaIso),
+            unidade,
+            pedidos: Math.max(1, Number(r.pedidos)||1),
+            fat: Math.max(0, fat),
+            des: Math.max(0, des),
+            fre: Math.max(0, fre),
+            turno: r.turno || r.Turno || null,
+            pagamento: r.pagamento || r.Pagamento || null,
+            "Canal de venda": r["Canal de venda"] || r.Canal || null,
+            "Nome da loja": r["Nome da loja"] || r.Loja || null,
+            cancelado: normCancel(r.cancelado || r['Está cancelado']),
+            hora: isFinite(hora)?hora:-1
+          };
+        }).filter(Boolean);
+
+        if(!normRows.length){ importStatus.textContent='Nada para importar (linhas inválidas).'; importStatus.className='muted danger'; return; }
+
+        // Deduplicação client-side antes do upsert
+        const acc = new Map();
+        for(const r of normRows){
+          const key = [r.dia,r.unidade,r["Nome da loja"],r.hora,r.pagamento,r["Canal de venda"]].join('|');
+          const v = acc.get(key) || {...r};
+          v.pedidos = (v.pedidos||0) + (r.pedidos||0);
+          v.fat     = (v.fat||0)     + (r.fat||0);
+          v.des     = (v.des||0)     + (r.des||0);
+          v.fre     = (v.fre||0)     + (r.fre||0);
+          v.cancelado = r.cancelado || v.cancelado;
+          acc.set(key,v);
         }
-
-        function onlyDate(isoString) {
-            return isoString.split('T')[0];
-        }
-
-        function ddmmyyyyToISO(dateStr) {
-            if (!dateStr) return null;
-            const parts = dateStr.split(/[\/\s]/);
-            if (parts.length >= 3) {
-                const day = parts[0].padStart(2, '0');
-                const month = parts[1].padStart(2, '0');
-                const year = parts[2];
-                return `${year}-${month}-${day}`;
-            }
-            return null;
-        }
-
-        function parseBR(value) {
-            if (!value) return 0;
-            return parseFloat(value.toString().replace(/[^\d,-]/g, '').replace(',', '.')) || 0;
-        }
-
-        function normCancel(value) {
-            if (!value) return 'N';
-            const v = norm(value);
-            return (v.includes('sim') || v.includes('s') || v === '1') ? 'S' : 'N';
-        }
-
-        function formatCurrency(value) {
-            return new Intl.NumberFormat('pt-BR', {
-                style: 'currency',
-                currency: 'BRL'
-            }).format(value);
-        }
-
-        function formatNumber(value) {
-            return new Intl.NumberFormat('pt-BR').format(value);
-        }
-
-        function updateStatus(type, message) {
-            const periodInfo = document.getElementById('period-info');
-            periodInfo.className = `status-badge status-${type}`;
-            periodInfo.textContent = message;
-        }
-
-        function showEmptyState() {
-            document.getElementById('empty-state').style.display = 'block';
-            document.getElementById('filters-section').style.display = 'none';
-            document.getElementById('kpis-section').style.display = 'none';
-            document.getElementById('chart-section').style.display = 'none';
-        }
-
-        function hideEmptyState() {
-            document.getElementById('empty-state').style.display = 'none';
-            document.getElementById('filters-section').style.display = 'block';
-            document.getElementById('kpis-section').style.display = 'grid';
-            document.getElementById('chart-section').style.display = 'block';
-        }
-
-        function scrollToImport() {
-            document.querySelector('.import-section').scrollIntoView({ 
-                behavior: 'smooth' 
-            });
-        }
-
-        // Get date range from database
-        async function getDateRange() {
-            console.log('📅 Verificando dados disponíveis...');
-            
-            try {
-                const result = await supa
-                    .from('vendas_kpi_daily_v2_data')
-                    .select('dia', { count: 'exact', head: true });
-
-                if (result.error) {
-                    console.warn('⚠️ Erro ao verificar dados:', result.error);
-                    throw new Error('Erro na conexão com banco');
-                }
-
-                if (!result.count || result.count === 0) {
-                    console.log('📊 Nenhum dado encontrado - banco vazio');
-                    hasData = false;
-                    updateStatus('warning', '⚠️ Sem dados - Importe CSV');
-                    showEmptyState();
-                    return;
-                }
-
-                // Get actual date range
-                const rangeResult = await supa
-                    .from('vendas_kpi_daily_v2_data')
-                    .select('dia')
-                    .order('dia', { ascending: true });
-
-                if (rangeResult.data && rangeResult.data.length > 0) {
-                    const dates = rangeResult.data.map(row => row.dia).filter(Boolean);
-                    minISO = dates[0];
-                    maxISO = dates[dates.length - 1];
-                    hasData = true;
-
-                    console.log(`✅ Dados encontrados: ${result.count} registros`);
-                    console.log(`📅 Período: ${minISO} → ${maxISO}`);
-                    updateStatus('success', `Período: ${minISO} → ${maxISO} · ${result.count} registros`);
-                    hideEmptyState();
-                } else {
-                    throw new Error('Dados inconsistentes');
-                }
-
-            } catch (error) {
-                console.error('❌ Erro ao buscar período:', error);
-                hasData = false;
-                updateStatus('warning', '⚠️ Sem dados - Importe CSV');
-                showEmptyState();
-            }
-        }
-
-        // Build filter options
-        async function buildOptions() {
-            if (!hasData) return;
-
-            console.log('🔄 Carregando opções dos filtros...');
-
-            try {
-                // Load units
-                const unitsResult = await supa
-                    .from('vendas_kpi_daily_v2_data')
-                    .select('unidade')
-                    .not('unidade', 'is', null);
-
-                if (unitsResult.data) {
-                    const units = [...new Set(unitsResult.data.map(row => row.unidade))].filter(Boolean);
-                    units.forEach(unit => {
-                        const option = document.createElement('option');
-                        option.value = unit;
-                        option.textContent = unit;
-                        uni.appendChild(option);
-                    });
-                    console.log(`✅ Unidades carregadas: ${units.length}`);
-                }
-
-                // Load top stores
-                const storesResult = await supa
-                    .from('vendas_kpi_daily_v2_data')
-                    .select('"Nome da loja", fat')
-                    .not('"Nome da loja"', 'is', null);
-
-                if (storesResult.data) {
-                    const storeRevenue = {};
-                    storesResult.data.forEach(row => {
-                        const storeName = row['Nome da loja'];
-                        if (storeName) {
-                            storeRevenue[storeName] = (storeRevenue[storeName] || 0) + (parseFloat(row.fat) || 0);
-                        }
-                    });
-
-                    const topStores = Object.entries(storeRevenue)
-                        .sort((a, b) => b[1] - a[1])
-                        .slice(0, 10)
-                        .map(entry => entry[0]);
-
-                    topStores.forEach(store => {
-                        const option = document.createElement('option');
-                        option.value = store;
-                        option.textContent = store;
-                        loja.appendChild(option);
-                    });
-                    console.log(`✅ Top lojas carregadas: ${topStores.length}`);
-                }
-
-                // Load channels
-                const channelsResult = await supa
-                    .from('vendas_kpi_daily_v2_data')
-                    .select('"Canal de venda"')
-                    .not('"Canal de venda"', 'is', null);
-
-                if (channelsResult.data) {
-                    const channels = [...new Set(channelsResult.data.map(row => row['Canal de venda']))].filter(Boolean);
-                    channels.forEach(channel => {
-                        const option = document.createElement('option');
-                        option.value = channel;
-                        option.textContent = channel;
-                        canal.appendChild(option);
-                    });
-                    console.log(`✅ Canais carregados: ${channels.length}`);
-                }
-
-                // Load payment methods
-                const paymentsResult = await supa
-                    .from('vendas_kpi_daily_v2_data')
-                    .select('pagamento')
-                    .not('pagamento', 'is', null);
-
-                if (paymentsResult.data) {
-                    const payments = [...new Set(paymentsResult.data.map(row => row.pagamento))].filter(Boolean);
-                    payments.forEach(payment => {
-                        const option = document.createElement('option');
-                        option.value = payment;
-                        option.textContent = payment;
-                        pag.appendChild(option);
-                    });
-                    console.log(`✅ Pagamentos carregados: ${payments.length}`);
-                }
-
-            } catch (error) {
-                console.error('❌ Erro ao carregar opções:', error);
-            }
-        }
-
-        // Set default dates
-        function setDefaultDates() {
-            if (maxISO) {
-                const endDate = new Date(maxISO);
-                const startDate = new Date(endDate.getTime() - (29 * 24 * 60 * 60 * 1000));
-                
-                dini.value = onlyDate(startDate.toISOString());
-                dfim.value = maxISO;
-            }
-        }
-
-        // Load data with pagination
-        async function loadAllData(filters = {}) {
-            if (!hasData) return [];
-
-            console.log('📊 Carregando todos os dados com paginação...');
-            
-            let allData = [];
-            let page = 0;
-            const pageSize = 1000;
-            let hasMore = true;
-
-            while (hasMore && page < 100) { // Safety limit
-                console.log(`📄 Carregando página ${page + 1}...`);
-                
-                let query = supa
-                    .from('vendas_kpi_daily_v2_data')
-                    .select('*')
-                    .range(page * pageSize, (page + 1) * pageSize - 1)
-                    .order('dia', { ascending: true });
-
-                // Apply filters
-                if (filters.startDate) {
-                    query = query.gte('dia', filters.startDate);
-                }
-                if (filters.endDate) {
-                    query = query.lte('dia', filters.endDate);
-                }
-                if (filters.unidade && filters.unidade !== 'Todas') {
-                    query = query.eq('unidade', filters.unidade);
-                }
-                if (filters.loja && filters.loja !== 'Todos') {
-                    query = query.eq('"Nome da loja"', filters.loja);
-                }
-                if (filters.turno && filters.turno !== 'Todos') {
-                    query = query.eq('turno', filters.turno);
-                }
-                if (filters.canal && filters.canal !== 'Todos') {
-                    query = query.eq('"Canal de venda"', filters.canal);
-                }
-                if (filters.pagamento && filters.pagamento !== 'Todos') {
-                    query = query.eq('pagamento', filters.pagamento);
-                }
-                if (filters.cancelado && filters.cancelado !== 'Todos') {
-                    query = query.eq('cancelado', filters.cancelado === 'Sim' ? 'S' : 'N');
-                }
-
-                const result = await query;
-                
-                if (result.error) {
-                    console.error('❌ Erro ao carregar dados:', result.error);
-                    break;
-                }
-
-                const pageData = result.data || [];
-                console.log(`📊 Página ${page + 1}: ${pageData.length} registros (total: ${allData.length + pageData.length})`);
-                
-                allData = allData.concat(pageData);
-                
-                if (pageData.length < pageSize) {
-                    hasMore = false;
-                    console.log('✅ Carregamento completo - última página');
-                } else {
-                    page++;
-                }
-            }
-
-            // Remove duplicates
-            const uniqueData = [];
-            const seen = new Set();
-            let duplicatesRemoved = 0;
-
-            allData.forEach(row => {
-                const key = `${row.dia}-${row.unidade}-${row['Nome da loja']}-${row.fat}-${row.pedidos}`;
-                if (!seen.has(key)) {
-                    seen.add(key);
-                    uniqueData.push(row);
-                } else {
-                    duplicatesRemoved++;
-                }
-            });
-
-            if (duplicatesRemoved > 0) {
-                console.log(`🔄 Removidas ${duplicatesRemoved} duplicatas`);
-            }
-
-            console.log(`✅ Total de dados carregados: ${uniqueData.length} registros únicos`);
-            return uniqueData;
-        }
-
-        // Calculate KPIs
-        function calculateKPIs(data) {
-            let totalPedidos = 0;
-            let totalFat = 0;
-            let totalFre = 0;
-            let totalDes = 0;
-
-            data.forEach(row => {
-                totalPedidos += parseFloat(row.pedidos) || 0;
-                totalFat += parseFloat(row.fat) || 0;
-                totalFre += parseFloat(row.fre) || 0;
-                totalDes += parseFloat(row.des) || 0;
-            });
-
-            const totalFatLiq = totalFat - totalDes;
-            const ticketMedio = totalPedidos > 0 ? totalFat / totalPedidos : 0;
-            const incentivosPerc = totalFat > 0 ? (totalDes / totalFat) * 100 : 0;
-
-            // Calculate days for average
-            const uniqueDays = new Set(data.map(row => row.dia)).size;
-            const fatMedioDia = uniqueDays > 0 ? totalFat / uniqueDays : 0;
-
-            return {
-                totalPedidos,
-                totalFat,
-                totalFre,
-                totalDes,
-                totalFatLiq,
-                ticketMedio,
-                incentivosPerc,
-                fatMedioDia
-            };
-        }
-
-        // Update KPI display
-        function updateKPIs(current, previous = null) {
-            // Update values
-            document.getElementById('pedidos-value').textContent = formatNumber(current.totalPedidos);
-            document.getElementById('ticket-value').textContent = formatCurrency(current.ticketMedio);
-            document.getElementById('faturamento-value').textContent = formatCurrency(current.totalFat);
-            document.getElementById('fat-dia-value').textContent = formatCurrency(current.fatMedioDia);
-            document.getElementById('incentivos-value').textContent = formatCurrency(current.totalDes);
-            document.getElementById('incentivos-perc-value').textContent = current.incentivosPerc.toFixed(1) + '%';
-            document.getElementById('frete-value').textContent = formatCurrency(current.totalFre);
-            document.getElementById('liquido-value').textContent = formatCurrency(current.totalFatLiq);
-
-            // Update trends if previous data available
-            if (previous) {
-                updateTrend('pedidos', current.totalPedidos, previous.totalPedidos);
-                updateTrend('ticket', current.ticketMedio, previous.ticketMedio);
-                updateTrend('faturamento', current.totalFat, previous.totalFat);
-                updateTrend('fat-dia', current.fatMedioDia, previous.fatMedioDia);
-                updateTrend('incentivos', current.totalDes, previous.totalDes);
-                updateTrend('incentivos-perc', current.incentivosPerc, previous.incentivosPerc);
-                updateTrend('frete', current.totalFre, previous.totalFre);
-                updateTrend('liquido', current.totalFatLiq, previous.totalFatLiq);
-            }
-        }
-
-        // Update trend indicators
-        function updateTrend(kpi, current, previous) {
-            const trendElement = document.getElementById(`${kpi}-trend`);
-            const subtitleElement = document.getElementById(`${kpi}-subtitle`);
-            
-            if (previous === 0) {
-                trendElement.className = 'kpi-trend trend-neutral';
-                trendElement.textContent = '— N/A';
-                subtitleElement.textContent = 'sem dados anteriores';
-                return;
-            }
-
-            const change = ((current - previous) / previous) * 100;
-            const isPercentage = kpi === 'incentivos-perc';
-            
-            if (Math.abs(change) < 0.1) {
-                trendElement.className = 'kpi-trend trend-neutral';
-                trendElement.textContent = '— 0%';
-            } else if (change > 0) {
-                trendElement.className = 'kpi-trend trend-up';
-                trendElement.textContent = `↗ +${change.toFixed(1)}%`;
-            } else {
-                trendElement.className = 'kpi-trend trend-down';
-                trendElement.textContent = `↘ ${change.toFixed(1)}%`;
-            }
-
-            const previousFormatted = isPercentage ? 
-                previous.toFixed(1) + '%' : 
-                (kpi === 'pedidos' ? formatNumber(previous) : formatCurrency(previous));
-            
-            subtitleElement.textContent = `vs ${previousFormatted} (período anterior)`;
-        }
-
-        // Calculate previous period
-        function calculatePreviousPeriod(startDate, endDate) {
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-            const diffTime = end.getTime() - start.getTime();
-            
-            const prevEnd = new Date(start.getTime() - 24 * 60 * 60 * 1000); // Day before start
-            const prevStart = new Date(prevEnd.getTime() - diffTime);
-            
-            return {
-                startDate: onlyDate(prevStart.toISOString()),
-                endDate: onlyDate(prevEnd.toISOString())
-            };
-        }
-
-        // Main reload function
-        async function reload() {
-            if (!hasData) {
-                console.log('⚠️ Sem dados para recarregar');
-                return;
-            }
-
-            console.log('🔄 Recarregando dados com comparativos...');
-
-            const filters = {
-                startDate: dini.value,
-                endDate: dfim.value,
-                unidade: uni.value,
-                loja: loja.value,
-                turno: turno.value,
-                canal: canal.value,
-                pagamento: pag.value,
-                cancelado: canc.value
-            };
-
-            console.log('📊 Filtros aplicados:', {
-                periodo: `${filters.startDate} → ${filters.endDate}`,
-                unidade: filters.unidade,
-                loja: filters.loja,
-                turno: filters.turno,
-                canal: filters.canal
-            });
-
-            try {
-                // Load current period data
-                console.log(`📊 Carregando dados para período: ${filters.startDate} → ${filters.endDate}`);
-                const currentData = await loadAllData(filters);
-                const currentKPIs = calculateKPIs(currentData);
-
-                // Calculate previous period
-                const prevPeriod = calculatePreviousPeriod(filters.startDate, filters.endDate);
-                console.log(`📅 Período anterior calculado: ${prevPeriod.startDate} → ${prevPeriod.endDate}`);
-
-                // Load previous period data
-                const prevFilters = { ...filters, startDate: prevPeriod.startDate, endDate: prevPeriod.endDate };
-                const previousData = await loadAllData(prevFilters);
-                const previousKPIs = calculateKPIs(previousData);
-
-                // Update display
-                console.log('✅ Dados carregados com sucesso!');
-                console.log('📊 KPIs atuais:', currentKPIs);
-                console.log('📊 KPIs anteriores:', previousKPIs);
-
-                updateKPIs(currentKPIs, previousKPIs);
-                updateStatus('success', `Período: ${filters.startDate} → ${filters.endDate} · ${currentData.length} registros`);
-                
-                // Update chart
-                updateChart(currentData, previousData);
-
-            } catch (error) {
-                console.error('❌ Erro ao carregar dados:', error);
-                updateStatus('error', `Erro: ${error.message}`);
-            }
-        }
-
-        // Update chart
-        function updateChart(currentData, previousData) {
-            const ctx = document.getElementById('revenueChart').getContext('2d');
-            
-            if (chart) {
-                chart.destroy();
-            }
-
-            // Group data by day
-            const currentByDay = {};
-            const previousByDay = {};
-
-            currentData.forEach(row => {
-                const day = row.dia;
-                currentByDay[day] = (currentByDay[day] || 0) + (parseFloat(row.fat) || 0);
-            });
-
-            previousData.forEach(row => {
-                const day = row.dia;
-                previousByDay[day] = (previousByDay[day] || 0) + (parseFloat(row.fat) || 0);
-            });
-
-            const currentDays = Object.keys(currentByDay).sort();
-            const currentValues = currentDays.map(day => currentByDay[day]);
-
-            chart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: currentDays,
-                    datasets: [{
-                        label: 'Receita Atual (R$)',
-                        data: currentValues,
-                        borderColor: '#6366f1',
-                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                        tension: 0.4,
-                        fill: true
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: true
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function(value) {
-                                    return formatCurrency(value);
-                                }
-                            }
-                        }
-                    },
-                    interaction: {
-                        intersect: false,
-                        mode: 'index'
-                    }
-                }
-            });
-        }
-
-        // Quick period selection
-        function applyQuickPeriod() {
-            if (!maxISO) return;
-
-            const opt = pr.value;
-            const end = new Date(maxISO);
-            let start;
-
-            if (opt === "Últimos 60 dias") {
-                start = new Date(end.getTime() - (59 * 24 * 60 * 60 * 1000));
-            } else if (opt === "Últimos 90 dias") {
-                start = new Date(end.getTime() - (89 * 24 * 60 * 60 * 1000));
-            } else if (opt === "Este mês") {
-                start = new Date(end.getFullYear(), end.getMonth(), 1);
-            } else if (opt === "Último mês") {
-                start = new Date(end.getFullYear(), end.getMonth() - 1, 1);
-                end.setDate(0);
-            } else if (opt === "Este ano") {
-                start = new Date(end.getFullYear(), 0, 1);
-            } else {
-                start = new Date(end.getTime() - (29 * 24 * 60 * 60 * 1000));
-            }
-
-            dini.value = onlyDate(start.toISOString());
-            dfim.value = onlyDate(end.toISOString());
-            
-            reload();
-        }
-
-        // Clear filters
-        function clearFilters() {
-            uni.value = 'Todas';
-            loja.value = 'Todos';
-            turno.value = 'Todos';
-            canal.value = 'Todos';
-            pag.value = 'Todos';
-            canc.value = 'Todos';
-            
-            setDefaultDates();
-            reload();
-        }
-
-        // Debug function
-        function debugInfo() {
-            console.log('🔍 DEBUG INFO - MAESTRO FOOD DASHBOARD (FINAL CORRIGIDO):');
-            console.log('🔗 Supabase URL:', SUPABASE_URL);
-            console.log('🔑 Supabase Key:', SUPABASE_ANON_KEY ? 'Configurada' : 'Não configurada');
-            console.log('📊 Status dos dados:', hasData ? 'Disponíveis' : 'Não disponíveis');
-            console.log('📅 Período disponível:', minISO, '→', maxISO);
-            console.log('📊 Filtros atuais:', {
-                unidade: uni.value,
-                loja: loja.value,
-                dataInicial: dini.value,
-                dataFinal: dfim.value,
-                turno: turno.value,
-                canal: canal.value,
-                pagamento: pag.value,
-                cancelado: canc.value
-            });
-            console.log('🎯 VALIDAÇÃO PLANILHA:');
-            console.log('   10/08/2025: 563 pedidos, R$ 36.026,26, R$ 4.905,90 desconto');
-            console.log('🔧 CORREÇÕES APLICADAS:');
-            console.log('   • Erro 404: Dashboard funciona sem dados');
-            console.log('   • Erro 409: Usa UPSERT para evitar duplicatas');
-            console.log('   • Importação: Funcionando com tratamento robusto');
-        }
-
-        // File handling
-        function handleFileSelect() {
-            const file = csv.files[0];
-            if (file) {
-                const fileName = file.name;
-                const fileLabel = document.querySelector('.file-input-label');
-                fileLabel.innerHTML = `
-                    <span style="font-size: 2rem;">✅</span>
-                    <div>
-                        <div style="font-weight: 600; margin-bottom: 4px;">${fileName}</div>
-                        <div style="font-size: 0.875rem; color: var(--text-muted);">Arquivo selecionado</div>
-                    </div>
-                `;
-            }
-        }
-
-        // CSV Import - CORRIGIDO COM UPSERT
-        async function importCSV() {
-            const file = csv.files[0];
-            if (!file) {
-                alert('Selecione um arquivo CSV primeiro');
-                return;
-            }
-
-            console.log('📤 Iniciando importação CSV com UPSERT:', file.name);
-            
-            try {
-                const text = await file.text();
-                console.log('📄 Arquivo lido, tamanho:', text.length, 'caracteres');
-                
-                Papa.parse(text, {
-                    header: true,
-                    skipEmptyLines: true,
-                    delimiter: ';', // Força uso do ponto e vírgula
-                    complete: async function(results) {
-                        console.log('📊 Dados CSV parseados:', results.data.length, 'registros');
-                        
-                        if (results.data.length === 0) {
-                            alert('Arquivo CSV vazio ou inválido');
-                            return;
-                        }
-
-                        // Process and validate data
-                        const processedData = [];
-                        let validRecords = 0;
-                        let invalidRecords = 0;
-
-                        for (const row of results.data) {
-                            try {
-                                const processedRow = {};
-                                
-                                // Map headers with better detection
-                                Object.keys(row).forEach(key => {
-                                    const normalizedKey = norm(stripBOM(key));
-                                    const value = stripBOM(row[key] || '').trim();
-                                    
-                                    if (normalizedKey.includes('data') && normalizedKey.includes('venda')) {
-                                        processedRow.dia = ddmmyyyyToISO(value);
-                                    } else if (normalizedKey.includes('unidade')) {
-                                        processedRow.unidade = value;
-                                    } else if (normalizedKey.includes('nome') && normalizedKey.includes('loja')) {
-                                        processedRow['Nome da loja'] = value;
-                                    } else if (normalizedKey === 'total' || (normalizedKey.includes('total') && !normalizedKey.includes('taxa'))) {
-                                        processedRow.fat = parseBR(value);
-                                    } else if (normalizedKey.includes('desconto')) {
-                                        processedRow.des = parseBR(value);
-                                    } else if (normalizedKey.includes('entrega') && !normalizedKey.includes('valor')) {
-                                        processedRow.fre = parseBR(value);
-                                    } else if (normalizedKey.includes('canal')) {
-                                        processedRow['Canal de venda'] = value;
-                                    } else if (normalizedKey.includes('pagamento')) {
-                                        processedRow.pagamento = value;
-                                    } else if (normalizedKey.includes('cancelado')) {
-                                        processedRow.cancelado = normCancel(value);
-                                    } else if (normalizedKey.includes('turno')) {
-                                        processedRow.turno = value;
-                                    }
-                                });
-                                
-                                // Set default values
-                                processedRow.pedidos = 1; // Each row is one order
-                                processedRow.hora = new Date().getHours(); // Default hour
-                                
-                                // Validate required fields
-                                if (processedRow.dia && processedRow.fat !== undefined && processedRow.fat > 0) {
-                                    processedData.push(processedRow);
-                                    validRecords++;
-                                } else {
-                                    invalidRecords++;
-                                }
-                                
-                            } catch (error) {
-                                console.warn('⚠️ Erro ao processar linha:', error);
-                                invalidRecords++;
-                            }
-                        }
-
-                        console.log(`✅ Processamento concluído: ${validRecords} válidos, ${invalidRecords} inválidos`);
-                        
-                        if (validRecords === 0) {
-                            alert('Nenhum registro válido encontrado no arquivo CSV');
-                            return;
-                        }
-
-                        // Insert data using UPSERT to avoid duplicates
-                        console.log('📤 Inserindo dados no Supabase com UPSERT...');
-                        
-                        // Insert in batches to avoid timeout
-                        const batchSize = 100;
-                        let insertedCount = 0;
-                        let upsertedCount = 0;
-                        
-                        for (let i = 0; i < processedData.length; i += batchSize) {
-                            const batch = processedData.slice(i, i + batchSize);
-                            
-                            // Use UPSERT to handle duplicates
-                            const result = await supa
-                                .from('vendas_kpi_daily_v2_data')
-                                .upsert(batch, { 
-                                    onConflict: 'dia,unidade,fat,pedidos', // Specify conflict columns
-                                    ignoreDuplicates: true 
-                                });
-                            
-                            if (result.error) {
-                                console.error('❌ Erro ao inserir lote:', result.error);
-                                // Continue with next batch instead of stopping
-                                continue;
-                            }
-                            
-                            insertedCount += batch.length;
-                            console.log(`📊 Processados ${insertedCount}/${validRecords} registros...`);
-                        }
-                        
-                        console.log('✅ Importação concluída com sucesso!');
-                        alert(`✅ Importação realizada com sucesso!\n\n${insertedCount} registros processados\n\nO dashboard será recarregado automaticamente.`);
-                        
-                        // Reload data after import
-                        await getDateRange();
-                        await buildOptions();
-                        setDefaultDates();
-                        await reload();
-                        
-                    },
-                    error: function(error) {
-                        console.error('❌ Erro ao processar CSV:', error);
-                        alert('Erro ao processar arquivo CSV: ' + error.message);
-                    }
-                });
-                
-            } catch (error) {
-                console.error('❌ Erro na importação:', error);
-                alert('Erro na importação: ' + error.message);
-            }
-        }
-
-        // Initialize dashboard
-        async function initDashboard() {
-            console.log('🚀 Iniciando Maestro Food Dashboard (FINAL CORRIGIDO)...');
-            
-            try {
-                console.log('🔗 Testando conexão com Supabase...');
-                
-                // Test connection
-                const testResult = await supa
-                    .from('vendas_kpi_daily_v2_data')
-                    .select('dia', { count: 'exact', head: true });
-                
-                if (testResult.error) {
-                    console.warn('⚠️ Erro de conexão:', testResult.error);
-                    updateStatus('error', '❌ Erro de conexão');
-                    showEmptyState();
-                    return;
-                }
-                
-                console.log('✅ Conexão Supabase estabelecida com sucesso');
-                
-                // Get date range (handles empty database)
-                await getDateRange();
-                
-                // Only proceed if we have data
-                if (hasData) {
-                    // Build filter options
-                    await buildOptions();
-                    
-                    // Set default dates
-                    setDefaultDates();
-                    
-                    // Load initial data
-                    await reload();
-                    
-                    console.log('✅ Dashboard inicializado com dados!');
-                } else {
-                    console.log('⚠️ Dashboard inicializado sem dados - aguardando importação');
-                }
-                
-                console.log('🎯 CORREÇÕES APLICADAS:');
-                console.log('   • Erro 404: Dashboard funciona sem dados ✅');
-                console.log('   • Erro 409: Usa UPSERT para evitar duplicatas ✅');
-                console.log('   • Importação: Funcionando com tratamento robusto ✅');
-                console.log('   • Validação: 10/08/2025: 563 pedidos, R$ 36.026,26 ✅');
-                
-            } catch (error) {
-                console.error('❌ Erro na inicialização:', error);
-                updateStatus('error', `Erro: ${error.message}`);
-                showEmptyState();
-            }
-        }
-
-        // Start when page loads
-        document.addEventListener('DOMContentLoaded', initDashboard);
-    </script>
+        const rows = [...acc.values()];
+
+        if(!TABLE){ await pickSource(); if(!TABLE){ importStatus.textContent='Sem tabela definida no banco.'; importStatus.className='muted danger'; return; } }
+        importStatus.textContent = `Enviando ${rows.length.toLocaleString('pt-BR')} registros…`;
+
+        const onC = 'dia,unidade,"Nome da loja",hora,pagamento,"Canal de venda"';
+        const { error } = await supa.from(TABLE).upsert(rows,{ onConflict:onC });
+        if(error){ console.error(error); importStatus.textContent='Erro ao inserir.'; importStatus.className='muted danger'; return; }
+
+        importStatus.textContent='Importado.'; importStatus.className='muted ok';
+        await fetchMinMax(); await buildOptions(); await reload();
+      },
+      error:(e)=>{ console.error(e); importStatus.textContent='Erro ao ler CSV.'; importStatus.className='muted danger'; }
+    });
+  });
+
+  // =============== LISTENERS ===============
+  pr.addEventListener('change', ()=>{ applyQuickDate(); reload(); $("fx").open=false; });
+  [uni,dini,dfim,turno,canal,pag,canc,loja].forEach(el=> el.addEventListener('change', ()=>{ reload(); $("fx").open=false; }));
+  btnLimpar.addEventListener('click', ()=>{ uni.value='Todas'; loja.value='Todos'; turno.selectedIndex=-1; canal.selectedIndex=-1; pag.selectedIndex=-1; canc.value='Todos'; applyQuickDate(); reload(); });
+
+  // =============== BOOT ===============
+  (async function(){
+    await pickSource();
+    await fetchMinMax();
+    if(minISO && maxISO){ applyQuickDate(); }
+    await buildOptions();
+    await reload();
+  })();
+})();
+</script>
 </body>
 </html>
-
