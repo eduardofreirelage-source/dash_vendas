@@ -4,7 +4,6 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Maestro Food</title>
-  <!-- Favicon inline para evitar 404 -->
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="62" fill="%231a73e8"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="64" fill="white">M</text></svg>'/>
   <link rel="stylesheet" href="https://unpkg.com/modern-css-reset/dist/reset.min.css">
   <style>
@@ -106,7 +105,7 @@
     </div>
   </div>
 
-  <!-- Libs antes do seu script -->
+  <!-- Libs -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 
@@ -147,23 +146,19 @@
       const _unidade = (fUnidade.value && fUnidade.value!=='Todas') ? fUnidade.value : null;
 
       const r = await supa.rpc('dash_filtros',{ _dini, _dfim, _unidade });
-      if(r.error){ return; }
+      if(r.error){ console.error(r.error); return; }
 
-      const data = r.data;
-      // Supabase retorna JSONB; se vier como linha única, data já é o json.
+      const data = r.data || {};
       const unidades = (data.unidades||[]).map(String);
       const lojas    = (data.lojas||[]).map(String);
       const canais   = (data.canais||[]).map(String);
       const pagamentos=(data.pagamentos||[]).map(String);
 
-      // Preencher selects (preservando seleção quando possível)
-      const keep = (sel, nov) => {
+      const keep = (sel, nov, primeira) => {
         const cur = sel.multiple ? getMulti(sel) : sel.value;
-        sel.innerHTML = (sel===fUnidade || sel===fLoja)
-          ? `<option>${sel===fUnidade?'Todas':'Todos'}</option>` + nov.map(v=>`<option>${v}</option>`).join('')
+        sel.innerHTML = primeira
+          ? `<option>${primeira}</option>` + nov.map(v=>`<option>${v}</option>`).join('')
           : nov.map(v=>`<option>${v}</option>`).join('');
-
-        // restaurar seleção se existir
         if(sel.multiple){
           Array.from(sel.options).forEach(o=>{ if(cur.includes(o.value)) o.selected=true; });
         }else{
@@ -171,10 +166,10 @@
         }
       };
 
-      keep(fUnidade, unidades);
-      keep(fLoja, lojas);
-      keep(fCanal, canais);
-      keep(fPag, pagamentos);
+      keep(fUnidade, unidades, 'Todas');
+      keep(fLoja,     lojas,    'Todos');
+      keep(fCanal,    canais,   null);
+      keep(fPag,      pagamentos,null);
     }
 
     // ======= RELOAD (KPIs + Série) =======
@@ -184,20 +179,17 @@
 
       const _unidade = (fUnidade.value && fUnidade.value!=='Todas') ? fUnidade.value : null;
       const _loja    = (fLoja.value && fLoja.value!=='Todos') ? fLoja.value : null;
-      const _canais  = getMulti(fCanal);   const canaisParam = _canais.length? _canais : null;
-      const _pags    = getMulti(fPag);     const pagsParam   = _pags.length? _pags   : null;
-      const _cancel  = fCanc.value || 'Todos';
+      const _canaisArr  = getMulti(fCanal);   const _canais = _canaisArr.length? _canaisArr : null;
+      const _pagsArr    = getMulti(fPag);     const _pagamentos = _pagsArr.length? _pagsArr   : null;
+      const _cancelado  = fCanc.value || 'Todos'; // passa string ('Todos'|'Sim'|'Não')
 
       // KPIs
       const k = await supa.rpc('dash_kpis',{
-        _dini, _dfim,
-        _unidade, _loja,
-        _canais: canaisParam,
-        _pagamentos: pagsParam,
-        _cancelado: _cancel
+        _dini, _dfim, _unidade, _loja, _canais, _pagamentos, _cancelado
       });
 
       if(k.error){
+        console.error(k.error);
         kPedidos.textContent='—'; kFat.textContent='—'; kTicket.textContent='—'; kFatLiq.textContent='—';
       }else{
         const r = k.data?.[0] || {};
@@ -216,11 +208,7 @@
 
       // Série (gráfico)
       const s = await supa.rpc('dash_serie',{
-        _dini, _dfim,
-        _unidade, _loja,
-        _canais: canaisParam,
-        _pagamentos: pagsParam,
-        _cancelado: _cancel
+        _dini, _dfim, _unidade, _loja, _canais, _pagamentos, _cancelado
       });
 
       if(s.error || !Array.isArray(s.data) || s.data.length===0){
@@ -228,9 +216,9 @@
         serieInfo.textContent='Sem pontos no período.';
       }else{
         const labels = s.data.map(r=>r.dia);
-        const values = s.data.map(r=>Number(r.fat||0));
-        if(chart) chart.destroy();
+        const values = s.data.map(r=>Number(r.fat||0)).map(v=> isFinite(v)? v:0);
         const ctx = chartEl.getContext('2d');
+        if(chart) chart.destroy();
         chart = new Chart(ctx, {
           type:'line',
           data:{ labels, datasets:[{ label:'Receita', data:values, tension:0.2 }] },
@@ -244,7 +232,7 @@
 
     // ======= LISTENERS =======
     fQuick.addEventListener('change', async ()=>{ applyQuick(); await loadFilterOptions(); await reloadAll(); });
-    btnAp.addEventListener('click', async ()=>{ await loadFilterOptions(); await reloadAll(); });
+    el('btnAplicar').addEventListener('click', async ()=>{ await loadFilterOptions(); await reloadAll(); });
     fUnidade.addEventListener('change', async ()=>{ await loadFilterOptions(); await reloadAll(); });
     fLoja.addEventListener('change', reloadAll);
     fCanal.addEventListener('change', reloadAll);
