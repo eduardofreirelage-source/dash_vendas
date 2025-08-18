@@ -1,155 +1,221 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Maestro Food — DB Healthcheck</title>
-  <!-- favicon inline para evitar 404 -->
-  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="62" fill="%231a73e8"/><text x="64" y="82" text-anchor="middle" font-family="Arial" font-size="72" fill="white">M</text></svg>'/>
-  <style>
-    body{font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Inter,Roboto;margin:24px;background:#f7f8fb;color:#0f172a}
-    .wrap{max-width:920px;margin:0 auto}
-    .card{background:#fff;border:1px solid #e6eaf2;border-radius:12px;padding:16px;margin-top:14px}
-    button{background:#1a73e8;color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
-    .muted{color:#667085}
-    pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:10px;overflow:auto;max-height:320px}
-    .ok{color:#0d9488} .err{color:#dc2626}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    @media(max-width:840px){.row{grid-template-columns:1fr}}
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Maestro Food — Importador CSV</title>
+<style>
+  :root{--bg:#f6f8fb;--card:#fff;--ink:#0f172a;--mut:#667085;--blue:#1a73e8;--ok:#16a34a;--err:#dc2626;--bd:#e6eaf2;--r:14px}
+  body{background:var(--bg);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto;color:var(--ink)}
+  .wrap{max-width:900px;margin:32px auto;padding:0 16px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);padding:16px}
+  h1{margin:0 0 4px 0;font-size:22px}
+  .mut{color:var(--mut)}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  input[type=file]{border:1px solid var(--bd);border-radius:10px;padding:10px;background:#fff}
+  button{background:var(--blue);color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer}
+  progress{width:100%;height:10px}
+  pre{background:#0b1220;color:#e2e8f0;padding:12px;border-radius:10px;overflow:auto;max-height:260px}
+  .pill{display:inline-block;background:#eef3ff;color:#1747b7;border-radius:999px;padding:4px 10px;font-weight:600}
+  .ok{color:var(--ok)} .err{color:var(--err)}
+</style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Maestro Food — Healthcheck do Banco</h1>
-  <p class="muted">Teste mínimo para garantir leitura do Supabase (sem filtros/gráficos/importação).</p>
+  <h1>Maestro Food — Importador CSV</h1>
+  <p class="mut">Preenche <b>vendas_kpi_daily_v2_data</b> no Supabase. Dedup por: <code>dia, unidade, "Nome da loja", hora, pagamento, "Canal de venda"</code>.</p>
 
-  <div class="card">
-    <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
-      <div>
-        <div>Fonte detectada: <b id="fonte">—</b></div>
-        <div>Intervalo no banco: <span id="range" class="muted">—</span></div>
-        <div>Total (count exato): <b id="total">—</b></div>
-      </div>
-      <div>
-        <button id="btnLoad">Carregar do Supabase</button>
-      </div>
+  <div class="card" style="margin-top:12px">
+    <div class="row">
+      <input id="csv" type="file" accept=".csv,text/csv"/>
+      <button id="go">Importar CSV</button>
+      <span id="msg" class="mut"></span>
     </div>
-    <div id="progress" class="muted" style="margin-top:8px">Pronto.</div>
+    <div style="margin-top:10px">
+      <progress id="pg" value="0" max="1" hidden></progress>
+    </div>
+    <div id="log" style="margin-top:10px"></div>
   </div>
 
-  <div class="row">
-    <div class="card">
-      <b>Sample (primeiras linhas)</b>
-      <pre id="sample">[]</pre>
-    </div>
-    <div class="card">
-      <b>Unidades / Canais / Pagamentos (amostra)</b>
-      <pre id="uniques">[]</pre>
-    </div>
-  </div>
-
-  <div class="card">
-    <b>Erros</b>
-    <pre id="errors" class="err">—</pre>
+  <div class="card" style="margin-top:12px">
+    <div id="check"></div>
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
+<!-- libs -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
 <script>
 (async function(){
   // ===== CONFIG =====
   const SUPABASE_URL  = "https://uahmcfzerofhzjvlzrqc.supabase.co";
   const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-  const PREFER_TABLE  = "vendas_kpi_daily_v2_data";
-  const FALLBACK_VIEW = "vendas_kpi_daily_v2";
-  const SELECT_COLS   = 'dia,unidade,"Nome da loja","Canal de venda",pagamento,fat,des,fre,hora,turno,cancelado';
+  const TABLE         = "vendas_kpi_daily_v2_data";
+  const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  const onConflict = 'dia,unidade,"Nome da loja",hora,pagamento,"Canal de venda"';
+  const BATCH = 3000; // ↑ lote grande p/ acelerar e não travar
 
-  const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {auth:{persistSession:true,autoRefreshToken:true}});
+  // ===== UI =====
+  const $ = id => document.getElementById(id);
+  const csvInp = $('csv'), go = $('go'), msg = $('msg'), pg = $('pg'), log = $('log'), check = $('check');
 
-  // ===== DOM =====
-  const $ = (id)=>document.getElementById(id);
-  const fonte=$("fonte"), range=$("range"), total=$("total"), progress=$("progress"),
-        sample=$("sample"), uniques=$("uniques"), errors=$("errors"), btn=$("btnLoad");
+  // ===== Helpers =====
+  const normCancel = (v)=>{
+    const s = String(v??'').trim().toLowerCase();
+    if (v===true || ['sim','s','1','true','y'].includes(s)) return 'Sim';
+    return 'Não';
+  };
+  const parseBR = (x)=>{
+    if (x==null || x==='') return 0;
+    if (typeof x==='number') return x;
+    const s = String(x).trim().replace(/\./g,'').replace(',','.');
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const ddmmyyyyToISO = (s)=>{
+    if (!s) return null;
+    const [datePart,timePart] = String(s).trim().split(' ');
+    const [d,m,y] = (datePart||'').split('/');
+    if (!d||!m||!y) return null;
+    const iso = `${y.padStart(4,'0')}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+    return (timePart? `${iso}T${timePart}:00` : `${iso}T00:00:00`);
+  };
+  const hourFromDateText = (s)=>{
+    const t = String(s||'').split(' ')[1]||'';
+    if (t.includes(':')) {
+      const h = parseInt(t.split(':')[0],10);
+      if (Number.isFinite(h)) return h;
+    }
+    return -1;
+  };
+  const onlyDate = iso => (iso && iso.slice ? iso.slice(0,10) : iso);
 
-  let TABLE=null, minISO=null, maxISO=null;
-
-  // ===== helpers =====
-  async function pickSource(){
-    let r = await supa.from(PREFER_TABLE).select('dia').limit(1);
-    if(!r.error){ TABLE=PREFER_TABLE; return; }
-    r = await supa.from(FALLBACK_VIEW).select('dia').limit(1);
-    if(!r.error){ TABLE=FALLBACK_VIEW; return; }
-    TABLE=null; errors.textContent = JSON.stringify(r.error||'Sem fonte', null, 2);
-  }
-  async function fetchMinMax(){
-    if(!TABLE){ minISO=maxISO=null; return; }
+  // ===== Diagnóstico rápido (contagem e intervalo) =====
+  async function health(){
     const a = await supa.from(TABLE).select('dia').order('dia',{ascending:true}).limit(1);
     const b = await supa.from(TABLE).select('dia').order('dia',{ascending:false}).limit(1);
-    if(!a.error && a.data?.length && !b.error && b.data?.length){
-      minISO = (a.data[0].dia||'').slice(0,10);
-      maxISO = (b.data[0].dia||'').slice(0,10);
+    const c = await supa.from(TABLE).select('*', { count: 'exact', head: true });
+    const has = !a.error && !b.error && c.count!=null;
+    const min = a.data?.[0]?.dia ? a.data[0].dia.slice(0,10) : '—';
+    const max = b.data?.[0]?.dia ? b.data[0].dia.slice(0,10) : '—';
+    check.innerHTML = `
+      <b>Healthcheck</b><br>
+      Tabela: <code>${TABLE}</code><br>
+      Intervalo no banco: <b>${min}</b> → <b>${max}</b><br>
+      Total (count exato): <b>${c.count ?? '—'}</b><br>
+      Status: ${has ? '<span class="ok">OK</span>' : '<span class="err">ERRO</span>'}
+    `;
+  }
+  await health();
+
+  // ===== Importação =====
+  go.addEventListener('click', ()=>{
+    const file = csvInp.files?.[0];
+    if (!file){ msg.textContent = 'Selecione o CSV.'; return; }
+    msg.textContent = 'Lendo arquivo…'; pg.hidden=false; pg.value=0; log.innerHTML='';
+    let total = 0, sent = 0, acc = [];
+
+    Papa.parse(file, {
+      header:true,
+      skipEmptyLines:'greedy',
+      delimiter:';', // seu arquivo é ; (pt-BR)
+      encoding:'utf-8',
+      transformHeader: (h)=>{
+        // mapeia p/ nomes do banco
+        const key = String(h).trim().toLowerCase();
+        const map = new Map([
+          ['data da venda','dia'],
+          ['unidade','unidade'],
+          ['total','fat'],
+          ['desconto','des'],
+          ['entrega','fre'],
+          ['pagamento','pagamento'],
+          ['está cancelado','cancelado'],
+          ['esta cancelado','cancelado'],
+          ['canal de venda','Canal de venda'],
+          ['nome da loja','Nome da loja'],
+          ['turno','turno'],
+        ]);
+        return map.get(key) ?? h;
+      },
+      step: async (row, parser)=>{
+        const r = row.data; total++;
+
+        // data
+        let diaIso = r.dia ? (r.dia.includes('/') ? ddmmyyyyToISO(r.dia) : r.dia) : null;
+        const dia = onlyDate(diaIso);
+        // hora
+        const hora = ('hora' in r) ? (parseInt(r.hora,10) || -1) : hourFromDateText(r.dia);
+
+        // números
+        const fat = parseBR(r.fat);
+        const des = parseBR(r.des);
+        const fre = parseBR(r.fre);
+
+        // linha válida mínima
+        if (!dia || !r.unidade || !Number.isFinite(fat)) {
+          return; // descarta invalidas
+        }
+
+        acc.push({
+          dia, unidade: r.unidade, pedidos: 1,
+          fat, des, fre,
+          turno: r.turno ?? null,
+          pagamento: r.pagamento ?? null,
+          "Canal de venda": r["Canal de venda"] ?? null,
+          "Nome da loja": r["Nome da loja"] ?? null,
+          cancelado: normCancel(r.cancelado),
+          hora: Number.isFinite(hora) ? hora : -1
+        });
+
+        // flush por lote
+        if (acc.length >= BATCH){
+          parser.pause();
+          msg.textContent = `Enviando… ${sent + acc.length} linhas`;
+          await sendBatch(acc);
+          sent += acc.length;
+          acc = [];
+          pg.value = sent / Math.max(total, 1);
+          parser.resume();
+        }
+      },
+      complete: async ()=>{
+        if (acc.length){
+          msg.textContent = `Enviando… ${sent + acc.length} linhas (finalizando)`;
+          await sendBatch(acc);
+          sent += acc.length;
+        }
+        msg.innerHTML = `<span class="ok">Concluído.</span> Enviadas ${sent.toLocaleString('pt-BR')} linhas (válidas).`;
+        pg.hidden = true;
+        await health();
+      },
+      error: (e)=>{ msg.innerHTML = `<span class="err">Erro ao ler CSV:</span> ${e?.message||e}`; }
+    });
+  });
+
+  async function sendBatch(batch){
+    // dedup no próprio lote para reduzir conflitos
+    const map = new Map();
+    for (const r of batch){
+      const key = [r.dia,r.unidade,r["Nome da loja"],r.hora,r.pagamento,r["Canal de venda"]].join('|');
+      const cur = map.get(key) || { ...r };
+      cur.pedidos = (cur.pedidos||0) + (r.pedidos||0);
+      cur.fat     = (cur.fat||0)     + (r.fat||0);
+      cur.des     = (cur.des||0)     + (r.des||0);
+      cur.fre     = (cur.fre||0)     + (r.fre||0);
+      cur.cancelado = r.cancelado || cur.cancelado || 'Não';
+      map.set(key, cur);
+    }
+    const rows = [...map.values()];
+    const { error } = await supa.from(TABLE).upsert(rows, { onConflict, ignoreDuplicates:false });
+    if (error){
+      const div = document.createElement('div');
+      div.innerHTML = `<div class="err">Supabase erro:</div><pre>${JSON.stringify(error,null,2)}</pre>`;
+      log.appendChild(div);
+      throw error;
     }
   }
-  async function countExact(){
-    if(!TABLE) return null;
-    const r = await supa.from(TABLE).select('dia', { count:'exact', head:true });
-    return r.count ?? null;
-  }
-  async function fetchAllPaged(step=5000, hardCap=1_000_000){
-    const out=[]; let from=0;
-    while(true){
-      const to=from+step-1;
-      const { data, error } = await supa.from(TABLE).select(SELECT_COLS).range(from,to);
-      if(error){ errors.textContent = JSON.stringify(error, null, 2); break; }
-      if(!data || !data.length) break;
-      out.push(...data);
-      progress.textContent = `Baixando… ${out.length.toLocaleString('pt-BR')} linhas`;
-      if(data.length<step || out.length>=hardCap) break;
-      from+=step;
-    }
-    return out;
-  }
-
-  async function loadNow(){
-    try{
-      progress.textContent = "Detectando fonte…";
-      await pickSource();
-      fonte.innerHTML = TABLE ? `<span class="ok">${TABLE}</span>` : '<span class="err">—</span>';
-      if(!TABLE){ progress.textContent = "Sem fonte."; return; }
-
-      progress.textContent = "Lendo intervalo de datas…";
-      await fetchMinMax();
-      range.textContent = (minISO && maxISO) ? `${minISO} → ${maxISO}` : "—";
-
-      progress.textContent = "Contando linhas (head)…";
-      const cnt = await countExact();
-      total.textContent = (cnt==null) ? "—" : cnt.toLocaleString('pt-BR');
-
-      progress.textContent = "Baixando páginas… (sem limite de 1000)";
-      const rows = await fetchAllPaged(5000, 1_000_000);
-
-      // sample
-      sample.textContent = JSON.stringify(rows.slice(0,10), null, 2);
-
-      // alguns uniques
-      const U = (key)=> [...new Set(rows.map(r=>r?.[key]).filter(Boolean))].slice(0,20);
-      uniques.textContent = JSON.stringify({
-        unidades: U('unidade'),
-        canais:   U('Canal de venda'),
-        pagamentos: U('pagamento')
-      }, null, 2);
-
-      progress.textContent = `Concluído. Baixadas ${rows.length.toLocaleString('pt-BR')} linhas.`;
-    }catch(e){
-      errors.textContent = JSON.stringify(String(e), null, 2);
-      progress.textContent = "Erro.";
-    }
-  }
-
-  btn.addEventListener('click', loadNow);
-
-  // dispara 1x ao abrir, se quiser automático:
-  // loadNow();
 })();
 </script>
 </body>
