@@ -79,7 +79,7 @@
   </div>
 
   <div class="card" style="margin-top:10px">
-    <div class="row cols-3" style="grid-template-columns:auto 140px">
+    <div class="row cols-3" style="grid-template-columns:auto 160px">
       <b>Receita diária</b>
       <span class="right mut" id="resumo"></span>
     </div>
@@ -106,7 +106,7 @@
   const kPedidos=$("kPedidos"), kTicket=$("kTicket"), kFat=$("kFat"), kFatDia=$("kFatDia"),
         kDes=$("kDes"), kDesPct=$("kDesPct"), kFre=$("kFre"), kFatLiq=$("kFatLiq");
   const chartEl=$("chart"); let chart=null;
-  let loadToken = 0; // evita concorrência (e “loop” visual)
+  let loadToken = 0; // evita concorrência
 
   // ===== UTILS =====
   const fmtBRL=v=> (isFinite(v)? v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : "—");
@@ -115,6 +115,8 @@
   const norm = s => String(s??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
   const normCancel = v => (v===true || ['sim','s','1','true','y'].includes(norm(v))) ? 'Sim' : 'Não';
   const eis=d=> new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const selected = sel => Array.from(sel.selectedOptions||[]).map(o=>o.value);
+
   function applyQuickDate(){
     const end=new Date(); let start;
     if(pr.value.startsWith("Últimos ")){ const n=parseInt(pr.value.split(' ')[1],10); start=new Date(); start.setDate(end.getDate()-(n-1)); }
@@ -123,6 +125,18 @@
     else if(pr.value==="Este ano"){ start=new Date(end.getFullYear(),0,1); }
     else { start=new Date(end.getFullYear(),end.getMonth(),end.getDate()-29); }
     dini.value=eis(start); dfim.value=eis(end);
+  }
+
+  function deriveTurno(h, fallback){
+    const hh = Number(h);
+    if (isFinite(hh)) {
+      if (hh>=6 && hh<12) return 'Manhã';
+      if (hh>=12 && hh<18) return 'Tarde';
+      if (hh>=18 && hh<24) return 'Noite';
+      if (hh>=0 && hh<6) return 'Madrugada';
+    }
+    // se veio no CSV algo como "Dia", mantém
+    return fallback || null;
   }
 
   // ===== MIN/MAX/TOTAL =====
@@ -139,15 +153,14 @@
   // ===== FETCH PAGINADO + DEDUP =====
   async function fetchAll(a,b){
     const myToken = ++loadToken;
-    const page=1000; let off=0, all=[];
+    const page=5000; let off=0, all=[];
     msg.textContent='Carregando…';
     while(true){
-      // Se chegou outra requisição, aborta esta
       if(myToken !== loadToken) return [];
       const {data, error} = await supa.from(TABLE)
-        .select('dia,unidade,pedidos,fat,des,fre,"Nome da loja",turno,"Canal de venda",pagamento,cancelado,hora')
-        .order('dia',{ascending:true})
+        .select('dia,unidade,pedidos,fat,des,fre,"Nome da loja","Canal de venda",pagamento,turno,cancelado,hora')
         .gte('dia', a).lte('dia', b)
+        .order('dia',{ascending:true})
         .range(off, off+page-1);
       if(error){ console.error(error); msg.textContent='Erro ao carregar dados.'; return []; }
       if(!data || !data.length){ break; }
@@ -155,19 +168,25 @@
       off += page;
       msg.textContent = `Carregando… ${all.length.toLocaleString('pt-BR')} linhas`;
       if(data.length < page) break;
-      if(off > 2_000_000) break; // trava de segurança
+      if(off > 5_000_000) break;
     }
-    // normalização + dedup por chave composta
     const seen = new Map();
     for(const r of all){
-      const row = {...r,
+      const row = {
         dia: onlyDate(r.dia),
-        cancelado: normCancel(r.cancelado),
-        pedidos: (Number(r.pedidos)||0) <= 0 ? 1 : Number(r.pedidos) // fallback = 1
+        unidade: (r.unidade??'').trim(),
+        pedidos: (Number(r.pedidos)||0) <= 0 ? 1 : Number(r.pedidos),
+        fat: Number(r.fat)||0, des:Number(r.des)||0, fre:Number(r.fre)||0,
+        pagamento: (r.pagamento??'').trim(),
+        "Canal de venda": (r["Canal de venda"]??'').trim(),
+        "Nome da loja": (r["Nome da loja"]??'').trim(),
+        hora: Number(r.hora),
+        turno: deriveTurno(r.hora, (r.turno??'').trim()),
+        cancelado: normCancel(r.cancelado)
       };
-      const key = [row.dia,row.unidade,row["Nome da loja"],row.hora,row.pagamento,row["Canal de venda"]].join("|");
-      // mantém o último (não soma duplicados)
-      seen.set(key, row);
+      if(!row.dia) continue;
+      const key = [row.dia,row.unidade,row["Nome da loja"],isFinite(row.hora)?row.hora:'-1',row.pagamento,row["Canal de venda"]].join("|");
+      seen.set(key, row); // keep last
     }
     const rows = [...seen.values()];
     msg.textContent = `Concluído. ${rows.length.toLocaleString('pt-BR')} registros após dedup.`;
@@ -190,6 +209,8 @@
     pag.innerHTML=[...setPag].size? [...setPag].sort().map(v=>`<option>${v}</option>`).join('') : '';
     const top=[...fatPorLoja.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k])=>k);
     loja.innerHTML=['Todos',...top].map(v=>`<option>${v}</option>`).join('');
+    // defaults
+    uni.value='Todas'; loja.value='Todos'; turno.selectedIndex=-1; canal.selectedIndex=-1; pag.selectedIndex=-1; canc.value='Todos';
   }
 
   // ===== KPIs & CHART =====
@@ -212,25 +233,22 @@
     kDesPct.textContent=fmtPct(desPct);
     kFre.textContent=fmtBRL(fre);
     kFatLiq.textContent=fmtBRL(fatliq);
+    resumo.textContent = `${rows.length.toLocaleString('pt-BR')} registros`;
   }
 
   function drawChart(rows){
-    // agrega por dia
     const by=new Map(); rows.forEach(r=> by.set(r.dia,(by.get(r.dia)||0)+(Number(r.fat)||0)));
     const labels=[...by.keys()].sort();
     const values=labels.map(d=>by.get(d));
-    resumo.textContent = labels.length ? `${labels.length} dias` : 'Sem dados';
-
     if(chart){ chart.destroy(); chart=null; }
     if(!labels.length){ return; }
-
     const ctx=chartEl.getContext('2d');
     chart=new Chart(ctx,{
       type:'line',
       data:{labels,datasets:[{label:'Receita',data:values,tension:0.2}]},
       options:{
         responsive:true, maintainAspectRatio:false, resizeDelay: 200,
-        animation:false, // sem animação => sem “loop”
+        animation:false,
         interaction:{mode:'index',intersect:false},
         scales:{y:{beginAtZero:true}}
       }
@@ -242,17 +260,17 @@
 
   function applyFiltersAndRender(){
     const uniSel=uni.value||'Todas', lojaSel=loja.value||'Todos';
-    const tSel=Array.from(turno.selectedOptions||[]).map(o=>o.value);
-    const cSel=Array.from(canal.selectedOptions||[]).map(o=>o.value);
-    const pSel=Array.from(pag.selectedOptions||[]).map(o=>o.value);
+    const tSel=selected(turno).map(norm);
+    const cSel=selected(canal).map(norm);
+    const pSel=selected(pag).map(norm);
     const cancSel=canc.value||'Todos';
 
     const rows = cache.filter(r=>{
       if(uniSel!=='Todas' && norm(r.unidade)!==norm(uniSel)) return false;
       if(lojaSel!=='Todos' && norm(r["Nome da loja"])!==norm(lojaSel)) return false;
-      if(tSel.length && !tSel.includes(r.turno)) return false;
-      if(cSel.length && !cSel.includes(r["Canal de venda"])) return false;
-      if(pSel.length && !pSel.includes(r.pagamento)) return false;
+      if(tSel.length && !tSel.includes(norm(r.turno))) return false;
+      if(cSel.length && !cSel.includes(norm(r["Canal de venda"]))) return false;
+      if(pSel.length && !pSel.includes(norm(r.pagamento))) return false;
       if(cancSel!=='Todos' && normCancel(r.cancelado)!==cancSel) return false;
       return true;
     });
@@ -263,18 +281,18 @@
 
   async function reload(){
     const a=dini.value, b=dfim.value;
-    cache = await fetchAll(a,b);        // busca e dedup
-    buildOptions(cache);                 // popula filtros
-    applyFiltersAndRender();             // render
+    cache = await fetchAll(a,b);
+    buildOptions(cache);
+    applyFiltersAndRender();
   }
 
-  // Eventos (sem cascata desnecessária)
+  // Eventos
   pr.addEventListener('change', ()=>{ applyQuickDate(); reload(); });
   [dini,dfim].forEach(e=> e.addEventListener('change', ()=> reload()));
   [uni,loja,turno,canal,pag,canc].forEach(e=> e.addEventListener('change', ()=> applyFiltersAndRender()));
   btnLimpar.addEventListener('click', ()=>{
-    uni.value='Todas'; loja.value='Todos'; turno.selectedIndex=-1; canal.selectedIndex=-1; pag.selectedIndex=-1; canc.value='Todos';
-    applyFiltersAndRender();
+    applyQuickDate();
+    reload();
   });
 
   await minmax();
