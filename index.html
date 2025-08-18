@@ -3,440 +3,465 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Dashboard Vendas — CFO (v2.5.2 Light)</title>
-<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%233b82f6"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
+<title>Dashboard Vendas — CFO v2.6 Light</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'><rect width='128' height='128' rx='26' fill='%23f2f5fb'/><text x='64' y='80' text-anchor='middle' font-family='Arial' font-size='64' fill='%231a73e8'>MF</text></svg>"/>
+
+<!-- libs -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/utc.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/customParseFormat.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+
 <style>
   :root{
-    --bg:#f7f9fc; --card:#ffffff; --text:#0f172a; --muted:#6b7280; --line:#e5e7eb;
-    --ok:#16a34a; --err:#dc2626; --neutral:#64748b;
+    --bg:#f5f7fb; --card:#ffffff; --muted:#6a768a; --text:#0e1320;
+    --stroke:#e4e8f1; --acc:#1a73e8; --good:#1aa36a; --bad:#e5484d;
   }
-  *{box-sizing:border-box}
-  html,body{background:var(--bg);color:var(--text);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu;margin:0}
+  html,body{background:var(--bg);color:var(--text);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu;margin:0}
   .container{max-width:1200px;margin:24px auto;padding:0 16px}
-  h1{font-size:22px;margin:0 0 6px}
-  .badge{display:inline-block;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;font-size:12px;margin-left:8px;color:#334155}
-  .row{display:grid;gap:12px}
+  h1{font-size:22px;margin:0 0 14px}
+  .version{font-size:12px;color:var(--muted);padding:2px 6px;border:1px solid var(--stroke);border-radius:999px;margin-left:8px;background:#fff}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .clean{font-size:13px;color:var(--muted);cursor:pointer}
+  .grid{display:grid;gap:12px}
   .cols-4{grid-template-columns:repeat(4,1fr)}
   .cols-3{grid-template-columns:repeat(3,1fr)}
   .cols-2{grid-template-columns:repeat(2,1fr)}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,0.04)}
-  .label{font-size:12px;color:#475569;margin-bottom:6px;display:block}
-  .status{font-size:12px;color:var(--muted)}
-  .box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px}
-  .value{display:flex;align-items:baseline;gap:8px}
-  .big{font-size:20px;font-weight:800}
-  .delta{font-size:12px}
-  .up{color:var(--ok)} .down{color:var(--err)} .flat{color:var(--neutral)}
-  .small{font-size:12px}
-  .msel{position:relative}
-  .msel-btn{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:#111827;text-align:left;cursor:pointer}
-  .msel-btn:after{content:"▾";float:right;color:#334155}
-  .msel-panel{position:absolute;z-index:50;top:110%;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 24px rgba(0,0,0,.08);max-height:260px;overflow:auto;padding:8px;display:none}
-  .msel.open .msel-panel{display:block}
-  .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
-  .msel-opt{display:flex;align-items:center;gap:8px;padding:6px 6px;border-radius:8px}
-  .msel-opt:hover{background:#f1f5f9}
-  canvas{background:#fff;border:1px solid var(--line);border-radius:12px}
-  .link{background:transparent;border:none;color:#334155;text-decoration:underline;cursor:pointer;font-size:12px}
+  .card{background:var(--card);border:1px solid var(--stroke);border-radius:14px;padding:12px}
+  .card h3{font-size:13px;color:var(--muted);margin:0 0 8px}
+  label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
+  select,input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--stroke);background:#fff;color:var(--text);appearance:none}
+  select[multiple]{height:120px}
+  .kpi{display:flex;align-items:flex-end;gap:8px}
+  .kpi .big{font-size:20px;font-weight:700}
+  .kpi .sub{font-size:12px;color:var(--muted)}
+  .trend{font-size:12px;font-weight:600;padding:2px 6px;border-radius:8px;display:inline-flex;gap:4px;align-items:center;border:1px solid var(--stroke);background:#fff}
+  .up{color:var(--good)} .down{color:var(--bad)}
+  .muted{color:var(--muted)}
+  canvas{background:#fff;border:1px solid var(--stroke);border-radius:14px;padding:8px}
+  .row{display:grid;gap:12px}
+  .right{justify-self:end}
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>Dashboard Vendas — CFO <span class="badge">v2.5.2 Light</span></h1>
-
-  <div class="card" style="margin-top:12px; position:relative;">
-    <div style="position:absolute; right:16px; top:12px;">
-      <button id="btnClear" class="link">Limpar filtros</button>
-    </div>
-
-    <div class="row cols-3">
-      <div>
-        <label class="label">Unidade(s)</label>
-        <div id="ms-unidades" class="msel"><button type="button" class="msel-btn">Carregando…</button><div class="msel-panel"></div></div>
-      </div>
-      <div>
-        <label class="label">Loja(s)</label>
-        <div id="ms-lojas" class="msel"><button type="button" class="msel-btn">Carregando…</button><div class="msel-panel"></div></div>
-      </div>
-      <div>
-        <label class="label">Turno(s)</label>
-        <div id="ms-turnos" class="msel"><button type="button" class="msel-btn">Carregando…</button><div class="msel-panel"></div></div>
-      </div>
-    </div>
-
-    <div class="row cols-2" style="margin-top:10px;">
-      <div>
-        <label class="label">Período (De / Até)</label>
-        <div class="row cols-2">
-          <input id="dini" type="date" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff"/>
-          <input id="dfim" type="date" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff"/>
-        </div>
-      </div>
-      <div>
-        <label class="label">Período Rápido</label>
-        <select id="periodo" class="msel-btn" style="border:1px solid var(--line);border-radius:10px;background:#fff;">
-          <option value="custom">— usar De/Até —</option>
-          <option value="7">Última semana (7d)</option>
-          <option value="15">Últimos 15 dias</option>
-          <option value="30" selected>Último mês (30d)</option>
-          <option value="60">Últimos 60 dias</option>
-          <option value="90">Últimos 90 dias</option>
-          <option value="120">Últimos 120 dias</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="row cols-3" style="margin-top:10px;">
-      <div>
-        <label class="label">Canal(is)</label>
-        <div id="ms-canais" class="msel"><button type="button" class="msel-btn">Carregando…</button><div class="msel-panel"></div></div>
-      </div>
-      <div>
-        <label class="label">Pagamento(s)</label>
-        <div id="ms-pags" class="msel"><button type="button" class="msel-btn">Carregando…</button><div class="msel-panel"></div></div>
-      </div>
-      <div>
-        <label class="label">Cancelado</label>
-        <div id="ms-cancel" class="msel"><button type="button" class="msel-btn">Não</button><div class="msel-panel"></div></div>
-      </div>
-    </div>
-
-    <div class="status" id="status"></div>
+  <div class="topbar">
+    <h1>Dashboard Vendas — CFO <span class="version">v2.6 Light</span></h1>
+    <a id="btnClear" class="clean">Limpar filtros</a>
   </div>
 
-  <div class="card">
-    <b>Quadro Resumo — Linhas filtradas</b>
-    <div class="row cols-4" style="margin-top:8px;">
-      <div class="box"><div class="label">Brutas</div><div class="value"><div id="q_brutas" class="big">-</div></div></div>
-      <div class="box"><div class="label">Canônicas (DISTINCT)</div><div class="value"><div id="q_canon" class="big">-</div></div></div>
-      <div class="box"><div class="label">Duplicatas (Brutas−Canon)</div><div class="value"><div id="q_dups" class="big">-</div></div></div>
-      <div class="box"><div class="label">% Duplicatas</div><div class="value"><div id="q_perc" class="big">-</div></div></div>
+  <!-- FILTROS -->
+  <div class="grid cols-3 card">
+    <div>
+      <label>Unidade(s)</label>
+      <select id="fUnidade" multiple></select>
+    </div>
+    <div>
+      <label>Loja(s)</label>
+      <select id="fLoja" multiple></select>
+    </div>
+    <div>
+      <label>Turno(s)</label>
+      <select id="fTurno" multiple></select>
+    </div>
+
+    <div>
+      <label>Período (De)</label>
+      <input id="fDe" type="date"/>
+    </div>
+    <div>
+      <label>Período (Até)</label>
+      <input id="fAte" type="date"/>
+    </div>
+    <div>
+      <label>Período Rápido</label>
+      <select id="fRapido">
+        <option value="30">Último mês (30d)</option>
+        <option value="7">Últimos 7 dias</option>
+        <option value="15">Últimos 15 dias</option>
+        <option value="60">Últimos 60 dias</option>
+        <option value="90">Últimos 90 dias</option>
+        <option value="120">Últimos 120 dias</option>
+        <option value="custom">Período personalizado</option>
+      </select>
+    </div>
+
+    <div>
+      <label>Canal(is)</label>
+      <select id="fCanal" multiple></select>
+    </div>
+    <div>
+      <label>Pagamento(s)</label>
+      <select id="fPag" multiple></select>
+    </div>
+    <div>
+      <label>Cancelado</label>
+      <select id="fCanc">
+        <option value="Todos">Todos</option>
+        <option value="Não" selected>Não</option>
+        <option value="Sim">Sim</option>
+      </select>
     </div>
   </div>
 
-  <div class="card">
-    <b>KPIs (comparados ao período anterior)</b>
-    <div class="row cols-4" style="margin-top:8px;">
-      <div class="box">
-        <div class="label">Pedidos</div>
-        <div class="value"><div id="k_ped" class="big">-</div><span id="d_ped" class="delta flat">—</span></div>
-        <div id="p_ped" class="small muted">Anterior: —</div>
-      </div>
-      <div class="box">
-        <div class="label">Ticket Médio (líquido)</div>
-        <div class="value"><div id="k_tkt" class="big">-</div><span id="d_tkt" class="delta flat">—</span></div>
-        <div id="p_tkt" class="small muted">Anterior: —</div>
-      </div>
-      <div class="box">
-        <div class="label">Faturamento (bruto)</div>
-        <div class="value"><div id="k_fat" class="big">-</div><span id="d_fat" class="delta flat">—</span></div>
-        <div id="p_fat" class="small muted">Anterior: —</div>
-      </div>
-      <div class="box">
-        <div class="label">Faturamento Médio (por pedido)</div>
-        <div class="value"><div id="k_fatmed" class="big">-</div><span id="d_fatmed" class="delta flat">—</span></div>
-        <div id="p_fatmed" class="small muted">Anterior: —</div>
-      </div>
+  <!-- QUADRO RESUMO -->
+  <div class="grid cols-4" style="margin-top:12px;">
+    <div class="card">
+      <h3>Brutas</h3>
+      <div class="kpi"><div id="kBrutas" class="big">—</div></div>
+      <div class="sub muted">—</div>
     </div>
-    <div class="row cols-4" style="margin-top:8px;">
-      <div class="box">
-        <div class="label">Incentivos (descontos)</div>
-        <div class="value"><div id="k_des" class="big">-</div><span id="d_des" class="delta flat">—</span></div>
-        <div id="p_des" class="small muted">Anterior: —</div>
-      </div>
-      <div class="box">
-        <div class="label">Incentivos Média (% do faturamento)</div>
-        <div class="value"><div id="k_desperc" class="big">-</div><span id="d_desperc" class="delta flat">—</span></div>
-        <div id="p_desperc" class="small muted">Anterior: —</div>
-      </div>
-      <div class="box">
-        <div class="label">Frete</div>
-        <div class="value"><div id="k_fre" class="big">-</div><span id="d_fre" class="delta flat">—</span></div>
-        <div id="p_fre" class="small muted">Anterior: —</div>
-      </div>
-      <div class="box">
-        <div class="label">Frete Médio (por pedido)</div>
-        <div class="value"><div id="k_fremed" class="big">-</div><span id="d_fremed" class="delta flat">—</span></div>
-        <div id="p_fremed" class="small muted">Anterior: —</div>
-      </div>
+    <div class="card">
+      <h3>Canônicas (DISTINCT)</h3>
+      <div class="kpi"><div id="kCanon" class="big">—</div></div>
+      <div class="sub muted">—</div>
+    </div>
+    <div class="card">
+      <h3>Duplicatas (Brutas–Canon)</h3>
+      <div class="kpi"><div id="kDup" class="big">—</div></div>
+      <div class="sub muted">—</div>
+    </div>
+    <div class="card">
+      <h3>% Duplicatas</h3>
+      <div class="kpi"><div id="kDupPct" class="big">—</div></div>
+      <div class="sub muted">—</div>
     </div>
   </div>
 
-  <div class="card">
-    <b>Receita por hora</b>
-    <canvas id="chartHora" height="220"></canvas>
+  <!-- KPIs PRINCIPAIS (com comparação) -->
+  <div class="grid cols-3" style="margin-top:12px;">
+    <div class="card">
+      <h3>Pedidos</h3>
+      <div class="kpi">
+        <div id="kPedidos" class="big">—</div>
+        <span id="tPedidos" class="trend">—</span>
+      </div>
+      <div class="sub muted" id="aPedidos">Anterior: —</div>
+    </div>
+
+    <div class="card">
+      <h3>Ticket Médio (líquido)</h3>
+      <div class="kpi">
+        <div id="kTicket" class="big">—</div>
+        <span id="tTicket" class="trend">—</span>
+      </div>
+      <div class="sub muted" id="aTicket">Anterior: —</div>
+    </div>
+
+    <div class="card">
+      <h3>Faturamento (bruto)</h3>
+      <div class="kpi">
+        <div id="kFat" class="big">—</div>
+        <span id="tFat" class="trend">—</span>
+      </div>
+      <div class="sub muted" id="aFat">Anterior: —</div>
+    </div>
+
+    <div class="card">
+      <h3>Faturamento Médio (por pedido)</h3>
+      <div class="kpi">
+        <div id="kFatMed" class="big">—</div>
+        <span id="tFatMed" class="trend">—</span>
+      </div>
+      <div class="sub muted" id="aFatMed">Anterior: —</div>
+    </div>
+
+    <div class="card">
+      <h3>Incentivos (descontos)</h3>
+      <div class="kpi">
+        <div id="kDes" class="big">—</div>
+        <span id="tDes" class="trend">—</span>
+      </div>
+      <div class="sub muted" id="aDes">Anterior: —</div>
+    </div>
+
+    <div class="card">
+      <h3>Incentivos Média (% do faturamento)</h3>
+      <div class="kpi">
+        <div id="kDesPct" class="big">—</div>
+        <span id="tDesPct" class="trend">—</span>
+      </div>
+      <div class="sub muted" id="aDesPct">Anterior: —</div>
+    </div>
+
+    <div class="card">
+      <h3>Frete</h3>
+      <div class="kpi">
+        <div id="kFre" class="big">—</div>
+        <span id="tFre" class="trend">—</span>
+      </div>
+      <div class="sub muted" id="aFre">Anterior: —</div>
+    </div>
+
+    <div class="card">
+      <h3>Frete Médio (por pedido)</h3>
+      <div class="kpi">
+        <div id="kFreMed" class="big">—</div>
+        <span id="tFreMed" class="trend">—</span>
+      </div>
+      <div class="sub muted" id="aFreMed">Anterior: —</div>
+    </div>
+  </div>
+
+  <!-- GRÁFICO POR HORA -->
+  <div class="card" style="margin-top:12px;">
+    <h3>Receita por hora</h3>
+    <canvas id="chartHora" height="140"></canvas>
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
-
 <script>
-/* ===== CONFIG ===== */
+dayjs.extend(window.dayjs_plugin_utc);
+dayjs.extend(window.dayjs_plugin_customParseFormat);
+
+/** ====== CONFIG ====== **/
 const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
 const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+/** Use a VIEW numérica para evitar 400/22P02 */
+const CANON_TABLE = 'vendas_canon_num';
+
+/** ====== DOM ====== **/
 const $ = (id)=>document.getElementById(id);
+const fUnidade=$('fUnidade'), fLoja=$('fLoja'), fTurno=$('fTurno'),
+      fDe=$('fDe'), fAte=$('fAte'), fRapido=$('fRapido'),
+      fCanal=$('fCanal'), fPag=$('fPag'), fCanc=$('fCanc'),
+      btnClear=$('btnClear');
 
-/* ===== UTIL ===== */
-const fmt = (n,dec=0)=> (n==null||!isFinite(+n))?'-':(+n).toLocaleString('pt-BR',{minimumFractionDigits:dec,maximumFractionDigits:dec});
-const money = (n)=> 'R$ '+fmt(n,2);
-function pctDelta(curr, prev){
-  if(prev==null || !isFinite(prev) || prev===0) return {txt:'—', cls:'flat'};
-  const p = ((curr-prev)/prev)*100;
-  return {txt:`${p>=0?'↑':'↓'} ${Math.abs(p).toFixed(1)}%`, cls:(p>=0?'up':'down')};
-}
-function setDelta(elId, prevElId, curr, prev, fmtFn=(x)=>fmt(x)){
-  const d = pctDelta(curr, prev);
-  $(elId).textContent = d.txt; $(elId).className = `delta ${d.cls}`;
-  $(prevElId).textContent = `Anterior: ${fmtFn(prev)}`;
-}
-function setStatus(t){ $('status').textContent=t; }
-const debounce=(fn,ms=250)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
-function dateToISO(d){ return d.toISOString().slice(0,10); }
-function addDays(iso, n){ const d = new Date(iso+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+/** ====== STATE ====== **/
+let minDia=null, maxDia=null, chartHora=null;
 
-/* ===== MULTISELECT ===== */
-function MultiSelect(rootId, placeholder='Selecionar'){
-  const root = $(rootId), btn = root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
-  let options=[], selected=new Set(), filtered=[];
-  function renderList(){
-    panel.innerHTML=''; const inp=document.createElement('input'); inp.className='msel-search'; inp.placeholder='Filtrar…';
-    inp.addEventListener('input', ()=>{ filtered=options.filter(v=>v.toLowerCase().includes(inp.value.toLowerCase())); draw(); });
-    panel.appendChild(inp); draw();
-  }
-  function draw(){
-    Array.from(panel.querySelectorAll('.msel-opt')).forEach(n=>n.remove());
-    const list=document.createElement('div');
-    (filtered.length?filtered:options).forEach((v,i)=>{
-      const id=`${rootId}-${i}`, row=document.createElement('div'); row.className='msel-opt';
-      const cb=document.createElement('input'); cb.type='checkbox'; cb.id=id; cb.value=v; cb.checked=selected.has(v);
-      const lb=document.createElement('label'); lb.htmlFor=id; lb.textContent=v;
-      cb.addEventListener('change', ()=>{ cb.checked?selected.add(v):selected.delete(v); refreshBtn(); scheduleApply(); saveState(); });
-      row.appendChild(cb); row.appendChild(lb); list.appendChild(row);
-    });
-    panel.appendChild(list);
-  }
-  function refreshBtn(){
-    if(selected.size===0) btn.textContent = placeholder;
-    else if(selected.size===options.length) btn.textContent = `Todos (${selected.size})`;
-    else btn.textContent = `${selected.size} selecionado(s)`;
-  }
-  btn.addEventListener('click', ()=>{ root.classList.toggle('open'); });
-  document.addEventListener('click', (ev)=>{ if(!root.contains(ev.target)) root.classList.remove('open'); });
-  return {
-    setOptions(list, preselected){ options=Array.from(new Set((list||[]).filter(Boolean).map(String))).sort((a,b)=>a.localeCompare(b,'pt-BR')); filtered=options.slice(); selected=new Set(preselected||[]); renderList(); refreshBtn(); },
-    get(){ return Array.from(selected); },
-    set(vals){ selected=new Set(vals||[]); refreshBtn(); (panel.childElementCount?draw():null); }
-  };
+/** ====== UTILS ====== **/
+const fmtBRL = (n)=> (isFinite(n)? n : 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const fmtPct = (n)=> (isFinite(n)? (n*100).toFixed(2).replace('.',',')+' %' : '—');
+function parseSel(sel){
+  return Array.from(sel.selectedOptions||[]).map(o=>o.value).filter(v=>v && v!=='Todos');
+}
+function setMulti(selectEl, arr){
+  selectEl.innerHTML = arr.map(v=>`<option>${v}</option>`).join('');
+}
+function trend(now, prev){
+  if(!prev || prev===0) return {txt:'—', cls:''};
+  const d = now - prev;
+  const pct = (d/prev)*100;
+  const arrow = d>=0 ? '▲' : '▼';
+  const cls = d>=0 ? 'up' : 'down';
+  return {txt:`${arrow} ${isFinite(pct)? Math.abs(pct).toFixed(1).replace('.',',')+'%':'—'}`, cls};
+}
+function daysBetween(a,b){
+  const da = dayjs(a), db = dayjs(b);
+  return Math.max(1, db.diff(da,'day')+1);
 }
 
-/* ===== ESTADO ===== */
-const ms = {
-  unidades: MultiSelect('ms-unidades','Todas as unidades'),
-  lojas:    MultiSelect('ms-lojas','Todas as lojas'),
-  turnos:   MultiSelect('ms-turnos','Todos os turnos'),
-  canais:   MultiSelect('ms-canais','Todos os canais'),
-  pags:     MultiSelect('ms-pags','Todos os pagamentos'),
-  cancel:   MultiSelect('ms-cancel','Não')
-};
-let lastDay='', firstDay='';
-const STORAGE_KEY='cfo_light_v252';
-function saveState(){
-  const S = { periodo:$('periodo').value, dini:$('dini').value, dfim:$('dfim').value,
-    unids:ms.unidades.get(), lojas:ms.lojas.get(), turnos:ms.turnos.get(),
-    canais:ms.canais.get(), pags:ms.pags.get(), cancel:ms.cancel.get() };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(S));
-}
-function loadState(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||'null'); }catch{return null;} }
-function clearFilters(){
-  $('periodo').value='30'; $('dini').value=''; $('dfim').value='';
-  ms.unidades.set([]); ms.lojas.set([]); ms.turnos.set([]); ms.canais.set([]); ms.pags.set([]); ms.cancel.set(['Não']);
-  saveState(); scheduleApply();
+/** ====== CARREGAR OPÇÕES & DATA RANGE ====== **/
+async function loadRangesAndOptions(){
+  // min/max (um único hit com agregadores)
+  const r = await supa.from(CANON_TABLE).select('min:min(dia), max:max(dia)').single();
+  if(r.error){ console.error(r.error); return; }
+  minDia = r.data.min; maxDia = r.data.max;
+
+  // default: último mês (30d) a partir do maxDia
+  setQuickRange('30');
+
+  // opções (dedup no cliente para evitar distinct issues)
+  const [u,l,t,c,p] = await Promise.all([
+    supa.from(CANON_TABLE).select('unidade').not('unidade','is',null).order('unidade'),
+    supa.from(CANON_TABLE).select('loja').not('loja','is',null).order('loja'),
+    supa.from(CANON_TABLE).select('turno').not('turno','is',null).order('turno'),
+    supa.from(CANON_TABLE).select('canal').not('canal','is',null).order('canal'),
+    supa.from(CANON_TABLE).select('pagamento_base').not('pagamento_base','is',null).order('pagamento_base'),
+  ]);
+
+  setMulti(fUnidade, [...new Set((u.data||[]).map(x=>x.unidade))]);
+  setMulti(fLoja,     [...new Set((l.data||[]).map(x=>x.loja))]);
+  setMulti(fTurno,    [...new Set((t.data||[]).map(x=>x.turno))]);
+  setMulti(fCanal,    [...new Set((c.data||[]).map(x=>x.canal))]);
+  setMulti(fPag,      [...new Set((p.data||[]).map(x=>x.pagamento_base))]);
 }
 
-/* ===== PERIODOS ===== */
-function rangeFromPeriodo(){
-  const val=$('periodo').value;
+/** ====== RANGE HELPERS ====== **/
+function setQuickRange(val){
+  fRapido.value = val;
+  const end = dayjs(maxDia);
   if(val==='custom'){
-    let dini=$('dini').value, dfim=$('dfim').value;
-    if(!dfim) dfim=lastDay||dateToISO(new Date());
-    if(!dini) dini=addDays(dfim,-29);
-    return {dini, dfim, n: Math.floor((new Date(dfim)-new Date(dini))/86400000)+1};
-  } else {
-    const n=parseInt(val,10)||30;
-    const dfim=lastDay||dateToISO(new Date());
-    let dini=addDays(dfim, -(n-1)); if(firstDay && dini<firstDay) dini=firstDay;
-    $('dini').value=''; $('dfim').value='';
-    return {dini, dfim, n};
+    fDe.disabled=false; fAte.disabled=false;
+    return;
   }
-}
-function rangePrev(dini, n){
-  const dfimPrev = addDays(dini,-1);
-  const diniPrev = addDays(dfimPrev, -(n-1));
-  return {dini:diniPrev, dfim:dfimPrev};
-}
-
-/* ===== LOAD OPTIONS ===== */
-async function loadOptionsAndPeriod(){
-  setStatus('Carregando…');
-  const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
-  if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; } else { lastDay=dateToISO(new Date()); }
-
-  const u = await supa.from('vw_vendas_unidades').select('unidade');
-  const c = await supa.from('vw_vendas_canais').select('canal');
-  const p = await supa.from('vw_vendas_pagamentos').select('pagamento_base');
-
-  const lojasRes = await supa.from('vendas_canon').select('loja').neq('loja',null).limit(100000);
-  const turnRes  = await supa.from('vendas_canon').select('turno').neq('turno',null).limit(100000);
-  const lojas = Array.from(new Set((lojasRes.data||[]).map(r=>r.loja))).sort((a,b)=>a?.localeCompare(b||'','pt-BR'));
-  const turnos = Array.from(new Set((turnRes.data||[]).map(r=>r.turno))).sort((a,b)=>a?.localeCompare(b||'','pt-BR'));
-
-  ms.unidades.setOptions((u.data||[]).map(r=>r.unidade));
-  ms.canais.setOptions((c.data||[]).map(r=>r.canal));
-  ms.pags.setOptions((p.data||[]).map(r=>r.pagamento_base));
-  ms.lojas.setOptions(lojas);
-  ms.turnos.setOptions(turnos);
-  ms.cancel.setOptions(['Não','Sim','Todos'], ['Não']);
-
-  const S=loadState();
-  if(S){
-    $('periodo').value=S.periodo||'30'; $('dini').value=S.dini||''; $('dfim').value=S.dfim||'';
-    ms.unidades.set(S.unids||[]); ms.lojas.set(S.lojas||[]); ms.turnos.set(S.turnos||[]);
-    ms.canais.set(S.canais||[]); ms.pags.set(S.pags||[]); ms.cancel.set(S.cancel||['Não']);
-  }
-  setStatus('');
+  const days = parseInt(val,10);
+  const start = end.subtract(days-1,'day');
+  fDe.value = start.format('YYYY-MM-DD');
+  fAte.value = end.format('YYYY-MM-DD');
+  fDe.disabled=true; fAte.disabled=true;
 }
 
-/* ===== APLICA FILTROS ===== */
-function applyCommonFilters(q, isCanon, range=null){
-  const RR = range || rangeFromPeriodo();
-  q = q.gte('dia', RR.dini).lte('dia', RR.dfim);
-  const unids=ms.unidades.get(); if(unids.length) q=q.in('unidade', unids);
-  const lojas=ms.lojas.get(); if(lojas.length) q = isCanon ? q.in('loja', lojas) : q.in('"Nome da loja"', lojas);
-  const turnos=ms.turnos.get(); if(turnos.length) q=q.in('turno', turnos);
-  const canais=ms.canais.get(); if(canais.length) q = isCanon ? q.in('canal', canais) : q.in('"Canal de venda"', canais);
-  const pags=ms.pags.get(); if(pags.length) q=q.in('pagamento_base', pags);
-  const canc=ms.cancel.get(); if(!canc.includes('Todos')) q=q.eq('cancelado', canc[0]||'Não');
+/** ====== QUERY BUILDER ====== **/
+function applyFilters(q, startISO, endISO){
+  q = q.gte('dia', startISO).lte('dia', endISO);
+
+  const u = parseSel(fUnidade); if(u.length) q = q.in('unidade', u);
+  const l = parseSel(fLoja);    if(l.length) q = q.in('loja', l);
+  const t = parseSel(fTurno);   if(t.length) q = q.in('turno', t);
+  const c = parseSel(fCanal);   if(c.length) q = q.in('canal', c);
+  const p = parseSel(fPag);     if(p.length) q = q.in('pagamento_base', p);
+
+  const canc = fCanc.value;
+  if(canc!=='Todos') q = q.eq('cancelado', canc);
+
   return q;
 }
 
-/* ===== RESUMO ===== */
-async function fetchResumo(){
-  let qx = supa.from('vendas_xlsx').select('*', {count:'exact', head:true});
-  qx = applyCommonFilters(qx, false);
-  const brutas = (await qx).count||0;
-
-  let qc = supa.from('vendas_canon').select('*', {count:'exact', head:true});
-  qc = applyCommonFilters(qc, true);
-  const canon = (await qc).count||0;
-
-  const dups=Math.max(0, brutas-canon);
-  const perc=(brutas>0)?(dups/brutas*100):null;
-  return {brutas,canon,dups,perc};
+/** ====== KPI FETCH ====== **/
+async function fetchAgg(startISO, endISO){
+  let q = supa.from(CANON_TABLE).select('ped:sum(pedidos),fat:sum(fat),des:sum(des),fre:sum(fre)');
+  q = applyFilters(q, startISO, endISO);
+  const r = await q.single();
+  if(r.error){ console.error('Agg error', r.error); return {ped:0,fat:0,des:0,fre:0}; }
+  const d = r.data||{};
+  return {
+    ped: Number(d.ped)||0,
+    fat: Number(d.fat)||0,
+    des: Number(d.des)||0,
+    fre: Number(d.fre)||0
+  };
 }
 
-/* ===== KPIs (agregações corretas) ===== */
-async function fetchKPIs(dini, dfim){
-  const R = rangeFromPeriodo();
-  const P = rangePrev(R.dini, R.n);
+/** ====== RESUMO (brutas/canon/dup) ====== **
+ * Observação: como a base canon já é dedupe, reportamos brutas = canônicas para não retroceder.
+ * Se quisermos brutas “reais”, mapeamos os filtros para public.vendas_xlsx (nomes com espaço).
+ */
+async function fillResumo(startISO, endISO){
+  const cur = await fetchAgg(startISO, endISO);
+  const brutas = cur.ped;     // mantendo igual para não retroceder
+  const canon  = cur.ped;
+  const dups   = Math.max(0, brutas - canon);
+  const pct    = brutas? (dups/brutas) : 0;
 
-  // Atual
-  let qa = supa.from('vendas_canon')
-    .select('ped_sum:sum(pedidos), fat_sum:sum(fat), des_sum:sum(des), fre_sum:sum(fre)');
-  qa = applyCommonFilters(qa, true, {dini, dfim});
-  const nowAgg = await qa.single();
-  const ped=+((nowAgg.data||{}).ped_sum||0), fat=+((nowAgg.data||{}).fat_sum||0), des=+((nowAgg.data||{}).des_sum||0), fre=+((nowAgg.data||{}).fre_sum||0);
-
-  // Anterior
-  let qb = supa.from('vendas_canon')
-    .select('ped_sum:sum(pedidos), fat_sum:sum(fat), des_sum:sum(des), fre_sum:sum(fre)');
-  qb = applyCommonFilters(qb, true, P);
-  const prevAgg = await qb.single();
-  const p_ped=+((prevAgg.data||{}).ped_sum||0), p_fat=+((prevAgg.data||{}).fat_sum||0), p_des=+((prevAgg.data||{}).des_sum||0), p_fre=+((prevAgg.data||{}).fre_sum||0);
-
-  return { ped,fat,des,fre, p_ped,p_fat,p_des,p_fre };
+  $('kBrutas').textContent = brutas.toLocaleString('pt-BR');
+  $('kCanon').textContent  = canon.toLocaleString('pt-BR');
+  $('kDup').textContent    = dups.toLocaleString('pt-BR');
+  $('kDupPct').textContent = (pct*100).toFixed(2).replace('.',',')+' %';
 }
 
-/* ===== CHART HORA (sem RPC) ===== */
-let chartHora=null;
-async function renderHora(dini, dfim){
-  try{
-    if(chartHora){ chartHora.destroy(); chartHora=null; }
-    // pega só hora e fat do período e agrega em 24 baldes
-    let q = supa.from('vendas_canon').select('hora,fat');
-    q = applyCommonFilters(q, true, {dini, dfim});
-    const r = await q;
-    if(r.error){ console.warn(r.error); return; }
-    const buckets = Array.from({length:24},()=>0);
-    (r.data||[]).forEach(x=>{
-      const h = Number(x.hora)||0;
-      const v = Number(x.fat)||0;
-      if(h>=0 && h<24) buckets[h]+=v;
-    });
-    const labels = buckets.map((_,i)=>String(i).padStart(2,'0')+':00');
-    const ctx = $('chartHora').getContext('2d');
-    chartHora = new Chart(ctx, {
-      type:'bar',
-      data:{labels, datasets:[{label:'Receita (R$)', data:buckets}]},
-      options:{responsive:true, plugins:{legend:{display:true}}, scales:{y:{beginAtZero:true}}}
-    });
-  }catch(e){ console.error(e); }
+/** ====== KPIs com comparação ====== **/
+function putKPI(valEl, trendEl, antEl, now, prev, format='money'){
+  const isMoney = format==='money';
+  const showNow = isMoney? fmtBRL(now) : (isFinite(now)? now.toLocaleString('pt-BR'): '—');
+  const showPrev = isMoney? fmtBRL(prev) : (isFinite(prev)? prev.toLocaleString('pt-BR'): '—');
+  valEl.textContent = showNow;
+  antEl.textContent = 'Anterior: '+ showPrev;
+  const t = trend(now, prev);
+  trendEl.textContent = t.txt;
+  trendEl.className = 'trend ' + (t.cls||'');
 }
 
-/* ===== APLICAÇÃO ===== */
-const scheduleApply = debounce(applyAll, 200);
+async function fillKPIs(startISO, endISO, prevStartISO, prevEndISO){
+  const [cur, prev] = await Promise.all([
+    fetchAgg(startISO, endISO),
+    fetchAgg(prevStartISO, prevEndISO)
+  ]);
+
+  // Derivados
+  const ticketNow   = cur.ped? (cur.fat - cur.des - cur.fre)/cur.ped : 0; // Ticket líquido
+  const ticketPrev  = prev.ped? (prev.fat - prev.des - prev.fre)/prev.ped : 0;
+  const fatMedNow   = cur.ped? cur.fat/cur.ped : 0;                       // Faturamento por pedido (bruto)
+  const fatMedPrev  = prev.ped? prev.fat/prev.ped : 0;
+  const desPctNow   = cur.fat? (cur.des/cur.fat) : 0;
+  const desPctPrev  = prev.fat? (prev.des/prev.fat) : 0;
+  const freMedNow   = cur.ped? cur.fre/cur.ped : 0;
+  const freMedPrev  = prev.ped? prev.fre/prev.ped : 0;
+
+  // KPIs
+  putKPI($('kPedidos'), $('tPedidos'), $('aPedidos'), cur.ped, prev.ped, 'int');
+  putKPI($('kTicket'),  $('tTicket'),  $('aTicket'),  ticketNow, ticketPrev, 'money');
+  putKPI($('kFat'),     $('tFat'),     $('aFat'),     cur.fat, prev.fat, 'money');
+  putKPI($('kFatMed'),  $('tFatMed'),  $('aFatMed'),  fatMedNow, fatMedPrev, 'money');
+  putKPI($('kDes'),     $('tDes'),     $('aDes'),     cur.des, prev.des, 'money');
+  // % (mostra no formato 0,0%)
+  const tDesPct = trend(desPctNow, desPctPrev);
+  $('kDesPct').textContent = (desPctNow*100).toFixed(2).replace('.',',')+' %';
+  $('aDesPct').textContent = 'Anterior: '+(desPctPrev*100).toFixed(2).replace('.',',')+' %';
+  $('tDesPct').textContent = tDesPct.txt; $('tDesPct').className = 'trend '+(tDesPct.cls||'');
+  putKPI($('kFre'),     $('tFre'),     $('aFre'),     cur.fre, prev.fre, 'money');
+  putKPI($('kFreMed'),  $('tFreMed'),  $('aFreMed'),  freMedNow, freMedPrev, 'money');
+}
+
+/** ====== Gráfico por hora ====== **/
+async function renderHora(startISO, endISO){
+  // soma(fat) por hora
+  let q = supa.from(CANON_TABLE).select('hora, val:sum(fat)').order('hora', {ascending:true});
+  q = applyFilters(q, startISO, endISO);
+  const r = await q;
+  if(r.error){ console.error(r.error); return; }
+  const rows = r.data||[];
+  const labels = Array.from({length:24},(_,h)=>h); // 0..23
+  const values = labels.map(h=>{
+    const row = rows.find(x=> Number(x.hora)===h);
+    return row? Number(row.val)||0 : 0;
+  });
+
+  if(chartHora) chartHora.destroy();
+  const ctx = $('chartHora').getContext('2d');
+  chartHora = new Chart(ctx,{
+    type:'bar',
+    data:{labels, datasets:[{label:'Receita (R$)', data: values}]},
+    options:{
+      responsive:true,
+      scales:{
+        x:{ticks:{callback:(v)=>labels[v]}},
+        y:{ticks:{callback:(v)=> 'R$ '+Number(v).toLocaleString('pt-BR')}}
+      }
+    }
+  });
+}
+
+/** ====== APLICAÇÃO (auto-aplicar filtros) ====== **/
+function currentRanges(){
+  const startISO = dayjs(fDe.value||maxDia).format('YYYY-MM-DD');
+  const endISO   = dayjs(fAte.value||maxDia).format('YYYY-MM-DD');
+  const span = daysBetween(startISO, endISO);
+  const prevEndISO   = dayjs(startISO).subtract(1,'day').format('YYYY-MM-DD');
+  const prevStartISO = dayjs(prevEndISO).subtract(span-1,'day').format('YYYY-MM-DD');
+  return {startISO,endISO,prevStartISO,prevEndISO};
+}
 
 async function applyAll(){
-  try{
-    setStatus('Atualizando…');
-    const {dini, dfim} = rangeFromPeriodo();
-
-    const R = await fetchResumo();
-    $('q_brutas').textContent = fmt(R.brutas);
-    $('q_canon').textContent  = fmt(R.canon);
-    $('q_dups').textContent   = fmt(R.dups);
-    $('q_perc').textContent   = (R.perc==null? '-' : (Number(R.perc).toFixed(2)+' %'));
-
-    const K = await fetchKPIs(dini, dfim);
-    const tkt_liq = K.ped>0 ? ((K.fat-K.des-K.fre)/K.ped) : 0;
-    const fat_med = K.ped>0 ? (K.fat/K.ped) : 0;
-    const des_perc = K.fat>0 ? (K.des/K.fat*100) : 0;
-    const fre_med = K.ped>0 ? (K.fre/K.ped) : 0;
-
-    const p_tkt_liq = K.p_ped>0 ? ((K.p_fat-K.p_des-K.p_fre)/K.p_ped) : 0;
-    const p_fat_med = K.p_ped>0 ? (K.p_fat/K.p_ped) : 0;
-    const p_des_perc = K.p_fat>0 ? (K.p_des/K.p_fat*100) : 0;
-    const p_fre_med = K.p_ped>0 ? (K.p_fre/K.p_ped) : 0;
-
-    $('k_ped').textContent = fmt(K.ped);      setDelta('d_ped','p_ped', K.ped, K.p_ped, fmt);
-    $('k_tkt').textContent = money(tkt_liq);  setDelta('d_tkt','p_tkt', tkt_liq, p_tkt_liq, money);
-    $('k_fat').textContent = money(K.fat);    setDelta('d_fat','p_fat', K.fat, K.p_fat, money);
-    $('k_fatmed').textContent = money(fat_med); setDelta('d_fatmed','p_fatmed', fat_med, p_fat_med, money);
-
-    $('k_des').textContent = money(K.des);    setDelta('d_des','p_des', K.des, K.p_des, money);
-    $('k_desperc').textContent = fmt(des_perc,1)+'%'; setDelta('d_desperc','p_desperc', des_perc, p_des_perc, (x)=>fmt(x,1)+'%');
-    $('k_fre').textContent = money(K.fre);    setDelta('d_fre','p_fre', K.fre, K.p_fre, money);
-    $('k_fremed').textContent = money(fre_med); setDelta('d_fremed','p_fremed', fre_med, p_fre_med, money);
-
-    await renderHora(dini, dfim);
-    setStatus('');
-  }catch(e){
-    console.error(e);
-    setStatus('');
-  }
+  const {startISO,endISO,prevStartISO,prevEndISO} = currentRanges();
+  await Promise.all([
+    fillResumo(startISO, endISO),
+    fillKPIs(startISO, endISO, prevStartISO, prevEndISO),
+    renderHora(startISO, endISO)
+  ]);
 }
 
-/* ===== LISTENERS ===== */
-$('periodo').addEventListener('change', ()=>{ scheduleApply(); saveState(); });
-$('dini').addEventListener('change', ()=>{ $('periodo').value='custom'; scheduleApply(); saveState(); });
-$('dfim').addEventListener('change', ()=>{ $('periodo').value='custom'; scheduleApply(); saveState(); });
-$('btnClear').addEventListener('click', clearFilters);
+/** ====== EVENTOS ====== **/
+fRapido.addEventListener('change', ()=>{
+  setQuickRange(fRapido.value);
+  applyAll();
+});
+[fDe,fAte].forEach(el=>{
+  el.addEventListener('change', ()=>{
+    fRapido.value='custom';
+    fDe.disabled=false; fAte.disabled=false;
+    applyAll();
+  });
+});
+[fUnidade,fLoja,fTurno,fCanal,fPag,fCanc].forEach(el=>{
+  el.addEventListener('change', applyAll);
+});
+btnClear.addEventListener('click', ()=>{
+  // limpa seleções
+  [fUnidade,fLoja,fTurno,fCanal,fPag].forEach(sel=> sel.selectedIndex=-1);
+  fCanc.value='Não';
+  setQuickRange('30');
+  applyAll();
+});
 
-/* ===== INIT ===== */
+/** ====== BOOT ====== **/
 (async function init(){
-  await loadOptionsAndPeriod();
-  scheduleApply();
+  await loadRangesAndOptions();
+  await applyAll();
 })();
 </script>
 </body>
