@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Dashboard Vendas — CFO (v2.4 Light)</title>
+<title>Dashboard Vendas — CFO (v2.5 Light)</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%233b82f6"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
 <style>
   :root{
     --bg:#f7f9fc; --card:#ffffff; --text:#0f172a; --muted:#6b7280; --line:#e5e7eb;
-    --blue:#2563eb; --blue-100:#eef2ff; --ok:#16a34a; --err:#dc2626; --neutral:#64748b;
+    --ok:#16a34a; --err:#dc2626; --neutral:#64748b;
   }
   *{box-sizing:border-box}
   html,body{background:var(--bg);color:var(--text);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu;margin:0}
@@ -21,11 +21,8 @@
   .cols-2{grid-template-columns:repeat(2,1fr)}
   .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,0.04)}
   .badge{display:inline-block;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;font-size:12px;margin-left:8px;color:#334155}
-  .sep{height:1px;background:var(--line);margin:12px 0}
   .small{font-size:12px}
-  .status{margin-left:8px;font-size:13px}
-  .pill{display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border-radius:999px;border:1px solid var(--line);background:#fff;color:#334155;font-size:12px}
-  .link{background:transparent;border:none;color:#334155;text-decoration:underline;cursor:pointer;font-size:12px}
+  .status{font-size:12px;color:var(--muted)}
   /* KPIs */
   .kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
   .box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px}
@@ -43,14 +40,14 @@
   .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
   .msel-opt{display:flex;align-items:center;gap:8px;padding:6px 6px;border-radius:8px}
   .msel-opt:hover{background:#f1f5f9}
-  pre{white-space:pre-wrap;background:#f8fafc;color:#111827;border-radius:10px;padding:12px;overflow:auto;border:1px solid var(--line);max-height:360px}
+  pre{white-space:pre-wrap;background:#f8fafc;color:#111827;border-radius:10px;padding:12px;overflow:auto;border:1px solid var(--line)}
   canvas{background:#fff;border:1px solid var(--line);border-radius:12px}
+  .link{background:transparent;border:none;color:#334155;text-decoration:underline;cursor:pointer;font-size:12px}
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>Dashboard Vendas — CFO <span class="badge">v2.4 Light</span></h1>
-  <div class="muted">Filtros automáticos, período rápido ancorado no último dia do banco, KPIs com comparação e gráfico por hora.</div>
+  <h1>Dashboard Vendas — CFO <span class="badge">v2.5 Light</span></h1>
 
   <div class="card" style="margin-top:12px; position:relative;">
     <div style="position:absolute; right:16px; top:12px;">
@@ -81,7 +78,6 @@
           <input id="dini" type="date" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff"/>
           <input id="dfim" type="date" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff"/>
         </div>
-        <div class="small muted" id="hintData">Digite datas para usar intervalo manual.</div>
       </div>
       <div>
         <label class="label">Período Rápido</label>
@@ -94,7 +90,6 @@
           <option value="90">Últimos 90 dias</option>
           <option value="120">Últimos 120 dias</option>
         </select>
-        <div class="muted small" id="periodoTexto" style="margin-top:4px;">—</div>
       </div>
     </div>
 
@@ -114,7 +109,7 @@
       </div>
     </div>
 
-    <div class="small muted" id="status">Carregando…</div>
+    <div class="status" id="status"></div>
   </div>
 
   <!-- RESUMO -->
@@ -180,21 +175,8 @@
 
   <!-- GRÁFICO -->
   <div class="card">
-    <div class="row cols-2">
-      <div>
-        <b>Receita por hora</b>
-        <canvas id="chartHora" height="220"></canvas>
-        <div id="hintHora" class="small muted" style="margin-top:6px;"></div>
-      </div>
-      <div>
-        <b>Resultado (lista / Amostra / Top dups)</b>
-        <pre id="out" style="height:260px">(vazio)</pre>
-        <div class="row cols-2">
-          <button id="btnAmostra" class="msel-btn" style="background:#fff;font-weight:700">Amostra (20)</button>
-          <button id="btnTopDups" class="msel-btn" style="background:#fff;font-weight:700">Top duplicatas (30)</button>
-        </div>
-      </div>
-    </div>
+    <b>Receita por hora</b>
+    <canvas id="chartHora" height="220"></canvas>
   </div>
 </div>
 
@@ -213,24 +195,22 @@ const $ = (id)=>document.getElementById(id);
 const fmt = (n,dec=0)=> (n==null||!isFinite(+n))?'-':(+n).toLocaleString('pt-BR',{minimumFractionDigits:dec,maximumFractionDigits:dec});
 const money = (n)=> 'R$ '+fmt(n,2);
 function pctDelta(curr, prev){
-  if(prev==null || !isFinite(prev) || prev===0) return {txt:'(—)', cls:'flat', arrow:''};
+  if(prev==null || !isFinite(prev) || prev===0) return {txt:'—', cls:'flat'};
   const p = ((curr-prev)/prev)*100;
-  const arrow = p>=0 ? '↑' : '↓';
   const cls   = p>=0 ? 'up' : 'down';
-  return {txt:`${arrow} ${Math.abs(p).toFixed(1)}%`, cls};
+  return {txt:`${p>=0?'↑':'↓'} ${Math.abs(p).toFixed(1)}%`, cls};
 }
 function setDelta(elId, prevElId, curr, prev, fmtFn=(x)=>fmt(x)){
   const d = pctDelta(curr, prev);
   $(elId).textContent = d.txt; $(elId).className = `delta ${d.cls}`;
   $(prevElId).textContent = `Anterior: ${fmtFn(prev)}`;
 }
-function setStatus(t,cls){ const el=$('status'); el.textContent=t; el.className = `small ${cls||'muted'}`; }
-const debounce=(fn,ms=350)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
-
+function setStatus(t){ $('status').textContent=t; }
+const debounce=(fn,ms=300)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
 function dateToISO(d){ return d.toISOString().slice(0,10); }
-function addDays(iso, n){ const d = new Date(iso+'T00:00:00'); d.setDate(d.getDate()+n); return dateToISO(d); }
+function addDays(iso, n){ const d = new Date(iso+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 
-/* ====== Multiselect ===== */
+/* ===== MULTISELECT ===== */
 function MultiSelect(rootId, placeholder='Selecionar'){
   const root = $(rootId);
   const btn  = root.querySelector('.msel-btn');
@@ -243,7 +223,6 @@ function MultiSelect(rootId, placeholder='Selecionar'){
     panel.appendChild(inp); draw();
   }
   function draw(){
-    // remove antigos
     Array.from(panel.querySelectorAll('.msel-opt')).forEach(n=>n.remove());
     const list = document.createElement('div');
     (filtered.length?filtered:options).forEach((v,i)=>{
@@ -286,7 +265,7 @@ const ms = {
   cancel:   MultiSelect('ms-cancel','Não')
 };
 let lastDay='', firstDay='';
-const STORAGE_KEY='cfo_light_v24';
+const STORAGE_KEY='cfo_light_v25';
 
 function saveState(){
   const S = {
@@ -301,51 +280,36 @@ function loadState(){
   try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||'null'); }catch{ return null; }
 }
 function clearFilters(){
-  $('periodo').value='30';
-  $('dini').value=''; $('dfim').value='';
+  $('periodo').value='30'; $('dini').value=''; $('dfim').value='';
   ms.unidades.set([]); ms.lojas.set([]); ms.turnos.set([]);
   ms.canais.set([]); ms.pags.set([]); ms.cancel.set(['Não']);
-  updatePeriodoTexto(); saveState(); scheduleApply();
+  saveState(); scheduleApply();
 }
 
 /* ===== OPTIONS + PERIOD ===== */
 async function loadOptionsAndPeriod(){
-  setStatus('Carregando opções…');
+  setStatus('Carregando…');
   const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
-  if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
-  // opções
+  if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; } else { lastDay=dateToISO(new Date()); }
+
+  // unidades, canais, pagamentos (views já existentes)
   const u = await supa.from('vw_vendas_unidades').select('unidade');
   const c = await supa.from('vw_vendas_canais').select('canal');
   const p = await supa.from('vw_vendas_pagamentos').select('pagamento_base');
 
-  // lojas (usa view se existir; fallback distinct de vendas_canon)
-  let lojas=[];
-  const tryView = await supa.from('vw_vendas_lojas').select('loja');
-  if(!tryView.error) lojas = (tryView.data||[]).map(r=>r.loja);
-  else {
-    const r = await supa.from('vendas_canon').select('loja').neq('loja',null).limit(5000);
-    lojas = Array.from(new Set((r.data||[]).map(x=>x.loja))).slice(0,3000);
-  }
-
-  // turnos (view opcional, senão distinct)
-  let turnos=[];
-  const tview = await supa.from('vw_vendas_turnos').select('turno');
-  if(!tview.error) turnos = (tview.data||[]).map(r=>r.turno);
-  else {
-    const r = await supa.from('vendas_canon').select('turno').neq('turno',null).limit(2000);
-    turnos = Array.from(new Set((r.data||[]).map(x=>x.turno)));
-  }
+  // lojas e turnos diretamente da base canônica (evita 404 de views opcionais)
+  const lojasRes = await supa.from('vendas_canon').select('loja').neq('loja',null).limit(100000);
+  const turnRes  = await supa.from('vendas_canon').select('turno').neq('turno',null).limit(100000);
+  const lojas = Array.from(new Set((lojasRes.data||[]).map(r=>r.loja))).sort((a,b)=>a?.localeCompare(b||'','pt-BR'));
+  const turnos = Array.from(new Set((turnRes.data||[]).map(r=>r.turno))).sort((a,b)=>a?.localeCompare(b||'','pt-BR'));
 
   ms.unidades.setOptions((u.data||[]).map(r=>r.unidade));
   ms.canais.setOptions((c.data||[]).map(r=>r.canal));
   ms.pags.setOptions((p.data||[]).map(r=>r.pagamento_base));
   ms.lojas.setOptions(lojas);
   ms.turnos.setOptions(turnos);
-
-  // cancelado
   ms.cancel.setOptions(['Não','Sim','Todos'], ['Não']);
 
-  // estado salvo
   const S = loadState();
   if(S){
     $('periodo').value = S.periodo || '30';
@@ -353,15 +317,13 @@ async function loadOptionsAndPeriod(){
     ms.unidades.set(S.unids||[]); ms.lojas.set(S.lojas||[]); ms.turnos.set(S.turnos||[]);
     ms.canais.set(S.canais||[]); ms.pags.set(S.pags||[]); ms.cancel.set(S.cancel||['Não']);
   }
-  updatePeriodoTexto();
-  setStatus(`Opções OK. Último dia no banco: ${lastDay}`,'muted');
+  setStatus('');
 }
 
-/* datas: período rápido anula datas manuais e vice-versa */
+/* ===== DATAS ===== */
 function rangeFromPeriodo(){
   const val = $('periodo').value;
   if(val==='custom'){
-    // valida manual; se vazio, usa fallback de 30 dias
     let dini=$('dini').value, dfim=$('dfim').value;
     if(!dfim) dfim = lastDay||dateToISO(new Date());
     if(!dini){ dini = addDays(dfim, -29); }
@@ -370,7 +332,7 @@ function rangeFromPeriodo(){
     const n = parseInt(val,10)||30;
     const dfim = lastDay||dateToISO(new Date());
     let dini = addDays(dfim, -(n-1)); if(firstDay && dini<firstDay) dini=firstDay;
-    $('dini').value=''; $('dfim').value=''; // zera manuais
+    $('dini').value=''; $('dfim').value='';
     return {dini, dfim, n};
   }
 }
@@ -379,17 +341,83 @@ function rangePrev(dini, n){
   const diniPrev = addDays(dfimPrev, -(n-1));
   return {dini:diniPrev, dfim:dfimPrev};
 }
-function updatePeriodoTexto(){
-  const isCustom = $('periodo').value==='custom';
-  $('dini').disabled = !isCustom;
-  $('dfim').disabled = !isCustom;
-  const {dini, dfim, n} = rangeFromPeriodo();
-  $('periodoTexto').textContent = isCustom
-    ? `Intervalo manual: ${dini} → ${dfim} (${n} dias)`
-    : `Período rápido: ${dini} → ${dfim} (${n} dias) • Âncora no último dia do banco (${lastDay}).`;
+
+/* ===== BUILD FILTERS ===== */
+function applyCommonFilters(q, isCanon){
+  const {dini, dfim} = rangeFromPeriodo();
+  q = q.gte('dia', dini).lte('dia', dfim);
+  const unids = ms.unidades.get(); if(unids.length) q = q.in('unidade', unids);
+  const lojas = ms.lojas.get();
+  if(lojas.length){
+    q = isCanon ? q.in('loja', lojas) : q.in('Nome da loja', lojas);
+  }
+  const turnos = ms.turnos.get(); if(turnos.length) q = q.in('turno', turnos);
+  const canais = ms.canais.get();
+  if(canais.length){
+    q = isCanon ? q.in('canal', canais) : q.in('Canal de venda', canais);
+  }
+  const pags = ms.pags.get(); if(pags.length) q = q.in('pagamento_base', pags);
+  const canc = ms.cancel.get();
+  if(!canc.includes('Todos')) q = q.eq('cancelado', canc[0]||'Não');
+  return q;
 }
 
-/* ===== PARAMS ===== */
+/* ===== RESUMO + KPIs (sem RPC) ===== */
+async function fetchResumoSemRPC(){
+  // brutas (vendas_xlsx)
+  let qx = supa.from('vendas_xlsx').select('*', {count:'exact', head:true});
+  qx = applyCommonFilters(qx, false);
+  const brutas = (await qx).count || 0;
+
+  // canônicas (vendas_canon)
+  let qc = supa.from('vendas_canon').select('*', {count:'exact', head:true});
+  qc = applyCommonFilters(qc, true);
+  const canon = (await qc).count || 0;
+
+  const dups = Math.max(0, brutas - canon);
+  const perc = (brutas>0)? ((dups/brutas)*100) : null;
+  return { brutas, canon, dups, perc };
+}
+
+async function fetchKPIsSemRPC(dini, dfim){
+  // atual
+  let qa = supa.from('vendas_canon');
+  qa = applyCommonFilters(qa, true);
+  const nowAgg = await qa.select('ped_sum:pedidos.sum(), fat_sum:fat.sum(), des_sum:des.sum(), fre_sum:fre.sum()').single();
+  const ped = +((nowAgg.data||{}).ped_sum||0), fat=+((nowAgg.data||{}).fat_sum||0), des=+((nowAgg.data||{}).des_sum||0), fre=+((nowAgg.data||{}).fre_sum||0);
+
+  // anterior
+  const R = rangeFromPeriodo();
+  const P = rangePrev(R.dini, R.n);
+  let qb = supa.from('vendas_canon').gte('dia', P.dini).lte('dia', P.dfim);
+  qb = applyCommonFilters(qb, true); // aplica mesmos filtros (unid/loja/…)
+  const prevAgg = await qb.select('ped_sum:pedidos.sum(), fat_sum:fat.sum(), des_sum:des.sum(), fre_sum:fre.sum()').single();
+  const p_ped=+((prevAgg.data||{}).ped_sum||0), p_fat=+((prevAgg.data||{}).fat_sum||0), p_des=+((prevAgg.data||{}).des_sum||0), p_fre=+((prevAgg.data||{}).fre_sum||0);
+
+  return { ped,fat,des,fre, p_ped,p_fat,p_des,p_fre };
+}
+
+/* ===== CHART ===== */
+let chartHora=null;
+async function renderHora(dini, dfim){
+  try{
+    if(chartHora){ chartHora.destroy(); chartHora=null; }
+    // tenta RPC (se existir, ótimo; senão, silenciosamente fica vazio)
+    const r = await supa.rpc('kpi_vendas_hora', buildParams(dini, dfim));
+    if(r.error) return;
+    const rows = (r.data||[]).sort((a,b)=>(+a.hora)-(+b.hora));
+    const labels = rows.map(x=> String(x.hora).padStart(2,'0')+':00');
+    const valores = rows.map(x=> +x.fat || 0);
+    const ctx = $('chartHora').getContext('2d');
+    chartHora = new Chart(ctx, {
+      type:'bar',
+      data:{labels, datasets:[{label:'Receita (R$)', data: valores}]},
+      options:{responsive:true, plugins:{legend:{display:true}}, scales:{y:{beginAtZero:true}}}
+    });
+  }catch{ /* silencioso */ }
+}
+
+/* ===== PARAMS PARA RPC (se houver) ===== */
 function buildParams(dini, dfim){
   const canc = ms.cancel.get();
   const p_cancelado = canc.includes('Todos') ? null : (canc[0]||'Não');
@@ -405,125 +433,58 @@ function buildParams(dini, dfim){
 }
 
 /* ===== APLICAÇÃO ===== */
-const scheduleApply = debounce(applyAll, 350);
+const scheduleApply = debounce(applyAll, 250);
 
 async function applyAll(){
   try{
-    setStatus('Consultando…');
-    saveState();
-
+    setStatus('Atualizando…');
     const {dini, dfim, n} = rangeFromPeriodo();
     const prev = rangePrev(dini, n);
 
-    // Resumo
-    const rsum = await supa.rpc('resumo_vendas', buildParams(dini, dfim));
-    if(rsum.error) throw rsum.error;
-    const R = rsum.data?.[0] || {};
+    // RESUMO
+    const R = await fetchResumoSemRPC();
     $('q_brutas').textContent = fmt(R.brutas);
     $('q_canon').textContent  = fmt(R.canon);
-    $('q_dups').textContent   = fmt(R.duplicatas);
-    $('q_perc').textContent   = (R.perc_dup==null? '-' : (Number(R.perc_dup).toFixed(2)+' %'));
+    $('q_dups').textContent   = fmt(R.dups);
+    $('q_perc').textContent   = (R.perc==null? '-' : (Number(R.perc).toFixed(2)+' %'));
 
-    // KPIs atuais
-    const kNow = await supa.rpc('kpi_vendas', buildParams(dini, dfim));
-    if(kNow.error) throw kNow.error;
-    let ped=0,fat=0,des=0,fre=0;
-    for(const r of (kNow.data||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; }
-    const tkt_liq = ped>0 ? ((fat-des-fre)/ped) : 0;
-    const fat_med = ped>0 ? (fat/ped) : 0;
-    const des_perc = fat>0 ? (des/fat*100) : 0;
-    const fre_med = ped>0 ? (fre/ped) : 0;
+    // KPIs
+    const K = await fetchKPIsSemRPC(dini, dfim);
+    const tkt_liq = K.ped>0 ? ((K.fat-K.des-K.fre)/K.ped) : 0;
+    const fat_med = K.ped>0 ? (K.fat/K.ped) : 0;
+    const des_perc = K.fat>0 ? (K.des/K.fat*100) : 0;
+    const fre_med = K.ped>0 ? (K.fre/K.ped) : 0;
 
-    // KPIs anteriores
-    const kPrev = await supa.rpc('kpi_vendas', buildParams(prev.dini, prev.dfim));
-    if(kPrev.error) throw kPrev.error;
-    let p_ped=0,p_fat=0,p_des=0,p_fre=0;
-    for(const r of (kPrev.data||[])){ p_ped+=+r.pedidos||0; p_fat+=+r.fat||0; p_des+=+r.des||0; p_fre+=+r.fre||0; }
-    const p_tkt_liq = p_ped>0 ? ((p_fat-p_des-p_fre)/p_ped) : 0;
-    const p_fat_med = p_ped>0 ? (p_fat/p_ped) : 0;
-    const p_des_perc = p_fat>0 ? (p_des/p_fat*100) : 0;
-    const p_fre_med = p_ped>0 ? (p_fre/p_ped) : 0;
+    const p_tkt_liq = K.p_ped>0 ? ((K.p_fat-K.p_des-K.p_fre)/K.p_ped) : 0;
+    const p_fat_med = K.p_ped>0 ? (K.p_fat/K.p_ped) : 0;
+    const p_des_perc = K.p_fat>0 ? (K.p_des/K.p_fat*100) : 0;
+    const p_fre_med = K.p_ped>0 ? (K.p_fre/K.p_ped) : 0;
 
-    // render KPIs
-    $('k_ped').textContent = fmt(ped);
-    setDelta('d_ped','p_ped', ped, p_ped, fmt);
+    $('k_ped').textContent = fmt(K.ped);      setDelta('d_ped','p_ped', K.ped, K.p_ped, fmt);
+    $('k_tkt').textContent = money(tkt_liq);  setDelta('d_tkt','p_tkt', tkt_liq, p_tkt_liq, money);
+    $('k_fat').textContent = money(K.fat);    setDelta('d_fat','p_fat', K.fat, K.p_fat, money);
+    $('k_fatmed').textContent = money(fat_med); setDelta('d_fatmed','p_fatmed', fat_med, p_fat_med, money);
 
-    $('k_tkt').textContent = money(tkt_liq);
-    setDelta('d_tkt','p_tkt', tkt_liq, p_tkt_liq, money);
+    $('k_des').textContent = money(K.des);    setDelta('d_des','p_des', K.des, K.p_des, money);
+    $('k_desperc').textContent = fmt(des_perc,1)+'%'; setDelta('d_desperc','p_desperc', des_perc, p_des_perc, (x)=>fmt(x,1)+'%');
+    $('k_fre').textContent = money(K.fre);    setDelta('d_fre','p_fre', K.fre, K.p_fre, money);
+    $('k_fremed').textContent = money(fre_med); setDelta('d_fremed','p_fremed', fre_med, p_fre_med, money);
 
-    $('k_fat').textContent = money(fat);
-    setDelta('d_fat','p_fat', fat, p_fat, money);
+    // GRÁFICO (silencioso se RPC não existir)
+    renderHora(dini, dfim);
 
-    $('k_fatmed').textContent = money(fat_med);
-    setDelta('d_fatmed','p_fatmed', fat_med, p_fat_med, money);
-
-    $('k_des').textContent = money(des);
-    setDelta('d_des','p_des', des, p_des, money);
-
-    $('k_desperc').textContent = fmt(des_perc,1)+'%';
-    setDelta('d_desperc','p_desperc', des_perc, p_des_perc, (x)=>fmt(x,1)+'%');
-
-    $('k_fre').textContent = money(fre);
-    setDelta('d_fre','p_fre', fre, p_fre, money);
-
-    $('k_fremed').textContent = money(fre_med);
-    setDelta('d_fremed','p_fremed', fre_med, p_fre_med, money);
-
-    // Amostra (preview dos últimos 10 dias)
-    $('out').textContent = JSON.stringify((kNow.data||[]).slice(-10), null, 2);
-
-    // Gráfico por hora
-    await renderHora(dini, dfim);
-
-    setStatus(`OK • Período atual ${dini} → ${dfim} (comparado a ${prev.dini} → ${prev.dfim})`,'muted');
+    setStatus('');
   }catch(e){
     console.error(e);
-    setStatus('Erro: '+(e.message||e), 'err');
+    setStatus(''); // silencioso
   }
 }
 
-/* ===== GRÁFICO POR HORA ===== */
-let chartHora=null;
-async function renderHora(dini, dfim){
-  const ctx = $('chartHora').getContext('2d');
-  if(chartHora){ chartHora.destroy(); chartHora=null; }
-  const r = await supa.rpc('kpi_vendas_hora', buildParams(dini, dfim));
-  if(r.error){
-    $('hintHora').textContent = 'Observação: crie a RPC kpi_vendas_hora(dini,dfim,...) para alimentar este gráfico.';
-    return;
-  }
-  const rows = (r.data||[]).sort((a,b)=>(+a.hora)-(+b.hora));
-  const labels = rows.map(x=> String(x.hora).padStart(2,'0')+':00');
-  const valores = rows.map(x=> +x.fat || 0);
-  chartHora = new Chart(ctx, {
-    type:'bar',
-    data:{labels, datasets:[{label:'Receita (R$)', data: valores}]},
-    options:{responsive:true, plugins:{legend:{display:true}}, scales:{y:{beginAtZero:true}}}
-  });
-  $('hintHora').textContent = 'Receita agregada por hora no período atual.';
-}
-
-/* ===== AMOSTRA & TOP DUPS ===== */
-async function amostra(){
-  const {dini, dfim} = rangeFromPeriodo();
-  const r = await supa.rpc('amostra_vendas', buildParams(dini, dfim));
-  $('out').textContent = r.error ? JSON.stringify(r.error,null,2) : JSON.stringify(r.data||[], null, 2);
-}
-async function topdups(){
-  const {dini, dfim} = rangeFromPeriodo();
-  const p = buildParams(dini, dfim); p.p_limit=30;
-  const r = await supa.rpc('top_dups_vendas', p);
-  $('out').textContent = r.error ? JSON.stringify(r.error,null,2) : JSON.stringify(r.data||[], null, 2);
-}
-
-/* ===== LISTENERS (auto) ===== */
-$('periodo').addEventListener('change', ()=>{ updatePeriodoTexto(); scheduleApply(); saveState(); });
-$('dini').addEventListener('change', ()=>{ $('periodo').value='custom'; updatePeriodoTexto(); scheduleApply(); saveState(); });
-$('dfim').addEventListener('change', ()=>{ $('periodo').value='custom'; updatePeriodoTexto(); scheduleApply(); saveState(); });
-
+/* ===== LISTENERS ===== */
+$('periodo').addEventListener('change', ()=>{ scheduleApply(); saveState(); });
+$('dini').addEventListener('change', ()=>{ $('periodo').value='custom'; scheduleApply(); saveState(); });
+$('dfim').addEventListener('change', ()=>{ $('periodo').value='custom'; scheduleApply(); saveState(); });
 $('btnClear').addEventListener('click', clearFilters);
-$('btnAmostra').addEventListener('click', amostra);
-$('btnTopDups').addEventListener('click', topdups);
 
 /* ===== INIT ===== */
 (async function init(){
