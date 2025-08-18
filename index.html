@@ -56,7 +56,7 @@
 
       <div class="row cols-3" style="margin-top:10px">
         <div><label>Unidade</label><select id="fUni"><option value="">Todas</option></select></div>
-        <div><label>Loja (Top 10)</label><select id="fLoja"><option value="">Todas</option></select></div>
+        <div><label>Loja (Top 10, sem “Loja Centro”/vazias)</label><select id="fLoja"><option value="">Todas</option></select></div>
         <div><label>Cancelado?</label>
           <select id="fCanc">
             <option value="Todos">Todos</option>
@@ -115,6 +115,11 @@
     const fmtBRL = v => isFinite(v) ? v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : "—";
     const fmtPct = v => isFinite(v) ? (v*100).toFixed(1).replace('.',',')+'%' : "—";
     const onlyISO = s => (s||'').slice(0,10);
+    const norm = s => String(s??'').trim().toLowerCase();
+    const isLojaBloqueada = name => {
+      const n = norm(name);
+      return !n || n === 'loja centro';
+    };
     function setQuick(range){
       const end = maxISO ? new Date(maxISO) : new Date();
       let start = new Date(end);
@@ -140,7 +145,7 @@
 
     // ====== OPTIONS (leves) ======
     async function buildOptions(){
-      // Unidades (distinct via Set sobre amostra grande; normalmente poucas unidades)
+      // Unidades
       const u = await supa.from(TABLE).select('unidade').not('unidade','is',null).order('unidade',{ascending:true}).range(0, 99999);
       if(!u.error){
         const arr=[...new Set((u.data||[]).map(r=>r.unidade).filter(Boolean))];
@@ -158,24 +163,42 @@
         const arr=[...new Set((p.data||[]).map(r=>r.pagamento).filter(Boolean))];
         fPag.innerHTML = '<option value="">Todos</option>'+arr.map(v=>`<option>${v}</option>`).join('');
       }
-      // Lojas Top10 (rápido)
-      const l = await supa.from(TABLE).select('"Nome da loja",fat').not('fat','is',null).not('Nome da loja','is',null).range(0, 20000);
-      if(!l.error){
-        const acc = new Map();
-        (l.data||[]).forEach(r=>{ const k=r["Nome da loja"]; acc.set(k,(acc.get(k)||0)+(Number(r.fat)||0)); });
-        const top = Array.from(acc.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k])=>k);
-        fLoja.innerHTML = '<option value="">Todas</option>'+top.map(v=>`<option>${v}</option>`).join('');
+      // Lojas Top10 (EXCLUI “Loja Centro” e vazias)
+      const pageSize = 20000;
+      let from = 0, done=false;
+      const acc = new Map();
+      while(!done){
+        const l = await supa.from(TABLE)
+          .select('"Nome da loja",fat')
+          .not('fat','is',null)
+          .not('Nome da loja','is',null)
+          .range(from, from+pageSize-1);
+        if(l.error) break;
+        (l.data||[]).forEach(r=>{
+          const k = r["Nome da loja"];
+          if(isLojaBloqueada(k)) return; // pula vazias/Loja Centro
+          acc.set(k,(acc.get(k)||0)+(Number(r.fat)||0));
+        });
+        if(!l.data || l.data.length < pageSize) done = true;
+        from += pageSize;
+        if(from > 200000) done = true; // guarda-chuva
       }
+      const top = Array.from(acc.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k])=>k);
+      fLoja.innerHTML = '<option value="">Todas</option>'+top.map(v=>`<option>${v}</option>`).join('');
     }
 
     // ====== RPC HELPERS ======
-    function arrOrNull(v){ return v ? [v] : null; } // nossos selects são simples
+    function lojaParam(){
+      const v = S('fLoja').value || '';
+      if(isLojaBloqueada(v)) return null; // segurança: nunca envia Loja Centro/vazio
+      return v || null;
+    }
+    function arrOrNull(v){ return v ? [v] : null; }
     async function loadKPIs(d1,d2,uni,loja,canal,pag,canc){
-      // canc: 'Todos' | 'Não' | 'Sim'
       return supa.rpc('dash_kpis',{
         _dini:d1, _dfim:d2,
         _unidade: uni||null,
-        _loja: loja||null,
+        _loja: loja,
         _canais: arrOrNull(canal),
         _pagamentos: arrOrNull(pag),
         _cancelado: canc||'Todos'
@@ -185,7 +208,7 @@
       return supa.rpc('dash_serie',{
         _dini:d1, _dfim:d2,
         _unidade: uni||null,
-        _loja: loja||null,
+        _loja: loja,
         _canais: arrOrNull(canal),
         _pagamentos: arrOrNull(pag),
         _cancelado: canc||'Todos'
@@ -198,7 +221,7 @@
       const fat = Number(row?.fat)||0;
       const des = Number(row?.descontos)||0;
       const fre = Number(row?.fretes)||0;
-      const fatliq = Number(row?.fat_liquido)|| (fat - des - fre);
+      const fatliq = isFinite(Number(row?.fat_liquido)) ? Number(row?.fat_liquido) : (fat - des - fre);
       const ticket = pedidos? fat/pedidos : 0;
       const dias = (()=>{ const a=new Date(d1), b=new Date(d2); return Math.floor((b-a)/86400000)+1; })();
       const fatDia = dias>0? fat/dias : 0;
@@ -216,38 +239,44 @@
 
     function renderChart(rows){
       const ctx = S('chart').getContext('2d');
-      if(chart) chart.destroy();
-      if(!rows || rows.length===0){
-        chart = new Chart(ctx,{type:'line',data:{labels:[],datasets:[{label:'Receita',data:[],tension:0.2}]},options:{responsive:true,maintainAspectRatio:false}});
-        return;
+      if(chart){ chart.destroy(); chart=null; }
+
+      // Proteções contra “gráfico infinito”
+      if(!rows || !Array.isArray(rows) || rows.length===0) return;
+
+      const labels=[]; const values=[];
+      for(const r of rows){
+        const d = r?.dia; const v = Number(r?.fat);
+        if(d && isFinite(v)){ labels.push(d); values.push(v); }
       }
-      const labels = rows.map(r=>r.dia);
-      const values = rows.map(r=>Number(r.fat)||0);
+      if(labels.length===0) return;
+
       chart = new Chart(ctx,{
         type:'line',
         data:{labels, datasets:[{label:'Receita', data:values, tension:0.2}]},
-        options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}}}
+        options:{
+          responsive:true, maintainAspectRatio:false,
+          parsing:false, // usa arrays já validados
+          scales:{ y:{ beginAtZero:true, ticks:{ callback:(v)=>v.toLocaleString('pt-BR') } } }
+        }
       });
     }
 
-    // ====== RELOAD (único ponto) ======
+    // ====== RELOAD ======
     async function reload(){
-      // período
       const d1 = dini.value || minISO;
       const d2 = dfim.value || maxISO;
       const uni = fUni.value || null;
-      const loja= fLoja.value || null;
+      const loja= lojaParam();
       const canal=fCanal.value || null;
       const pag  =fPag.value || null;
       const canc = fCanc.value || 'Todos';
       periodoEl.textContent = `Período: ${d1??'—'} → ${d2??'—'}`;
 
-      // KPIs
       const k = await loadKPIs(d1,d2,uni,loja,canal,pag,canc);
       if(k.error){ console.error(k.error); renderKPIs({},d1,d2); }
       else { renderKPIs(k.data?.[0]||{}, d1,d2); }
 
-      // Série (gráfico)
       const s = await loadSerie(d1,d2,uni,loja,canal,pag,canc);
       if(s.error){ console.error(s.error); renderChart([]); }
       else { renderChart(s.data||[]); }
