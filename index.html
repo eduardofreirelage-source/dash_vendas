@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>DASHBOARD — CFO (v2.8.3 Light)</title>
+<title>DASHBOARD — CFO (v2.8.4 Light)</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
 <style>
   :root{
@@ -29,7 +29,7 @@
   .cols-2{grid-template-columns:repeat(2,1fr)}
   input[type="date"], .msel-btn{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
 
-  /* chips de período rápido (distribuídos igualmente) */
+  /* chips de período rápido */
   .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
   .chip{padding:8px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:600}
   .chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
@@ -239,12 +239,13 @@ function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d=
 function MultiSelect(rootId, placeholder){
   const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
   let options=[], selected=new Set(), filtered=[];
+  function norm(s){ return String(s??'').trim(); } // normaliza para igualdade exata no backend
   function render(){ panel.innerHTML=''; const q=document.createElement('input'); q.className='msel-search'; q.placeholder='Filtrar…'; q.addEventListener('input',()=>{filtered=options.filter(v=>v.toLowerCase().includes(q.value.toLowerCase())); draw();}); panel.appendChild(q); draw(); }
-  function draw(){ const box=document.createElement('div'); (filtered.length?filtered:options).forEach((v,i)=>{ const row=document.createElement('div'); row.className='msel-opt'; const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v; cb.checked=selected.has(v); const lb=document.createElement('label'); lb.textContent=v; cb.addEventListener('change',()=>{cb.checked?selected.add(v):selected.delete(v); refresh(); applyAll();}); row.appendChild(cb); row.appendChild(lb); box.appendChild(row);}); const olds=[...panel.querySelectorAll('.msel-opt')]; olds.forEach(n=>n.remove()); panel.appendChild(box); }
+  function draw(){ const box=document.createElement('div'); (filtered.length?filtered:options).forEach((v,i)=>{ const row=document.createElement('div'); row.className='msel-opt'; const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v; cb.checked=selected.has(v); const lb=document.createElement('label'); lb.textContent=v; cb.addEventListener('change',()=>{ if(cb.checked) selected.add(norm(v)); else selected.delete(norm(v)); refresh(); applyAll();}); row.appendChild(cb); row.appendChild(lb); box.appendChild(row);}); const olds=[...panel.querySelectorAll('.msel-opt')]; olds.forEach(n=>n.remove()); panel.appendChild(box); }
   function refresh(){ btn.textContent = selected.size===0 ? placeholder : `${selected.size} selecionado(s)`; }
   btn.addEventListener('click',()=>root.classList.toggle('open'));
   document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
-  return { setOptions(list){options=(list||[]).filter(Boolean); filtered=options.slice(); selected=new Set(); render(); refresh();}, get(){return [...selected];}, set(vals){selected=new Set(vals||[]); refresh(); draw();} };
+  return { setOptions(list){options=(list||[]).filter(v=>v!=null && String(v).trim()!=='').map(v=>String(v).trim()); filtered=options.slice(); selected=new Set(); render(); refresh();}, get(){return [...selected];}, set(vals){selected=new Set((vals||[]).map(v=>String(v).trim())); refresh(); draw();} };
 }
 
 /* ============== ESTADO / PERÍODO ============== */
@@ -271,11 +272,17 @@ function buildParams(de,ate,overrideCancel=null){
   let p_cancelado=null;                 // 'Sim' | 'Não' | null
   if (canc.length===1 && (canc[0]==='Não' || canc[0]==='Sim')) p_cancelado=canc[0];
 
+  // ⚠️ Normaliza valores de loja p/ igualdade exata no SQL (evita espaços invisíveis)
+  const lojasSel = ms.lojas.get().map(s => String(s).trim());
+
+  // Pequeno log no console para auditoria silenciosa (não aparece na UI)
+  console.debug('[params lojas]', lojasSel);
+
   return {
     p_dini: de,
     p_dfim: ate,
-    p_unids:  null,                                        // (sem filtro de unidade neste layout)
-    p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
+    p_unids:  null,
+    p_lojas:  lojasSel.length ? lojasSel : null,
     p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
     p_canais: ms.canais.get().length ? ms.canais.get() : null,
     p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
