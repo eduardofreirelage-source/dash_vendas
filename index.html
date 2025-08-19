@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>DASHBOARD — CFO (v2.8.3 Light)</title>
+<title>DASHBOARD — CFO (v2.8.3a Light)</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
 <style>
   :root{
     --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb;
     --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff;
-    --bar:#334155; /* cinza escuro para a barra dos KPIs */
+    --bar:#374151; /* cinza escuro para a barrinha do KPI (mais sóbrio) */
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
@@ -28,9 +28,13 @@
   .cols-3{grid-template-columns:repeat(3,1fr)}
   .cols-2{grid-template-columns:repeat(2,1fr)}
   input[type="date"], .msel-btn{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
-  .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
-  .chip{padding:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:700}
+
+  /* chips (período rápido) — sem “d”, espaçamento melhor */
+  .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+  .chip{padding:8px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:700;letter-spacing:.5px}
   .chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
+
+  /* multiselect */
   .msel{position:relative}
   .msel-btn{cursor:pointer;text-align:left}
   .msel-btn:after{content:"▾";float:right;color:#475569}
@@ -39,17 +43,21 @@
   .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
   .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
   .msel-opt:hover{background:#f3f4f6}
+
+  /* KPIs */
   .krow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
   .kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
   .kpi .bar{position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:14px 0 0 14px;background:var(--bar)}
-  .kpi h4{margin:0 0 6px;font-size:13px;color:#475569;display:flex;justify-content:space-between;align-items:center}
+  .kpi h4{margin:0 0 8px;font-size:13px;color:#475569;display:flex;align-items:center;gap:10px} /* delta mais à esquerda (ao lado do título) */
   .kpi .val{font-size:22px;font-weight:800}
   .kpi .sub{font-size:12px;color:#667085;margin-top:2px}
-  .delta{display:inline-flex;gap:6px;align-items:center;padding:2px 8px;border-radius:999px;border:1px solid var(--line);font-weight:700}
-  .delta svg{width:12px;height:12px}
+  .delta{display:inline-flex;gap:6px;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid var(--line);font-weight:800;font-size:14px}
+  .delta svg{width:14px;height:14px}
   .delta.up{color:var(--ok);border-color:#86efac}
   .delta.down{color:var(--down);border-color:#fecaca}
   .delta.flat{color:#64748b}
+  /* informação sutil do último dia carregado */
+  #periodoInfo{font-size:12px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -65,7 +73,10 @@
   <div class="section">
     <div class="sec-head">
       <div class="sec-title">
-        <svg class="ico" viewBox="0 0 24 24" fill="none"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        <!-- ícone de filtro (funnel) mais “clássico” -->
+        <svg class="ico" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2l-7 8v6l-4 2v-8L3 6V4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        </svg>
         Filtros de Data
       </div>
       <button id="btnClear" class="btn clear">✖ Limpar filtros</button>
@@ -89,17 +100,21 @@
           <button class="chip" data-q="90">90</button>
           <button class="chip" data-q="120">120</button>
         </div>
-        <div id="periodoInfo" class="muted" style="margin-top:6px;font-size:12px;">—</div>
+        <!-- Apenas o último dia carregado (sutil) -->
+        <div id="periodoInfo" style="margin-top:6px;">—</div>
       </div>
     </div>
   </div>
 
-  <!-- Demais Filtros -->
+  <!-- Filtros (antes: Demais Filtros) -->
   <div class="section">
     <div class="sec-head">
       <div class="sec-title">
-        <svg class="ico" viewBox="0 0 24 24" fill="none"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
-        Demais Filtros
+        <!-- mesmo ícone de filtro para consistência -->
+        <svg class="ico" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2l-7 8v6l-4 2v-8L3 6V4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        </svg>
+        Filtros
       </div>
       <div id="status" class="muted">—</div>
     </div>
@@ -137,7 +152,7 @@
     </div>
   </div>
 
-  <!-- KPIs -->
+  <!-- KPIs (layout apenas: barra cinza escuro, delta maior e à esquerda do título) -->
   <div class="krow">
     <div class="kpi"><span class="bar"></span>
       <h4><span>Pedidos</span><span id="d_ped" class="delta flat">—</span></h4>
