@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>DASHBOARD — CFO (v2.9.2 Light)</title>
+<title>DASHBOARD — CFO (v2.9.3 Light)</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
 <style>
   :root{
@@ -281,12 +281,23 @@ function deltaBadge(el,curr,prev){
 function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l5 6h-3v8H8V9H5l5-6z"/></svg>';}
 function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 17l-5-6h3V3h4v8h3l-5 6z"/></svg>';}
 
-/* >>> Parser ROBUSTO pt-BR (remove “R$”, espaços e letras) <<< */
+/* Parser BR robusto (remove R$, letras, espaços; trata 12.345,67 e 12,345.67) */
 function parseBR(v){
   if (v==null) return 0;
   if (typeof v === 'number' && isFinite(v)) return v;
-  // mantém apenas dígitos, vírgula, ponto e sinal
-  const s = String(v).replace(/[^\d,.\-]/g,'').replace(/\./g,'').replace(',', '.');
+  let s = String(v).trim();
+  if (s === '') return 0;
+  s = s.replace(/[^\d,.\-]/g,''); // remove R$, letras, espaços
+  // Se tiver mais de uma vírgula/ponto, mantemos só o último separador decimal
+  const lastComma = s.lastIndexOf(',');
+  const lastDot   = s.lastIndexOf('.');
+  // Remove separador de milhar
+  if (lastDot > lastComma) { // decimal é ponto
+    s = s.replace(/,/g,'');  // vírgulas eram milhares
+  } else {                    // decimal é vírgula
+    s = s.replace(/\./g,''); // pontos eram milhares
+    s = s.replace(',', '.'); // vírgula vira decimal
+  }
   const n = Number(s);
   return isFinite(n) ? n : 0;
 }
@@ -339,7 +350,7 @@ function buildParams(de, ate, overrideCancel = null) {
 }
 function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
 
-/* ===== APPLY ===== */
+/* ===== APPLY (KPIs) ===== */
 async function applyAll(){
   try{
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
@@ -397,31 +408,50 @@ async function applyAll(){
   }catch(e){ console.error(e); setStatus('Erro: '+(e.message||e),'err'); }
 }
 
-/* ===== BUSCA PARA GRÁFICOS ===== */
+/* ===== BUSCA RESILIENTE PARA GRÁFICOS ===== */
+async function fetchFromAny(sources, selectCols, whereFn){
+  for (const src of sources){
+    try{
+      let q = supa.from(src).select(selectCols);
+      q = whereFn(q);
+      const r = await q;
+      if (!r.error){
+        console.log(`[graf] Fonte usada: ${src} • linhas: ${r.data?.length||0}`, r.data?.[0]);
+        return r.data||[];
+      }
+    }catch(e){}
+  }
+  return [];
+}
 async function fetchVendas(de, ate){
-  let q = supa.from('vendas_canon')
-    .select('dia,hora,turno,fat,pedidos,loja,canal,pagamento_base,cancelado')
-    .gte('dia', de).lte('dia', ate);
+  const sources = ['vendas_canon','mv_vendas_canon','vw_vendas','vw_vendas_canon'];
+  const selectCols = 'dia,hora,turno,fat,pedidos,loja,canal,pagamento_base,cancelado';
+  const data = await fetchFromAny(sources, selectCols, (q)=>{
+    q = q.gte('dia', de).lte('dia', ate);
+    const lojas = ms.lojas.get(); if (lojas.length) q = q.in('loja', lojas);
+    const canais = ms.canais.get(); if (canais.length) q = q.in('canal', canais);
+    const turnos = ms.turnos.get(); if (turnos.length) q = q.in('turno', turnos);
+    const pags   = ms.pags.get();   if (pags.length)   q = q.in('pagamento_base', pags);
+    const canc = ms.cancel.get();
+    if (canc.length === 1 && (canc[0] === 'Não' || canc[0] === 'Sim')) q = q.eq('cancelado', canc[0]);
+    return q.limit(60000);
+  });
 
-  const lojas = ms.lojas.get(); if (lojas.length) q = q.in('loja', lojas);
-  const canais = ms.canais.get(); if (canais.length) q = q.in('canal', canais);
-  const turnos = ms.turnos.get(); if (turnos.length) q = q.in('turno', turnos);
-  const pags   = ms.pags.get();   if (pags.length)   q = q.in('pagamento_base', pags);
-
-  const canc = ms.cancel.get();
-  if (canc.length === 1 && (canc[0] === 'Não' || canc[0] === 'Sim')) q = q.eq('cancelado', canc[0]);
-
-  const r = await q.limit(50000);
-  if (r.error) throw r.error;
-
-  // Normaliza números (agora remove "R$" e qualquer letra)
-  return (r.data||[]).map(x=>({
-    dia: x.dia,
-    hora: Math.max(0, Math.min(23, parseBR(x.hora))), 
-    turno: String(x.turno||''),
-    fat: parseBR(x.fat),
-    pedidos: parseBR(x.pedidos) || 0
-  }));
+  // Normalização
+  return data.map(x=>{
+    let h = x.hora;
+    if (typeof h === 'string') {
+      const m = h.match(/\d{1,2}/); h = m ? parseInt(m[0],10) : 0;
+    }
+    h = Math.max(0, Math.min(23, Number(h)||0));
+    return {
+      dia: String(x.dia),
+      hora: h,
+      turno: String(x.turno||''),
+      fat: parseBR(x.fat),
+      pedidos: parseBR(x.pedidos) || 0
+    };
+  });
 }
 
 /* ===== AGRUPADORES ===== */
@@ -431,7 +461,7 @@ function groupByDOW(rows, metric='fat', mode='total'){
   const daySeen = Array.from({length:7},()=>new Set());
   for (const r of rows){
     const d = new Date(r.dia+'T00:00:00'); const dow = d.getDay();
-    const val = parseBR(r[metric])||0;
+    const val = Number(r[metric])||0;
     sums[dow] += val;
     daySeen[dow].add(r.dia);
   }
@@ -451,7 +481,8 @@ function groupByMonth(rows, metric='fat', mode='total'){
   const days = new Map();
   for (const r of rows){
     const k = ymKey(r.dia);
-    sums.set(k, (sums.get(k)||0) + (parseBR(r[metric])||0));
+    const v = Number(r[metric])||0;
+    sums.set(k, (sums.get(k)||0) + v);
     if(!days.has(k)) days.set(k, new Set());
     days.get(k).add(r.dia);
   }
@@ -471,7 +502,7 @@ function groupByHour(rows, metric='fat', mode='total'){
   const days = Array.from({length:24},()=>new Set());
   for (const r of rows){
     const h = Math.max(0, Math.min(23, parseInt(r.hora)||0));
-    const v = parseBR(r[metric])||0;
+    const v = Number(r[metric])||0;
     sums[h] += v;
     days[h].add(r.dia);
   }
@@ -486,7 +517,7 @@ function groupByTurno(rows, metric='fat', mode='total'){
   const days = new Map(TURNO_ORDER.map(t=>[t,new Set()]));
   for (const r of rows){
     const t = TURNO_ORDER.includes(r.turno)? r.turno : 'Dia';
-    const v = parseBR(r[metric])||0;
+    const v = Number(r[metric])||0;
     sums.set(t, (sums.get(t)||0)+v);
     days.get(t).add(r.dia);
   }
@@ -565,6 +596,8 @@ document.querySelectorAll('.seg').forEach(seg=>{
 /* ===== UPDATE CHARTS ===== */
 async function updateCharts(de, ate, dePrev, atePrev, onlyKey=null){
   const [nowRows, prevRows] = await Promise.all([ fetchVendas(de,ate), fetchVendas(dePrev,atePrev) ]);
+
+  console.log('[graf] atual:', nowRows.length, 'prev:', prevRows.length);
 
   if (!onlyKey || onlyKey==='dow'){
     const mode = chartMode.dow;
