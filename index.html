@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>DASHBOARD — CFO (v2.9.6 Light)</title>
+<title>DASHBOARD — CFO (v2.9.7 Light)</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
 <style>
   :root{
@@ -346,6 +346,14 @@ function buildParams(de, ate, overrideCancel = null) {
   };
 }
 function rpcName(params){ return params.p_unids ? 'kpi_vendas_v2' : 'kpi_vendas'; } // usar v2 quando filtrar unidade
+function prepareArgs(name, params){
+  // kpi_vendas NÃO aceita p_unids; removê-lo evita 404 "schema cache"
+  if(name==='kpi_vendas'){
+    const {p_unids, ...rest} = params;
+    return rest;
+  }
+  return params; // kpi_vendas_v2 aceita p_unids
+}
 
 /* ===== KPIs + base para gráficos ===== */
 let cacheNow=[], cachePrev=[];
@@ -364,10 +372,10 @@ async function applyAll(){
     const nameNow=rpcName(pNow), namePrev=rpcName(pPrev);
 
     const [now,prev,cNow,cPrev] = await Promise.all([
-      supa.rpc(nameNow, pNow),
-      supa.rpc(namePrev, pPrev),
-      supa.rpc(nameNow, {...pNow, p_cancelado:'Sim'}),
-      supa.rpc(namePrev, {...pPrev, p_cancelado:'Sim'}),
+      supa.rpc(nameNow, prepareArgs(nameNow,pNow)),
+      supa.rpc(namePrev, prepareArgs(namePrev,pPrev)),
+      supa.rpc(nameNow, prepareArgs(nameNow,{...pNow, p_cancelado:'Sim'})),
+      supa.rpc(namePrev, prepareArgs(namePrev,{...pPrev, p_cancelado:'Sim'})),
     ]);
     if(now.error) throw now.error; if(prev.error) throw prev.error;
     if(cNow.error) throw cNow.error; if(cPrev.error) throw cPrev.error;
@@ -404,6 +412,14 @@ async function applyAll(){
 
     await updateCharts();
   }catch(e){ console.error(e); setStatus('Erro: '+(e.message||e),'err'); }
+}
+
+/* ===== Deltas ===== */
+function deltaBadge(el,curr,prev){
+  if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
+  const p=((curr-prev)/prev)*100;
+  el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
+  el.className='delta '+(p>=0?'up':'down');
 }
 
 /* ===== Gráficos (usando cacheNow/cachePrev) ===== */
