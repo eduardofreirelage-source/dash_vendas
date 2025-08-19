@@ -3,13 +3,12 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>DASHBOARD — CFO (v2.9.3 Light)</title>
+<title>DASHBOARD — CFO (v2.9.4 Light)</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
 <style>
   :root{
     --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb;
-    --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff;
-    --bar:#334155;
+    --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155;
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
@@ -144,7 +143,7 @@
     </div>
   </div>
 
-  <!-- KPIs -->
+  <!-- KPIs (inalterados) -->
   <div class="krow">
     <div class="kpi"><span class="bar"></span>
       <h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4>
@@ -272,34 +271,28 @@ const pctf =v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR'
 function iso(d){return d.toISOString().slice(0,10);}
 function addDaysISO(isoStr,n){const d=new Date(isoStr+'T00:00:00'); d.setDate(d.getDate()+n); return iso(d);}
 function daysLen(de,ate){const d1=new Date(de+'T00:00:00'), d2=new Date(ate+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24))+1;}
-function deltaBadge(el,curr,prev){
-  if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
-  const p=((curr-prev)/prev)*100;
-  el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
-  el.className='delta '+(p>=0?'up':'down');
-}
 function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l5 6h-3v8H8V9H5l5-6z"/></svg>';}
 function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 17l-5-6h3V3h4v8h3l-5 6z"/></svg>';}
 
-/* Parser BR robusto (remove R$, letras, espaços; trata 12.345,67 e 12,345.67) */
+/* Parser BR robusto */
 function parseBR(v){
   if (v==null) return 0;
   if (typeof v === 'number' && isFinite(v)) return v;
   let s = String(v).trim();
   if (s === '') return 0;
-  s = s.replace(/[^\d,.\-]/g,''); // remove R$, letras, espaços
-  // Se tiver mais de uma vírgula/ponto, mantemos só o último separador decimal
+  s = s.replace(/[^\d,.\-]/g,'');
   const lastComma = s.lastIndexOf(',');
   const lastDot   = s.lastIndexOf('.');
-  // Remove separador de milhar
-  if (lastDot > lastComma) { // decimal é ponto
-    s = s.replace(/,/g,'');  // vírgulas eram milhares
-  } else {                    // decimal é vírgula
-    s = s.replace(/\./g,''); // pontos eram milhares
-    s = s.replace(',', '.'); // vírgula vira decimal
-  }
+  if (lastDot > lastComma) { s = s.replace(/,/g,''); }
+  else { s = s.replace(/\./g,''); s = s.replace(',', '.'); }
   const n = Number(s);
   return isFinite(n) ? n : 0;
+}
+function deltaBadge(el,curr,prev){
+  if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
+  const p=((curr-prev)/prev)*100;
+  el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
+  el.className='delta '+(p>=0?'up':'down');
 }
 
 /* ===== MULTISELECT ===== */
@@ -319,7 +312,6 @@ let firstDay='', lastDay='';
 const chips=[...document.querySelectorAll('.chip')];
 const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
 const ms={ lojas:MultiSelect('ms-lojas','Todas as lojas'), canais:MultiSelect('ms-canais','Todos os canais'), turnos:MultiSelect('ms-turnos','Todos os turnos'), pags:MultiSelect('ms-pags','Todos os tipos'), cancel:MultiSelect('ms-cancel','Todos') };
-
 function setActiveChip(val){ chips.forEach(c=>c.classList.toggle('active', c.dataset.q===String(val))); }
 function applyQuick(val){
   setActiveChip(val);
@@ -332,7 +324,7 @@ $('btnClear').addEventListener('click', ()=>{ ms.lojas.set([]); ms.canais.set([]
 chips.forEach(b=> b.addEventListener('click', ()=>applyQuick(b.dataset.q)));
 [fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{ chips.forEach(c=>c.classList.remove('active')); periodoInfo.textContent=`Último dia carregado: ${lastDay}`; applyAll(); }));
 
-/* ===== PARÂMETROS ===== */
+/* ===== PARÂMETROS PARA RPC (KPIs) ===== */
 function buildParams(de, ate, overrideCancel = null) {
   const canc = overrideCancel != null ? [overrideCancel] : ms.cancel.get();
   let p_cancelado = null;
@@ -350,7 +342,7 @@ function buildParams(de, ate, overrideCancel = null) {
 }
 function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
 
-/* ===== APPLY (KPIs) ===== */
+/* ===== KPIs ===== */
 async function applyAll(){
   try{
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
@@ -423,35 +415,55 @@ async function fetchFromAny(sources, selectCols, whereFn){
   }
   return [];
 }
+function normCancel(v){
+  const s = String(v??'').trim().toLowerCase();
+  if (['sim','s','true','1','y','yes'].includes(s)) return 'Sim';
+  return 'Não'; // tudo que não for "Sim" vira Não
+}
+function inferTurno(h){
+  if (h>=0 && h<=5) return 'Madrugada';
+  if (h<=11) return 'Manhã';
+  if (h<=17) return 'Tarde';
+  return 'Noite';
+}
 async function fetchVendas(de, ate){
   const sources = ['vendas_canon','mv_vendas_canon','vw_vendas','vw_vendas_canon'];
-  const selectCols = 'dia,hora,turno,fat,pedidos,loja,canal,pagamento_base,cancelado';
-  const data = await fetchFromAny(sources, selectCols, (q)=>{
+  const selectCols = 'dia,hora,turno,fat,faturamento,valor_total,valor,total,pedidos,qtd_pedidos,qtde,loja,canal,pagamento_base,cancelado';
+  const raw = await fetchFromAny(sources, selectCols, (q)=>{
     q = q.gte('dia', de).lte('dia', ate);
     const lojas = ms.lojas.get(); if (lojas.length) q = q.in('loja', lojas);
     const canais = ms.canais.get(); if (canais.length) q = q.in('canal', canais);
     const turnos = ms.turnos.get(); if (turnos.length) q = q.in('turno', turnos);
     const pags   = ms.pags.get();   if (pags.length)   q = q.in('pagamento_base', pags);
-    const canc = ms.cancel.get();
-    if (canc.length === 1 && (canc[0] === 'Não' || canc[0] === 'Sim')) q = q.eq('cancelado', canc[0]);
+    // NÃO filtra cancelado aqui – faremos no JS com tolerância
     return q.limit(60000);
   });
 
-  // Normalização
-  return data.map(x=>{
-    let h = x.hora;
-    if (typeof h === 'string') {
-      const m = h.match(/\d{1,2}/); h = m ? parseInt(m[0],10) : 0;
-    }
-    h = Math.max(0, Math.min(23, Number(h)||0));
-    return {
-      dia: String(x.dia),
-      hora: h,
-      turno: String(x.turno||''),
-      fat: parseBR(x.fat),
-      pedidos: parseBR(x.pedidos) || 0
-    };
-  });
+  const cancSel = ms.cancel.get();
+  const needCancel = (cancSel.length === 1 && (cancSel[0]==='Sim' || cancSel[0]==='Não')) ? cancSel[0] : null;
+
+  return raw
+    .filter(x => {
+      if (!needCancel) return true;
+      return normCancel(x.cancelado) === needCancel;
+    })
+    .map(x=>{
+      // hora normalizada
+      let h = x.hora;
+      if (typeof h === 'string') {
+        const m = h.match(/\d{1,2}/); h = m ? parseInt(m[0],10) : 0;
+      }
+      h = Math.max(0, Math.min(23, Number(h)||0));
+
+      // valores robustos
+      const fat = parseBR(x.fat ?? x.faturamento ?? x.valor_total ?? x.valor ?? x.total ?? 0);
+      const ped = parseBR(x.pedidos ?? x.qtd_pedidos ?? x.qtde ?? 0);
+
+      // turno (se vier vazio, infere por hora)
+      const turno = String(x.turno||'').trim() || inferTurno(h);
+
+      return { dia:String(x.dia), hora:h, turno, fat, pedidos: ped };
+    });
 }
 
 /* ===== AGRUPADORES ===== */
@@ -596,7 +608,6 @@ document.querySelectorAll('.seg').forEach(seg=>{
 /* ===== UPDATE CHARTS ===== */
 async function updateCharts(de, ate, dePrev, atePrev, onlyKey=null){
   const [nowRows, prevRows] = await Promise.all([ fetchVendas(de,ate), fetchVendas(dePrev,atePrev) ]);
-
   console.log('[graf] atual:', nowRows.length, 'prev:', prevRows.length);
 
   if (!onlyKey || onlyKey==='dow'){
