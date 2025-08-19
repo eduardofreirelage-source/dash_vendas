@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>DASHBOARD — CFO (v2.9.4 Light)</title>
+<title>DASHBOARD — CFO (v2.9.5 Light)</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
 <style>
   :root{
@@ -143,7 +143,7 @@
     </div>
   </div>
 
-  <!-- KPIs (inalterados) -->
+  <!-- KPIs (mesma estrutura) -->
   <div class="krow">
     <div class="kpi"><span class="bar"></span>
       <h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4>
@@ -324,7 +324,7 @@ $('btnClear').addEventListener('click', ()=>{ ms.lojas.set([]); ms.canais.set([]
 chips.forEach(b=> b.addEventListener('click', ()=>applyQuick(b.dataset.q)));
 [fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{ chips.forEach(c=>c.classList.remove('active')); periodoInfo.textContent=`Último dia carregado: ${lastDay}`; applyAll(); }));
 
-/* ===== PARÂMETROS PARA RPC (KPIs) ===== */
+/* ===== PARÂMETROS para RPC (KPIs) ===== */
 function buildParams(de, ate, overrideCancel = null) {
   const canc = overrideCancel != null ? [overrideCancel] : ms.cancel.get();
   let p_cancelado = null;
@@ -342,7 +342,7 @@ function buildParams(de, ate, overrideCancel = null) {
 }
 function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
 
-/* ===== KPIs ===== */
+/* ===== KPIs (inalterados) ===== */
 async function applyAll(){
   try{
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
@@ -366,30 +366,23 @@ async function applyAll(){
 
     const tktN = N.ped>0 ? (N.fat/N.ped) : 0;
     const tktP = P.ped>0 ? (P.fat/P.ped) : 0;
-
     const fatMedN = len>0 ? (N.fat/len) : 0;
     const fatMedP = len>0 ? (P.fat/len) : 0;
-
     const desPercN = N.fat>0 ? (N.des/N.fat) : 0;
     const desPercP = P.fat>0 ? (P.des/P.fat) : 0;
-
     const freMedN = N.ped>0 ? (N.fre/N.ped) : 0;
     const freMedP = P.ped>0 ? (P.fre/P.ped) : 0;
-
     const partCancN = N.ped>0 ? (CN.ped/N.ped) : 0;
     const partCancP = P.ped>0 ? (CP.ped/P.ped) : 0;
 
     $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
     $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
     $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
-
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
     $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
     $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
-
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
     $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
-
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
     $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
     $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
@@ -400,25 +393,58 @@ async function applyAll(){
   }catch(e){ console.error(e); setStatus('Erro: '+(e.message||e),'err'); }
 }
 
-/* ===== BUSCA RESILIENTE PARA GRÁFICOS ===== */
-async function fetchFromAny(sources, selectCols, whereFn){
-  for (const src of sources){
-    try{
-      let q = supa.from(src).select(selectCols);
-      q = whereFn(q);
-      const r = await q;
-      if (!r.error){
-        console.log(`[graf] Fonte usada: ${src} • linhas: ${r.data?.length||0}`, r.data?.[0]);
-        return r.data||[];
-      }
-    }catch(e){}
-  }
-  return [];
+/* ===== DISCOVERY + FETCH ROBUSTO PARA GRÁFICOS ===== */
+async function discoverColumns(source){
+  try{
+    const r = await supa.from(source).select('*').limit(1);
+    if (r.error) return null;
+    const row = (r.data||[])[0] || {};
+    const cols = Object.keys(row);
+    if (!cols.length) return null;
+    const pick = (...cands)=> cands.find(c=> cols.includes(c)) || null;
+
+    const dateCol  = pick('dia','data','dt','date');
+    if (!dateCol) return null; // sem coluna de data não dá pra filtrar
+
+    const hourCol  = pick('hora','hr','hour','horario','time_hour');
+    const turnoCol = pick('turno','periodo','shift');
+    const fatCol   = pick('fat','faturamento','valor_total','valor','total','vlr_total','vl_total');
+    const pedCol   = pick('pedidos','qtd_pedidos','qtde','qtd','qtd_ped');
+    const lojaCol  = pick('loja','loja_nome','nome_loja','unidade','unid');
+    const canalCol = pick('canal','canal_venda','origem');
+    const pagCol   = pick('pagamento_base','tipo_pagamento','pagamento');
+    const cancCol  = pick('cancelado','canceled','is_cancel','cancel');
+
+    return { dateCol, hourCol, turnoCol, fatCol, pedCol, lojaCol, canalCol, pagCol, cancCol, cols };
+  }catch(e){ return null; }
 }
+
+async function trySource(source, de, ate){
+  const map = await discoverColumns(source);
+  if (!map) return null;
+
+  // select só com o que existe
+  const sel = [map.dateCol, map.hourCol, map.turnoCol, map.fatCol, map.pedCol, map.lojaCol, map.canalCol, map.pagCol, map.cancCol]
+               .filter(Boolean).join(',');
+
+  let q = supa.from(source).select(sel).gte(map.dateCol, de).lte(map.dateCol, ate);
+
+  const lojas = ms.lojas.get(); if (lojas.length && map.lojaCol) q = q.in(map.lojaCol, lojas);
+  const canais = ms.canais.get(); if (canais.length && map.canalCol) q = q.in(map.canalCol, canais);
+  const turnos = ms.turnos.get(); if (turnos.length && map.turnoCol) q = q.in(map.turnoCol, turnos);
+  const pags   = ms.pags.get();   if (pags.length && map.pagCol)   q = q.in(map.pagCol, pags);
+
+  q = q.limit(60000);
+
+  const r = await q;
+  if (r.error){ console.warn('[graf] erro source', source, r.error); return null; }
+  return { rows: r.data||[], map, src: source };
+}
+
 function normCancel(v){
   const s = String(v??'').trim().toLowerCase();
   if (['sim','s','true','1','y','yes'].includes(s)) return 'Sim';
-  return 'Não'; // tudo que não for "Sim" vira Não
+  return 'Não';
 }
 function inferTurno(h){
   if (h>=0 && h<=5) return 'Madrugada';
@@ -426,44 +452,41 @@ function inferTurno(h){
   if (h<=17) return 'Tarde';
   return 'Noite';
 }
+
 async function fetchVendas(de, ate){
-  const sources = ['vendas_canon','mv_vendas_canon','vw_vendas','vw_vendas_canon'];
-  const selectCols = 'dia,hora,turno,fat,faturamento,valor_total,valor,total,pedidos,qtd_pedidos,qtde,loja,canal,pagamento_base,cancelado';
-  const raw = await fetchFromAny(sources, selectCols, (q)=>{
-    q = q.gte('dia', de).lte('dia', ate);
-    const lojas = ms.lojas.get(); if (lojas.length) q = q.in('loja', lojas);
-    const canais = ms.canais.get(); if (canais.length) q = q.in('canal', canais);
-    const turnos = ms.turnos.get(); if (turnos.length) q = q.in('turno', turnos);
-    const pags   = ms.pags.get();   if (pags.length)   q = q.in('pagamento_base', pags);
-    // NÃO filtra cancelado aqui – faremos no JS com tolerância
-    return q.limit(60000);
-  });
+  const sources = ['vendas_canon','mv_vendas_canon','vw_vendas_canon','vw_vendas'];
+  for (const src of sources){
+    try{
+      const res = await trySource(src, de, ate);
+      if (!res) continue;
+      const {rows, map} = res;
 
-  const cancSel = ms.cancel.get();
-  const needCancel = (cancSel.length === 1 && (cancSel[0]==='Sim' || cancSel[0]==='Não')) ? cancSel[0] : null;
+      const cancSel = ms.cancel.get();
+      const needCancel = (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não')) ? cancSel[0] : null;
 
-  return raw
-    .filter(x => {
-      if (!needCancel) return true;
-      return normCancel(x.cancelado) === needCancel;
-    })
-    .map(x=>{
-      // hora normalizada
-      let h = x.hora;
-      if (typeof h === 'string') {
-        const m = h.match(/\d{1,2}/); h = m ? parseInt(m[0],10) : 0;
-      }
-      h = Math.max(0, Math.min(23, Number(h)||0));
+      const data = rows
+        .filter(x => {
+          if (!needCancel || !map.cancCol) return true;
+          return normCancel(x[map.cancCol]) === needCancel;
+        })
+        .map(x=>{
+          const d  = String(x[map.dateCol]);
+          let h    = map.hourCol ? Number(String(x[map.hourCol]).match(/\d{1,2}/)?.[0]||0) : 0;
+          h = Math.max(0, Math.min(23, isFinite(h)?h:0));
+          const fat = parseBR(map.fatCol ? x[map.fatCol] : 0);
+          const ped = parseBR(map.pedCol ? x[map.pedCol] : 0);
+          const turno = map.turnoCol && x[map.turnoCol] ? String(x[map.turnoCol]) : inferTurno(h);
+          return { dia:d, hora:h, turno, fat, pedidos: ped };
+        });
 
-      // valores robustos
-      const fat = parseBR(x.fat ?? x.faturamento ?? x.valor_total ?? x.valor ?? x.total ?? 0);
-      const ped = parseBR(x.pedidos ?? x.qtd_pedidos ?? x.qtde ?? 0);
-
-      // turno (se vier vazio, infere por hora)
-      const turno = String(x.turno||'').trim() || inferTurno(h);
-
-      return { dia:String(x.dia), hora:h, turno, fat, pedidos: ped };
-    });
+      console.log(`[graf] Fonte usada: ${src} • linhas: ${data.length} • map:`, map);
+      return data;
+    }catch(e){
+      console.warn('[graf] falha tentando', src, e);
+    }
+  }
+  console.warn('[graf] nenhuma fonte retornou dados');
+  return [];
 }
 
 /* ===== AGRUPADORES ===== */
@@ -545,7 +568,7 @@ function groupByTurno(rows, metric='fat', mode='total'){
   return {labels, vals};
 }
 
-/* ===== Formatação de eixos ===== */
+/* ===== Eixos ===== */
 function formatCurrencyTick(value){
   const v = Number(value)||0;
   if (Math.abs(v) >= 1_000_000) return 'R$ ' + (v/1_000_000).toFixed(1).replace('.',',') + ' mi';
