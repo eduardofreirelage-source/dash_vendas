@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>DASHBOARD — CFO (v2.9.1 Light)</title>
+<title>DASHBOARD — CFO (v2.9.2 Light)</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
 <style>
   :root{
@@ -144,7 +144,7 @@
     </div>
   </div>
 
-  <!-- KPIs (mantidos) -->
+  <!-- KPIs -->
   <div class="krow">
     <div class="kpi"><span class="bar"></span>
       <h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4>
@@ -281,11 +281,12 @@ function deltaBadge(el,curr,prev){
 function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l5 6h-3v8H8V9H5l5-6z"/></svg>';}
 function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 17l-5-6h3V3h4v8h3l-5 6z"/></svg>';}
 
-/* Parse seguro para números em pt-BR (ex.: "1.234,56" → 1234.56) */
+/* >>> Parser ROBUSTO pt-BR (remove “R$”, espaços e letras) <<< */
 function parseBR(v){
   if (v==null) return 0;
   if (typeof v === 'number' && isFinite(v)) return v;
-  const s = String(v).trim().replace(/\./g,'').replace(',', '.');
+  // mantém apenas dígitos, vírgula, ponto e sinal
+  const s = String(v).replace(/[^\d,.\-]/g,'').replace(/\./g,'').replace(',', '.');
   const n = Number(s);
   return isFinite(n) ? n : 0;
 }
@@ -320,7 +321,7 @@ $('btnClear').addEventListener('click', ()=>{ ms.lojas.set([]); ms.canais.set([]
 chips.forEach(b=> b.addEventListener('click', ()=>applyQuick(b.dataset.q)));
 [fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{ chips.forEach(c=>c.classList.remove('active')); periodoInfo.textContent=`Último dia carregado: ${lastDay}`; applyAll(); }));
 
-/* ===== PARÂMETROS p/ RPC ===== */
+/* ===== PARÂMETROS ===== */
 function buildParams(de, ate, overrideCancel = null) {
   const canc = overrideCancel != null ? [overrideCancel] : ms.cancel.get();
   let p_cancelado = null;
@@ -338,7 +339,7 @@ function buildParams(de, ate, overrideCancel = null) {
 }
 function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
 
-/* ===== APPLY KPIs + CHARTS ===== */
+/* ===== APPLY ===== */
 async function applyAll(){
   try{
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
@@ -413,12 +414,12 @@ async function fetchVendas(de, ate){
   const r = await q.limit(50000);
   if (r.error) throw r.error;
 
-  // Normaliza números com segurança
+  // Normaliza números (agora remove "R$" e qualquer letra)
   return (r.data||[]).map(x=>({
     dia: x.dia,
-    hora: Math.max(0, Math.min(23, parseBR(x.hora))),   // garante 0..23
+    hora: Math.max(0, Math.min(23, parseBR(x.hora))), 
     turno: String(x.turno||''),
-    fat: parseBR(x.fat),                                 // <— correção principal
+    fat: parseBR(x.fat),
     pedidos: parseBR(x.pedidos) || 0
   }));
 }
@@ -501,7 +502,7 @@ function groupByTurno(rows, metric='fat', mode='total'){
   return {labels, vals};
 }
 
-/* ===== Formatação de eixos em moeda ===== */
+/* ===== Formatação de eixos ===== */
 function formatCurrencyTick(value){
   const v = Number(value)||0;
   if (Math.abs(v) >= 1_000_000) return 'R$ ' + (v/1_000_000).toFixed(1).replace('.',',') + ' mi';
@@ -509,14 +510,11 @@ function formatCurrencyTick(value){
   return 'R$ ' + v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
-/* ===== CHART helper (destrói antes de recriar) ===== */
+/* ===== CHART helper ===== */
 function ensureChart(canvasId, labels, nowArr, prevArr){
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
-  if (canvas.__chart) {
-    try { canvas.__chart.destroy(); } catch (e) {}
-    canvas.__chart = null;
-  }
+  if (canvas.__chart) { try { canvas.__chart.destroy(); } catch (e) {} canvas.__chart = null; }
   const ctx = canvas.getContext('2d');
   const chart = new Chart(ctx, {
     type: 'bar',
@@ -540,12 +538,7 @@ function ensureChart(canvasId, labels, nowArr, prevArr){
         legend: { position: 'top' },
         tooltip: {
           mode: 'index', intersect: false,
-          callbacks: {
-            label(ctx){
-              const v = ctx.parsed.y;
-              return `${ctx.dataset.label}: ${money(v)}`;
-            }
-          }
+          callbacks: { label(ctx){ return `${ctx.dataset.label}: ${money(ctx.parsed.y||0)}`; } }
         }
       }
     }
@@ -553,7 +546,7 @@ function ensureChart(canvasId, labels, nowArr, prevArr){
   canvas.__chart = chart;
 }
 
-/* ===== STATE dos gráficos (Total | Média) ===== */
+/* ===== STATE Total|Média ===== */
 const chartMode = { dow:'total', month:'total', hour:'total', turno:'total' };
 document.querySelectorAll('.seg').forEach(seg=>{
   seg.addEventListener('click', (e)=>{
