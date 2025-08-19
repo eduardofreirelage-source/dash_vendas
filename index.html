@@ -1,79 +1,298 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>DASHBOARD — CFO (v2.8.2 Light)</title>
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
+<style>
+  :root{
+    --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb;
+    --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff;
+    --bar:#334155; /* cinza escuro para a barra dos KPIs */
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
+  .wrap{max-width:1200px;margin:28px auto;padding:0 16px}
+  .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  h1{margin:0;font-size:28px;letter-spacing:.2px}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
+  .btn.ghost{background:#fff}
+  .btn.clear{gap:6px}
+  .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px}
+  .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
+  .ico{width:16px;height:16px;color:#475569}
+  .muted{color:var(--muted)}
+  .row{display:grid;gap:12px}
+  .cols-3{grid-template-columns:repeat(3,1fr)}
+  .cols-2{grid-template-columns:repeat(2,1fr)}
+  input[type="date"], .msel-btn{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+
+  /* chips de período rápido (distribuídos igualmente) */
+  .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+  .chip{padding:8px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:600}
+  .chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
+
+  /* multiselect */
+  .msel{position:relative}
+  .msel-btn{cursor:pointer;text-align:left}
+  .msel-btn:after{content:"▾";float:right;color:#475569}
+  .msel-panel{position:absolute;z-index:40;top:110%;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 24px rgba(0,0,0,.08);max-height:260px;overflow:auto;padding:8px;display:none}
+  .msel.open .msel-panel{display:block}
+  .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
+  .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
+  .msel-opt:hover{background:#f3f4f6}
+
+  /* KPI cards */
+  .kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
+  .kpi .bar{position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:14px 0 0 14px;background:var(--bar)}
+  .kpi h4{margin:0 0 6px;font-size:13px;color:#475569;display:flex;justify-content:space-between;align-items:center}
+  .kpi .val{font-size:22px;font-weight:800}
+  .kpi .sub{font-size:12px;color:#667085;margin-top:2px}
+  .delta{display:inline-flex;gap:6px;align-items:center;padding:2px 8px;border-radius:999px;border:1px solid var(--line);font-weight:700}
+  .delta svg{width:12px;height:12px}
+  .delta.up{color:var(--ok);border-color:#86efac}
+  .delta.down{color:var(--down);border-color:#fecaca}
+  .delta.flat{color:#64748b}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>DASHBOARD</h1>
+    <div class="right">
+      <button id="btnUpload" class="btn ghost">📤 Carregar Excel</button>
+    </div>
+  </div>
+
+  <!-- Filtros de Data -->
+  <div class="section">
+    <div class="sec-head">
+      <div class="sec-title">
+        <!-- ícone funil -->
+        <svg class="ico" viewBox="0 0 24 24" fill="none"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        Filtros de Data
+      </div>
+      <button id="btnClear" class="btn clear">✖ Limpar filtros</button>
+    </div>
+    <div class="row cols-3">
+      <div>
+        <div class="muted" style="margin-bottom:6px;">Intervalo (início)</div>
+        <input type="date" id="fDe">
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">Intervalo (fim)</div>
+        <input type="date" id="fAte">
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">Período rápido</div>
+        <div class="chips">
+          <button class="chip" data-q="7">07</button>
+          <button class="chip" data-q="15">15</button>
+          <button class="chip active" data-q="30">30</button>
+          <button class="chip" data-q="60">60</button>
+          <button class="chip" data-q="90">90</button>
+          <button class="chip" data-q="120">120</button>
+        </div>
+        <!-- mostra apenas o último dia carregado, de forma sutil -->
+        <div id="periodoInfo" class="muted" style="margin-top:6px;font-size:12px;">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Demais Filtros -->
+  <div class="section">
+    <div class="sec-head">
+      <div class="sec-title">
+        <svg class="ico" viewBox="0 0 24 24" fill="none"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        Demais Filtros
+      </div>
+      <div id="status" class="muted">—</div>
+    </div>
+    <div class="row cols-3">
+      <div>
+        <div class="muted" style="margin-bottom:6px;">Nome da Loja</div>
+        <div id="ms-lojas" class="msel"><button class="msel-btn">Todas as lojas</button><div class="msel-panel"></div></div>
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">Canal de Venda</div>
+        <div id="ms-canais" class="msel"><button class="msel-btn">Todos os canais</button><div class="msel-panel"></div></div>
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">Turno da Venda</div>
+        <div id="ms-turnos" class="msel"><button class="msel-btn">Todos os turnos</button><div class="msel-panel"></div></div>
+      </div>
+    </div>
+    <div class="row cols-3" style="margin-top:10px;">
+      <div>
+        <div class="muted" style="margin-bottom:6px;">Tipo de Pagamento</div>
+        <div id="ms-pags" class="msel"><button class="msel-btn">Todos os tipos</button><div class="msel-panel"></div></div>
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">Cancelado</div>
+        <div id="ms-cancel" class="msel">
+          <button class="msel-btn">Não</button>
+          <div class="msel-panel">
+            <div class="msel-opt"><input type="checkbox" value=""><label>Todos</label></div>
+            <div class="msel-opt"><input type="checkbox" value="Não" checked><label>Não</label></div>
+            <div class="msel-opt"><input type="checkbox" value="Sim"><label>Sim</label></div>
+          </div>
+        </div>
+      </div>
+      <div></div>
+    </div>
+  </div>
+
+  <!-- KPIs linha 1 -->
+  <div class="row cols-3">
+    <div class="kpi"><span class="bar"></span>
+      <h4><span>Pedidos</span><span id="d_ped" class="delta flat">—</span></h4>
+      <div class="val" id="k_ped">—</div>
+      <div class="sub">Anterior: <span id="p_ped">—</span></div>
+    </div>
+    <div class="kpi"><span class="bar"></span>
+      <h4><span>Faturamento</span><span id="d_fat" class="delta flat">—</span></h4>
+      <div class="val" id="k_fat">—</div>
+      <div class="sub">Anterior: <span id="p_fat">—</span></div>
+    </div>
+    <div class="kpi"><span class="bar"></span>
+      <h4><span>Incentivos</span><span id="d_des" class="delta flat">—</span></h4>
+      <div class="val" id="k_des">—</div>
+      <div class="sub">Anterior: <span id="p_des">—</span></div>
+    </div>
+  </div>
+
+  <!-- KPIs linha 2 -->
+  <div class="row cols-3" style="margin-top:12px;">
+    <div class="kpi"><span class="bar"></span>
+      <h4><span>% de Incentivos</span><span id="d_desperc" class="delta flat">—</span></h4>
+      <div class="val" id="k_desperc">—</div>
+      <div class="sub">Anterior: <span id="p_desperc">—</span></div>
+    </div>
+    <div class="kpi"><span class="bar"></span>
+      <h4><span>Ticket Médio</span><span id="d_tkt" class="delta flat">—</span></h4>
+      <div class="val" id="k_tkt">—</div>
+      <div class="sub">Anterior: <span id="p_tkt">—</span></div>
+    </div>
+    <div class="kpi"><span class="bar"></span>
+      <h4><span>Faturamento Médio</span><span id="d_fatmed" class="delta flat">—</span></h4>
+      <div class="val" id="k_fatmed">—</div>
+      <div class="sub">Anterior: <span id="p_fatmed">—</span></div>
+    </div>
+  </div>
+
+  <!-- KPIs linha 3 -->
+  <div class="row cols-3" style="margin-top:12px;">
+    <div class="kpi"><span class="bar"></span>
+      <h4><span>Frete</span><span id="d_fre" class="delta flat">—</span></h4>
+      <div class="val" id="k_fre">—</div>
+      <div class="sub">Anterior: <span id="p_fre">—</span></div>
+    </div>
+    <div class="kpi"><span class="bar"></span>
+      <h4><span>Frete Médio</span><span id="d_fremed" class="delta flat">—</span></h4>
+      <div class="val" id="k_fremed">—</div>
+      <div class="sub">Anterior: <span id="p_fremed">—</span></div>
+    </div>
+    <div class="kpi"><span class="bar"></span>
+      <h4><span>Pedidos Cancelados</span><span id="d_canc_ped" class="delta flat">—</span></h4>
+      <div class="val" id="k_canc_ped">—</div>
+      <div class="sub">Participação: <span id="k_canc_part">—</span> (Anterior: <span id="p_canc_part">—</span>)</div>
+    </div>
+  </div>
+
+  <!-- KPIs linha 4 -->
+  <div class="row cols-3" style="margin-top:12px;">
+    <div class="kpi"><span class="bar"></span>
+      <h4><span>Valor de Cancelados</span><span id="d_canc_val" class="delta flat">—</span></h4>
+      <div class="val" id="k_canc_val">—</div>
+      <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Supabase -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
 <script>
+/* ============== CONFIG ============== */
+const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
+const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+const $ = id => document.getElementById(id);
+const setStatus=(t,k)=>{const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085');};
+
+/* ============== UTIL ============== */
+const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const num  =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
+const pctf =v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+function iso(d){return d.toISOString().slice(0,10);}
+function addDaysISO(isoStr,n){const d=new Date(isoStr+'T00:00:00'); d.setDate(d.getDate()+n); return iso(d);}
+function daysLen(de,ate){const d1=new Date(de+'T00:00:00'), d2=new Date(ate+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24))+1;}
+function deltaBadge(el,curr,prev){
+  if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
+  const p=((curr-prev)/prev)*100;
+  el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
+  el.className='delta '+(p>=0?'up':'down');
+}
+function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l5 6h-3v8H8V9H5l5-6z"/></svg>';}
+function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 17l-5-6h3V3h4v8h3l-5 6z"/></svg>';}
+
+/* ============== MULTISELECT ============== */
+function MultiSelect(rootId, placeholder){
+  const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
+  let options=[], selected=new Set(), filtered=[];
+  function render(){ panel.innerHTML=''; const q=document.createElement('input'); q.className='msel-search'; q.placeholder='Filtrar…'; q.addEventListener('input',()=>{filtered=options.filter(v=>v.toLowerCase().includes(q.value.toLowerCase())); draw();}); panel.appendChild(q); draw(); }
+  function draw(){ const box=document.createElement('div'); (filtered.length?filtered:options).forEach((v,i)=>{ const row=document.createElement('div'); row.className='msel-opt'; const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v; cb.checked=selected.has(v); const lb=document.createElement('label'); lb.textContent=v; cb.addEventListener('change',()=>{cb.checked?selected.add(v):selected.delete(v); refresh(); applyAll();}); row.appendChild(cb); row.appendChild(lb); box.appendChild(row);}); const olds=[...panel.querySelectorAll('.msel-opt')]; olds.forEach(n=>n.remove()); panel.appendChild(box); }
+  function refresh(){ btn.textContent = selected.size===0 ? placeholder : `${selected.size} selecionado(s)`; }
+  btn.addEventListener('click',()=>root.classList.toggle('open'));
+  document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
+  return { setOptions(list){options=(list||[]).filter(Boolean); filtered=options.slice(); selected=new Set(); render(); refresh();}, get(){return [...selected];}, set(vals){selected=new Set(vals||[]); refresh(); draw();} };
+}
+
+/* ============== ESTADO / PERÍODO ============== */
+let firstDay='', lastDay='';
+const chips=[...document.querySelectorAll('.chip')];
+const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
+const ms={ lojas:MultiSelect('ms-lojas','Todas as lojas'), canais:MultiSelect('ms-canais','Todos os canais'), turnos:MultiSelect('ms-turnos','Todos os turnos'), pags:MultiSelect('ms-pags','Todos os tipos'), cancel:MultiSelect('ms-cancel','Todos') };
+
+function setActiveChip(val){ chips.forEach(c=>c.classList.toggle('active', c.dataset.q===String(val))); }
+function applyQuick(val){
+  setActiveChip(val);
+  const ate=lastDay||iso(new Date()); const de=addDaysISO(ate, -(Number(val)-1));
+  fDe.value=de; fAte.value=ate;
+  // apenas último dia carregado
+  periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
+  applyAll();
+}
+$('btnClear').addEventListener('click', ()=>{ ms.lojas.set([]); ms.canais.set([]); ms.turnos.set([]); ms.pags.set([]); ms.cancel.set(['Não']); applyQuick('30'); });
+chips.forEach(b=> b.addEventListener('click', ()=>applyQuick(b.dataset.q)));
+[fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{ chips.forEach(c=>c.classList.remove('active')); periodoInfo.textContent=`Último dia carregado: ${lastDay}`; applyAll(); }));
+
+/* ============== QUERIES / PARÂMETROS ============== */
+function buildParams(de,ate,overrideCancel=null){
+  const canc = overrideCancel!=null ? [overrideCancel] : ms.cancel.get();
+  let p_cancelado=null; // 'Sim' | 'Não' | null
+  if (canc.length===1 && (canc[0]==='Não' || canc[0]==='Sim')) p_cancelado=canc[0];
+  return {
+    p_dini:de, p_dfim:ate,
+    p_unids:null,
+    p_canais: ms.canais.get().length? ms.canais.get(): null,
+    p_pags:   ms.pags.get().length  ? ms.pags.get()  : null,
+    p_loja:   ms.lojas.get().length ? null : null,
+    p_cancelado
+  };
+}
+function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
+
+/* ============== RENDER KPIs ============== */
 async function applyAll(){
   try{
-    const de = fDe.value || firstDay;
-    const ate= fAte.value || lastDay;
-    const len = (new Date(ate)-new Date(de))/86400000 + 1;
-
-    setStatus('Consultando…');
-
-    // 1) Tenta a rota rápida (única chamada)
-    const fast = await supa.rpc('kpi_v2', buildParams(de,ate));
-    if (!fast.error && fast.data) {
-      const rows = fast.data; // 4 linhas
-      const get = (s,g)=> rows.find(r=>r.scope===s && r.grp===g) || {pedidos:0,fat:0,des:0,fre:0};
-
-      const now  = get('now','all');
-      const prev = get('prev','all');
-      const cNow = get('now','canc');
-      const cPre = get('prev','canc');
-
-      // derivados
-      const tktN     = now.pedidos>0 ? (now.fat/now.pedidos) : 0;
-      const tktP     = prev.pedidos>0 ? (prev.fat/prev.pedidos) : 0;
-      const fatMedN  = len>0 ? (now.fat/len) : 0;
-      const fatMedP  = len>0 ? (prev.fat/len) : 0;
-      const desPercN = now.fat>0 ? (now.des/now.fat) : 0;
-      const desPercP = prev.fat>0 ? (prev.des/prev.fat) : 0;
-      const freMedN  = now.pedidos>0 ? (now.fre/now.pedidos) : 0;
-      const freMedP  = prev.pedidos>0 ? (prev.fre/prev.pedidos) : 0;
-      const partCN   = now.pedidos>0 ? (cNow.pedidos/now.pedidos) : 0;
-      const partCP   = prev.pedidos>0 ? (cPre.pedidos/prev.pedidos) : 0;
-
-      // pintar
-      $('k_ped').textContent = (now.pedidos||0).toLocaleString('pt-BR');
-      $('p_ped').textContent = (prev.pedidos||0).toLocaleString('pt-BR');
-      deltaBadge($('d_ped'), now.pedidos||0, prev.pedidos||0);
-
-      $('k_fat').textContent = money(now.fat);  $('p_fat').textContent = money(prev.fat);
-      deltaBadge($('d_fat'), now.fat, prev.fat);
-
-      $('k_des').textContent = money(now.des);  $('p_des').textContent = money(prev.des);
-      deltaBadge($('d_des'), now.des, prev.des);
-
-      $('k_desperc').textContent = ((desPercN*100).toFixed(1)).replace('.',',')+'%';
-      $('p_desperc').textContent = ((desPercP*100).toFixed(1)).replace('.',',')+'%';
-      deltaBadge($('d_desperc'), desPercN, desPercP);
-
-      $('k_tkt').textContent = money(tktN);  $('p_tkt').textContent = money(tktP);
-      deltaBadge($('d_tkt'), tktN, tktP);
-
-      $('k_fatmed').textContent = money(fatMedN);  $('p_fatmed').textContent = money(fatMedP);
-      deltaBadge($('d_fatmed'), fatMedN, fatMedP);
-
-      $('k_fre').textContent = money(now.fre);  $('p_fre').textContent = money(prev.fre);
-      deltaBadge($('d_fre'), now.fre, prev.fre);
-
-      $('k_fremed').textContent = money(freMedN);  $('p_fremed').textContent = money(freMedP);
-      deltaBadge($('d_fremed'), freMedN, freMedP);
-
-      $('k_canc_ped').textContent = (cNow.pedidos||0).toLocaleString('pt-BR');
-      deltaBadge($('d_canc_ped'), cNow.pedidos||0, cPre.pedidos||0);
-
-      $('k_canc_val').textContent = money(cNow.fat);  $('p_canc_val').textContent = money(cPre.fat);
-      deltaBadge($('d_canc_val'), cNow.fat, cPre.fat);
-
-      $('k_canc_part').textContent = ((partCN*100).toFixed(2)).replace('.',',')+'%';
-      $('p_canc_part').textContent = ((partCP*100).toFixed(2)).replace('.',',')+'%';
-
-      setStatus('OK','ok');
-      return; // fim do caminho rápido
-    }
-
-    // 2) Fallback (mantém 100% compatível caso kpi_v2 não exista)
-    const atePrevISO=new Date(new Date(de+'T00:00:00').getTime()-86400000);
-    const dePrevISO=new Date(atePrevISO.getTime()-((len-1)*86400000));
+    const de=fDe.value||firstDay, ate=fAte.value||lastDay;
+    const len=daysLen(de,ate);
+    const atePrevISO=new Date(new Date(de+'T00:00:00').getTime()-24*60*60*1000);
+    const dePrevISO=new Date(atePrevISO.getTime()-(len-1)*24*60*60*1000);
     const dePrev=iso(dePrevISO), atePrev=iso(atePrevISO);
+    setStatus('Consultando…');
 
     const [now,prev,cNow,cPrev] = await Promise.all([
       supa.rpc('kpi_vendas', buildParams(de,ate)),
@@ -84,10 +303,69 @@ async function applyAll(){
     if(now.error) throw now.error; if(prev.error) throw prev.error;
     if(cNow.error) throw cNow.error; if(cPrev.error) throw cPrev.error;
 
-    // ... (use o mesmo bloco de pintura acima, agregando os arrays)
-    // (mantive para brevidade – você já tem esse trecho em produção)
-    setStatus('OK (fallback)','ok');
+    const N=agg(now.data), P=agg(prev.data);
+    const CN=agg(cNow.data), CP=agg(cPrev.data);
 
+    // derivados
+    const tktN = N.ped>0 ? (N.fat/N.ped) : 0;
+    const tktP = P.ped>0 ? (P.fat/P.ped) : 0;
+
+    const fatMedN = len>0 ? (N.fat/len) : 0;
+    const fatMedP = len>0 ? (P.fat/len) : 0;
+
+    const desPercN = N.fat>0 ? (N.des/N.fat) : 0;
+    const desPercP = P.fat>0 ? (P.des/P.fat) : 0;
+
+    const freMedN = N.ped>0 ? (N.fre/N.ped) : 0;
+    const freMedP = P.ped>0 ? (P.fre/P.ped) : 0;
+
+    const partCancN = N.ped>0 ? (CN.ped/N.ped) : 0;
+    const partCancP = P.ped>0 ? (CP.ped/P.ped) : 0;
+
+    // pintar
+    $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
+    $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
+    $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
+
+    $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
+    $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
+    $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
+
+    $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
+    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
+
+    $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
+    $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
+    $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
+
+    setStatus('OK','ok');
   }catch(e){ console.error(e); setStatus('Erro: '+(e.message||e),'err'); }
 }
+
+/* ============== BOOT ============== */
+(async function init(){
+  setStatus('Carregando…');
+  const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
+  if(dr.error){ setStatus('Erro datas: '+dr.error.message,'err'); return; }
+  if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
+
+  // opções
+  const [lojas,canais,turnos,pags] = await Promise.all([
+    supa.from('vw_vendas_lojas').select('loja').order('loja'),
+    supa.from('vw_vendas_canais').select('canal').order('canal'),
+    supa.from('vw_vendas_turnos').select('turno').order('turno'),
+    supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
+  ]);
+  const setOpts=(res,field,msel)=> msel.setOptions((res.data||[]).map(r=>r[field]));
+  if(!lojas.error) setOpts(lojas,'loja',ms.lojas);
+  if(!canais.error) setOpts(canais,'canal',ms.canais);
+  if(!turnos.error) setOpts(turnos,'turno',ms.turnos);
+  if(!pags.error) setOpts(pags,'pagamento_base',ms.pags);
+  ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
+
+  // default 30 dias ancorado
+  applyQuick('30');
+})();
 </script>
+</body>
+</html>
