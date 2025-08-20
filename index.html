@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.2 — restore)</title>
+  <title>DASHBOARD — CFO (v2.12.3 — date-read fix)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{
@@ -220,7 +220,7 @@
         <div class="val" id="k_canc_val">—</div>
         <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
       </div>
-      <!-- ROI — produto, como estava -->
+      <!-- ROI preservado (foco nos gráficos) -->
       <div class="kpi"><span class="bar"></span>
         <h4><span>ROI (incentivos × fat)</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
         <div class="val" id="k_roi">—</div>
@@ -282,7 +282,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <script>
   /* ===== Config ===== */
-  const ROI_MODE = 'product'; // como estava
+  const ROI_MODE = 'product'; // mantido; foco é arrumar datas dos gráficos
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -313,21 +313,33 @@
     if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
     const n=Number(s); return isFinite(n)?n:0;
   }
+
+  /* >>> Normalização de data robusta (BR/ISO) */
   function dayOnly(v){
     if(v==null) return '';
     if(v instanceof Date) return iso(v);
-    const s = String(v);
-    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
-    const m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
-    return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
+    const s = String(v).trim();
+    // 1) BR com hora:  dd/mm/yyyy HH:mm[:ss]
+    let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+    if(m){
+      const d=+m[1], mo=+m[2], y=+m[3];
+      if(y>=1900 && mo>=1 && mo<=12 && d>=1 && d<=31) return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    }
+    // 2) ISO completo: yyyy-mm-dd[ T]HH:mm[:ss]
+    m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s]\d{1,2}:\d{2}(?::\d{2})?)?/);
+    if(m) return `${m[1]}-${m[2]}-${m[3]}`;
+    // 3) ISO só data já pega
+    return '';
   }
+
   function dowFromISO(s){
     const d = dayOnly(s);
     if(!d) return null;
     const [Y,M,D]=d.split('-').map(Number);
-    const dt = new Date(Y, M-1, D); // local
+    const dt = new Date(Y, M-1, D); // local time para não "escapar" dia
     return dt.getDay(); // 0..6
   }
+
   function normCancel(v){
     const s=String(v??'').trim().toLowerCase();
     if(['sim','s','true','1','y','yes'].includes(s)) return 'Sim';
@@ -473,7 +485,7 @@
     el.className='delta '+(p>=0?'up':'down');
   }
 
-  /* ===== Descoberta p/ gráficos (versão anterior) ===== */
+  /* ===== Descoberta p/ gráficos ===== */
   function uniq(arr){ return [...new Set(arr.filter(Boolean))]; }
   function pickFirstNumber(row, keys){
     for(const k of keys){
@@ -507,6 +519,7 @@
 
     return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, lojaKeys, unidKeys, canalKeys, pagKeys, cancKeys};
   }
+
   async function trySource(source, de, ate){
     const map = await discoverColumns(source);
     if(!map) return null;
@@ -517,8 +530,12 @@
       ...map.lojaKeys, ...map.unidKeys, ...map.canalKeys, ...map.pagKeys, ...map.cancKeys
     ]).join(',');
 
-    // <<< versão anterior (inclui fim com <=)
-    let q = supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate);
+    const dateCol = map.dateKeys[0];
+    const deISO   = dayOnly(de);
+    const ateISO  = dayOnly(ate);
+    const ateNext = addDaysISO(ateISO || ate, 1); // fim exclusivo
+
+    let q = supa.from(source).select(sel).gte(dateCol, deISO).lt(dateCol, ateNext);
 
     const unids = ms.unids.get();  if(unids.length && map.unidKeys.length)  q = q.in(map.unidKeys[0], unids);
     const lojas = ms.lojas.get();  if(lojas.length && map.lojaKeys.length)  q = q.in(map.lojaKeys[0], lojas);
@@ -543,11 +560,12 @@
         return norm === needCancel;
       })
       .map(x=>{
-        const dia = dayOnly(x[map.dateKeys[0]]);
-        let h = NaN;
-        if (map.hourKeys.length) h = parseHour(x[map.hourKeys[0]]);
+        const rawDate = x[dateCol];
+        const dia = dayOnly(rawDate);
+        // hora pode vir em coluna separada ou embutida no date/time
+        let h = (map.hourKeys.length && x[map.hourKeys[0]]!=null) ? parseHour(x[map.hourKeys[0]]) : NaN;
         if (!Number.isFinite(h)) {
-          const m = String(x[map.dateKeys[0]]).match(/(?:\s|T)(\d{1,2})[:h]/);
+          const m = String(rawDate??'').match(/(?:\s|T)(\d{1,2}):(\d{2})/);
           if (m) h = Math.max(0,Math.min(23, +m[1]));
         }
         const fat = pickFirstNumber(x, map.fatKeys);
@@ -560,6 +578,7 @@
     setStatus(`OK — gráficos: ${source} (linhas ${rows.length}, soma fat: ${money(sumFat)})`,'ok');
     return {source, map, rows};
   }
+
   async function fetchRows(de, ate){
     const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
     for(const src of sources){
@@ -586,6 +605,7 @@
     }
     return mode==='media' ? sums.map((v,i)=>days[i].size? v/days[i].size:0) : sums;
   }
+
   function groupMonth(rows, metric='fat', mode='total'){
     const sums=new Map(), days=new Map();
     for(const r of rows){
@@ -596,15 +616,12 @@
       if(!days.has(ym)) days.set(ym,new Set());
       days.get(ym).add(d);
     }
-    const labels=[...sums.keys()].sort().map(monthLabel);
-    const vals=labels.map((lab,i)=>{
-      const raw=[...sums.keys()].sort()[i];
-      const tot=sums.get(raw)||0;
-      const denom=((days.get(raw)||new Set()).size)||1;
-      return mode==='media' ? (tot/denom) : tot;
-    });
+    const raws=[...sums.keys()].sort();
+    const labels=raws.map(monthLabel);
+    const vals=raws.map(k=> mode==='media' ? (sums.get(k)/((days.get(k)||new Set()).size||1)) : sums.get(k));
     return {labels, vals};
   }
+
   function groupHour(rows, metric='fat', mode='total'){
     const sums=Array(24).fill(0), days=Array.from({length:24},()=>new Set());
     for(const r of rows){
@@ -614,6 +631,7 @@
     }
     return mode==='media' ? sums.map((v,i)=>days[i].size? v/days[i].size:0) : sums;
   }
+
   const TURNO_ORDER=['Manhã','Tarde','Noite','Madrugada','Dia'];
   function groupTurno(rows, metric='fat', mode='total'){
     const sums=new Map(TURNO_ORDER.map(t=>[t,0])), days=new Map(TURNO_ORDER.map(t=>[t,new Set()]));
@@ -628,7 +646,7 @@
     return {labels, vals};
   }
 
-  /* ===== Chart helpers (versão anterior) ===== */
+  /* ===== Chart helpers ===== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -682,9 +700,9 @@
     if(!only || only==='month'){
       const gN=groupMonth(chartCacheNow,'fat',chartMode.month);
       const gP=groupMonth(chartCachePrev,'fat',chartMode.month);
-      const all=[...new Set([...gN.labels,...gP.labels])];
-      const mN=new Map(gN.labels.map((l,i)=>[l,gN.vals?gN.vals[i]:0]));
-      const mP=new Map(gP.labels.map((l,i)=>[l,gP.vals?gP.vals[i]:0]));
+      const all=[...new Set([...(gN.labels||[]),...(gP.labels||[])])];
+      const mN=new Map((gN.labels||[]).map((l,i)=>[l,(gN.vals||[])[i]||0]));
+      const mP=new Map((gP.labels||[]).map((l,i)=>[l,(gP.vals||[])[i]||0]));
       ensureChart('ch_month', all, all.map(l=>mN.get(l)||0), all.map(l=>mP.get(l)||0));
     }
     if(!only || only==='hour'){
@@ -696,9 +714,9 @@
     if(!only || only==='turno'){
       const gN=groupTurno(chartCacheNow,'fat',chartMode.turno);
       const gP=groupTurno(chartCachePrev,'fat',chartMode.turno);
-      const all=[...new Set([...gN.labels,...gP.labels])];
-      const mN=new Map(gN.labels.map((l,i)=>[l,gN.vals[i]]));
-      const mP=new Map(gP.labels.map((l,i)=>[l,gP.vals[i]]));
+      const all=[...new Set([...(gN.labels||[]),...(gP.labels||[])])];
+      const mN=new Map((gN.labels||[]).map((l,i)=>[l,(gN.vals||[])[i]||0]));
+      const mP=new Map((gP.labels||[]).map((l,i)=>[l,(gP.vals||[])[i]||0]));
       ensureChart('ch_turno', all, all.map(l=>mN.get(l)||0), all.map(l=>mP.get(l)||0));
     }
   }
