@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.3 — date-read fix)</title>
+  <title>DASHBOARD — CFO (v2.12.4 — date-read + month-align)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{
@@ -54,7 +54,7 @@
     .delta{display:inline-flex;gap:6px;align-items:center;padding:2px 10px;border-radius:999px;border:1px solid var(--line);font-weight:800;font-size:13px;margin-left:12px}
     .delta svg{width:12px;height:12px}
     .delta.up{color:var(--ok);border-color:#86efac}
-    .delta.down{color:var(--down);border-color:#fecaca}
+    .delta.down{color:#ef4444;border-color:#fecaca}
     .delta.flat{color:#64748b}
 
     /* Gráficos */
@@ -64,7 +64,7 @@
     .seg button{padding:6px 10px;border:0;background:#fff;cursor:pointer;font-weight:700}
     .seg button.active{background:var(--pri);color:#fff}
     .chart-box{height:280px}
-    .chart-box canvas{display:block;width:100% !important;height:100% !important;} /* evita canvas zero */
+    .chart-box canvas{display:block;width:100% !important;height:100% !important;}
     .diag{font-size:12px;color:#475569;margin-left:8px}
   </style>
 </head>
@@ -220,7 +220,6 @@
         <div class="val" id="k_canc_val">—</div>
         <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
       </div>
-      <!-- ROI preservado (foco nos gráficos) -->
       <div class="kpi"><span class="bar"></span>
         <h4><span>ROI (incentivos × fat)</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
         <div class="val" id="k_roi">—</div>
@@ -282,15 +281,16 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <script>
   /* ===== Config ===== */
-  const ROI_MODE = 'product'; // mantido; foco é arrumar datas dos gráficos
+  const DEBUG = false;               // troque p/ true se quiser ver logs de datas
+  const ROI_MODE = 'product';        // mantido; foco nos gráficos
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
   const $ = id => document.getElementById(id);
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
-  const setDiag=(nowRows,prevRows, metricKey)=>{
+  const setDiag=(nowRows,prevRows, metricKey, extra='')=>{
     const sum = (arr)=> (arr||[]).reduce((a,b)=> a + (+b[metricKey]||0), 0);
-    $('diag').textContent = `(linhas: atual ${nowRows?.length||0} / ant ${prevRows?.length||0} | soma ${metricKey}: ${money(sum(nowRows))} / ${money(sum(prevRows))})`;
+    $('diag').textContent = `(linhas: atual ${nowRows?.length||0} / ant ${prevRows?.length||0} | soma ${metricKey}: ${money(sum(nowRows))} / ${money(sum(prevRows))}) ${extra}`;
   };
 
   /* ===== Util ===== */
@@ -314,12 +314,23 @@
     const n=Number(s); return isFinite(n)?n:0;
   }
 
-  /* >>> Normalização de data robusta (BR/ISO) */
+  // >>> Normalização robusta de data (BR/ISO/serial Excel), sempre 'YYYY-MM-DD'
   function dayOnly(v){
     if(v==null) return '';
-    if(v instanceof Date) return iso(v);
+    if(v instanceof Date) return `${v.getFullYear()}-${String(v.getMonth()+1).padStart(2,'0')}-${String(v.getDate()).padStart(2,'0')}`;
     const s = String(v).trim();
-    // 1) BR com hora:  dd/mm/yyyy HH:mm[:ss]
+
+    // 0) Serial do Excel (dias desde 1899-12-30)
+    if(/^\d{5,}$/.test(s)){
+      const days = parseInt(s,10);
+      if(days>59 && days<80000){ // janela razoável
+        const base = new Date(Date.UTC(1899,11,30));
+        base.setUTCDate(base.getUTCDate()+days);
+        return `${base.getUTCFullYear()}-${String(base.getUTCMonth()+1).padStart(2,'0')}-${String(base.getUTCDate()).padStart(2,'0')}`;
+      }
+    }
+
+    // 1) BR com / ou - e opcional hora
     let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
     if(m){
       const d=+m[1], mo=+m[2], y=+m[3];
@@ -328,7 +339,7 @@
     // 2) ISO completo: yyyy-mm-dd[ T]HH:mm[:ss]
     m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s]\d{1,2}:\d{2}(?::\d{2})?)?/);
     if(m) return `${m[1]}-${m[2]}-${m[3]}`;
-    // 3) ISO só data já pega
+
     return '';
   }
 
@@ -336,8 +347,8 @@
     const d = dayOnly(s);
     if(!d) return null;
     const [Y,M,D]=d.split('-').map(Number);
-    const dt = new Date(Y, M-1, D); // local time para não "escapar" dia
-    return dt.getDay(); // 0..6
+    const dt = new Date(Y, M-1, D); // local time, sem UTC shift
+    return dt.getDay();
   }
 
   function normCancel(v){
@@ -533,7 +544,8 @@
     const dateCol = map.dateKeys[0];
     const deISO   = dayOnly(de);
     const ateISO  = dayOnly(ate);
-    const ateNext = addDaysISO(ateISO || ate, 1); // fim exclusivo
+    if(!deISO || !ateISO){ setStatus('Erro: datas inválidas (normalização)', 'err'); return null; }
+    const ateNext = addDaysISO(ateISO, 1); // fim exclusivo
 
     let q = supa.from(source).select(sel).gte(dateCol, deISO).lt(dateCol, ateNext);
 
@@ -551,6 +563,8 @@
     const cancSel = ms.cancel.get();
     const needCancel = (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não')) ? cancSel[0] : null;
 
+    let invalid = 0, outOfRange = 0;
+
     const rows = (r.data||[])
       .filter(x=>{
         if(!needCancel || !map.cancKeys.length) return true;
@@ -562,7 +576,7 @@
       .map(x=>{
         const rawDate = x[dateCol];
         const dia = dayOnly(rawDate);
-        // hora pode vir em coluna separada ou embutida no date/time
+        if(!dia) invalid++;
         let h = (map.hourKeys.length && x[map.hourKeys[0]]!=null) ? parseHour(x[map.hourKeys[0]]) : NaN;
         if (!Number.isFinite(h)) {
           const m = String(rawDate??'').match(/(?:\s|T)(\d{1,2}):(\d{2})/);
@@ -572,11 +586,21 @@
         const ped = pickFirstNumber(x, map.pedKeys);
         const t   = map.turnoKeys.length && x[map.turnoKeys[0]] ? String(x[map.turnoKeys[0]]) : inferTurno(h);
         return { dia, hora:Number.isFinite(h)?h:NaN, turno:t, fat:Number(fat)||0, pedidos:Number(ped)||0 };
+      })
+      // segurança: filtro cliente pelo range (se a coluna for texto no SQL)
+      .filter(r=>{
+        if(!r.dia) return false;
+        if(r.dia < deISO || r.dia > ateISO){ outOfRange++; return false; }
+        return true;
       });
 
     const sumFat = rows.reduce((a,b)=>a+(+b.fat||0),0);
+    const extraDiag = ` [inv:${invalid} fora:${outOfRange}]`;
     setStatus(`OK — gráficos: ${source} (linhas ${rows.length}, soma fat: ${money(sumFat)})`,'ok');
-    return {source, map, rows};
+    if(DEBUG) console.debug('Fonte:', source, 'Range:', deISO, '→', ateISO, 'Inv:', invalid, 'Fora:', outOfRange);
+    // anexar diagnóstico extra no topo (não persistente, só no update imediato)
+    lastExtraDiag = extraDiag;
+    return {source, map, rows, extraDiag};
   }
 
   async function fetchRows(de, ate){
@@ -584,16 +608,17 @@
     for(const src of sources){
       try{
         const res = await trySource(src, de, ate);
-        if(res) return res.rows;
+        if(res) return res;
       }catch(_e){}
     }
     setStatus('OK — gráficos sem linhas no período/filtros','ok');
-    return [];
+    return {rows:[], extraDiag:''};
   }
 
   /* ===== Agrupadores ===== */
   const DOW_LABELS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  function monthLabel(isoYM){ const [y,m]=isoYM.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
+  const MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  function monthLabelYM(ym){ const [y,m]=ym.split('-').map(Number); return `${MONTH_NAMES[m-1]}/${String(y).slice(-2)}`; }
 
   function groupDOW(rows, metric='fat', mode='total'){
     const sums=Array(7).fill(0), days=Array.from({length:7},()=>new Set());
@@ -606,7 +631,7 @@
     return mode==='media' ? sums.map((v,i)=>days[i].size? v/days[i].size:0) : sums;
   }
 
-  function groupMonth(rows, metric='fat', mode='total'){
+  function groupMonthRaw(rows, metric='fat', mode='total'){
     const sums=new Map(), days=new Map();
     for(const r of rows){
       const d = dayOnly(r.dia); if(!d) continue;
@@ -616,10 +641,9 @@
       if(!days.has(ym)) days.set(ym,new Set());
       days.get(ym).add(d);
     }
-    const raws=[...sums.keys()].sort();
-    const labels=raws.map(monthLabel);
+    const raws=[...sums.keys()].sort();               // sempre YYYY-MM
     const vals=raws.map(k=> mode==='media' ? (sums.get(k)/((days.get(k)||new Set()).size||1)) : sums.get(k));
-    return {labels, vals};
+    return {raws, vals};
   }
 
   function groupHour(rows, metric='fat', mode='total'){
@@ -688,9 +712,9 @@
   });
 
   /* ===== Cache p/ gráficos ===== */
-  let chartCacheNow=[], chartCachePrev=[];
+  let chartCacheNow=[], chartCachePrev=[], lastExtraDiag='';
   function updateChartsFromCache(only){
-    setDiag(chartCacheNow, chartCachePrev, 'fat');
+    setDiag(chartCacheNow, chartCachePrev, 'fat', lastExtraDiag);
 
     if(!only || only==='dow'){
       const now=groupDOW(chartCacheNow,'fat',chartMode.dow);
@@ -698,12 +722,12 @@
       ensureChart('ch_dow', DOW_LABELS, now, prev);
     }
     if(!only || only==='month'){
-      const gN=groupMonth(chartCacheNow,'fat',chartMode.month);
-      const gP=groupMonth(chartCachePrev,'fat',chartMode.month);
-      const all=[...new Set([...(gN.labels||[]),...(gP.labels||[])])];
-      const mN=new Map((gN.labels||[]).map((l,i)=>[l,(gN.vals||[])[i]||0]));
-      const mP=new Map((gP.labels||[]).map((l,i)=>[l,(gP.vals||[])[i]||0]));
-      ensureChart('ch_month', all, all.map(l=>mN.get(l)||0), all.map(l=>mP.get(l)||0));
+      const gN=groupMonthRaw(chartCacheNow,'fat',chartMode.month);
+      const gP=groupMonthRaw(chartCachePrev,'fat',chartMode.month);
+      const allRaw=[...new Set([...gN.raws,...gP.raws])].sort();
+      const mN=new Map(gN.raws.map((l,i)=>[l,gN.vals[i]]));
+      const mP=new Map(gP.raws.map((l,i)=>[l,gP.vals[i]]));
+      ensureChart('ch_month', allRaw.map(monthLabelYM), allRaw.map(l=>mN.get(l)||0), allRaw.map(l=>mP.get(l)||0));
     }
     if(!only || only==='hour'){
       const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
@@ -714,9 +738,9 @@
     if(!only || only==='turno'){
       const gN=groupTurno(chartCacheNow,'fat',chartMode.turno);
       const gP=groupTurno(chartCachePrev,'fat',chartMode.turno);
-      const all=[...new Set([...(gN.labels||[]),...(gP.labels||[])])];
-      const mN=new Map((gN.labels||[]).map((l,i)=>[l,(gN.vals||[])[i]||0]));
-      const mP=new Map((gP.labels||[]).map((l,i)=>[l,(gP.vals||[])[i]||0]));
+      const all=[...new Set([...gN.labels,...gP.labels])];
+      const mN=new Map(gN.labels.map((l,i)=>[l,gN.vals[i]]));
+      const mP=new Map(gP.labels.map((l,i)=>[l,gP.vals[i]]));
       ensureChart('ch_turno', all, all.map(l=>mN.get(l)||0), all.map(l=>mP.get(l)||0));
     }
   }
@@ -738,8 +762,8 @@
       let kpiOk=true;
       await kpiPromise.catch(e=>{ console.error(e); kpiOk=false; });
 
-      const [nowRows, prevRows] = await rowsPromise;
-      chartCacheNow=nowRows; chartCachePrev=prevRows;
+      const [nowRes, prevRes] = await rowsPromise;
+      chartCacheNow=nowRes.rows; chartCachePrev=prevRes.rows; lastExtraDiag = (nowRes.extraDiag||'');
       updateChartsFromCache();
 
       if(!kpiOk) setStatus('OK (sem KPIs — RPC indisponível)');
