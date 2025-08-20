@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.10.0)</title>
+  <title>DASHBOARD — CFO (v2.10.2 — fix gráficos)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{
@@ -276,7 +276,7 @@
 
   /* ===== UTIL ===== */
   const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const num =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
+  const num =v=>(v==null||+v===0||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
   const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
   function iso(d){return d.toISOString().slice(0,10);}
   function addDaysISO(isoStr,n){const d=new Date(isoStr+'T00:00:00'); d.setDate(d.getDate()+n); return iso(d);}
@@ -285,6 +285,19 @@
   function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 17l-5-6h3V3h4v8h3l-5 6z"/></svg>';}
   function parseHour(val){ if(val==null) return NaN; const m=String(val).match(/\d{1,2}/); const h=m?+m[0]:NaN; return (h>=0&&h<=23)?h:NaN; }
   function inferTurno(h){ if(!isFinite(h)) return 'Dia'; if(h<=5) return 'Madrugada'; if(h<=11) return 'Manhã'; if(h<=17) return 'Tarde'; return 'Noite'; }
+  function parseBR(v){ if(v==null) return 0; if(typeof v==='number' && isFinite(v)) return v;
+    let s=String(v).trim(); if(!s) return 0; s=s.replace(/[^\d,.\-]/g,'');
+    const lastC=s.lastIndexOf(','), lastD=s.lastIndexOf('.');
+    if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
+    const n=Number(s); return isFinite(n)?n:0;
+  }
+  function normCancel(v){
+    const s=String(v??'').trim().toLowerCase();
+    if(['sim','s','true','1','y','yes'].includes(s)) return 'Sim';
+    if(['nao','não','n','false','0','no'].includes(s)) return 'Não';
+    // valores diferentes tratamos como "Não" por padrão
+    return s==='sim' ? 'Sim' : 'Não';
+  }
 
   /* ===== MULTISELECT ===== */
   function MultiSelect(rootId, placeholder){
@@ -307,14 +320,14 @@
         cb.addEventListener('change',()=>{cb.checked?selected.add(v):selected.delete(v); refresh(); applyAll();});
         row.appendChild(cb); row.appendChild(lb); box.appendChild(row);
       });
-      const olds=[...panel.querySelectorAll('.msel-opt')]; olds.forEach(n=>n.remove());
+      panel.querySelectorAll('.msel-opt').forEach(n=>n.remove());
       panel.appendChild(box);
     }
     function refresh(){ btn.textContent = selected.size===0 ? placeholder : `${selected.size} selecionado(s)`; }
     btn.addEventListener('click',()=>root.classList.toggle('open'));
     document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
     return {
-      setOptions(list){options=(list||[]).filter(v=>v!==null&&v!==undefined).map(String); filtered=options.slice(); selected=new Set(); render(); refresh();},
+      setOptions(list){options=(list||[]).filter(v=>v!=null).map(String); filtered=options.slice(); selected=new Set(); render(); refresh();},
       get(){return [...selected];},
       set(vals){selected=new Set((vals||[]).map(String)); refresh(); draw();}
     };
@@ -434,7 +447,6 @@
     $('k_canc_part').textContent=pctf(partCancN);
     $('p_canc_part').textContent=pctf(partCancP);
   }
-
   function deltaBadge(el,curr,prev){
     if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
     const p=((curr-prev)/prev)*100;
@@ -442,39 +454,90 @@
     el.className='delta '+(p>=0?'up':'down');
   }
 
-  /* ===== DADOS PARA GRÁFICOS (linhas da MV) ===== */
-  async function fetchRows(de,ate){
-    let q = supa.from('mv_vendas_canon')
-      .select('dia,hora,turno,canal,pagamento_base,cancelado,unidade,loja,fat,pedidos,fre,des')
-      .gte('dia', de).lte('dia', ate);
+  /* ======== DISCOVERY ROBUSTA P/ GRÁFICOS ======== */
+  async function discoverColumns(source){
+    const r = await supa.from(source).select('*').limit(1);
+    if(r.error) return null;
+    const row = (r.data||[])[0] || {};
+    const cols = Object.keys(row);
+    if (!cols.length) return null;
+    const pick = (...cands)=> cands.find(c=> cols.includes(c)) || null;
 
-    const unids = ms.unids.get();  if(unids.length)  q = q.in('unidade', unids);
-    const lojas = ms.lojas.get();  if(lojas.length)  q = q.in('loja', lojas);
-    const turnos= ms.turnos.get(); if(turnos.length) q = q.in('turno', turnos);
-    const canais= ms.canais.get(); if(canais.length) q = q.in('canal', canais);
-    const pags  = ms.pags.get();   if(pags.length)   q = q.in('pagamento_base', pags);
+    const dateCol = pick('dia','data','dt','date','data_venda','data_pedido');
+    if(!dateCol) return null; // sem data não seguimos
 
-    const canc = ms.cancel.get();
-    if (canc.length===1 && (canc[0]==='Sim' || canc[0]==='Não')) {
-      q = q.eq('cancelado', canc[0]);
-    }
+    const hourCol = pick('hora','hr','hour','horario','time_hour','hora_venda');
+    const turnoCol= pick('turno','periodo','shift');
 
-    // limite de segurança alto
+    const fatCol  = pick('fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido');
+    const pedCol  = pick('pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido');
+
+    const lojaCol = pick('loja','loja_nome','nome_loja','loja_fantasia');
+    const unidCol = pick('unidade','unid','filial','cod_unidade','empresa');
+    const canalCol= pick('canal','canal_venda','origem','meio','canal_vendas');
+    const pagCol  = pick('pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto');
+    const cancCol = pick('cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada');
+
+    return { dateCol, hourCol, turnoCol, fatCol, pedCol, lojaCol, unidCol, canalCol, pagCol, cancCol };
+  }
+
+  async function trySource(source, de, ate){
+    const map = await discoverColumns(source);
+    if(!map) return null;
+
+    // monte SELECT apenas com colunas existentes
+    const sel = [map.dateCol,map.hourCol,map.turnoCol,map.fatCol,map.pedCol,map.lojaCol,map.unidCol,map.canalCol,map.pagCol,map.cancCol]
+      .filter(Boolean).join(',');
+
+    let q = supa.from(source).select(sel).gte(map.dateCol, de).lte(map.dateCol, ate);
+
+    // aplique filtros somente quando a coluna existir
+    const unids = ms.unids.get();  if(unids.length && map.unidCol)  q = q.in(map.unidCol, unids);
+    const lojas = ms.lojas.get();  if(lojas.length && map.lojaCol)  q = q.in(map.lojaCol, lojas);
+    const turnos= ms.turnos.get(); if(turnos.length && map.turnoCol)q = q.in(map.turnoCol, turnos);
+    const canais= ms.canais.get(); if(canais.length && map.canalCol)q = q.in(map.canalCol, canais);
+    const pags  = ms.pags.get();   if(pags.length && map.pagCol)    q = q.in(map.pagCol, pags);
+
+    // NÃO filtramos cancelado no SQL para evitar mismatch (bool/0-1 vs 'Sim/Não')
     q = q.limit(200000);
 
-    const { data, error } = await q;
-    if(error) throw error;
+    const r = await q;
+    if(r.error) return null;
 
-    // Normalização leve
-    return (data||[]).map(r=>({
-      dia: String(r.dia),
-      hora: parseHour(r.hora),
-      turno: r.turno || inferTurno(parseHour(r.hora)),
-      fat: +r.fat || 0,
-      pedidos: +r.pedidos || 0,
-      fre: +r.fre || 0,
-      des: +r.des || 0
-    }));
+    const cancSel = ms.cancel.get();
+    const needCancel = (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não')) ? cancSel[0] : null;
+
+    const rows = (r.data||[])
+      .filter(x=>{
+        if(!needCancel || !map.cancCol) return true;
+        return normCancel(x[map.cancCol]) === needCancel;
+      })
+      .map(x=>{
+        const dia = String(x[map.dateCol]);
+        const h   = map.hourCol!=null ? parseHour(x[map.hourCol]) : NaN;
+        const fat = parseBR(map.fatCol ? x[map.fatCol] : 0);
+        const ped = parseBR(map.pedCol ? x[map.pedCol] : 0);
+        const turno = (map.turnoCol && x[map.turnoCol]) ? String(x[map.turnoCol]) : inferTurno(h);
+        return { dia, hora: isFinite(h)?h:NaN, turno, fat, pedidos: ped };
+      });
+
+    return {source, map, rows};
+  }
+
+  async function fetchRows(de, ate){
+    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
+    for(const src of sources){
+      try{
+        const res = await trySource(src, de, ate);
+        if(res && res.rows.length){
+          // mostre de forma útil qual fonte foi usada e qual coluna de faturamento
+          setStatus(`OK — gráficos: ${res.source} (linhas ${res.rows.length}, métrica: ${res.map.fatCol||'—'})`,'ok');
+          return res.rows;
+        }
+      }catch(_e){}
+    }
+    setStatus('OK — gráficos sem linhas no período/filtros','ok');
+    return [];
   }
 
   /* ===== AGRUPADORES ===== */
@@ -587,7 +650,7 @@
 
       setStatus('Consultando…');
 
-      // KPIs e Linhas para gráficos em paralelo
+      // KPIs e Linhas para gráficos em paralelo (gráficos usam discovery de colunas e fontes)
       const kpiPromise = updateKPIs(de,ate,dePrev,atePrev);
       const rowsPromise = Promise.all([fetchRows(de,ate), fetchRows(dePrev,atePrev)]);
 
@@ -598,7 +661,7 @@
       chartCacheNow=nowRows; chartCachePrev=prevRows;
       updateChartsFromCache();
 
-      setStatus(kpiOk ? 'OK' : 'OK (sem KPIs — RPC indisponível)', kpiOk ? 'ok' : null);
+      if(!kpiOk) setStatus('OK (sem KPIs — RPC indisponível)');
     }catch(e){
       console.error(e);
       setStatus('Erro: '+(e.message||e),'err');
