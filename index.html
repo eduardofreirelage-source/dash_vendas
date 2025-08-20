@@ -3,27 +3,27 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.4 — charts RPC v1 + Excel + fix cancel)</title>
+  <title>DASHBOARD — CFO (v2.12.5 — RPC charts + Excel DB + prevRange + ROI%)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
     *{box-sizing:border-box}
     html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
     .wrap{max-width:1200px;margin:28px auto;padding:0 16px}
-    .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+    .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap}
     h1{margin:0;font-size:28px;letter-spacing:.2px}
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
     .btn.clear{gap:6px}
 
     .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px}
-    .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+    .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap}
     .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
     .ico{width:16px;height:16px;color:#475569}
     .muted{color:var(--muted)}
     .row{display:grid;gap:12px}
     .cols-3{grid-template-columns:repeat(3,1fr)}
     .cols-2{grid-template-columns:repeat(2,1fr)}
-    input[type="date"], .msel-btn{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+    input[type="date"], .msel-btn, .input{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
     .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
     .chip{padding:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:700}
     .chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
@@ -59,14 +59,14 @@
     .seg button{padding:6px 10px;border:0;background:#fff;cursor:pointer;font-weight:700}
     .seg button.active{background:var(--pri);color:#fff}
     .chart-box{height:280px}
-    /* evita canvas 0x0 */
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
     .diag{font-size:12px;color:#475569;margin-left:8px}
 
-    /* Upload info */
+    /* Upload Excel */
+    .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .upload-info{margin-top:8px;font-size:12px;color:#475569}
 
-    /* ===== Responsivo ===== */
+    /* Responsivo */
     @media (max-width:1024px){
       .cols-3{grid-template-columns:repeat(2,1fr)}
       .cols-2{grid-template-columns:1fr}
@@ -82,9 +82,13 @@
   <div class="wrap">
     <div class="top">
       <h1>DASHBOARD</h1>
-      <div class="right">
+      <div class="upload-bar">
         <button id="btnUpload" class="btn">📤 Carregar Excel</button>
         <input id="fileExcel" type="file" accept=".xlsx,.xls,.csv" style="display:none">
+        <input id="excelTable" class="input" placeholder="Tabela destino (ex.: vendas_importadas)">
+        <label style="display:inline-flex;align-items:center;gap:6px;">
+          <input id="excelWrite" type="checkbox"> Gravar no banco
+        </label>
       </div>
     </div>
 
@@ -233,7 +237,7 @@
         <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
       </div>
       <div class="kpi"><span class="bar"></span>
-        <h4><span>ROI (incentivos × fat)</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
+        <h4><span>ROI</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
         <div class="val" id="k_roi">—</div>
         <div class="sub">Anterior: <span id="p_roi">—</span></div>
       </div>
@@ -291,7 +295,6 @@
   <!-- libs -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
-  <!-- SheetJS p/ Excel -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 
   <script>
@@ -300,15 +303,12 @@
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  // Opcional: enviar Excel para tabela no Supabase (deixe null para apenas pré-visualizar)
-  const EXCEL_TARGET_TABLE = null; // ex: 'vendas_importadas'
-
   const $ = id => document.getElementById(id);
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
   const setDiag=(msg)=>{ $('diag').textContent = msg || ''; };
   const info=(msg)=>{ $('uploadInfo').textContent = msg || ''; };
 
-  /* ===== Util ===== */
+  /* ===== Utils ===== */
   const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const num =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
   const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
@@ -329,6 +329,8 @@
     if(['nao','não','n','false','0','no','nao/não'].includes(s)) return 'Não';
     return 'Não';
   }
+  const rmAcc = (s)=> s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const normHeader = (s)=> rmAcc(String(s||'').toLowerCase()).replace(/[^a-z0-9]+/g,' ').trim();
 
   /* ===== Multiselect ===== */
   function MultiSelect(rootId, placeholder){
@@ -412,8 +414,10 @@
   function prepareArgs(name, params){ if(name==='kpi_vendas'){ const {p_unids, ...rest}=params; return rest; } return params; }
   function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
 
+  // ROI: (fat - des) / des  -> porcentagem
+  function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
+
   async function kpiCancelFallback(de,ate,dePrev,atePrev){
-    // Usa mesma lógica de descoberta dos gráficos para somar cancelados localmente
     const rowsNow = await fetchRowsLocal(de,ate,'Sim');
     const rowsPrev= await fetchRowsLocal(dePrev,atePrev,'Sim');
     const sum = a => a.reduce((acc,x)=>({ ped:acc.ped+(+x.pedidos||0), fat:acc.fat+(+x.fat||0) }), {ped:0,fat:0});
@@ -433,13 +437,11 @@
     if(now.error) throw now.error;
     if(prev.error) throw prev.error;
 
-    let N=agg(now.data||[]), P=agg(prev.data||[]);
+    const N=agg(now.data||[]), P=agg(prev.data||[]);
     let CN=agg((cNow.data)||[]), CP=agg((cPrev.data)||[]);
 
-    // Fallback se RPC de cancelados não trouxe nada mas há pedidos
     if((!cNow || cNow.error || (!CN.ped && !CN.fat)) && (N.ped>0 || N.fat>0)){
-      try{
-        const fb = await kpiCancelFallback(de,ate,dePrev,atePrev);
+      try{ const fb = await kpiCancelFallback(de,ate,dePrev,atePrev);
         CN = { ped: fb.CN.ped, fat: fb.CN.fat, des:0, fre:0 };
         CP = { ped: fb.CP.ped, fat: fb.CP.fat, des:0, fre:0 };
       }catch(_e){}
@@ -466,11 +468,49 @@
     $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
     $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
 
-    const roiN = (N.des||0)*(N.fat||0), roiP = (P.des||0)*(P.fat||0);
-    $('k_roi').textContent=money(roiN); $('p_roi').textContent=money(roiP); deltaBadge($('d_roi'), roiN, roiP);
+    const roiN = computeROI(N), roiP = computeROI(P);
+    $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
+    $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
+    deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
   }
 
-  /* ===== Gráficos (RPC v1) ===== */
+  /* ===== Comparativo: exatamente período anterior =====
+     - Ano cheio (1/1..31/12) -> mesmo intervalo do ANO ANTERIOR
+     - Meses inteiros alinhados -> mesmos meses do ANO ANTERIOR
+     - Caso contrário -> período contíguo anterior do mesmo tamanho  */
+  function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
+  function isFullYear(d1,d2){
+    return d1.getMonth()===0 && d1.getDate()===1 &&
+           d2.getMonth()===11 && d2.getDate()===31 &&
+           d1.getFullYear()===d2.getFullYear();
+  }
+  function isFullMonthsAligned(d1,d2){
+    return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth());
+  }
+  function shiftYear(date,delta){
+    const d=new Date(date); d.setFullYear(d.getFullYear()+delta);
+    // ajustar fim de mês se necessário
+    const ld = lastDayOfMonth(d.getFullYear(), d.getMonth());
+    if(d.getDate()>ld) d.setDate(ld);
+    return d;
+  }
+  function computePrevRangeISO(deISO, ateISO){
+    const d1=new Date(deISO+'T00:00:00'), d2=new Date(ateISO+'T00:00:00');
+    if(isFullYear(d1,d2)){
+      const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1);
+      return { dePrev: iso(p1), atePrev: iso(p2) };
+    }
+    if(isFullMonthsAligned(d1,d2)){
+      const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1);
+      return { dePrev: iso(p1), atePrev: iso(p2) };
+    }
+    const len=daysLen(deISO,ateISO);
+    const atePrev=new Date(d1.getTime()-24*60*60*1000);
+    const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);
+    return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
+  }
+
+  /* ===== Gráficos via RPC v1 ===== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -532,10 +572,7 @@
 
   async function updateChartsServer(only){
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-    const len=daysLen(de,ate);
-    const atePrevISO=new Date(new Date(de+'T00:00:00').getTime()-24*60*60*1000);
-    const dePrevISO=new Date(atePrevISO.getTime()-(len-1)*24*60*60*1000);
-    const dePrev=iso(dePrevISO), atePrev=iso(atePrevISO);
+    const {dePrev, atePrev} = computePrevRangeISO(de,ate);
 
     try{
       setDiag('');
@@ -547,7 +584,6 @@
         return {k, now, prev};
       }));
 
-      // DOW
       const pD = packs.find(p=>p.k==='dow');
       if(!only || only==='dow'){
         const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
@@ -557,7 +593,6 @@
         ensureChart('ch_dow', labels, (chartMode.dow==='media'?nMed:nArr), (chartMode.dow==='media'?pMed:pArr));
       }
 
-      // MÊS
       const pM = packs.find(p=>p.k==='month');
       if(!only || only==='month'){
         const n = pM?.now||[], p = pM?.prev||[];
@@ -567,7 +602,6 @@
         ensureChart('ch_month', all.map(ymToLabel), all.map(x=>mapN.get(x)||0), all.map(x=>mapP.get(x)||0));
       }
 
-      // HORA
       const pH = packs.find(p=>p.k==='hour');
       if(!only || only==='hour'){
         const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
@@ -577,7 +611,6 @@
         ensureChart('ch_hour', labels, (chartMode.hour==='media'?nMed:nArr), (chartMode.hour==='media'?pMed:pArr));
       }
 
-      // TURNO
       const pT = packs.find(p=>p.k==='turno');
       if(!only || only==='turno'){
         const order=['Manhã','Tarde','Noite','Madrugada','Dia'];
@@ -597,7 +630,7 @@
     }
   }
 
-  /* ===== Suporte p/ fallback de cancelados (reuso de descoberta dos gráficos) ===== */
+  /* ===== Fallback local p/ cancelados (descoberta leve) ===== */
   function uniq(arr){ return [...new Set(arr.filter(Boolean))]; }
   function parseBR(v){
     if(v==null) return 0;
@@ -620,21 +653,16 @@
     const turnoKeys= ['turno','periodo','shift'].filter(has);
     const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
     const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
-    const lojaKeys = ['loja','loja_nome','nome_loja','loja_fantasia'].filter(has);
-    const unidKeys = ['unidade','unid','filial','cod_unidade','empresa'].filter(has);
-    const canalKeys= ['canal','canal_venda','origem','meio','canal_vendas'].filter(has);
-    const pagKeys  = ['pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto'].filter(has);
     const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
-    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, lojaKeys, unidKeys, canalKeys, pagKeys, cancKeys};
+    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, cancKeys};
   }
   async function trySourceLocal(source, de, ate, onlyCancel){
     const map = await discoverColumns(source);
     if(!map) return null;
     const sel = uniq([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys]).join(',');
-    let q = supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
-    const r = await q;
-    if(r.error) return null;
-    const rows = (r.data||[]).filter(x=>{
+    const q = await supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
+    if(q.error) return null;
+    const rows = (q.data||[]).filter(x=>{
       if(!onlyCancel) return true;
       const k = map.cancKeys[0];
       const norm = normCancel(x[k]);
@@ -646,7 +674,7 @@
     });
     return rows;
   }
-  async function fetchRowsLocal(de, ate, onlyCancelValue){ // onlyCancelValue 'Sim'|'Não'|null
+  async function fetchRowsLocal(de, ate, onlyCancelValue){
     const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
     const onlyCancel = (onlyCancelValue==='Sim');
     for(const src of sources){
@@ -660,6 +688,42 @@
 
   /* ===== Excel ===== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
+
+  function normalizeDateCell(v){
+    if(v==null) return null;
+    if(v instanceof Date) return iso(v);
+    const s=String(v).trim();
+    if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+    // DD/MM/YYYY HH:mm[:ss]
+    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+    if(m){
+      const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
+      const d = new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
+      return iso(d);
+    }
+    // Excel serial (número)
+    if(!isNaN(+s)){
+      const serial = +s;
+      const base = new Date(Date.UTC(1899,11,30)); // 1899-12-30 (compensa bug do 1900)
+      const d = new Date(base.getTime() + serial*24*60*60*1000);
+      return iso(d);
+    }
+    // tenta parse nativo
+    const t=new Date(s);
+    return isNaN(t.getTime()) ? null : iso(t);
+  }
+
+  function pickColumn(headers, alts){
+    const map = headers.map(h=>({orig:h, key:normHeader(h)}));
+    for(const a of alts){
+      // match exato
+      const ex = map.find(m=>m.key===a); if(ex) return ex.orig;
+      // match contém (mais tolerante)
+      const cont = map.find(m=>m.key.includes(a)); if(cont) return cont.orig;
+    }
+    return null;
+  }
+
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file){ info(''); return; }
@@ -670,29 +734,23 @@
       const ws = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
-      // Mapear colunas comuns
-      const normKey = s => String(s||'').toLowerCase().trim();
-      const keys = json.length ? Object.keys(json[0]).map(k=>[k, normKey(k)]) : [];
-      const findKey = (alts)=> {
-        const lower = keys.map(([orig,low])=>({orig,low}));
-        for(const a of alts){ const f = lower.find(k=>k.low===a); if(f) return f.orig; }
-        return null;
-      };
-      const kDia  = findKey(['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora']);
-      const kHora = findKey(['hora','hr','hour','horario','time_hour','hora venda','hora_venda']);
-      const kTurn = findKey(['turno','periodo','shift']);
-      const kFat  = findKey(['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota']);
-      const kPed  = findKey(['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas']);
-      const kUni  = findKey(['unidade','unid','filial','cod_unidade','empresa']);
-      const kLoja = findKey(['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia']);
-      const kCan  = findKey(['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas']);
-      const kPag  = findKey(['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto']);
-      const kCanc = findKey(['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada']);
+      const headers = json.length ? Object.keys(json[0]) : [];
+
+      const kDia  = pickColumn(headers, ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora']);
+      const kHora = pickColumn(headers, ['hora','hr','hour','horario','time_hour','hora venda','hora_venda']);
+      const kTurn = pickColumn(headers, ['turno','periodo','shift']);
+      const kFat  = pickColumn(headers, ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota']);
+      const kPed  = pickColumn(headers, ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas']);
+      const kUni  = pickColumn(headers, ['unidade','unid','filial','cod_unidade','empresa']);
+      const kLoja = pickColumn(headers, ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia']);
+      const kCan  = pickColumn(headers, ['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas']);
+      const kPag  = pickColumn(headers, ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto']);
+      const kCanc = pickColumn(headers, ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada']);
 
       let mapped = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
         return {
-          dia: get(kDia),
+          dia: normalizeDateCell(get(kDia)),
           hora: get(kHora),
           turno: get(kTurn),
           fat: parseBR(get(kFat)),
@@ -704,27 +762,32 @@
           cancelado: normCancel(get(kCanc))
         };
       });
-      const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!==''); // requer ao menos a data
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). ${EXCEL_TARGET_TABLE? 'Pronto para enviar.' : 'Pré-visualização local (sem envio).'}`);
 
-      // Opcional: enviar para Supabase
-      if(EXCEL_TARGET_TABLE){
-        setStatus('Enviando Excel…');
-        // pequenos lotes para evitar payload grande
-        const chunk = 500;
-        for(let i=0;i<ok.length;i+=chunk){
-          const slice = ok.slice(i,i+chunk);
-          const { error } = await supa.from(EXCEL_TARGET_TABLE).insert(slice);
-          if(error){ setStatus('Erro no upload: '+error.message,'err'); throw error; }
+      const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). ${( $('excelWrite').checked && $('excelTable').value.trim()) ? 'Enviando ao banco…' : 'Pré-visualização local (sem envio).'}`);
+
+      // Enviar para o banco se selecionado
+      if($('excelWrite').checked){
+        const table = $('excelTable').value.trim();
+        if(!table){ setStatus('Defina a tabela destino para gravar.','err'); }
+        else if(ok.length===0){ setStatus('Nada para gravar (0 linhas mapeadas).','err'); }
+        else{
+          setStatus('Enviando Excel…');
+          const chunk = 500;
+          for(let i=0;i<ok.length;i+=chunk){
+            const slice = ok.slice(i,i+chunk);
+            const { error } = await supa.from(table).insert(slice);
+            if(error){ setStatus('Erro no upload: '+error.message,'err'); throw error; }
+          }
+          setStatus('Upload concluído','ok');
+          info(`Gravado em "${table}": ${ok.length} linhas.`);
         }
-        setStatus('Upload concluído','ok');
       }
     }catch(e){
       console.error(e);
-      setStatus('Erro ao ler Excel: '+(e.message||e),'err');
+      setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
       info('');
     }finally{
-      // reset para permitir reupload do mesmo arquivo
       $('fileExcel').value='';
     }
   });
@@ -733,10 +796,7 @@
   async function applyAll(){
     try{
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-      const len=daysLen(de,ate);
-      const atePrevISO=new Date(new Date(de+'T00:00:00').getTime()-24*60*60*1000);
-      const dePrevISO=new Date(atePrevISO.getTime()-(len-1)*24*60*60*1000);
-      const dePrev=iso(dePrevISO), atePrev=iso(atePrevISO);
+      const {dePrev, atePrev} = computePrevRangeISO(de,ate);
 
       setStatus('Consultando…');
 
