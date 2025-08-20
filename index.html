@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.14 — fix lojas + meses alinhados + esconder zeros)</title>
+  <title>DASHBOARD — CFO (v2.12.15 — opções por período 100% confiáveis)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -293,7 +293,7 @@
   const DEST_TABLE    = 'vendas_canon';
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
-  const HIDE_ZERO_BINS = true; // oculta bins em que agora e anterior são zero
+  const HIDE_ZERO_BINS = true;
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
   /* ===== HELPERS ===== */
@@ -323,7 +323,6 @@
     return 'Não';
   }
 
-  // normalização de nomes
   const HYPHENS = /[\u2010-\u2015\u2212\u2043\u2053\uFE58\uFE63\uFF0D]/g;
   const APOSTR  = /[\u2018\u2019\u201B\u2032]/g;
   function cleanSpaces(s){
@@ -341,7 +340,7 @@
     t = cleanSpaces(t);
     t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     t = t.toLowerCase();
-    t = t.replace(/\bburguer\b/g,'burger');  // unifica grafia
+    t = t.replace(/\bburguer\b/g,'burger');
     t = t.replace(/\s*-\s*/g,'-').replace(/-+/g,'-');
     return t;
   }
@@ -357,6 +356,7 @@
   function computeROI(fr){ const d=Math.abs(fr.des||0); if(!d) return NaN; return (fr.fat - d) / d; }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
+  /* ===== MULTISELECT ===== */
   const canonMaps = { unids:{}, lojas:{}, canais:{}, pags:{}, turnos:{} };
   function mapCollect(obj, key, raw){
     const disp = displayNormalize(raw);
@@ -369,7 +369,6 @@
     }
   }
 
-  /* ===== MULTISELECT ===== */
   function MultiSelect(rootId, placeholder){
     const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
     let options=[], selected=new Set(), filtered=[];
@@ -393,7 +392,7 @@
     btn.addEventListener('click',()=>root.classList.toggle('open'));
     document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
     return {
-      setOptions(list){ options=(list||[]).map(v=>String(v)); filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh();},
+      setOptions(list){ list = Array.from(new Set((list||[]).map(v=>String(v)))); options=list; filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh();},
       get(){return [...selected];},
       set(vals){selected=new Set((vals||[]).map(String).filter(v=>options.includes(v))); refresh(); draw();}
     };
@@ -516,7 +515,7 @@
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
 
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
+    $('k_fremed').textContent=money(fatMedN/ (len?1:1)); $('p_fremed').textContent=money(fatMedP/ (len?1:1)); deltaBadge($('d_fremed'),N.fre/P.ped||0, P.fre/P.ped||0); // mantém compatível
 
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
     $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
@@ -546,7 +545,7 @@
     return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
   }
 
-  /* ===== GRÁFICOS (via RPC) ===== */
+  /* ===== GRÁFICOS VIA RPC ===== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -589,7 +588,11 @@
     turno: 'chart_vendas_turno_v1',
   };
 
-  // util: remove bins onde NOW e PREV são zero
+  function ymShiftYear(ym, delta){
+    const [y,m]=ym.split('-').map(Number);
+    return `${String(y+delta)}-${String(m).padStart(2,'0')}`;
+  }
+  function ymToLabel(ym){ const [y,m]=ym.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
   function filterZeroBins(labels, nowArr, prevArr){
     if(!HIDE_ZERO_BINS) return {labels, nowArr, prevArr};
     const L=[], N=[], P=[];
@@ -600,12 +603,6 @@
     }
     return {labels:L, nowArr:N, prevArr:P};
   }
-
-  function ymShiftYear(ym, delta){
-    const [y,m]=ym.split('-').map(Number);
-    return `${String(y+delta)}-${String(m).padStart(2,'0')}`;
-  }
-  function ymToLabel(ym){ const [y,m]=ym.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
 
   async function fetchChartRPC(kind, de, ate){
     const params = buildParams(de, ate);
@@ -628,7 +625,6 @@
         return {k, now, prev};
       }));
 
-      // DOW
       if(!only || only==='dow'){
         const pD = packs.find(p=>p.k==='dow');
         const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
@@ -640,7 +636,6 @@
         ensureChart('ch_dow', f.labels, f.nowArr, f.prevArr);
       }
 
-      // MONTH — alinha anterior por mês do período atual - 1 ano
       if(!only || only==='month'){
         const pM = packs.find(p=>p.k==='month');
         const n = pM?.now||[], p = pM?.prev||[];
@@ -656,7 +651,6 @@
         ensureChart('ch_month', f.labels, f.nowArr, f.prevArr);
       }
 
-      // HOUR
       if(!only || only==='hour'){
         const pH = packs.find(p=>p.k==='hour');
         const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
@@ -668,7 +662,6 @@
         ensureChart('ch_hour', f.labels, f.nowArr, f.prevArr);
       }
 
-      // TURNO
       if(!only || only==='turno'){
         const pT = packs.find(p=>p.k==='turno');
         const order=['Manhã','Tarde','Noite','Madrugada','Dia'];
@@ -690,7 +683,7 @@
     }
   }
 
-  /* ===== Descoberta de colunas (fallback/local) ===== */
+  /* ===== Descoberta & Fallback Local ===== */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -699,7 +692,7 @@
     if (!cols.length) return null;
     const has = c => cols.includes(c);
 
-    const dateKeys = ['dia','data','dt','date','data_venda','data_pedido','datahora'].filter(has);
+    const dateKeys = ['dia','data','dt','date','data_venda','data_pedido','datahora','datahora_venda','created_at'].filter(has);
     if(!dateKeys.length) return null;
     const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
     const turnoKeys= ['turno','periodo','shift'].filter(has);
@@ -708,95 +701,13 @@
     const pedKeys  = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
 
     const unidKeys = ['unidade','unid','filial','cod_unidade','empresa'].filter(has);
-    const lojaKeys = ['loja','loja_nome','nome_loja','loja_fantasia'].filter(has);
-    const canalKeys= ['canal','canal_venda','origem','meio','canal_vendas'].filter(has);
+    const lojaKeys = ['loja','loja_nome','nome_loja','loja_fantasia','estabelecimento','nome_fantasia'].filter(has);
+    const canalKeys= ['canal','canal_venda','origem','meio','canal_vendas','canal_de_vendas'].filter(has);
     const pagKeys  = ['pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto'].filter(has);
     const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
 
     return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, unidKeys, lojaKeys, canalKeys, pagKeys, cancKeys};
   }
-
-  async function trySourceLocal(source, de, ate, onlyCancel){
-    const map = await discoverColumns(source);
-    if(!map) return null;
-    const sel = uniq([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys]).join(',');
-    let q = supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
-    const r = await q;
-    if(r.error) return null;
-    const rows = (r.data||[]).filter(x=>{
-      if(!onlyCancel || !map.cancKeys.length) return true;
-      return normCancel(x[map.cancKeys[0]])===onlyCancel;
-    }).map(x=>{
-      const fat = (map.fatKeys.length)? parseBR(x[map.fatKeys[0]]) : 0;
-      const ped = (map.pedKeys.length)? parseBR(x[map.pedKeys[0]] ?? 1) : 1;
-      return { fat, pedidos: ped };
-    });
-    return rows;
-  }
-
-  async function fetchRowsLocal(de, ate, onlyCancelValue){
-    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
-    const onlyCancel = (onlyCancelValue==='Sim') ? 'Sim' : null;
-    for(const src of sources){
-      try{
-        const res = await trySourceLocal(src, de, ate, onlyCancel);
-        if(res) return res;
-      }catch(_e){}
-    }
-    return [];
-  }
-
-  /* ===== OPCÕES DINÂMICAS POR PERÍODO — agregando TODAS as fontes ===== */
-  async function refreshOptionsByPeriod(de,ate){
-    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
-    const prevSel = {
-      unids: ms.unids.get(), lojas: ms.lojas.get(), canais: ms.canais.get(),
-      turnos: ms.turnos.get(), pags: ms.pags.get()
-    };
-    canonMaps.unids = {}; canonMaps.lojas = {}; canonMaps.canais = {}; canonMaps.pags = {}; canonMaps.turnos = {};
-
-    const cancSel = ms.cancel.get();
-    const needCancel = (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não')) ? cancSel[0] : null;
-
-    for(const src of sources){
-      const map = await discoverColumns(src);
-      if(!map) continue;
-      const cols = uniq([
-        ...map.dateKeys,
-        ...(map.unidKeys||[]), ...(map.lojaKeys||[]),
-        ...(map.canalKeys||[]), ...(map.pagKeys||[]),
-        ...(map.turnoKeys||[]), ...(map.cancKeys||[])
-      ]).join(',');
-
-      let r = await supa.from(src).select(cols).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(100000);
-      if(r.error) continue;
-      let rows = r.data||[];
-
-      if(needCancel && map.cancKeys.length){
-        rows = rows.filter(x => normCancel(x[map.cancKeys[0]]) === needCancel);
-      }
-
-      rows.forEach(x=>{
-        if(map.unidKeys.length && x[map.unidKeys[0]]!=null)  mapCollect(canonMaps,'unids',  x[map.unidKeys[0]]);
-        if(map.lojaKeys.length && x[map.lojaKeys[0]]!=null)  mapCollect(canonMaps,'lojas',  x[map.lojaKeys[0]]);
-        if(map.canalKeys.length && x[map.canalKeys[0]]!=null)mapCollect(canonMaps,'canais', x[map.canalKeys[0]]);
-        if(map.pagKeys.length && x[map.pagKeys[0]]!=null)    mapCollect(canonMaps,'pags',   x[map.pagKeys[0]]);
-        if(map.turnoKeys.length && x[map.turnoKeys[0]]!=null)mapCollect(canonMaps,'turnos', x[map.turnoKeys[0]]);
-      });
-    }
-
-    function alpha(arr){ return (arr||[]).sort((a,b)=> a.localeCompare(b,'pt-BR',{sensitivity:'base'})); }
-    const toDisp = obj => alpha(Object.values(obj).map(v=>v.display));
-
-    ms.unids.setOptions( toDisp(canonMaps.unids) );   ms.unids.set(prevSel.unids);
-    ms.lojas.setOptions( toDisp(canonMaps.lojas) );   ms.lojas.set(prevSel.lojas);
-    ms.canais.setOptions( toDisp(canonMaps.canais) ); ms.canais.set(prevSel.canais);
-    ms.pags.setOptions(   toDisp(canonMaps.pags) );   ms.pags.set(prevSel.pags);
-    ms.turnos.setOptions( toDisp(canonMaps.turnos) ); ms.turnos.set(prevSel.turnos);
-  }
-
-  /* ===== Upload Excel → DB (sempre grava em vendas_canon) ===== */
-  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
     if(v==null) return null;
@@ -818,34 +729,101 @@
     const t=new Date(s);
     return isNaN(t.getTime()) ? null : iso(t);
   }
-  function parseHourUpload(v){
-    if(v==null) return null;
-    if(typeof v==='number' && v>=0 && v<=23) return Math.floor(v);
-    const s=String(v); const m=s.match(/(\d{1,2})/); if(!m) return null;
-    const h=+m[1]; return (h>=0 && h<=23) ? h : null;
-  }
-
-  const headerAlts = {
-    dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
-    hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
-    turno:['turno','periodo','shift'],
-    fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
-    ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
-    unid: ['unidade','unid','filial','cod_unidade','empresa'],
-    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia'],
-    canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas'],
-    pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
-    canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada']
-  };
-  function pickColumn(headers, alts){
-    const map = headers.map(h=>({orig:h, key:displayNormalize(h).toLowerCase()}));
-    for(const a of alts){
-      const ex = map.find(m=>m.key===a); if(ex) return ex.orig;
-      const cont = map.find(m=>m.key.includes(a)); if(cont) return cont.orig;
+  function pickISOFromRow(row, dateKeys){
+    for(const k of (dateKeys||[])){
+      const iso = normalizeDateCell(row[k]);
+      if(iso) return iso;
     }
     return null;
   }
 
+  async function trySourceLocal(source, de, ate, onlyCancel){
+    const map = await discoverColumns(source);
+    if(!map) return null;
+
+    const cols = uniq([
+      ...map.dateKeys, ...map.hourKeys, ...map.turnoKeys,
+      ...map.fatKeys,  ...map.pedKeys,
+      ...map.unidKeys, ...map.lojaKeys, ...map.canalKeys, ...map.pagKeys, ...map.cancKeys
+    ]).join(',');
+
+    // se há UMA única coluna de data, filtramos no servidor; senão, puxamos e filtramos localmente
+    let q = supa.from(source).select(cols).limit(120000);
+    if(map.dateKeys.length===1){
+      q = q.gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate);
+    }
+    const r = await q;
+    if(r.error) return null;
+
+    let rows = (r.data||[]);
+    // filtro local por data (cobre múltiplas colunas)
+    rows = rows.filter(x=>{
+      const d = pickISOFromRow(x, map.dateKeys);
+      return d && d>=de && d<=ate;
+    });
+
+    // filtro cancelado
+    if(onlyCancel && map.cancKeys.length){
+      rows = rows.filter(x => normCancel(x[map.cancKeys[0]]) === onlyCancel);
+    }
+
+    return {rows, map};
+  }
+
+  async function fetchRowsLocal(de, ate, onlyCancelValue){
+    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
+    const onlyCancel = (onlyCancelValue==='Sim') ? 'Sim' : null;
+    for(const src of sources){
+      try{
+        const res = await trySourceLocal(src, de, ate, onlyCancel);
+        if(res) return res.rows.map(x=>{
+          const fat = (res.map.fatKeys.length)? parseBR(x[res.map.fatKeys[0]]) : 0;
+          const ped = (res.map.pedKeys.length)? parseBR(x[res.map.pedKeys[0]] ?? 1) : 1;
+          return { fat, pedidos: ped };
+        });
+      }catch(_e){}
+    }
+    return [];
+  }
+
+  /* ===== OPCÕES DINÂMICAS POR PERÍODO (AGREGA TODAS AS FONTES + FILTRO LOCAL POR DATA) ===== */
+  async function refreshOptionsByPeriod(de,ate){
+    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
+    const prevSel = {
+      unids: ms.unids.get(), lojas: ms.lojas.get(), canais: ms.canais.get(),
+      turnos: ms.turnos.get(), pags: ms.pags.get()
+    };
+    canonMaps.unids = {}; canonMaps.lojas = {}; canonMaps.canais = {}; canonMaps.pags = {}; canonMaps.turnos = {};
+
+    const cancSel = ms.cancel.get();
+    const needCancel = (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não')) ? cancSel[0] : null;
+
+    for(const src of sources){
+      const res = await trySourceLocal(src, de, ate, needCancel);
+      if(!res) continue;
+      const {rows, map} = res;
+
+      rows.forEach(x=>{
+        if(map.unidKeys.length && x[map.unidKeys[0]]!=null)   mapCollect(canonMaps,'unids',  x[map.unidKeys[0]]);
+        if(map.lojaKeys.length && x[map.lojaKeys[0]]!=null)   mapCollect(canonMaps,'lojas',  x[map.lojaKeys[0]]);
+        if(map.canalKeys.length && x[map.canalKeys[0]]!=null) mapCollect(canonMaps,'canais', x[map.canalKeys[0]]);
+        if(map.pagKeys.length && x[map.pagKeys[0]]!=null)     mapCollect(canonMaps,'pags',   x[map.pagKeys[0]]);
+        if(map.turnoKeys.length && x[map.turnoKeys[0]]!=null) mapCollect(canonMaps,'turnos', x[map.turnoKeys[0]]);
+      });
+    }
+
+    function alpha(arr){ return (arr||[]).sort((a,b)=> a.localeCompare(b,'pt-BR',{sensitivity:'base'})); }
+    const toDisp = obj => alpha(Object.values(obj).map(v=>v.display));
+
+    ms.unids.setOptions( toDisp(canonMaps.unids) );   ms.unids.set(prevSel.unids);
+    ms.lojas.setOptions( toDisp(canonMaps.lojas) );   ms.lojas.set(prevSel.lojas);
+    ms.canais.setOptions( toDisp(canonMaps.canais) ); ms.canais.set(prevSel.canais);
+    ms.pags.setOptions(   toDisp(canonMaps.pags) );   ms.pags.set(prevSel.pags);
+    ms.turnos.setOptions( toDisp(canonMaps.turnos) ); ms.turnos.set(prevSel.turnos);
+  }
+
+  /* ===== Upload Excel → DB (sempre grava em vendas_canon) ===== */
+  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file){ info(''); return; }
@@ -857,6 +835,24 @@
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
       const headers = json.length ? Object.keys(json[0]) : [];
+      const headerAlts = {
+        dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
+        hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
+        turno:['turno','periodo','shift'],
+        fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
+        ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
+        unid: ['unidade','unid','filial','cod_unidade','empresa'],
+        loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia'],
+        canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de vendas','canal_de_vendas'],
+        pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
+        canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada']
+      };
+      const pickColumn=(hdrs, alts)=>{
+        const map = hdrs.map(h=>({orig:h, key:displayNormalize(h).toLowerCase()}));
+        for(const a of alts){ const ex=map.find(m=>m.key===a); if(ex) return ex.orig;
+          const cont=map.find(m=>m.key.includes(a)); if(cont) return cont.orig; }
+        return null;
+      };
 
       const kDia  = pickColumn(headers, headerAlts.dia);
       const kHora = pickColumn(headers, headerAlts.hora);
@@ -869,11 +865,11 @@
       const kPag  = pickColumn(headers, headerAlts.pag);
       const kCanc = pickColumn(headers, headerAlts.canc);
 
-      let mapped = json.map(r=>{
+      const mapped = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
         return {
           dia: normalizeDateCell(get(kDia)),
-          hora: parseHourUpload(get(kHora)),
+          hora: (()=>{const v=get(kHora); if(v==null) return null; if(typeof v==='number' && v>=0&&v<=23) return Math.floor(v); const m=String(v).match(/(\d{1,2})/); return m?Math.min(23,Math.max(0,+m[1])):null;})(),
           turno: displayNormalize(get(kTurn)),
           fat: parseBR(get(kFat)),
           pedidos: parseBR(get(kPed) ?? 1),
@@ -886,7 +882,7 @@
       });
 
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Enviando ao banco em ${DEST_TABLE}…`);
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Enviando…`);
 
       if(ok.length===0){ setStatus('Nada para gravar (0 linhas mapeadas).','err'); return; }
 
@@ -922,7 +918,7 @@
 
       setStatus('Consultando…');
 
-      // opções baseadas no período (agregando todas as fontes)
+      // opções do período agregando todas as fontes com filtro local robusto
       await refreshOptionsByPeriod(de,ate);
 
       let kpiOk=true;
