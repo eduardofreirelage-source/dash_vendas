@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.6 — RPC charts + Excel AUTO DB + prevRange + ROI%)</title>
+  <title>DASHBOARD — CFO (v2.12.8 — hotfix rmAcc / upload DB / RPC charts / ROI%)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -28,7 +28,6 @@
     .chip{padding:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:700}
     .chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
 
-    /* multiselect */
     .msel{position:relative}
     .msel-btn{cursor:pointer;text-align:left}
     .msel-btn:after{content:"▾";float:right;color:#475569}
@@ -38,7 +37,6 @@
     .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
     .msel-opt:hover{background:#f3f4f6}
 
-    /* KPIs */
     .krow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
     .kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .kpi .bar{position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:14px 0 0 14px;background:var(--bar)}
@@ -49,10 +47,9 @@
     .delta{display:inline-flex;gap:6px;align-items:center;padding:2px 10px;border-radius:999px;border:1px solid var(--line);font-weight:800;font-size:13px;margin-left:12px}
     .delta svg{width:12px;height:12px}
     .delta.up{color:var(--ok);border-color:#86efac}
-    .delta.down{color:var(--down);border-color:#fecaca}
+    .delta.down{color:#ef4444;border-color:#fecaca}
     .delta.flat{color:#64748b}
 
-    /* Gráficos */
     .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
     .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
@@ -62,11 +59,9 @@
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
     .diag{font-size:12px;color:#475569;margin-left:8px}
 
-    /* Upload Excel */
     .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .upload-info{margin-top:8px;font-size:12px;color:#475569}
 
-    /* Responsivo */
     @media (max-width:1024px){
       .cols-3{grid-template-columns:repeat(2,1fr)}
       .cols-2{grid-template-columns:1fr}
@@ -294,19 +289,18 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 
   <script>
-  /* ===== Config ===== */
-  // <<< AJUSTE SE FOR OUTRO NOME >>>
-  const DEST_TABLE   = 'vendas_canon'; // tabela já usada atualmente
-  const SUPABASE_URL = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
-  const SUPABASE_ANON= 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
+  /* ===================== CONFIG ===================== */
+  const DEST_TABLE    = 'vendas_canon'; // <<<< tabela destino fixa
+  const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
+  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
+  /* ===================== HELPERS (ÚNICOS) ===================== */
   const $ = id => document.getElementById(id);
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
   const setDiag=(msg)=>{ $('diag').textContent = msg || ''; };
   const info=(msg)=>{ $('uploadInfo').textContent = msg || ''; };
 
-  /* ===== Utils ===== */
   const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const num =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
   const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
@@ -327,10 +321,20 @@
     if(['nao','não','n','false','0','no','nao/não'].includes(s)) return 'Não';
     return 'Não';
   }
-  const rmAcc = (s)=> s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  const normHeader = (s)=> rmAcc(String(s||'').toLowerCase()).replace(/[^a-z0-9]+/g,' ').trim();
+  const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const normHeader = (s)=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  function parseBR(v){
+    if(v==null) return 0;
+    if(typeof v==='number' && isFinite(v)) return v;
+    let s=String(v).trim(); if(!s) return 0; s=s.replace(/[^\d,.\-]/g,'');
+    const lastC=s.lastIndexOf(','), lastD=s.lastIndexOf('.');
+    if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
+    const n=Number(s); return isFinite(n)?n:0;
+  }
+  function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
+  function uniq(arr){ return [...new Set((arr||[]).filter(Boolean))]; }
 
-  /* ===== Multiselect ===== */
+  /* ===================== MULTISELECT ===================== */
   function MultiSelect(rootId, placeholder){
     const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
     let options=[], selected=new Set(), filtered=[];
@@ -360,7 +364,7 @@
     };
   }
 
-  /* ===== Estado / período ===== */
+  /* ===================== ESTADO / PERÍODO ===================== */
   let firstDay='', lastDay='';
   const chips=[...document.querySelectorAll('.chip')];
   const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
@@ -387,13 +391,13 @@
     applyQuick('30');
   });
   chips.forEach(b=> b.addEventListener('click', ()=>applyQuick(b.dataset.q)));
-  [fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{
+  ;[fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{
     chips.forEach(c=>c.classList.remove('active'));
     periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
     applyAll();
   }));
 
-  /* ===== KPIs ===== */
+  /* ===================== KPIs ===================== */
   function buildParams(de, ate, overrideCancel = null) {
     const canc = overrideCancel != null ? [overrideCancel] : ms.cancel.get();
     let p_cancelado = null;
@@ -411,7 +415,6 @@
   function rpcName(params){ return params.p_unids ? 'kpi_vendas_v2' : 'kpi_vendas'; }
   function prepareArgs(name, params){ if(name==='kpi_vendas'){ const {p_unids, ...rest}=params; return rest; } return params; }
   function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
-  function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
 
   async function kpiCancelFallback(de,ate,dePrev,atePrev){
     const rowsNow = await fetchRowsLocal(de,ate,'Sim');
@@ -460,8 +463,7 @@
     $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
 
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
-    $('k_canc_val').textContent=money(CN.fat);
-    $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
+    $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
     $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
 
     const roiN = computeROI(N), roiP = computeROI(P);
@@ -470,7 +472,7 @@
     deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
   }
 
-  /* ===== Comparativo (período anterior “calendário”) ===== */
+  /* ===== Comparativo: período anterior exato (ano/mês cheios → -1 ano) ===== */
   function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
   function isFullYear(d1,d2){
     return d1.getMonth()===0 && d1.getDate()===1 &&
@@ -498,7 +500,7 @@
     return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
   }
 
-  /* ===== Gráficos via RPC ===== */
+  /* ===================== GRÁFICOS VIA RPC ===================== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -555,7 +557,6 @@
     if(error){ console.warn('[chart rpc]', kind, error.message); throw error; }
     return data||[];
   }
-
   function ymToLabel(ym){ const [y,m]=ym.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
 
   async function updateChartsServer(only){
@@ -618,16 +619,7 @@
     }
   }
 
-  /* ===== Fallback local p/ cancelados ===== */
-  function uniq(arr){ return [...new Set(arr.filter(Boolean))]; }
-  function parseBR(v){
-    if(v==null) return 0;
-    if(typeof v==='number' && isFinite(v)) return v;
-    let s=String(v).trim(); if(!s) return 0; s=s.replace(/[^\d,.\-]/g,'');
-    const lastC=s.lastIndexOf(','), lastD=s.lastIndexOf('.');
-    if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
-    const n=Number(s); return isFinite(n)?n:0;
-  }
+  /* ===================== FALLBACK LOCAL (cancelados) ===================== */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -674,7 +666,7 @@
     return [];
   }
 
-  /* ===== Excel (sempre grava no banco) ===== */
+  /* ===================== EXCEL → DB (sempre grava) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -682,17 +674,15 @@
     if(v instanceof Date) return iso(v);
     const s=String(v).trim();
     if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
-    // DD/MM/YYYY HH:mm[:ss] ou DD-MM-YYYY
     const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
     if(m){
       const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
       const d = new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
       return iso(d);
     }
-    // Excel serial
-    if(!isNaN(+s)){
+    if(!isNaN(+s)){ // Excel serial
       const serial = +s;
-      const base = new Date(Date.UTC(1899,11,30)); // 1899-12-30
+      const base = new Date(Date.UTC(1899,11,30));
       const d = new Date(base.getTime() + serial*24*60*60*1000);
       return iso(d);
     }
@@ -702,12 +692,10 @@
   function parseHourUpload(v){
     if(v==null) return null;
     if(typeof v==='number' && v>=0 && v<=23) return Math.floor(v);
-    const s=String(v);
-    const m=s.match(/(\d{1,2})/);
-    if(!m) return null;
-    const h=+m[1];
-    return (h>=0 && h<=23) ? h : null;
+    const s=String(v); const m=s.match(/(\d{1,2})/); if(!m) return null;
+    const h=+m[1]; return (h>=0 && h<=23) ? h : null;
   }
+
   const headerAlts = {
     dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
     hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
@@ -720,8 +708,6 @@
     pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
     canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada']
   };
-  const rmAcc = (s)=> s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  function normHeader(h){ return rmAcc(String(h||'').toLowerCase()).replace(/[^a-z0-9]+/g,' ').trim(); }
   function pickColumn(headers, alts){
     const map = headers.map(h=>({orig:h, key:normHeader(h)}));
     for(const a of alts){
@@ -785,7 +771,6 @@
       setStatus('Upload concluído','ok');
       info(`Gravado em "${DEST_TABLE}": ${ok.length} linhas.`);
 
-      // Atualiza range de datas e recarrega dashboard
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
         if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`; }
@@ -800,7 +785,7 @@
     }
   });
 
-  /* ===== Ciclo principal ===== */
+  /* ===================== LOOP PRINCIPAL ===================== */
   async function applyAll(){
     try{
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
