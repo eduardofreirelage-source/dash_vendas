@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.11.0 — gráficos fix + KPI ROI)</title>
+  <title>DASHBOARD — CFO (v2.12.0 — gráficos fix + ROI = faturamento ÷ incentivos)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{
@@ -116,7 +116,7 @@
         </div>
         <div>
           <span id="status" class="muted">—</span>
-          <span id="diag" class="diag"> </span>
+          <span id="diag" class="diag"></span>
         </div>
       </div>
       <div class="row cols-3">
@@ -217,9 +217,9 @@
         <div class="val" id="k_canc_val">—</div>
         <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
       </div>
-      <!-- NOVO KPI ROI -->
+      <!-- NOVO KPI ROI (Faturamento ÷ Incentivos) -->
       <div class="kpi"><span class="bar"></span>
-        <h4><span>ROI (base: incentivos)</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
+        <h4><span>ROI (fat ÷ incentivos)</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
         <div class="val" id="k_roi">—</div>
         <div class="sub">Anterior: <span id="p_roi">—</span></div>
       </div>
@@ -278,18 +278,31 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <script>
+  /*
+    IMPORTANTE (pedido do usuário):
+    ROI aqui foi ajustado para "Incentivos × Faturamento" no sentido de RELAÇÃO entre os dois.
+    Interpretação adotada: ROI = Faturamento ÷ Incentivos  (retorno por R$1 investido).
+    Se preferir ROI clássico = (Faturamento - Incentivos) ÷ Incentivos, troque ROI_MODE para 'delta'.
+  */
+  const ROI_MODE = 'ratio'; // 'ratio' => fat / incentivos ; 'delta' => (fat - incentivos) / incentivos
+
   /* ===== CONFIG ===== */
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
   const $ = id => document.getElementById(id);
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
-  const setDiag=(nowRows,prevRows)=>{ const n = (nowRows||[]).reduce((a,b)=>a+(+b.fat||0),0); const p=(prevRows||[]).reduce((a,b)=>a+(+b.fat||0),0); $('diag').textContent=`(linhas: atual ${nowRows?.length||0} / ant ${prevRows?.length||0} | soma fat: ${money(n)} / ${money(p)})`; };
+  const setDiag=(nowRows,prevRows, metricKey)=>{ 
+    const n = (nowRows||[]).reduce((a,b)=>a+(+b[metricKey]||0),0);
+    const p = (prevRows||[]).reduce((a,b)=>a+(+b[metricKey]||0),0);
+    $('diag').textContent=`(linhas: atual ${nowRows?.length||0} / ant ${prevRows?.length||0} | soma ${metricKey}: ${money(n)} / ${money(p)})`;
+  };
 
   /* ===== UTIL ===== */
   const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const num =v=>(v==null||+v===0||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
+  const num =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
   const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+  const multf=v=>(v==null||!isFinite(+v))?'—':(+v).toLocaleString('pt-BR',{maximumFractionDigits:2})+'x';
 
   function iso(d){return d.toISOString().slice(0,10);}
   function addDaysISO(isoStr,n){const d=new Date(isoStr+'T00:00:00'); d.setDate(d.getDate()+n); return iso(d);}
@@ -298,26 +311,13 @@
   function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 17l-5-6h3V3h4v8h3l-5 6z"/></svg>';}
   function parseHour(val){ if(val==null) return NaN; const m=String(val).match(/\d{1,2}/); const h=m?+m[0]:NaN; return (h>=0&&h<=23)?h:NaN; }
   function inferTurno(h){ if(!isFinite(h)) return 'Dia'; if(h<=5) return 'Madrugada'; if(h<=11) return 'Manhã'; if(h<=17) return 'Tarde'; return 'Noite'; }
-
-  // forçar dia no formato YYYY-MM-DD
-  function dayOnly(v){
-    if(v==null) return '';
-    if(v instanceof Date) return iso(v);
-    const s = String(v);
-    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
-    // tenta extrair AAAA-MM-DD no meio da string
-    const m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
-    return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
+  function safeDiv(a,b){ return (b && isFinite(a) && isFinite(b)) ? (a/b) : 0; }
+  function deltaBadge(el,curr,prev){
+    if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
+    const p=((curr-prev)/prev)*100;
+    el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
+    el.className='delta '+(p>=0?'up':'down');
   }
-  // cálculo de DOW sem timezone
-  function dowFromISO(s){
-    const d = dayOnly(s);
-    if(!d) return null;
-    const [Y,M,D]=d.split('-').map(Number);
-    const dt = new Date(Date.UTC(Y, M-1, D));
-    return dt.getUTCDay(); // 0..6
-  }
-
   function parseBR(v){
     if(v==null) return 0;
     if(typeof v==='number' && isFinite(v)) return v;
@@ -325,6 +325,21 @@
     const lastC=s.lastIndexOf(','), lastD=s.lastIndexOf('.');
     if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
     const n=Number(s); return isFinite(n)?n:0;
+  }
+  function dayOnly(v){
+    if(v==null) return '';
+    if(v instanceof Date) return iso(v);
+    const s = String(v);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+    const m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
+  }
+  function dowFromISO(s){
+    const d = dayOnly(s);
+    if(!d) return null;
+    const [Y,M,D]=d.split('-').map(Number);
+    const dt = new Date(Date.UTC(Y, M-1, D));
+    return dt.getUTCDay(); // 0..6
   }
   function normCancel(v){
     const s=String(v??'').trim().toLowerCase();
@@ -421,7 +436,6 @@
 
   /* ===== KPIs ===== */
   function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
-  function safeDiv(a,b){ return (b && isFinite(a) && isFinite(b)) ? (a/b) : 0; }
 
   async function updateKPIs(de, ate, dePrev, atePrev){
     const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
@@ -447,9 +461,9 @@
     const freMedN = safeDiv(N.fre,N.ped), freMedP = safeDiv(P.fre,P.ped);
     const partCancN = safeDiv(CN.ped,N.ped), partCancP = safeDiv(CP.ped,P.ped);
 
-    // NOVO ROI: (Faturamento - Incentivos) / Incentivos
-    const roiN = safeDiv((N.fat - N.des), N.des);
-    const roiP = safeDiv((P.fat - P.des), P.des);
+    // ROI ajustado: 'ratio' => Faturamento ÷ Incentivos | 'delta' => (Faturamento - Incentivos) ÷ Incentivos
+    const roiN = (ROI_MODE==='ratio') ? safeDiv(N.fat, N.des) : safeDiv((N.fat-N.des), N.des);
+    const roiP = (ROI_MODE==='ratio') ? safeDiv(P.fat, P.des) : safeDiv((P.fat-P.des), P.des);
 
     $('k_ped').textContent=num(N.ped);
     $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
@@ -482,57 +496,71 @@
     $('k_canc_part').textContent=pctf(partCancN);
     $('p_canc_part').textContent=pctf(partCancP);
 
-    // Exibir ROI
-    $('k_roi').textContent=pctf(roiN);
-    $('p_roi').textContent=pctf(roiP);
+    // Exibir ROI como multiplicador (ex.: 3,2x)
+    $('k_roi').textContent=multf(roiN);
+    $('p_roi').textContent=multf(roiP);
     deltaBadge($('d_roi'), roiN, roiP);
-  }
-  function deltaBadge(el,curr,prev){
-    if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
-    const p=((curr-prev)/prev)*100;
-    el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
-    el.className='delta '+(p>=0?'up':'down');
   }
 
   /* ======== DISCOVERY ROBUSTA P/ GRÁFICOS ======== */
+  function uniq(arr){ return [...new Set(arr.filter(Boolean))]; }
+  function pickFirstNumber(row, keys){
+    for(const k of keys){
+      const v = row[k];
+      const n = parseBR(v);
+      if (isFinite(n) && n !== null && !Number.isNaN(n) && (n!==0 || v===0 || v==='0')) return n;
+    }
+    return 0;
+  }
+
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
-    const row = (r.data||[])[0] || {};
-    const cols = Object.keys(row);
+    const row = (r.data||[{}])[0];
+    const cols = Object.keys(row||{});
     if (!cols.length) return null;
-    const pick = (...cands)=> cands.find(c=> cols.includes(c)) || null;
+    const has = c => cols.includes(c);
 
-    const dateCol = pick('dia','data','dt','date','data_venda','data_pedido','datahora');
-    if(!dateCol) return null;
+    const dateKeys = ['dia','data','dt','date','data_venda','data_pedido','datahora'].filter(has);
+    if(!dateKeys.length) return null;
 
-    const hourCol = pick('hora','hr','hour','horario','time_hour','hora_venda');
-    const turnoCol= pick('turno','periodo','shift');
-    const fatCol  = pick('fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido');
-    const pedCol  = pick('pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido');
-    const lojaCol = pick('loja','loja_nome','nome_loja','loja_fantasia');
-    const unidCol = pick('unidade','unid','filial','cod_unidade','empresa');
-    const canalCol= pick('canal','canal_venda','origem','meio','canal_vendas');
-    const pagCol  = pick('pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto');
-    const cancCol = pick('cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada');
+    const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
+    const turnoKeys= ['turno','periodo','shift'].filter(has);
 
-    return { dateCol, hourCol, turnoCol, fatCol, pedCol, lojaCol, unidCol, canalCol, pagCol, cancCol };
+    // candidatos AMPLIADOS — vamos selecionar TODOS os presentes e calcular no cliente
+    const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
+    const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
+
+    const lojaKeys = ['loja','loja_nome','nome_loja','loja_fantasia'].filter(has);
+    const unidKeys = ['unidade','unid','filial','cod_unidade','empresa'].filter(has);
+    const canalKeys= ['canal','canal_venda','origem','meio','canal_vendas'].filter(has);
+    const pagKeys  = ['pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto'].filter(has);
+    const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
+
+    return {
+      dateKeys, hourKeys, turnoKeys,
+      fatKeys, pedKeys,
+      lojaKeys, unidKeys, canalKeys, pagKeys, cancKeys
+    };
   }
 
   async function trySource(source, de, ate){
     const map = await discoverColumns(source);
     if(!map) return null;
 
-    const sel = [map.dateCol,map.hourCol,map.turnoCol,map.fatCol,map.pedCol,map.lojaCol,map.unidCol,map.canalCol,map.pagCol,map.cancCol]
-      .filter(Boolean).join(',');
+    const sel = uniq([
+      ...map.dateKeys, ...map.hourKeys, ...map.turnoKeys,
+      ...map.fatKeys,  ...map.pedKeys,
+      ...map.lojaKeys, ...map.unidKeys, ...map.canalKeys, ...map.pagKeys, ...map.cancKeys
+    ]).join(',');
 
-    let q = supa.from(source).select(sel).gte(map.dateCol, de).lte(map.dateCol, ate);
+    let q = supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate);
 
-    const unids = ms.unids.get();  if(unids.length && map.unidCol)  q = q.in(map.unidCol, unids);
-    const lojas = ms.lojas.get();  if(lojas.length && map.lojaCol)  q = q.in(map.lojaCol, lojas);
-    const turnos= ms.turnos.get(); if(turnos.length && map.turnoCol)q = q.in(map.turnoCol, turnos);
-    const canais= ms.canais.get(); if(canais.length && map.canalCol)q = q.in(map.canalCol, canais);
-    const pags  = ms.pags.get();   if(pags.length && map.pagCol)    q = q.in(map.pagCol, pags);
+    const unids = ms.unids.get();  if(unids.length && map.unidKeys.length)  q = q.in(map.unidKeys[0], unids);
+    const lojas = ms.lojas.get();  if(lojas.length && map.lojaKeys.length)  q = q.in(map.lojaKeys[0], lojas);
+    const turnos= ms.turnos.get(); if(turnos.length && map.turnoKeys.length)q = q.in(map.turnoKeys[0], turnos);
+    const canais= ms.canais.get(); if(canais.length && map.canalKeys.length)q = q.in(map.canalKeys[0], canais);
+    const pags  = ms.pags.get();   if(pags.length && map.pagKeys.length)    q = q.in(map.pagKeys[0], pags);
 
     q = q.limit(200000);
 
@@ -544,26 +572,28 @@
 
     const rows = (r.data||[])
       .filter(x=>{
-        if(!needCancel || !map.cancCol) return true;
-        return normCancel(x[map.cancCol]) === needCancel;
+        if(!needCancel || !map.cancKeys.length) return true;
+        const k = map.cancKeys[0];
+        const v = String(x[k]??'').trim().toLowerCase();
+        const norm = (['sim','s','true','1','y','yes'].includes(v))?'Sim': (['nao','não','n','false','0','no'].includes(v)?'Não':'Não');
+        return norm === needCancel;
       })
       .map(x=>{
-        // *** CRÍTICO: normalizar a data para YYYY-MM-DD ***
-        const dia = dayOnly(x[map.dateCol]);
-        // tentar hora de forma segura
+        const dia = dayOnly(x[map.dateKeys[0]]);
+        // hora: tenta na coluna de hora, senão extrai da própria data/hora
         let h = NaN;
-        if (map.hourCol) h = parseHour(x[map.hourCol]);
+        if (map.hourKeys.length) h = parseHour(x[map.hourKeys[0]]);
         if (!isFinite(h)) {
-          // alguns datasets trazem HH:MM:SS dentro da própria coluna de data/hora
-          const m = String(x[map.dateCol]).match(/(?:\s|T)(\d{1,2})[:h]/);
+          const m = String(x[map.dateKeys[0]]).match(/(?:\s|T)(\d{1,2})[:h]/);
           if (m) h = Math.max(0,Math.min(23, +m[1]));
         }
-        const fat = parseBR(map.fatCol ? x[map.fatCol] : 0);
-        const ped = parseBR(map.pedCol ? x[map.pedCol] : 0);
-        const turno = (map.turnoCol && x[map.turnoCol]) ? String(x[map.turnoCol]) : inferTurno(h);
-        return { dia, hora: isFinite(h)?h:NaN, turno, fat, pedidos: ped };
+        const fat = pickFirstNumber(x, map.fatKeys);
+        const ped = pickFirstNumber(x, map.pedKeys);
+        const t   = map.turnoKeys.length && x[map.turnoKeys[0]] ? String(x[map.turnoKeys[0]]) : inferTurno(h);
+        return { dia, hora:isFinite(h)?h:NaN, turno:t, fat, pedidos: ped };
       });
 
+    // Se todas as linhas ficaram com fat = 0, devolve mesmo assim (diag vai exibir)
     return {source, map, rows};
   }
 
@@ -572,8 +602,9 @@
     for(const src of sources){
       try{
         const res = await trySource(src, de, ate);
-        if(res && res.rows.length){
-          setStatus(`OK — gráficos: ${res.source} (linhas ${res.rows.length}, métrica: ${res.map.fatCol||'—'})`,'ok');
+        if(res){
+          const sumFat = res.rows.reduce((a,b)=>a+(+b.fat||0),0);
+          setStatus(`OK — gráficos: ${res.source} (linhas ${res.rows.length}, soma fat: ${money(sumFat)})`,'ok');
           return res.rows;
         }
       }catch(_e){}
@@ -623,8 +654,7 @@
   function groupTurno(rows, metric='fat', mode='total'){
     const sums=new Map(TURNO_ORDER.map(t=>[t,0])), days=new Map(TURNO_ORDER.map(t=>[t,new Set()]));
     for(const r of rows){
-      const t=r.turno || inferTurno(r.hora);
-      const key=TURNO_ORDER.includes(t)?t:'Dia';
+      const key=TURNO_ORDER.includes(r.turno)?r.turno:'Dia';
       const v=+r[metric]||0;
       sums.set(key,(sums.get(key)||0)+v);
       const d = dayOnly(r.dia); if(d) days.get(key).add(d);
@@ -652,7 +682,6 @@
         {label:'Anterior', data:prevArr, backgroundColor:'rgba(2,132,199,0.6)'}
       ]},
       options:{
-        indexAxis:'x',
         responsive:true, maintainAspectRatio:false, animation:false, parsing:false,
         scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:formatCurrencyTick}}},
         plugins:{ legend:{position:'top'}, tooltip:{mode:'index',intersect:false,callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${money(ctx.parsed.y||0)}`}}}
@@ -675,7 +704,9 @@
   /* ===== Cache de linhas para gráficos ===== */
   let chartCacheNow=[], chartCachePrev=[];
   function updateChartsFromCache(only){
-    setDiag(chartCacheNow, chartCachePrev); // auto-teste visível
+    // diagnóstico rápido na UI
+    setDiag(chartCacheNow, chartCachePrev, 'fat');
+
     if(!only || only==='dow'){
       const now=groupDOW(chartCacheNow,'fat',chartMode.dow);
       const prev=groupDOW(chartCachePrev,'fat',chartMode.dow);
