@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.15 — opções por período 100% confiáveis)</title>
+  <title>DASHBOARD — CFO (v2.12.16 — opções por período 100% locais)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -392,7 +392,7 @@
     btn.addEventListener('click',()=>root.classList.toggle('open'));
     document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
     return {
-      setOptions(list){ list = Array.from(new Set((list||[]).map(v=>String(v)))); options=list; filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh();},
+      setOptions(list){ list = Array.from(new Set((list||[]).map(v=>String(v)))); options=list.sort((a,b)=>a.localeCompare(b,'pt-BR',{sensitivity:'base'})); filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh();},
       get(){return [...selected];},
       set(vals){selected=new Set((vals||[]).map(String).filter(v=>options.includes(v))); refresh(); draw();}
     };
@@ -515,7 +515,7 @@
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
 
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-    $('k_fremed').textContent=money(fatMedN/ (len?1:1)); $('p_fremed').textContent=money(fatMedP/ (len?1:1)); deltaBadge($('d_fremed'),N.fre/P.ped||0, P.fre/P.ped||0); // mantém compatível
+    $('k_fremed').textContent=money(fatMedN/ (len?1:1)); $('p_fremed').textContent=money(fatMedP/ (len?1:1)); deltaBadge($('d_fremed'),N.fre/P.ped||0, P.fre/P.ped||0);
 
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
     $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
@@ -683,7 +683,7 @@
     }
   }
 
-  /* ===== Descoberta & Fallback Local ===== */
+  /* ===== Descoberta & Fallback Local (SEM filtro no servidor por data) ===== */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -708,7 +708,6 @@
 
     return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, unidKeys, lojaKeys, canalKeys, pagKeys, cancKeys};
   }
-
   function normalizeDateCell(v){
     if(v==null) return null;
     if(v instanceof Date) return iso(v);
@@ -747,22 +746,19 @@
       ...map.unidKeys, ...map.lojaKeys, ...map.canalKeys, ...map.pagKeys, ...map.cancKeys
     ]).join(',');
 
-    // se há UMA única coluna de data, filtramos no servidor; senão, puxamos e filtramos localmente
-    let q = supa.from(source).select(cols).limit(120000);
-    if(map.dateKeys.length===1){
-      q = q.gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate);
-    }
-    const r = await q;
+    // >>> MUDANÇA CRÍTICA: SEM filtro .gte/.lte no servidor (evita perder linhas onde a data é texto)
+    const r = await supa.from(source).select(cols).limit(150000);
     if(r.error) return null;
 
     let rows = (r.data||[]);
-    // filtro local por data (cobre múltiplas colunas)
+
+    // Filtro local de data, robusto para qualquer coluna/forma
     rows = rows.filter(x=>{
       const d = pickISOFromRow(x, map.dateKeys);
       return d && d>=de && d<=ate;
     });
 
-    // filtro cancelado
+    // Filtro cancelado (apenas se explicitamente pedido por quem chama esta função)
     if(onlyCancel && map.cancKeys.length){
       rows = rows.filter(x => normCancel(x[map.cancKeys[0]]) === onlyCancel);
     }
@@ -786,7 +782,7 @@
     return [];
   }
 
-  /* ===== OPCÕES DINÂMICAS POR PERÍODO (AGREGA TODAS AS FONTES + FILTRO LOCAL POR DATA) ===== */
+  /* ===== OPCÕES DINÂMICAS POR PERÍODO (IGNORA Cancelado; SOMENTE Data) ===== */
   async function refreshOptionsByPeriod(de,ate){
     const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
     const prevSel = {
@@ -795,13 +791,12 @@
     };
     canonMaps.unids = {}; canonMaps.lojas = {}; canonMaps.canais = {}; canonMaps.pags = {}; canonMaps.turnos = {};
 
-    const cancSel = ms.cancel.get();
-    const needCancel = (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não')) ? cancSel[0] : null;
-
+    let diagSrc = [];
     for(const src of sources){
-      const res = await trySourceLocal(src, de, ate, needCancel);
-      if(!res) continue;
+      const res = await trySourceLocal(src, de, ate, /*onlyCancel*/ null); // << IGNORA cancelado para montar opções
+      if(!res){ diagSrc.push(`${src}: 0`); continue; }
       const {rows, map} = res;
+      diagSrc.push(`${src}: ${rows.length}`);
 
       rows.forEach(x=>{
         if(map.unidKeys.length && x[map.unidKeys[0]]!=null)   mapCollect(canonMaps,'unids',  x[map.unidKeys[0]]);
@@ -812,7 +807,7 @@
       });
     }
 
-    function alpha(arr){ return (arr||[]).sort((a,b)=> a.localeCompare(b,'pt-BR',{sensitivity:'base'})); }
+    const alpha = arr => (arr||[]).sort((a,b)=> a.localeCompare(b,'pt-BR',{sensitivity:'base'}));
     const toDisp = obj => alpha(Object.values(obj).map(v=>v.display));
 
     ms.unids.setOptions( toDisp(canonMaps.unids) );   ms.unids.set(prevSel.unids);
@@ -820,9 +815,13 @@
     ms.canais.setOptions( toDisp(canonMaps.canais) ); ms.canais.set(prevSel.canais);
     ms.pags.setOptions(   toDisp(canonMaps.pags) );   ms.pags.set(prevSel.pags);
     ms.turnos.setOptions( toDisp(canonMaps.turnos) ); ms.turnos.set(prevSel.turnos);
+
+    // Diagnóstico claro: quantas opções resultaram + linhas por fonte
+    const counts = `opts — lojas:${Object.keys(canonMaps.lojas).length} canais:${Object.keys(canonMaps.canais).length}`;
+    setDiag(`${counts} | fontes(${diagSrc.join(', ')})`);
   }
 
-  /* ===== Upload Excel → DB (sempre grava em vendas_canon) ===== */
+  /* ===== Upload Excel → DB ===== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
@@ -918,7 +917,7 @@
 
       setStatus('Consultando…');
 
-      // opções do período agregando todas as fontes com filtro local robusto
+      // Opções por período (agora SEM usar Cancelado; só data) e SEM filtro no servidor
       await refreshOptionsByPeriod(de,ate);
 
       let kpiOk=true;
@@ -947,7 +946,7 @@
         supa.from('vw_vendas_turnos').select('turno').order('turno'),
         supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
       ]);
-      const setOpts=(res,field,msel)=> msel.setOptions((res.data||[]).map(r=>displayNormalize(r[field])).sort((a,b)=>a.localeCompare(b,'pt-BR',{sensitivity:'base'})));
+      const setOpts=(res,field,msel)=> msel.setOptions((res.data||[]).map(r=>displayNormalize(r[field])));
       if(!unids.error) setOpts(unids,'unidade',ms.unids);
       if(!lojas.error) setOpts(lojas,'loja',ms.lojas);
       if(!canais.error) setOpts(canais,'canal',ms.canais);
