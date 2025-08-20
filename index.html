@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.11 — lojas à prova de variações)</title>
+  <title>DASHBOARD — CFO (v2.12.12 — lojas por período + cancelado)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -322,12 +322,12 @@
     return 'Não';
   }
 
-  // ======== Normalização canônica robusta (NFKC, hífens, NBSP, acentos) ========
-  const HYPHENS = /[\u2010-\u2015\u2212\u2043\u2053\uFE58\uFE63\uFF0D]/g; // vários “traços”
+  // ======== Normalização canônica (hífens, espaços, acentos) ========
+  const HYPHENS = /[\u2010-\u2015\u2212\u2043\u2053\uFE58\uFE63\uFF0D]/g;
   const APOSTR  = /[\u2018\u2019\u201B\u2032]/g;
   function cleanSpaces(s){
     return String(s||'')
-      .replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ') // espaços especiais → espaço normal
+      .replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ')
       .replace(/\s+/g,' ')
       .trim();
   }
@@ -335,19 +335,14 @@
     let t = String(s||'').normalize('NFKC');
     t = t.replace(HYPHENS,'-').replace(APOSTR,"'");
     t = cleanSpaces(t);
-    t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,''); // remove acentos
+    t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     t = t.toLowerCase();
-    // compacta padrões " - " para "-"
-    t = t.replace(/\s*-\s*/g,'-');
-    // remove duplicidades de hífen
-    t = t.replace(/-+/g,'-');
+    t = t.replace(/\s*-\s*/g,'-').replace(/-+/g,'-');
     return t;
   }
-  // Display legível também normaliza o hífen visual
   function displayNormalize(s){
     return cleanSpaces(String(s||'').normalize('NFKC').replace(HYPHENS,'-'));
   }
-
   function parseBR(v){
     if(v==null) return 0;
     if(typeof v==='number' && isFinite(v)) return v;
@@ -356,11 +351,10 @@
     if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
     const n=Number(s); return isFinite(n)?n:0;
   }
-  function computeROI(fr){ const d=Math.abs(fr.des||0); if(!d) return NaN; return (fr.fat - d) / d; } // ROI %
+  function computeROI(fr){ const d=Math.abs(fr.des||0); if(!d) return NaN; return (fr.fat - d) / d; }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
-  /* Canonização para filtros */
-  const canonMaps = { unids:{}, lojas:{}, canais:{}, pags:{}, turnos:{} }; // canon -> { originals:Set, display:String, count:Number }
+  const canonMaps = { unids:{}, lojas:{}, canais:{}, pags:{}, turnos:{} };
 
   /* ============ MULTISELECT ============ */
   function MultiSelect(rootId, placeholder){
@@ -425,7 +419,7 @@
     applyAll();
   }));
 
-  /* ============ PARAMS (com expansão canônica) ============ */
+  /* ============ PARAMS ============ */
   function expandSelected(kind, arr){
     const map = canonMaps[kind]||{};
     const out = [];
@@ -436,7 +430,6 @@
     });
     return [...new Map(out.map(v=>[v,v])).keys()];
   }
-
   function buildParams(de, ate, overrideCancel = null) {
     const canc = overrideCancel != null ? [overrideCancel] : ms.cancel.get();
     let p_cancelado = null;
@@ -470,7 +463,6 @@
     const N=sum(rowsNow), P=sum(rowsPrev);
     return { CN:N, CP:P };
   }
-
   async function updateKPIs(de, ate, dePrev, atePrev){
     const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
     const nameNow=rpcName(pNow),     namePrev=rpcName(pPrev);
@@ -652,7 +644,7 @@
     }
   }
 
-  /* ============ DISCOVERY + FALLBACK LOCAL ============ */
+  /* ============ Fallback local p/ contagem cancelados ============ */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -704,7 +696,7 @@
     return [];
   }
 
-  /* ============ OPÇÕES DINÂMICAS POR PERÍODO (aplica demais filtros) ============ */
+  /* ============ OPÇÕES DINÂMICAS POR PERÍODO (SOMENTE período + cancelado) ============ */
   async function detectSourceForOptions(de,ate){
     const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
     for(const src of sources){
@@ -715,19 +707,16 @@
     }
     return null;
   }
-
   function mapCollect(obj, key, raw){
     const disp = displayNormalize(raw);
     const canon = canonText(raw);
     if(!obj[key][canon]) obj[key][canon] = { originals:new Set(), display:disp, count:0 };
     obj[key][canon].originals.add(raw);
     obj[key][canon].count++;
-    // Preferir display mais comprido/explicativo
     if(disp && obj[key][canon].display!==disp){
       if(disp.length > obj[key][canon].display.length) obj[key][canon].display = disp;
     }
   }
-
   async function refreshOptionsByPeriod(de,ate){
     const found = await detectSourceForOptions(de,ate);
     if(!found) return;
@@ -750,22 +739,13 @@
       ...(map.cancKeys||[])
     ]).join(',');
 
+    // <<< REGRA: só período + cancelado >>> (NÃO aplica demais filtros)
     let q = supa.from(src).select(cols).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(200000);
 
-    // aplicar demais filtros SELECIONADOS (exceto a dimensão loja, para montar suas opções)
     const cancSel = ms.cancel.get();
     if (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não') && map.cancKeys.length){
       q = q.eq(map.cancKeys[0], cancSel[0]);
     }
-    const selUnids  = expandSelected('unids',  ms.unids.get());
-    const selCanais = expandSelected('canais', ms.canais.get());
-    const selPags   = expandSelected('pags',   ms.pags.get());
-    const selTurnos = expandSelected('turnos', ms.turnos.get());
-    if(selUnids.length  && map.unidKeys.length)  q = q.in(map.unidKeys[0], selUnids);
-    if(selCanais.length && map.canalKeys.length) q = q.in(map.canalKeys[0], selCanais);
-    if(selPags.length   && map.pagKeys.length)   q = q.in(map.pagKeys[0], selPags);
-    if(selTurnos.length && map.turnoKeys.length) q = q.in(map.turnoKeys[0], selTurnos);
-    // NÃO aplicar filtro de loja aqui: queremos descobrir TODAS as lojas válidas no contexto acima
 
     const r = await q;
     if(r.error){ console.warn('options by period error', r.error.message); return; }
@@ -917,7 +897,7 @@
 
       setStatus('Consultando…');
 
-      await refreshOptionsByPeriod(de,ate);  // atualiza filtros com normalização robusta
+      await refreshOptionsByPeriod(de,ate);  // agora: período + cancelado (sem apertar por outros filtros)
       let kpiOk=true;
       await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
       await updateChartsServer();
