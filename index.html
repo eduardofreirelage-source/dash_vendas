@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.9 — filtros dinâmicos por período)</title>
+  <title>DASHBOARD — CFO (v2.12.10 — loja canônica + ROI %)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -289,13 +289,13 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 
   <script>
-  /* ===================== CONFIG ===================== */
+  /* ============ CONFIG ============ */
   const DEST_TABLE    = 'vendas_canon';
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  /* ===================== HELPERS ===================== */
+  /* ============ HELPERS ============ */
   const $ = id => document.getElementById(id);
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
   const setDiag=(msg)=>{ $('diag').textContent = msg || ''; };
@@ -331,10 +331,15 @@
     if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
     const n=Number(s); return isFinite(n)?n:0;
   }
-  function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
+  function computeROI(fr){ const d=Math.abs(fr.des||0); if(!d) return NaN; return (fr.fat - d) / d; } // ROI %
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
-  /* ===================== MULTISELECT ===================== */
+  /* Canonização de valores textuais para filtros (resolve “Vista Delivery” com espaços/variações) */
+  function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u2000-\u200B]/g,' ').replace(/\s+/g,' ').trim(); }
+  function canonText(s){ return cleanSpaces(s).toLowerCase(); }
+  const canonMaps = { unids:{}, lojas:{}, canais:{}, pags:{}, turnos:{} }; // canon -> { originals:Set, display:String, count:Number }
+
+  /* ============ MULTISELECT ============ */
   function MultiSelect(rootId, placeholder){
     const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
     let options=[], selected=new Set(), filtered=[];
@@ -358,13 +363,13 @@
     btn.addEventListener('click',()=>root.classList.toggle('open'));
     document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
     return {
-      setOptions(list){ options=(list||[]).map(String); filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh();},
+      setOptions(list){ options=(list||[]).map(v=>String(v)); filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh();},
       get(){return [...selected];},
       set(vals){selected=new Set((vals||[]).map(String).filter(v=>options.includes(v))); refresh(); draw();}
     };
   }
 
-  /* ===================== ESTADO / PERÍODO ===================== */
+  /* ============ ESTADO / PERÍODO ============ */
   let firstDay='', lastDay='';
   const chips=[...document.querySelectorAll('.chip')];
   const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
@@ -397,18 +402,37 @@
     applyAll();
   }));
 
-  /* ===================== KPIs ===================== */
+  /* ============ PARAMS (com expansão canônica) ============ */
+  function expandSelected(kind, arr){
+    const map = canonMaps[kind]||{};
+    const out = [];
+    (arr||[]).forEach(lbl=>{
+      const c = canonText(lbl);
+      if(map[c]?.originals) out.push(...map[c].originals);
+      else out.push(lbl);
+    });
+    // remove duplicados preservando ordem
+    return [...new Map(out.map(v=>[v,v])).keys()];
+  }
+
   function buildParams(de, ate, overrideCancel = null) {
     const canc = overrideCancel != null ? [overrideCancel] : ms.cancel.get();
     let p_cancelado = null;
     if (canc.length === 1 && (canc[0] === 'Não' || canc[0] === 'Sim')) p_cancelado = canc[0];
+
+    const sel_unids  = expandSelected('unids',  ms.unids.get());
+    const sel_lojas  = expandSelected('lojas',  ms.lojas.get());
+    const sel_turnos = expandSelected('turnos', ms.turnos.get());
+    const sel_canais = expandSelected('canais', ms.canais.get());
+    const sel_pags   = expandSelected('pags',   ms.pags.get());
+
     return {
       p_dini: de, p_dfim: ate,
-      p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
-      p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
-      p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
-      p_canais: ms.canais.get().length ? ms.canais.get() : null,
-      p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
+      p_unids:  sel_unids.length  ? sel_unids  : null,
+      p_lojas:  sel_lojas.length  ? sel_lojas  : null,
+      p_turnos: sel_turnos.length ? sel_turnos : null,
+      p_canais: sel_canais.length ? sel_canais : null,
+      p_pags:   sel_pags.length   ? sel_pags   : null,
       p_cancelado
     };
   }
@@ -416,6 +440,7 @@
   function prepareArgs(name, params){ if(name==='kpi_vendas'){ const {p_unids, ...rest}=params; return rest; } return params; }
   function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
 
+  /* ============ KPIs ============ */
   async function kpiCancelFallback(de,ate,dePrev,atePrev){
     const rowsNow = await fetchRowsLocal(de,ate,'Sim');
     const rowsPrev= await fetchRowsLocal(dePrev,atePrev,'Sim');
@@ -446,10 +471,13 @@
       }catch(_e){}
     }
 
+    // Normaliza incentivos (sempre positivos)
+    const Dn = Math.abs(N.des||0), Dp = Math.abs(P.des||0);
+
     const len=daysLen(de,ate);
     const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
     const fatMedN = len? (N.fat/len) : 0,    fatMedP = len? (P.fat/len) : 0;
-    const desPercN = N.fat? (N.des/N.fat) : 0, desPercP = P.fat? (P.des/P.fat) : 0;
+    const desPercN = N.fat? (Dn/N.fat) : 0, desPercP = P.fat? (Dp/P.fat) : 0;
     const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/P.ped) : 0;
     const partCancN = N.ped? (CN.ped/N.ped) : 0, partCancP = P.ped? (CP.ped/P.ped) : 0;
 
@@ -457,37 +485,29 @@
     $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
     $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
     $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
-    $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
+
+    $('k_des').textContent=money(Dn); $('p_des').textContent=money(Dp); deltaBadge($('d_des'),Dn,Dp);
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
+
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,fatMedP);
+    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
 
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
     $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
     $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
 
-    const roiN = computeROI(N), roiP = computeROI(P);
+    const roiN = computeROI({fat:N.fat, des: Dn});
+    const roiP = computeROI({fat:P.fat, des: Dp});
     $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
     $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
     deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
   }
 
-  /* ===== Comparativo: período anterior exato ===== */
+  /* ============ Período anterior exato ============ */
   function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
-  function isFullYear(d1,d2){
-    return d1.getMonth()===0 && d1.getDate()===1 &&
-           d2.getMonth()===11 && d2.getDate()===31 &&
-           d1.getFullYear()===d2.getFullYear();
-  }
-  function isFullMonthsAligned(d1,d2){
-    return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth());
-  }
-  function shiftYear(date,delta){
-    const d=new Date(date); d.setFullYear(d.getFullYear()+delta);
-    const ld = lastDayOfMonth(d.getFullYear(), d.getMonth());
-    if(d.getDate()>ld) d.setDate(ld);
-    return d;
-  }
+  function isFullYear(d1,d2){ return d1.getMonth()===0 && d1.getDate()===1 && d2.getMonth()===11 && d2.getDate()===31 && d1.getFullYear()===d2.getFullYear(); }
+  function isFullMonthsAligned(d1,d2){ return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth()); }
+  function shiftYear(date,delta){ const d=new Date(date); d.setFullYear(d.getFullYear()+delta); const ld = lastDayOfMonth(d.getFullYear(), d.getMonth()); if(d.getDate()>ld) d.setDate(ld); return d; }
   function computePrevRangeISO(deISO, ateISO){
     const d1=new Date(deISO+'T00:00:00'), d2=new Date(ateISO+'T00:00:00');
     if(isFullYear(d1,d2) || isFullMonthsAligned(d1,d2)){
@@ -500,7 +520,7 @@
     return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
   }
 
-  /* ===================== GRÁFICOS (RPC) ===================== */
+  /* ============ GRÁFICOS via RPC ============ */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -544,15 +564,7 @@
   };
 
   async function fetchChartRPC(kind, de, ate){
-    const params = {
-      p_dini: de, p_dfim: ate,
-      p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
-      p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
-      p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
-      p_canais: ms.canais.get().length ? ms.canais.get() : null,
-      p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
-      p_cancelado: (ms.cancel.get().length===1 && (ms.cancel.get()[0]==='Sim' || ms.cancel.get()[0]==='Não')) ? ms.cancel.get()[0] : null
-    };
+    const params = buildParams(de, ate);
     const { data, error } = await supa.rpc(RPC_FN[kind], params);
     if(error){ console.warn('[chart rpc]', kind, error.message); throw error; }
     return data||[];
@@ -619,7 +631,7 @@
     }
   }
 
-  /* ===================== DISCOVERY (AMPLIADA) + FALLBACK LOCAL ===================== */
+  /* ============ DISCOVERY + FALLBACK LOCAL ============ */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -674,7 +686,7 @@
     return [];
   }
 
-  /* ===================== NOVO: OPÇÕES DINÂMICAS POR PERÍODO ===================== */
+  /* ============ OPÇÕES DINÂMICAS POR PERÍODO (com canônicos) ============ */
   async function detectSourceForOptions(de,ate){
     const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
     for(const src of sources){
@@ -686,18 +698,33 @@
     return null;
   }
 
+  function mapCollect(obj, key, raw){
+    const displayCandidate = cleanSpaces(raw);
+    const canon = canonText(raw);
+    if(!obj[key][canon]) obj[key][canon] = { originals:new Set(), display:displayCandidate, count:0 };
+    obj[key][canon].originals.add(raw);
+    obj[key][canon].count++;
+    // mantém o display mais frequente (melhor representação)
+    if(displayCandidate && obj[key][canon].display!==displayCandidate){
+      // simples heurística: troca se o novo tem mais caracteres (parece mais completo)
+      if(displayCandidate.length > obj[key][canon].display.length) obj[key][canon].display = displayCandidate;
+    }
+  }
+
   async function refreshOptionsByPeriod(de,ate){
     const found = await detectSourceForOptions(de,ate);
     if(!found) return;
     const {src, map} = found;
 
-    // Preservar seleções anteriores
+    // Preserva seleções
     const prev = {
       unids: ms.unids.get(), lojas: ms.lojas.get(), canais: ms.canais.get(),
       turnos: ms.turnos.get(), pags: ms.pags.get()
     };
 
-    // Monta SELECT mínimo
+    // Zera mapas canônicos
+    canonMaps.unids = {}; canonMaps.lojas = {}; canonMaps.canais = {}; canonMaps.pags = {}; canonMaps.turnos = {};
+
     const cols = uniq([
       ...map.dateKeys,
       ...(map.unidKeys||[]),
@@ -708,39 +735,36 @@
       ...(map.cancKeys||[])
     ]).join(',');
 
-    let q = supa.from(src).select(cols).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(150000);
-
-    // Aplica filtro de "Cancelado" se usuário deixou “Sim” ou “Não” único
-    const cancSel = ms.cancel.get();
-    if (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não') && map.cancKeys.length){
-      // filtra depois (client) para evitar diferenças de valores, mantendo simplicidade
-    }
-
-    const r = await q;
+    let r = await supa.from(src).select(cols).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(150000);
     if(r.error){ console.warn('options by period error', r.error.message); return; }
     let rows = r.data||[];
 
+    const cancSel = ms.cancel.get();
     if (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não') && map.cancKeys.length){
       const ck = map.cancKeys[0];
       rows = rows.filter(x => normCancel(x[ck]) === cancSel[0]);
     }
 
-    const list = (keyArr)=> uniq(rows.map(x=> x[(keyArr||[])[0]] ).filter(Boolean)).sort((a,b)=> String(a).localeCompare(String(b),'pt-BR'));
-    const unids = list(map.unidKeys);
-    const lojas = list(map.lojaKeys);
-    const canais= list(map.canalKeys);
-    const pags  = list(map.pagKeys);
-    const turnos= list(map.turnoKeys);
+    rows.forEach(x=>{
+      if(map.unidKeys.length && x[map.unidKeys[0]]!=null)  mapCollect(canonMaps,'unids',  x[map.unidKeys[0]]);
+      if(map.lojaKeys.length && x[map.lojaKeys[0]]!=null)  mapCollect(canonMaps,'lojas',  x[map.lojaKeys[0]]);
+      if(map.canalKeys.length && x[map.canalKeys[0]]!=null)mapCollect(canonMaps,'canais', x[map.canalKeys[0]]);
+      if(map.pagKeys.length && x[map.pagKeys[0]]!=null)    mapCollect(canonMaps,'pags',   x[map.pagKeys[0]]);
+      if(map.turnoKeys.length && x[map.turnoKeys[0]]!=null)mapCollect(canonMaps,'turnos', x[map.turnoKeys[0]]);
+    });
 
-    // Atualiza opções (preservando seleção válida)
-    ms.unids.setOptions(unids);  ms.unids.set(prev.unids);
-    ms.lojas.setOptions(lojas);  ms.lojas.set(prev.lojas);
-    ms.canais.setOptions(canais);ms.canais.set(prev.canais);
-    ms.pags.setOptions(pags);    ms.pags.set(prev.pags);
-    ms.turnos.setOptions(turnos);ms.turnos.set(prev.turnos);
+    function sortedDisplays(obj){
+      return Object.values(obj).sort((a,b)=> b.count - a.count || a.display.localeCompare(b.display,'pt-BR')).map(v=>v.display);
+    }
+
+    ms.unids.setOptions( sortedDisplays(canonMaps.unids) );  ms.unids.set(prev.unids);
+    ms.lojas.setOptions( sortedDisplays(canonMaps.lojas) );  ms.lojas.set(prev.lojas);
+    ms.canais.setOptions( sortedDisplays(canonMaps.canais) );ms.canais.set(prev.canais);
+    ms.pags.setOptions(   sortedDisplays(canonMaps.pags) );  ms.pags.set(prev.pags);
+    ms.turnos.setOptions( sortedDisplays(canonMaps.turnos) );ms.turnos.set(prev.turnos);
   }
 
-  /* ===================== EXCEL → DB (sempre grava) ===================== */
+  /* ============ Excel → DB (sempre grava) ============ */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -819,13 +843,13 @@
         return {
           dia: normalizeDateCell(get(kDia)),
           hora: parseHourUpload(get(kHora)),
-          turno: get(kTurn),
+          turno: cleanSpaces(get(kTurn)),
           fat: parseBR(get(kFat)),
           pedidos: parseBR(get(kPed) ?? 1),
-          unidade: get(kUni),
-          loja: get(kLoja),
-          canal: get(kCan),
-          pagamento_base: get(kPag),
+          unidade: cleanSpaces(get(kUni)),
+          loja: cleanSpaces(get(kLoja)),
+          canal: cleanSpaces(get(kCan)),
+          pagamento_base: cleanSpaces(get(kPag)),
           cancelado: normCancel(get(kCanc))
         };
       });
@@ -859,7 +883,7 @@
     }
   });
 
-  /* ===================== LOOP PRINCIPAL ===================== */
+  /* ============ LOOP ============ */
   async function applyAll(){
     try{
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
@@ -867,14 +891,9 @@
 
       setStatus('Consultando…');
 
-      // 1) Atualiza opções por período ANTES dos KPIs/Gráficos
-      await refreshOptionsByPeriod(de,ate);
-
-      // 2) KPIs
+      await refreshOptionsByPeriod(de,ate);  // atualiza filtros (inclui Vista Delivery)
       let kpiOk=true;
       await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
-
-      // 3) Gráficos
       await updateChartsServer();
 
       if(!kpiOk) setStatus('OK (sem KPIs — RPC indisponível)');
@@ -899,7 +918,7 @@
         supa.from('vw_vendas_turnos').select('turno').order('turno'),
         supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
       ]);
-      const setOpts=(res,field,msel)=> msel.setOptions((res.data||[]).map(r=>r[field]));
+      const setOpts=(res,field,msel)=> msel.setOptions((res.data||[]).map(r=>cleanSpaces(r[field])));
       if(!unids.error) setOpts(unids,'unidade',ms.unids);
       if(!lojas.error) setOpts(lojas,'loja',ms.lojas);
       if(!canais.error) setOpts(canais,'canal',ms.canais);
