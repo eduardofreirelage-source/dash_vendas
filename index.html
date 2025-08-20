@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.3 — charts RPC v1)</title>
+  <title>DASHBOARD — CFO (v2.12.4 — charts RPC v1 + Excel + fix cancel)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -14,6 +14,7 @@
     h1{margin:0;font-size:28px;letter-spacing:.2px}
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
     .btn.clear{gap:6px}
+
     .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px}
     .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
     .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
@@ -24,8 +25,10 @@
     .cols-2{grid-template-columns:repeat(2,1fr)}
     input[type="date"], .msel-btn{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
     .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
-    .chip{padding:10px 0;border:1px solid var(--line);border-radius:10px;background:#eef2ff;cursor:pointer;text-align:center;font-weight:700}
+    .chip{padding:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:700}
     .chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
+
+    /* multiselect */
     .msel{position:relative}
     .msel-btn{cursor:pointer;text-align:left}
     .msel-btn:after{content:"▾";float:right;color:#475569}
@@ -34,6 +37,8 @@
     .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
     .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
     .msel-opt:hover{background:#f3f4f6}
+
+    /* KPIs */
     .krow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
     .kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .kpi .bar{position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:14px 0 0 14px;background:var(--bar)}
@@ -46,21 +51,41 @@
     .delta.up{color:var(--ok);border-color:#86efac}
     .delta.down{color:var(--down);border-color:#fecaca}
     .delta.flat{color:#64748b}
+
+    /* Gráficos */
     .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
     .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
     .seg button{padding:6px 10px;border:0;background:#fff;cursor:pointer;font-weight:700}
     .seg button.active{background:var(--pri);color:#fff}
     .chart-box{height:280px}
+    /* evita canvas 0x0 */
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
     .diag{font-size:12px;color:#475569;margin-left:8px}
+
+    /* Upload info */
+    .upload-info{margin-top:8px;font-size:12px;color:#475569}
+
+    /* ===== Responsivo ===== */
+    @media (max-width:1024px){
+      .cols-3{grid-template-columns:repeat(2,1fr)}
+      .cols-2{grid-template-columns:1fr}
+      .krow{grid-template-columns:repeat(2,1fr)}
+    }
+    @media (max-width:640px){
+      .cols-3{grid-template-columns:1fr}
+      .krow{grid-template-columns:1fr}
+    }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="top">
       <h1>DASHBOARD</h1>
-      <div class="right"><button id="btnUpload" class="btn">📤 Carregar Excel</button></div>
+      <div class="right">
+        <button id="btnUpload" class="btn">📤 Carregar Excel</button>
+        <input id="fileExcel" type="file" accept=".xlsx,.xls,.csv" style="display:none">
+      </div>
     </div>
 
     <!-- Filtros de Data -->
@@ -73,8 +98,14 @@
         <button id="btnClear" class="btn clear">✖ Limpar filtros</button>
       </div>
       <div class="row cols-3">
-        <div><div class="muted" style="margin-bottom:6px;">Intervalo (início)</div><input type="date" id="fDe"></div>
-        <div><div class="muted" style="margin-bottom:6px;">Intervalo (fim)</div><input type="date" id="fAte"></div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Intervalo (início)</div>
+          <input type="date" id="fDe">
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Intervalo (fim)</div>
+          <input type="date" id="fAte">
+        </div>
         <div>
           <div class="muted" style="margin-bottom:6px;">Período rápido</div>
           <div class="chips">
@@ -97,16 +128,35 @@
           <svg class="ico" viewBox="0 0 24 24" fill="none"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
           Filtros
         </div>
-        <div><span id="status" class="muted">—</span><span id="diag" class="diag"></span></div>
+        <div>
+          <span id="status" class="muted">—</span>
+          <span id="diag" class="diag"></span>
+          <div id="uploadInfo" class="upload-info"></div>
+        </div>
       </div>
       <div class="row cols-3">
-        <div><div class="muted" style="margin-bottom:6px;">Unidade</div><div id="ms-unids" class="msel"><button class="msel-btn">Todas as unidades</button><div class="msel-panel"></div></div></div>
-        <div><div class="muted" style="margin-bottom:6px;">Nome da Loja</div><div id="ms-lojas" class="msel"><button class="msel-btn">Todas as lojas</button><div class="msel-panel"></div></div></div>
-        <div><div class="muted" style="margin-bottom:6px;">Turno da Venda</div><div id="ms-turnos" class="msel"><button class="msel-btn">Todos os turnos</button><div class="msel-panel"></div></div></div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Unidade</div>
+          <div id="ms-unids" class="msel"><button class="msel-btn">Todas as unidades</button><div class="msel-panel"></div></div>
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Nome da Loja</div>
+          <div id="ms-lojas" class="msel"><button class="msel-btn">Todas as lojas</button><div class="msel-panel"></div></div>
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Turno da Venda</div>
+          <div id="ms-turnos" class="msel"><button class="msel-btn">Todos os turnos</button><div class="msel-panel"></div></div>
+        </div>
       </div>
       <div class="row cols-3" style="margin-top:10px;">
-        <div><div class="muted" style="margin-bottom:6px;">Canal de Venda</div><div id="ms-canais" class="msel"><button class="msel-btn">Todos os canais</button><div class="msel-panel"></div></div></div>
-        <div><div class="muted" style="margin-bottom:6px;">Tipo de Pagamento</div><div id="ms-pags" class="msel"><button class="msel-btn">Todos os tipos</button><div class="msel-panel"></div></div></div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Canal de Venda</div>
+          <div id="ms-canais" class="msel"><button class="msel-btn">Todos os canais</button><div class="msel-panel"></div></div>
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Tipo de Pagamento</div>
+          <div id="ms-pags" class="msel"><button class="msel-btn">Todos os tipos</button><div class="msel-panel"></div></div>
+        </div>
         <div>
           <div class="muted" style="margin-bottom:6px;">Cancelado</div>
           <div id="ms-cancel" class="msel">
@@ -121,28 +171,72 @@
       </div>
     </div>
 
-    <!-- KPIs (inalterados) -->
+    <!-- KPIs -->
     <div class="krow">
-      <div class="kpi"><span class="bar"></span><h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4><div class="val" id="k_ped">—</div><div class="sub">Anterior: <span id="p_ped">—</span></div></div>
-      <div class="kpi"><span class="bar"></span><h4><span>Ticket Médio</span><span class="spacer"></span><span id="d_tkt" class="delta flat">—</span></h4><div class="val" id="k_tkt">—</div><div class="sub">Anterior: <span id="p_tkt">—</span></div></div>
-      <div class="kpi"><span class="bar"></span><h4><span>Faturamento</span><span class="spacer"></span><span id="d_fat" class="delta flat">—</span></h4><div class="val" id="k_fat">—</div><div class="sub">Anterior: <span id="p_fat">—</span></div></div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4>
+        <div class="val" id="k_ped">—</div>
+        <div class="sub">Anterior: <span id="p_ped">—</span></div>
+      </div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Ticket Médio</span><span class="spacer"></span><span id="d_tkt" class="delta flat">—</span></h4>
+        <div class="val" id="k_tkt">—</div>
+        <div class="sub">Anterior: <span id="p_tkt">—</span></div>
+      </div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Faturamento</span><span class="spacer"></span><span id="d_fat" class="delta flat">—</span></h4>
+        <div class="val" id="k_fat">—</div>
+        <div class="sub">Anterior: <span id="p_fat">—</span></div>
+      </div>
     </div>
 
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi"><span class="bar"></span><h4><span>Faturamento Médio</span><span class="spacer"></span><span id="d_fatmed" class="delta flat">—</span></h4><div class="val" id="k_fatmed">—</div><div class="sub">Anterior: <span id="p_fatmed">—</span></div></div>
-      <div class="kpi"><span class="bar"></span><h4><span>Incentivos</span><span class="spacer"></span><span id="d_des" class="delta flat">—</span></h4><div class="val" id="k_des">—</div><div class="sub">Anterior: <span id="p_des">—</span></div></div>
-      <div class="kpi"><span class="bar"></span><h4><span>% de Incentivos</span><span class="spacer"></span><span id="d_desperc" class="delta flat">—</span></h4><div class="val" id="k_desperc">—</div><div class="sub">Anterior: <span id="p_desperc">—</span></div></div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Faturamento Médio</span><span class="spacer"></span><span id="d_fatmed" class="delta flat">—</span></h4>
+        <div class="val" id="k_fatmed">—</div>
+        <div class="sub">Anterior: <span id="p_fatmed">—</span></div>
+      </div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Incentivos</span><span class="spacer"></span><span id="d_des" class="delta flat">—</span></h4>
+        <div class="val" id="k_des">—</div>
+        <div class="sub">Anterior: <span id="p_des">—</span></div>
+      </div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>% de Incentivos</span><span class="spacer"></span><span id="d_desperc" class="delta flat">—</span></h4>
+        <div class="val" id="k_desperc">—</div>
+        <div class="sub">Anterior: <span id="p_desperc">—</span></div>
+      </div>
     </div>
 
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi"><span class="bar"></span><h4><span>Frete</span><span class="spacer"></span><span id="d_fre" class="delta flat">—</span></h4><div class="val" id="k_fre">—</div><div class="sub">Anterior: <span id="p_fre">—</span></div></div>
-      <div class="kpi"><span class="bar"></span><h4><span>Frete Médio</span><span class="spacer"></span><span id="d_fremed" class="delta flat">—</span></h4><div class="val" id="k_fremed">—</div><div class="sub">Anterior: <span id="p_fremed">—</span></div></div>
-      <div class="kpi"><span class="bar"></span><h4><span>Pedidos Cancelados</span><span class="spacer"></span><span id="d_canc_ped" class="delta flat">—</span></h4><div class="val" id="k_canc_ped">—</div><div class="sub">Participação: <span id="k_canc_part">—</span> (Anterior: <span id="p_canc_part">—</span>)</div></div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Frete</span><span class="spacer"></span><span id="d_fre" class="delta flat">—</span></h4>
+        <div class="val" id="k_fre">—</div>
+        <div class="sub">Anterior: <span id="p_fre">—</span></div>
+      </div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Frete Médio</span><span class="spacer"></span><span id="d_fremed" class="delta flat">—</span></h4>
+        <div class="val" id="k_fremed">—</div>
+        <div class="sub">Anterior: <span id="p_fremed">—</span></div>
+      </div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Pedidos Cancelados</span><span class="spacer"></span><span id="d_canc_ped" class="delta flat">—</span></h4>
+        <div class="val" id="k_canc_ped">—</div>
+        <div class="sub">Participação: <span id="k_canc_part">—</span> (Anterior: <span id="p_canc_part">—</span>)</div>
+      </div>
     </div>
 
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi"><span class="bar"></span><h4><span>Valor de Cancelados</span><span class="spacer"></span><span id="d_canc_val" class="delta flat">—</span></h4><div class="val" id="k_canc_val">—</div><div class="sub">Anterior: <span id="p_canc_val">—</span></div></div>
-      <div class="kpi"><span class="bar"></span><h4><span>ROI (incentivos × fat)</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4><div class="val" id="k_roi">—</div><div class="sub">Anterior: <span id="p_roi">—</span></div></div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Valor de Cancelados</span><span class="spacer"></span><span id="d_canc_val" class="delta flat">—</span></h4>
+        <div class="val" id="k_canc_val">—</div>
+        <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
+      </div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>ROI (incentivos × fat)</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
+        <div class="val" id="k_roi">—</div>
+        <div class="sub">Anterior: <span id="p_roi">—</span></div>
+      </div>
       <div></div>
     </div>
 
@@ -197,14 +291,24 @@
   <!-- libs -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <!-- SheetJS p/ Excel -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
+
   <script>
+  /* ===== Config ===== */
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  // Opcional: enviar Excel para tabela no Supabase (deixe null para apenas pré-visualizar)
+  const EXCEL_TARGET_TABLE = null; // ex: 'vendas_importadas'
+
   const $ = id => document.getElementById(id);
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
   const setDiag=(msg)=>{ $('diag').textContent = msg || ''; };
+  const info=(msg)=>{ $('uploadInfo').textContent = msg || ''; };
 
+  /* ===== Util ===== */
   const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const num =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
   const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
@@ -219,7 +323,14 @@
     el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
     el.className='delta '+(p>=0?'up':'down');
   }
+  function normCancel(v){
+    const s=String(v??'').trim().toLowerCase();
+    if(['sim','s','true','1','y','yes'].includes(s)) return 'Sim';
+    if(['nao','não','n','false','0','no','nao/não'].includes(s)) return 'Não';
+    return 'Não';
+  }
 
+  /* ===== Multiselect ===== */
   function MultiSelect(rootId, placeholder){
     const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
     let options=[], selected=new Set(), filtered=[];
@@ -249,6 +360,7 @@
     };
   }
 
+  /* ===== Estado / período ===== */
   let firstDay='', lastDay='';
   const chips=[...document.querySelectorAll('.chip')];
   const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
@@ -281,10 +393,10 @@
     applyAll();
   }));
 
+  /* ===== KPIs ===== */
   function buildParams(de, ate, overrideCancel = null) {
     const canc = overrideCancel != null ? [overrideCancel] : ms.cancel.get();
     let p_cancelado = null;
-    if (canc.length === 1 && (canc[0] === 'Não' || cenc[0] === 'Sim')) p_cancelado = canc[0]; // typo guard
     if (canc.length === 1 && (canc[0] === 'Não' || canc[0] === 'Sim')) p_cancelado = canc[0];
     return {
       p_dini: de, p_dfim: ate,
@@ -300,6 +412,15 @@
   function prepareArgs(name, params){ if(name==='kpi_vendas'){ const {p_unids, ...rest}=params; return rest; } return params; }
   function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
 
+  async function kpiCancelFallback(de,ate,dePrev,atePrev){
+    // Usa mesma lógica de descoberta dos gráficos para somar cancelados localmente
+    const rowsNow = await fetchRowsLocal(de,ate,'Sim');
+    const rowsPrev= await fetchRowsLocal(dePrev,atePrev,'Sim');
+    const sum = a => a.reduce((acc,x)=>({ ped:acc.ped+(+x.pedidos||0), fat:acc.fat+(+x.fat||0) }), {ped:0,fat:0});
+    const N=sum(rowsNow), P=sum(rowsPrev);
+    return { CN:N, CP:P };
+  }
+
   async function updateKPIs(de, ate, dePrev, atePrev){
     const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
     const nameNow=rpcName(pNow),     namePrev=rpcName(pPrev);
@@ -309,9 +430,20 @@
       supa.rpc(nameNow, prepareArgs(nameNow,{...pNow, p_cancelado:'Sim'})),
       supa.rpc(namePrev, prepareArgs(namePrev,{...pPrev, p_cancelado:'Sim'})),
     ]);
-    if(now.error||prev.error||cNow.error||cPrev.error) throw (now.error||prev.error||cNow.error||cPrev.error);
-    const N=agg(now.data||[]), P=agg(prev.data||[]);
-    const CN=agg(cNow.data||[]), CP=agg(cPrev.data||[]);
+    if(now.error) throw now.error;
+    if(prev.error) throw prev.error;
+
+    let N=agg(now.data||[]), P=agg(prev.data||[]);
+    let CN=agg((cNow.data)||[]), CP=agg((cPrev.data)||[]);
+
+    // Fallback se RPC de cancelados não trouxe nada mas há pedidos
+    if((!cNow || cNow.error || (!CN.ped && !CN.fat)) && (N.ped>0 || N.fat>0)){
+      try{
+        const fb = await kpiCancelFallback(de,ate,dePrev,atePrev);
+        CN = { ped: fb.CN.ped, fat: fb.CN.fat, des:0, fre:0 };
+        CP = { ped: fb.CP.ped, fat: fb.CP.fat, des:0, fre:0 };
+      }catch(_e){}
+    }
 
     const len=daysLen(de,ate);
     const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
@@ -329,10 +461,16 @@
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
     $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
 
+    $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
+    $('k_canc_val').textContent=money(CN.fat);
+    $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
+    $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
+
     const roiN = (N.des||0)*(N.fat||0), roiP = (P.des||0)*(P.fat||0);
     $('k_roi').textContent=money(roiN); $('p_roi').textContent=money(roiP); deltaBadge($('d_roi'), roiN, roiP);
   }
 
+  /* ===== Gráficos (RPC v1) ===== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -459,6 +597,139 @@
     }
   }
 
+  /* ===== Suporte p/ fallback de cancelados (reuso de descoberta dos gráficos) ===== */
+  function uniq(arr){ return [...new Set(arr.filter(Boolean))]; }
+  function parseBR(v){
+    if(v==null) return 0;
+    if(typeof v==='number' && isFinite(v)) return v;
+    let s=String(v).trim(); if(!s) return 0; s=s.replace(/[^\d,.\-]/g,'');
+    const lastC=s.lastIndexOf(','), lastD=s.lastIndexOf('.');
+    if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
+    const n=Number(s); return isFinite(n)?n:0;
+  }
+  async function discoverColumns(source){
+    const r = await supa.from(source).select('*').limit(1);
+    if(r.error) return null;
+    const row = (r.data||[{}])[0];
+    const cols = Object.keys(row||{});
+    if (!cols.length) return null;
+    const has = c => cols.includes(c);
+    const dateKeys = ['dia','data','dt','date','data_venda','data_pedido','datahora'].filter(has);
+    if(!dateKeys.length) return null;
+    const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
+    const turnoKeys= ['turno','periodo','shift'].filter(has);
+    const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
+    const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
+    const lojaKeys = ['loja','loja_nome','nome_loja','loja_fantasia'].filter(has);
+    const unidKeys = ['unidade','unid','filial','cod_unidade','empresa'].filter(has);
+    const canalKeys= ['canal','canal_venda','origem','meio','canal_vendas'].filter(has);
+    const pagKeys  = ['pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto'].filter(has);
+    const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
+    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, lojaKeys, unidKeys, canalKeys, pagKeys, cancKeys};
+  }
+  async function trySourceLocal(source, de, ate, onlyCancel){
+    const map = await discoverColumns(source);
+    if(!map) return null;
+    const sel = uniq([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys]).join(',');
+    let q = supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
+    const r = await q;
+    if(r.error) return null;
+    const rows = (r.data||[]).filter(x=>{
+      if(!onlyCancel) return true;
+      const k = map.cancKeys[0];
+      const norm = normCancel(x[k]);
+      return norm === 'Sim';
+    }).map(x=>{
+      const fat = (map.fatKeys.length)? parseBR(x[map.fatKeys[0]]) : 0;
+      const ped = (map.pedKeys.length)? parseBR(x[map.pedKeys[0]]) : 1;
+      return { fat, pedidos: ped };
+    });
+    return rows;
+  }
+  async function fetchRowsLocal(de, ate, onlyCancelValue){ // onlyCancelValue 'Sim'|'Não'|null
+    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
+    const onlyCancel = (onlyCancelValue==='Sim');
+    for(const src of sources){
+      try{
+        const res = await trySourceLocal(src, de, ate, onlyCancel);
+        if(res) return res;
+      }catch(_e){}
+    }
+    return [];
+  }
+
+  /* ===== Excel ===== */
+  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
+  $('fileExcel').addEventListener('change', async (ev)=>{
+    const file = ev.target.files?.[0];
+    if(!file){ info(''); return; }
+    info('Lendo arquivo…');
+    try{
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type:'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
+
+      // Mapear colunas comuns
+      const normKey = s => String(s||'').toLowerCase().trim();
+      const keys = json.length ? Object.keys(json[0]).map(k=>[k, normKey(k)]) : [];
+      const findKey = (alts)=> {
+        const lower = keys.map(([orig,low])=>({orig,low}));
+        for(const a of alts){ const f = lower.find(k=>k.low===a); if(f) return f.orig; }
+        return null;
+      };
+      const kDia  = findKey(['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora']);
+      const kHora = findKey(['hora','hr','hour','horario','time_hour','hora venda','hora_venda']);
+      const kTurn = findKey(['turno','periodo','shift']);
+      const kFat  = findKey(['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota']);
+      const kPed  = findKey(['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas']);
+      const kUni  = findKey(['unidade','unid','filial','cod_unidade','empresa']);
+      const kLoja = findKey(['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia']);
+      const kCan  = findKey(['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas']);
+      const kPag  = findKey(['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto']);
+      const kCanc = findKey(['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada']);
+
+      let mapped = json.map(r=>{
+        const get = (k)=> (k? r[k] : null);
+        return {
+          dia: get(kDia),
+          hora: get(kHora),
+          turno: get(kTurn),
+          fat: parseBR(get(kFat)),
+          pedidos: parseBR(get(kPed) ?? 1),
+          unidade: get(kUni),
+          loja: get(kLoja),
+          canal: get(kCan),
+          pagamento_base: get(kPag),
+          cancelado: normCancel(get(kCanc))
+        };
+      });
+      const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!==''); // requer ao menos a data
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). ${EXCEL_TARGET_TABLE? 'Pronto para enviar.' : 'Pré-visualização local (sem envio).'}`);
+
+      // Opcional: enviar para Supabase
+      if(EXCEL_TARGET_TABLE){
+        setStatus('Enviando Excel…');
+        // pequenos lotes para evitar payload grande
+        const chunk = 500;
+        for(let i=0;i<ok.length;i+=chunk){
+          const slice = ok.slice(i,i+chunk);
+          const { error } = await supa.from(EXCEL_TARGET_TABLE).insert(slice);
+          if(error){ setStatus('Erro no upload: '+error.message,'err'); throw error; }
+        }
+        setStatus('Upload concluído','ok');
+      }
+    }catch(e){
+      console.error(e);
+      setStatus('Erro ao ler Excel: '+(e.message||e),'err');
+      info('');
+    }finally{
+      // reset para permitir reupload do mesmo arquivo
+      $('fileExcel').value='';
+    }
+  });
+
+  /* ===== Ciclo principal ===== */
   async function applyAll(){
     try{
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
