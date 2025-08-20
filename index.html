@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.0 — gráficos fix + ROI = faturamento ÷ incentivos)</title>
+  <title>DASHBOARD — CFO (v2.12.1 — gráficos fix + ROI produto)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{
@@ -62,6 +62,8 @@
     .seg button{padding:6px 10px;border:0;background:#fff;cursor:pointer;font-weight:700}
     .seg button.active{background:var(--pri);color:#fff}
     .chart-box{height:280px}
+    /* >>> Fix de responsividade do canvas (evita canvas com altura/largura 0) */
+    .chart-box canvas{display:block;width:100% !important;height:100% !important;}
     .diag{font-size:12px;color:#475569;margin-left:8px}
   </style>
 </head>
@@ -217,9 +219,9 @@
         <div class="val" id="k_canc_val">—</div>
         <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
       </div>
-      <!-- NOVO KPI ROI (Faturamento ÷ Incentivos) -->
+      <!-- ROI — agora como produto (Incentivos × Faturamento), conforme pedido -->
       <div class="kpi"><span class="bar"></span>
-        <h4><span>ROI (fat ÷ incentivos)</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
+        <h4><span>ROI (incentivos × fat)</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
         <div class="val" id="k_roi">—</div>
         <div class="sub">Anterior: <span id="p_roi">—</span></div>
       </div>
@@ -278,32 +280,24 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <script>
-  /*
-    IMPORTANTE (pedido do usuário):
-    ROI aqui foi ajustado para "Incentivos × Faturamento" no sentido de RELAÇÃO entre os dois.
-    Interpretação adotada: ROI = Faturamento ÷ Incentivos  (retorno por R$1 investido).
-    Se preferir ROI clássico = (Faturamento - Incentivos) ÷ Incentivos, troque ROI_MODE para 'delta'.
-  */
-  const ROI_MODE = 'ratio'; // 'ratio' => fat / incentivos ; 'delta' => (fat - incentivos) / incentivos
+  /* ===== Config ===== */
+  const ROI_MODE = 'product'; // 'product' => incentivos × faturamento | 'ratio' => fat ÷ incentivos | 'delta' => (fat - incentivos) ÷ incentivos
 
-  /* ===== CONFIG ===== */
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
   const $ = id => document.getElementById(id);
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
-  const setDiag=(nowRows,prevRows, metricKey)=>{ 
-    const n = (nowRows||[]).reduce((a,b)=>a+(+b[metricKey]||0),0);
-    const p = (prevRows||[]).reduce((a,b)=>a+(+b[metricKey]||0),0);
-    $('diag').textContent=`(linhas: atual ${nowRows?.length||0} / ant ${prevRows?.length||0} | soma ${metricKey}: ${money(n)} / ${money(p)})`;
+  const setDiag=(nowRows,prevRows, metricKey)=>{
+    const sum = (arr)=> (arr||[]).reduce((a,b)=> a + (+b[metricKey]||0), 0);
+    $('diag').textContent = `(linhas: atual ${nowRows?.length||0} / ant ${prevRows?.length||0} | soma ${metricKey}: ${money(sum(nowRows))} / ${money(sum(prevRows))})`;
   };
 
-  /* ===== UTIL ===== */
+  /* ===== Util ===== */
   const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const num =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
   const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
   const multf=v=>(v==null||!isFinite(+v))?'—':(+v).toLocaleString('pt-BR',{maximumFractionDigits:2})+'x';
-
   function iso(d){return d.toISOString().slice(0,10);}
   function addDaysISO(isoStr,n){const d=new Date(isoStr+'T00:00:00'); d.setDate(d.getDate()+n); return iso(d);}
   function daysLen(de,ate){const d1=new Date(de+'T00:00:00'), d2=new Date(ate+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24))+1;}
@@ -337,9 +331,10 @@
   function dowFromISO(s){
     const d = dayOnly(s);
     if(!d) return null;
+    // usar local time para evitar dia "vazar" pelo UTC
     const [Y,M,D]=d.split('-').map(Number);
-    const dt = new Date(Date.UTC(Y, M-1, D));
-    return dt.getUTCDay(); // 0..6
+    const dt = new Date(Y, M-1, D);
+    return dt.getDay(); // 0..6
   }
   function normCancel(v){
     const s=String(v??'').trim().toLowerCase();
@@ -348,7 +343,7 @@
     return 'Não';
   }
 
-  /* ===== MULTISELECT ===== */
+  /* ===== Multiselect ===== */
   function MultiSelect(rootId, placeholder){
     const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
     let options=[], selected=new Set(), filtered=[];
@@ -382,7 +377,7 @@
     };
   }
 
-  /* ===== ESTADO / PERÍODO ===== */
+  /* ===== Estado / período ===== */
   let firstDay='', lastDay='';
   const chips=[...document.querySelectorAll('.chip')];
   const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
@@ -394,7 +389,6 @@
     pags:   MultiSelect('ms-pags','Todos os tipos'),
     cancel: MultiSelect('ms-cancel','Todos')
   };
-
   function setActiveChip(val){ chips.forEach(c=>c.classList.toggle('active', c.dataset.q===String(val))); }
   function applyQuick(val){
     setActiveChip(val);
@@ -416,7 +410,7 @@
     applyAll();
   }));
 
-  /* ===== PARÂMETROS / RPC dos KPIs ===== */
+  /* ===== KPIs ===== */
   function buildParams(de, ate, overrideCancel = null) {
     const canc = overrideCancel != null ? [overrideCancel] : ms.cancel.get();
     let p_cancelado = null;
@@ -433,8 +427,6 @@
   }
   function rpcName(params){ return params.p_unids ? 'kpi_vendas_v2' : 'kpi_vendas'; }
   function prepareArgs(name, params){ if(name==='kpi_vendas'){ const {p_unids, ...rest}=params; return rest; } return params; }
-
-  /* ===== KPIs ===== */
   function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
 
   async function updateKPIs(de, ate, dePrev, atePrev){
@@ -455,15 +447,17 @@
     const CN=agg(cNow.data||[]), CP=agg(cPrev.data||[]);
 
     const len=daysLen(de,ate);
-    const tktN = safeDiv(N.fat,N.ped), tktP = safeDiv(P.fat,P.ped);
-    const fatMedN = safeDiv(N.fat,len), fatMedP = safeDiv(P.fat,len);
-    const desPercN = safeDiv(N.des,N.fat), desPercP = safeDiv(P.des,P.fat);
-    const freMedN = safeDiv(N.fre,N.ped), freMedP = safeDiv(P.fre,P.ped);
-    const partCancN = safeDiv(CN.ped,N.ped), partCancP = safeDiv(CP.ped,P.ped);
+    const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
+    const fatMedN = len? (N.fat/len) : 0,    fatMedP = len? (P.fat/len) : 0;
+    const desPercN = N.fat? (N.des/N.fat) : 0, desPercP = P.fat? (P.des/P.fat) : 0;
+    const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/P.ped) : 0;
+    const partCancN = N.ped? (CN.ped/N.ped) : 0, partCancP = P.ped? (CP.ped/P.ped) : 0;
 
-    // ROI ajustado: 'ratio' => Faturamento ÷ Incentivos | 'delta' => (Faturamento - Incentivos) ÷ Incentivos
-    const roiN = (ROI_MODE==='ratio') ? safeDiv(N.fat, N.des) : safeDiv((N.fat-N.des), N.des);
-    const roiP = (ROI_MODE==='ratio') ? safeDiv(P.fat, P.des) : safeDiv((P.fat-P.des), P.des);
+    // ROI conforme pedido: produto (incentivos × faturamento)
+    let roiN, roiP;
+    if(ROI_MODE==='product'){ roiN = (N.des||0)*(N.fat||0); roiP = (P.des||0)*(P.fat||0); }
+    else if(ROI_MODE==='ratio'){ roiN = N.des? (N.fat/N.des):0; roiP = P.des? (P.fat/P.des):0; }
+    else { roiN = N.des? ((N.fat-N.des)/N.des):0; roiP = P.des? ((P.fat-P.des)/P.des):0; }
 
     $('k_ped').textContent=num(N.ped);
     $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
@@ -493,26 +487,27 @@
     $('k_canc_val').textContent=money(CN.fat);
     $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
 
-    $('k_canc_part').textContent=pctf(partCancN);
-    $('p_canc_part').textContent=pctf(partCancP);
-
-    // Exibir ROI como multiplicador (ex.: 3,2x)
-    $('k_roi').textContent=multf(roiN);
-    $('p_roi').textContent=multf(roiP);
+    if(ROI_MODE==='product'){
+      $('k_roi').textContent=money(roiN);
+      $('p_roi').textContent=money(roiP);
+    }else if(ROI_MODE==='ratio'){
+      $('k_roi').textContent=multf(roiN);
+      $('p_roi').textContent=multf(roiP);
+    }else{
+      $('k_roi').textContent=pctf(roiN);
+      $('p_roi').textContent=pctf(roiP);
+    }
     deltaBadge($('d_roi'), roiN, roiP);
   }
 
-  /* ======== DISCOVERY ROBUSTA P/ GRÁFICOS ======== */
+  /* ===== Descoberta p/ gráficos ===== */
   function uniq(arr){ return [...new Set(arr.filter(Boolean))]; }
   function pickFirstNumber(row, keys){
-    for(const k of keys){
-      const v = row[k];
-      const n = parseBR(v);
-      if (isFinite(n) && n !== null && !Number.isNaN(n) && (n!==0 || v===0 || v==='0')) return n;
+    for(const k of keys){ const v=row[k]; const n=parseBR(v);
+      if (Number.isFinite(n)) return n;
     }
     return 0;
   }
-
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -523,11 +518,9 @@
 
     const dateKeys = ['dia','data','dt','date','data_venda','data_pedido','datahora'].filter(has);
     if(!dateKeys.length) return null;
-
     const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
     const turnoKeys= ['turno','periodo','shift'].filter(has);
 
-    // candidatos AMPLIADOS — vamos selecionar TODOS os presentes e calcular no cliente
     const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
     const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
 
@@ -537,13 +530,8 @@
     const pagKeys  = ['pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto'].filter(has);
     const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
 
-    return {
-      dateKeys, hourKeys, turnoKeys,
-      fatKeys, pedKeys,
-      lojaKeys, unidKeys, canalKeys, pagKeys, cancKeys
-    };
+    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, lojaKeys, unidKeys, canalKeys, pagKeys, cancKeys};
   }
-
   async function trySource(source, de, ate){
     const map = await discoverColumns(source);
     if(!map) return null;
@@ -580,40 +568,35 @@
       })
       .map(x=>{
         const dia = dayOnly(x[map.dateKeys[0]]);
-        // hora: tenta na coluna de hora, senão extrai da própria data/hora
         let h = NaN;
         if (map.hourKeys.length) h = parseHour(x[map.hourKeys[0]]);
-        if (!isFinite(h)) {
+        if (!Number.isFinite(h)) {
           const m = String(x[map.dateKeys[0]]).match(/(?:\s|T)(\d{1,2})[:h]/);
           if (m) h = Math.max(0,Math.min(23, +m[1]));
         }
         const fat = pickFirstNumber(x, map.fatKeys);
         const ped = pickFirstNumber(x, map.pedKeys);
         const t   = map.turnoKeys.length && x[map.turnoKeys[0]] ? String(x[map.turnoKeys[0]]) : inferTurno(h);
-        return { dia, hora:isFinite(h)?h:NaN, turno:t, fat, pedidos: ped };
+        return { dia, hora:Number.isFinite(h)?h:NaN, turno:t, fat:Number(fat)||0, pedidos:Number(ped)||0 };
       });
 
-    // Se todas as linhas ficaram com fat = 0, devolve mesmo assim (diag vai exibir)
+    const sumFat = rows.reduce((a,b)=>a+(+b.fat||0),0);
+    setStatus(`OK — gráficos: ${source} (linhas ${rows.length}, soma fat: ${money(sumFat)})`,'ok');
     return {source, map, rows};
   }
-
   async function fetchRows(de, ate){
     const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
     for(const src of sources){
       try{
         const res = await trySource(src, de, ate);
-        if(res){
-          const sumFat = res.rows.reduce((a,b)=>a+(+b.fat||0),0);
-          setStatus(`OK — gráficos: ${res.source} (linhas ${res.rows.length}, soma fat: ${money(sumFat)})`,'ok');
-          return res.rows;
-        }
+        if(res) return res.rows;
       }catch(_e){}
     }
     setStatus('OK — gráficos sem linhas no período/filtros','ok');
     return [];
   }
 
-  /* ===== AGRUPADORES ===== */
+  /* ===== Agrupadores ===== */
   const DOW_LABELS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   function monthLabel(isoYM){ const [y,m]=isoYM.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
 
@@ -644,7 +627,7 @@
   function groupHour(rows, metric='fat', mode='total'){
     const sums=Array(24).fill(0), days=Array.from({length:24},()=>new Set());
     for(const r of rows){
-      const h=isFinite(r.hora)?r.hora:NaN; if(!isFinite(h)) continue;
+      const h=Number.isFinite(r.hora)?r.hora:NaN; if(!Number.isFinite(h)) continue;
       const v=+r[metric]||0;
       sums[h]+=v; days[h].add(dayOnly(r.dia));
     }
@@ -664,7 +647,7 @@
     return {labels, vals};
   }
 
-  /* ===== Chart helpers ===== */
+  /* ===== Chart helpers (REMOVIDO parsing:false) ===== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -675,14 +658,19 @@
     const canvas=$(canvasId); if(!canvas) return;
     if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
     const ctx=canvas.getContext('2d');
+
+    // garante números (evita strings)
+    const _now = nowArr.map(v=>Number(v)||0);
+    const _prev= prevArr.map(v=>Number(v)||0);
+
     const chart=new Chart(ctx,{
       type:'bar',
       data:{ labels, datasets:[
-        {label:'Atual', data:nowArr, backgroundColor:'rgba(47,110,247,0.85)'},
-        {label:'Anterior', data:prevArr, backgroundColor:'rgba(2,132,199,0.6)'}
+        {label:'Atual', data:_now, backgroundColor:'rgba(47,110,247,0.85)'},
+        {label:'Anterior', data:_prev, backgroundColor:'rgba(2,132,199,0.6)'}
       ]},
       options:{
-        responsive:true, maintainAspectRatio:false, animation:false, parsing:false,
+        responsive:true, maintainAspectRatio:false, animation:false,
         scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:formatCurrencyTick}}},
         plugins:{ legend:{position:'top'}, tooltip:{mode:'index',intersect:false,callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${money(ctx.parsed.y||0)}`}}}
       }
@@ -701,10 +689,9 @@
     });
   });
 
-  /* ===== Cache de linhas para gráficos ===== */
+  /* ===== Cache p/ gráficos ===== */
   let chartCacheNow=[], chartCachePrev=[];
   function updateChartsFromCache(only){
-    // diagnóstico rápido na UI
     setDiag(chartCacheNow, chartCachePrev, 'fat');
 
     if(!only || only==='dow'){
@@ -747,7 +734,6 @@
 
       setStatus('Consultando…');
 
-      // KPIs e Linhas para gráficos em paralelo
       const kpiPromise = updateKPIs(de,ate,dePrev,atePrev);
       const rowsPromise = Promise.all([fetchRows(de,ate), fetchRows(dePrev,atePrev)]);
 
@@ -765,16 +751,14 @@
     }
   }
 
-  /* ===== BOOT ===== */
+  /* ===== Boot ===== */
   (async function init(){
     try{
       setStatus('Carregando…');
-      // datas
       const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
       if(dr.error) throw dr.error;
       if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
 
-      // opções de filtros
       const [unids,lojas,canais,turnos,pags] = await Promise.all([
         supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
         supa.from('vw_vendas_lojas').select('loja').order('loja'),
