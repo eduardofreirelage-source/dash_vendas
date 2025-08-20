@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.8 — hotfix rmAcc / upload DB / RPC charts / ROI%)</title>
+  <title>DASHBOARD — CFO (v2.12.9 — filtros dinâmicos por período)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -290,12 +290,12 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  const DEST_TABLE    = 'vendas_canon'; // <<<< tabela destino fixa
+  const DEST_TABLE    = 'vendas_canon';
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  /* ===================== HELPERS (ÚNICOS) ===================== */
+  /* ===================== HELPERS ===================== */
   const $ = id => document.getElementById(id);
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
   const setDiag=(msg)=>{ $('diag').textContent = msg || ''; };
@@ -332,14 +332,14 @@
     const n=Number(s); return isFinite(n)?n:0;
   }
   function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
-  function uniq(arr){ return [...new Set((arr||[]).filter(Boolean))]; }
+  function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
   /* ===================== MULTISELECT ===================== */
   function MultiSelect(rootId, placeholder){
     const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
     let options=[], selected=new Set(), filtered=[];
     function render(){ panel.innerHTML=''; const q=document.createElement('input'); q.className='msel-search'; q.placeholder='Filtrar…';
-      q.addEventListener('input',()=>{filtered=options.filter(v=>v.toLowerCase().includes(q.value.toLowerCase())); draw();});
+      q.addEventListener('input',()=>{filtered=options.filter(v=>String(v).toLowerCase().includes(q.value.toLowerCase())); draw();});
       panel.appendChild(q); draw();
     }
     function draw(){
@@ -358,9 +358,9 @@
     btn.addEventListener('click',()=>root.classList.toggle('open'));
     document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
     return {
-      setOptions(list){options=(list||[]).filter(v=>v!=null).map(String); filtered=options.slice(); selected=new Set(); render(); refresh();},
+      setOptions(list){ options=(list||[]).map(String); filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh();},
       get(){return [...selected];},
-      set(vals){selected=new Set((vals||[]).map(String)); refresh(); draw();}
+      set(vals){selected=new Set((vals||[]).map(String).filter(v=>options.includes(v))); refresh(); draw();}
     };
   }
 
@@ -460,7 +460,7 @@
     $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
+    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,fatMedP);
 
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
     $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
@@ -472,7 +472,7 @@
     deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
   }
 
-  /* ===== Comparativo: período anterior exato (ano/mês cheios → -1 ano) ===== */
+  /* ===== Comparativo: período anterior exato ===== */
   function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
   function isFullYear(d1,d2){
     return d1.getMonth()===0 && d1.getDate()===1 &&
@@ -500,7 +500,7 @@
     return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
   }
 
-  /* ===================== GRÁFICOS VIA RPC ===================== */
+  /* ===================== GRÁFICOS (RPC) ===================== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -619,7 +619,7 @@
     }
   }
 
-  /* ===================== FALLBACK LOCAL (cancelados) ===================== */
+  /* ===================== DISCOVERY (AMPLIADA) + FALLBACK LOCAL ===================== */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -627,14 +627,22 @@
     const cols = Object.keys(row||{});
     if (!cols.length) return null;
     const has = c => cols.includes(c);
+
     const dateKeys = ['dia','data','dt','date','data_venda','data_pedido','datahora'].filter(has);
     if(!dateKeys.length) return null;
     const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
     const turnoKeys= ['turno','periodo','shift'].filter(has);
-    const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
-    const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
+
+    const fatKeys  = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
+    const pedKeys  = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
+
+    const unidKeys = ['unidade','unid','filial','cod_unidade','empresa'].filter(has);
+    const lojaKeys = ['loja','loja_nome','nome_loja','loja_fantasia'].filter(has);
+    const canalKeys= ['canal','canal_venda','origem','meio','canal_vendas'].filter(has);
+    const pagKeys  = ['pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto'].filter(has);
     const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
-    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, cancKeys};
+
+    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, unidKeys, lojaKeys, canalKeys, pagKeys, cancKeys};
   }
   async function trySourceLocal(source, de, ate, onlyCancel){
     const map = await discoverColumns(source);
@@ -664,6 +672,72 @@
       }catch(_e){}
     }
     return [];
+  }
+
+  /* ===================== NOVO: OPÇÕES DINÂMICAS POR PERÍODO ===================== */
+  async function detectSourceForOptions(de,ate){
+    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
+    for(const src of sources){
+      const map = await discoverColumns(src);
+      if(map && map.dateKeys.length && (map.lojaKeys.length || map.unidKeys.length || map.canalKeys.length || map.pagKeys.length)) {
+        return { src, map };
+      }
+    }
+    return null;
+  }
+
+  async function refreshOptionsByPeriod(de,ate){
+    const found = await detectSourceForOptions(de,ate);
+    if(!found) return;
+    const {src, map} = found;
+
+    // Preservar seleções anteriores
+    const prev = {
+      unids: ms.unids.get(), lojas: ms.lojas.get(), canais: ms.canais.get(),
+      turnos: ms.turnos.get(), pags: ms.pags.get()
+    };
+
+    // Monta SELECT mínimo
+    const cols = uniq([
+      ...map.dateKeys,
+      ...(map.unidKeys||[]),
+      ...(map.lojaKeys||[]),
+      ...(map.canalKeys||[]),
+      ...(map.pagKeys||[]),
+      ...(map.turnoKeys||[]),
+      ...(map.cancKeys||[])
+    ]).join(',');
+
+    let q = supa.from(src).select(cols).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(150000);
+
+    // Aplica filtro de "Cancelado" se usuário deixou “Sim” ou “Não” único
+    const cancSel = ms.cancel.get();
+    if (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não') && map.cancKeys.length){
+      // filtra depois (client) para evitar diferenças de valores, mantendo simplicidade
+    }
+
+    const r = await q;
+    if(r.error){ console.warn('options by period error', r.error.message); return; }
+    let rows = r.data||[];
+
+    if (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não') && map.cancKeys.length){
+      const ck = map.cancKeys[0];
+      rows = rows.filter(x => normCancel(x[ck]) === cancSel[0]);
+    }
+
+    const list = (keyArr)=> uniq(rows.map(x=> x[(keyArr||[])[0]] ).filter(Boolean)).sort((a,b)=> String(a).localeCompare(String(b),'pt-BR'));
+    const unids = list(map.unidKeys);
+    const lojas = list(map.lojaKeys);
+    const canais= list(map.canalKeys);
+    const pags  = list(map.pagKeys);
+    const turnos= list(map.turnoKeys);
+
+    // Atualiza opções (preservando seleção válida)
+    ms.unids.setOptions(unids);  ms.unids.set(prev.unids);
+    ms.lojas.setOptions(lojas);  ms.lojas.set(prev.lojas);
+    ms.canais.setOptions(canais);ms.canais.set(prev.canais);
+    ms.pags.setOptions(pags);    ms.pags.set(prev.pags);
+    ms.turnos.setOptions(turnos);ms.turnos.set(prev.turnos);
   }
 
   /* ===================== EXCEL → DB (sempre grava) ===================== */
@@ -793,12 +867,18 @@
 
       setStatus('Consultando…');
 
+      // 1) Atualiza opções por período ANTES dos KPIs/Gráficos
+      await refreshOptionsByPeriod(de,ate);
+
+      // 2) KPIs
       let kpiOk=true;
       await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
 
+      // 3) Gráficos
       await updateChartsServer();
 
       if(!kpiOk) setStatus('OK (sem KPIs — RPC indisponível)');
+      else setStatus('OK','ok');
     }catch(e){
       console.error(e);
       setStatus('Erro: '+(e.message||e),'err');
