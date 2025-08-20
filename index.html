@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.10 — loja canônica + ROI %)</title>
+  <title>DASHBOARD — CFO (v2.12.11 — lojas à prova de variações)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -321,8 +321,33 @@
     if(['nao','não','n','false','0','no','nao/não'].includes(s)) return 'Não';
     return 'Não';
   }
-  const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  const normHeader = (s)=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+
+  // ======== Normalização canônica robusta (NFKC, hífens, NBSP, acentos) ========
+  const HYPHENS = /[\u2010-\u2015\u2212\u2043\u2053\uFE58\uFE63\uFF0D]/g; // vários “traços”
+  const APOSTR  = /[\u2018\u2019\u201B\u2032]/g;
+  function cleanSpaces(s){
+    return String(s||'')
+      .replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ') // espaços especiais → espaço normal
+      .replace(/\s+/g,' ')
+      .trim();
+  }
+  function canonText(s){
+    let t = String(s||'').normalize('NFKC');
+    t = t.replace(HYPHENS,'-').replace(APOSTR,"'");
+    t = cleanSpaces(t);
+    t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,''); // remove acentos
+    t = t.toLowerCase();
+    // compacta padrões " - " para "-"
+    t = t.replace(/\s*-\s*/g,'-');
+    // remove duplicidades de hífen
+    t = t.replace(/-+/g,'-');
+    return t;
+  }
+  // Display legível também normaliza o hífen visual
+  function displayNormalize(s){
+    return cleanSpaces(String(s||'').normalize('NFKC').replace(HYPHENS,'-'));
+  }
+
   function parseBR(v){
     if(v==null) return 0;
     if(typeof v==='number' && isFinite(v)) return v;
@@ -334,9 +359,7 @@
   function computeROI(fr){ const d=Math.abs(fr.des||0); if(!d) return NaN; return (fr.fat - d) / d; } // ROI %
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
-  /* Canonização de valores textuais para filtros (resolve “Vista Delivery” com espaços/variações) */
-  function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u2000-\u200B]/g,' ').replace(/\s+/g,' ').trim(); }
-  function canonText(s){ return cleanSpaces(s).toLowerCase(); }
+  /* Canonização para filtros */
   const canonMaps = { unids:{}, lojas:{}, canais:{}, pags:{}, turnos:{} }; // canon -> { originals:Set, display:String, count:Number }
 
   /* ============ MULTISELECT ============ */
@@ -411,7 +434,6 @@
       if(map[c]?.originals) out.push(...map[c].originals);
       else out.push(lbl);
     });
-    // remove duplicados preservando ordem
     return [...new Map(out.map(v=>[v,v])).keys()];
   }
 
@@ -471,7 +493,6 @@
       }catch(_e){}
     }
 
-    // Normaliza incentivos (sempre positivos)
     const Dn = Math.abs(N.des||0), Dp = Math.abs(P.des||0);
 
     const len=daysLen(de,ate);
@@ -660,14 +681,11 @@
     const map = await discoverColumns(source);
     if(!map) return null;
     const sel = uniq([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys]).join(',');
-    const q = await supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
-    if(q.error) return null;
-    const rows = (q.data||[]).filter(x=>{
-      if(!onlyCancel) return true;
-      const k = map.cancKeys[0];
-      const norm = normCancel(x[k]);
-      return norm === 'Sim';
-    }).map(x=>{
+    let q = supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
+    if(map.cancKeys.length && onlyCancel==='Sim'){ q = q.eq(map.cancKeys[0],'Sim'); }
+    const r = await q;
+    if(r.error) return null;
+    const rows = (r.data||[]).map(x=>{
       const fat = (map.fatKeys.length)? parseBR(x[map.fatKeys[0]]) : 0;
       const ped = (map.pedKeys.length)? parseBR(x[map.pedKeys[0]]) : 1;
       return { fat, pedidos: ped };
@@ -676,7 +694,7 @@
   }
   async function fetchRowsLocal(de, ate, onlyCancelValue){
     const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
-    const onlyCancel = (onlyCancelValue==='Sim');
+    const onlyCancel = (onlyCancelValue==='Sim') ? 'Sim' : null;
     for(const src of sources){
       try{
         const res = await trySourceLocal(src, de, ate, onlyCancel);
@@ -686,7 +704,7 @@
     return [];
   }
 
-  /* ============ OPÇÕES DINÂMICAS POR PERÍODO (com canônicos) ============ */
+  /* ============ OPÇÕES DINÂMICAS POR PERÍODO (aplica demais filtros) ============ */
   async function detectSourceForOptions(de,ate){
     const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
     for(const src of sources){
@@ -699,15 +717,14 @@
   }
 
   function mapCollect(obj, key, raw){
-    const displayCandidate = cleanSpaces(raw);
+    const disp = displayNormalize(raw);
     const canon = canonText(raw);
-    if(!obj[key][canon]) obj[key][canon] = { originals:new Set(), display:displayCandidate, count:0 };
+    if(!obj[key][canon]) obj[key][canon] = { originals:new Set(), display:disp, count:0 };
     obj[key][canon].originals.add(raw);
     obj[key][canon].count++;
-    // mantém o display mais frequente (melhor representação)
-    if(displayCandidate && obj[key][canon].display!==displayCandidate){
-      // simples heurística: troca se o novo tem mais caracteres (parece mais completo)
-      if(displayCandidate.length > obj[key][canon].display.length) obj[key][canon].display = displayCandidate;
+    // Preferir display mais comprido/explicativo
+    if(disp && obj[key][canon].display!==disp){
+      if(disp.length > obj[key][canon].display.length) obj[key][canon].display = disp;
     }
   }
 
@@ -716,13 +733,11 @@
     if(!found) return;
     const {src, map} = found;
 
-    // Preserva seleções
     const prev = {
       unids: ms.unids.get(), lojas: ms.lojas.get(), canais: ms.canais.get(),
       turnos: ms.turnos.get(), pags: ms.pags.get()
     };
 
-    // Zera mapas canônicos
     canonMaps.unids = {}; canonMaps.lojas = {}; canonMaps.canais = {}; canonMaps.pags = {}; canonMaps.turnos = {};
 
     const cols = uniq([
@@ -735,15 +750,26 @@
       ...(map.cancKeys||[])
     ]).join(',');
 
-    let r = await supa.from(src).select(cols).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(150000);
-    if(r.error){ console.warn('options by period error', r.error.message); return; }
-    let rows = r.data||[];
+    let q = supa.from(src).select(cols).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(200000);
 
+    // aplicar demais filtros SELECIONADOS (exceto a dimensão loja, para montar suas opções)
     const cancSel = ms.cancel.get();
     if (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não') && map.cancKeys.length){
-      const ck = map.cancKeys[0];
-      rows = rows.filter(x => normCancel(x[ck]) === cancSel[0]);
+      q = q.eq(map.cancKeys[0], cancSel[0]);
     }
+    const selUnids  = expandSelected('unids',  ms.unids.get());
+    const selCanais = expandSelected('canais', ms.canais.get());
+    const selPags   = expandSelected('pags',   ms.pags.get());
+    const selTurnos = expandSelected('turnos', ms.turnos.get());
+    if(selUnids.length  && map.unidKeys.length)  q = q.in(map.unidKeys[0], selUnids);
+    if(selCanais.length && map.canalKeys.length) q = q.in(map.canalKeys[0], selCanais);
+    if(selPags.length   && map.pagKeys.length)   q = q.in(map.pagKeys[0], selPags);
+    if(selTurnos.length && map.turnoKeys.length) q = q.in(map.turnoKeys[0], selTurnos);
+    // NÃO aplicar filtro de loja aqui: queremos descobrir TODAS as lojas válidas no contexto acima
+
+    const r = await q;
+    if(r.error){ console.warn('options by period error', r.error.message); return; }
+    const rows = r.data||[];
 
     rows.forEach(x=>{
       if(map.unidKeys.length && x[map.unidKeys[0]]!=null)  mapCollect(canonMaps,'unids',  x[map.unidKeys[0]]);
@@ -807,7 +833,7 @@
     canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada']
   };
   function pickColumn(headers, alts){
-    const map = headers.map(h=>({orig:h, key:normHeader(h)}));
+    const map = headers.map(h=>({orig:h, key:displayNormalize(h).toLowerCase()}));
     for(const a of alts){
       const ex = map.find(m=>m.key===a); if(ex) return ex.orig;
       const cont = map.find(m=>m.key.includes(a)); if(cont) return cont.orig;
@@ -843,13 +869,13 @@
         return {
           dia: normalizeDateCell(get(kDia)),
           hora: parseHourUpload(get(kHora)),
-          turno: cleanSpaces(get(kTurn)),
+          turno: displayNormalize(get(kTurn)),
           fat: parseBR(get(kFat)),
           pedidos: parseBR(get(kPed) ?? 1),
-          unidade: cleanSpaces(get(kUni)),
-          loja: cleanSpaces(get(kLoja)),
-          canal: cleanSpaces(get(kCan)),
-          pagamento_base: cleanSpaces(get(kPag)),
+          unidade: displayNormalize(get(kUni)),
+          loja: displayNormalize(get(kLoja)),
+          canal: displayNormalize(get(kCan)),
+          pagamento_base: displayNormalize(get(kPag)),
           cancelado: normCancel(get(kCanc))
         };
       });
@@ -891,7 +917,7 @@
 
       setStatus('Consultando…');
 
-      await refreshOptionsByPeriod(de,ate);  // atualiza filtros (inclui Vista Delivery)
+      await refreshOptionsByPeriod(de,ate);  // atualiza filtros com normalização robusta
       let kpiOk=true;
       await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
       await updateChartsServer();
@@ -918,7 +944,7 @@
         supa.from('vw_vendas_turnos').select('turno').order('turno'),
         supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
       ]);
-      const setOpts=(res,field,msel)=> msel.setOptions((res.data||[]).map(r=>cleanSpaces(r[field])));
+      const setOpts=(res,field,msel)=> msel.setOptions((res.data||[]).map(r=>displayNormalize(r[field])));
       if(!unids.error) setOpts(unids,'unidade',ms.unids);
       if(!lojas.error) setOpts(lojas,'loja',ms.lojas);
       if(!canais.error) setOpts(canais,'canal',ms.canais);
