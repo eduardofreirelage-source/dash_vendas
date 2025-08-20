@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.3 — gráficos datas/fat robustos)</title>
+  <title>DASHBOARD — CFO (v2.12.2 — restore)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{
@@ -18,6 +18,7 @@
     h1{margin:0;font-size:28px;letter-spacing:.2px}
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
     .btn.clear{gap:6px}
+
     .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px}
     .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
     .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
@@ -26,6 +27,7 @@
     .row{display:grid;gap:12px}
     .cols-3{grid-template-columns:repeat(3,1fr)}
     .cols-2{grid-template-columns:repeat(2,1fr)}
+
     input[type="date"], .msel-btn{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
     .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
     .chip{padding:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:700}
@@ -62,7 +64,7 @@
     .seg button{padding:6px 10px;border:0;background:#fff;cursor:pointer;font-weight:700}
     .seg button.active{background:var(--pri);color:#fff}
     .chart-box{height:280px}
-    .chart-box canvas{display:block;width:100% !important;height:100% !important;}
+    .chart-box canvas{display:block;width:100% !important;height:100% !important;} /* evita canvas zero */
     .diag{font-size:12px;color:#475569;margin-left:8px}
   </style>
 </head>
@@ -157,7 +159,7 @@
       </div>
     </div>
 
-    <!-- KPIs (inalterados) -->
+    <!-- KPIs -->
     <div class="krow">
       <div class="kpi"><span class="bar"></span>
         <h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4>
@@ -218,6 +220,7 @@
         <div class="val" id="k_canc_val">—</div>
         <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
       </div>
+      <!-- ROI — produto, como estava -->
       <div class="kpi"><span class="bar"></span>
         <h4><span>ROI (incentivos × fat)</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
         <div class="val" id="k_roi">—</div>
@@ -279,7 +282,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <script>
   /* ===== Config ===== */
-  const ROI_MODE = 'product'; // foco agora é gráfico; ROI fica como você pediu (produto)
+  const ROI_MODE = 'product'; // como estava
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -319,10 +322,11 @@
     return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
   }
   function dowFromISO(s){
-    const d = dayOnly(s); if(!d) return null;
+    const d = dayOnly(s);
+    if(!d) return null;
     const [Y,M,D]=d.split('-').map(Number);
-    const dt = new Date(Y, M-1, D); // local time para não “vazar” UTC
-    return dt.getDay();
+    const dt = new Date(Y, M-1, D); // local
+    return dt.getDay(); // 0..6
   }
   function normCancel(v){
     const s=String(v??'').trim().toLowerCase();
@@ -462,21 +466,22 @@
     else { $('k_roi').textContent=pctf(roiN); $('p_roi').textContent=pctf(roiP); }
     deltaBadge($('d_roi'), roiN, roiP);
   }
+  function deltaBadge(el,curr,prev){
+    if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
+    const p=((curr-prev)/prev)*100;
+    el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
+    el.className='delta '+(p>=0?'up':'down');
+  }
 
-  /* ===== Descoberta p/ gráficos ===== */
+  /* ===== Descoberta p/ gráficos (versão anterior) ===== */
   function uniq(arr){ return [...new Set(arr.filter(Boolean))]; }
-  // pega “melhor” valor entre vários campos candidatos
-  function pickBestNumber(row, keys){
-    let best = 0, foundPos = false;
+  function pickFirstNumber(row, keys){
     for(const k of keys){
       if(!(k in row)) continue;
-      const n = parseBR(row[k]);
-      if(!Number.isFinite(n)) continue;
-      if(n > 0 && !foundPos){ best = n; foundPos = true; } // primeiro positivo
-      if(!foundPos && Math.abs(n) > Math.abs(best)) best = n; // senão, maior absoluto
-      if(foundPos) break;
+      const n=parseBR(row[k]);
+      if(Number.isFinite(n)) return n;
     }
-    return Number(best)||0;
+    return 0;
   }
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
@@ -512,12 +517,8 @@
       ...map.lojaKeys, ...map.unidKeys, ...map.canalKeys, ...map.pagKeys, ...map.cancKeys
     ]).join(',');
 
-    const dateCol = map.dateKeys[0];
-    const ateNext = addDaysISO(ate, 1); // inclui o dia final
-    let q = supa.from(source)
-      .select(sel)
-      .gte(dateCol, de)
-      .lt(dateCol, ateNext);
+    // <<< versão anterior (inclui fim com <=)
+    let q = supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate);
 
     const unids = ms.unids.get();  if(unids.length && map.unidKeys.length)  q = q.in(map.unidKeys[0], unids);
     const lojas = ms.lojas.get();  if(lojas.length && map.lojaKeys.length)  q = q.in(map.lojaKeys[0], lojas);
@@ -525,7 +526,7 @@
     const canais= ms.canais.get(); if(canais.length && map.canalKeys.length)q = q.in(map.canalKeys[0], canais);
     const pags  = ms.pags.get();   if(pags.length && map.pagKeys.length)    q = q.in(map.pagKeys[0], pags);
 
-    q = q.limit(1_000_000);
+    q = q.limit(200000);
 
     const r = await q;
     if(r.error) return null;
@@ -542,16 +543,15 @@
         return norm === needCancel;
       })
       .map(x=>{
-        const dRaw = x[map.dateKeys[0]];
-        const dia = dayOnly(dRaw);
-        // hora: coluna própria OU extraída do timestamp (T..:)
-        let h = map.hourKeys.length ? parseHour(x[map.hourKeys[0]]) : NaN;
+        const dia = dayOnly(x[map.dateKeys[0]]);
+        let h = NaN;
+        if (map.hourKeys.length) h = parseHour(x[map.hourKeys[0]]);
         if (!Number.isFinite(h)) {
-          const m = String(dRaw).match(/(?:\s|T)(\d{1,2})[:h]/);
+          const m = String(x[map.dateKeys[0]]).match(/(?:\s|T)(\d{1,2})[:h]/);
           if (m) h = Math.max(0,Math.min(23, +m[1]));
         }
-        const fat = pickBestNumber(x, map.fatKeys);
-        const ped = pickBestNumber(x, map.pedKeys);
+        const fat = pickFirstNumber(x, map.fatKeys);
+        const ped = pickFirstNumber(x, map.pedKeys);
         const t   = map.turnoKeys.length && x[map.turnoKeys[0]] ? String(x[map.turnoKeys[0]]) : inferTurno(h);
         return { dia, hora:Number.isFinite(h)?h:NaN, turno:t, fat:Number(fat)||0, pedidos:Number(ped)||0 };
       });
@@ -590,18 +590,20 @@
     const sums=new Map(), days=new Map();
     for(const r of rows){
       const d = dayOnly(r.dia); if(!d) continue;
-      const ym=d.slice(0,7); // YYYY-MM (chave crua, estável)
+      const ym=d.slice(0,7);
       const v=+r[metric]||0;
       sums.set(ym,(sums.get(ym)||0)+v);
       if(!days.has(ym)) days.set(ym,new Set());
       days.get(ym).add(d);
     }
-    const raw=[...sums.keys()].sort(); // ordem cronológica correta
-    const vals = raw.map(k=>{
-      const denom = ((days.get(k) || new Set()).size) || 1;
-      return mode==='media' ? ((sums.get(k) || 0) / denom) : (sums.get(k) || 0);
+    const labels=[...sums.keys()].sort().map(monthLabel);
+    const vals=labels.map((lab,i)=>{
+      const raw=[...sums.keys()].sort()[i];
+      const tot=sums.get(raw)||0;
+      const denom=((days.get(raw)||new Set()).size)||1;
+      return mode==='media' ? (tot/denom) : tot;
     });
-    return {raw, labels:raw.map(monthLabel), vals};
+    return {labels, vals};
   }
   function groupHour(rows, metric='fat', mode='total'){
     const sums=Array(24).fill(0), days=Array.from({length:24},()=>new Set());
@@ -626,7 +628,7 @@
     return {labels, vals};
   }
 
-  /* ===== Chart helpers — com “sombra” (overlay) ===== */
+  /* ===== Chart helpers (versão anterior) ===== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -644,8 +646,8 @@
     const chart=new Chart(ctx,{
       type:'bar',
       data:{ labels, datasets:[
-        {label:'Anterior', data:_prev, backgroundColor:'rgba(47,110,247,0.18)', grouped:false, order:0, borderWidth:0, borderRadius:7, maxBarThickness:28},
-        {label:'Atual',    data:_now,  backgroundColor:'rgba(47,110,247,0.85)', grouped:false, order:1, borderWidth:0, borderRadius:7, maxBarThickness:18}
+        {label:'Atual',    data:_now,  backgroundColor:'rgba(47,110,247,0.85)'},
+        {label:'Anterior', data:_prev, backgroundColor:'rgba(2,132,199,0.6)'}
       ]},
       options:{
         responsive:true, maintainAspectRatio:false, animation:false,
@@ -680,10 +682,10 @@
     if(!only || only==='month'){
       const gN=groupMonth(chartCacheNow,'fat',chartMode.month);
       const gP=groupMonth(chartCachePrev,'fat',chartMode.month);
-      const allRaw=[...new Set([...gN.raw,...gP.raw])].sort();
-      const mapN=new Map(gN.raw.map((r,i)=>[r,gN.vals[i]]));
-      const mapP=new Map(gP.raw.map((r,i)=>[r,gP.vals[i]]));
-      ensureChart('ch_month', allRaw.map(monthLabel), allRaw.map(r=>mapN.get(r)||0), allRaw.map(r=>mapP.get(r)||0));
+      const all=[...new Set([...gN.labels,...gP.labels])];
+      const mN=new Map(gN.labels.map((l,i)=>[l,gN.vals?gN.vals[i]:0]));
+      const mP=new Map(gP.labels.map((l,i)=>[l,gP.vals?gP.vals[i]:0]));
+      ensureChart('ch_month', all, all.map(l=>mN.get(l)||0), all.map(l=>mP.get(l)||0));
     }
     if(!only || only==='hour'){
       const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
