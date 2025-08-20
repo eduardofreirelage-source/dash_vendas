@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.2 — gráficos fix + ROI produto)</title>
+  <title>DASHBOARD — CFO (v2.12.3 — gráficos datas/fat robustos)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{
@@ -62,7 +62,6 @@
     .seg button{padding:6px 10px;border:0;background:#fff;cursor:pointer;font-weight:700}
     .seg button.active{background:var(--pri);color:#fff}
     .chart-box{height:280px}
-    /* Fix de responsividade do canvas (evita canvas com altura/largura 0) */
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
     .diag{font-size:12px;color:#475569;margin-left:8px}
   </style>
@@ -158,7 +157,7 @@
       </div>
     </div>
 
-    <!-- KPIs -->
+    <!-- KPIs (inalterados) -->
     <div class="krow">
       <div class="kpi"><span class="bar"></span>
         <h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4>
@@ -219,7 +218,6 @@
         <div class="val" id="k_canc_val">—</div>
         <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
       </div>
-      <!-- ROI — produto (Incentivos × Faturamento), conforme v2.12.1 -->
       <div class="kpi"><span class="bar"></span>
         <h4><span>ROI (incentivos × fat)</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
         <div class="val" id="k_roi">—</div>
@@ -281,8 +279,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <script>
   /* ===== Config ===== */
-  const ROI_MODE = 'product'; // 'product' => incentivos × faturamento | 'ratio' => fat ÷ incentivos | 'delta' => (fat - incentivos) ÷ incentivos
-
+  const ROI_MODE = 'product'; // foco agora é gráfico; ROI fica como você pediu (produto)
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -305,13 +302,6 @@
   function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 17l-5-6h3V3h4v8h3l-5 6z"/></svg>';}
   function parseHour(val){ if(val==null) return NaN; const m=String(val).match(/\d{1,2}/); const h=m?+m[0]:NaN; return (h>=0&&h<=23)?h:NaN; }
   function inferTurno(h){ if(!isFinite(h)) return 'Dia'; if(h<=5) return 'Madrugada'; if(h<=11) return 'Manhã'; if(h<=17) return 'Tarde'; return 'Noite'; }
-  function safeDiv(a,b){ return (b && isFinite(a) && isFinite(b)) ? (a/b) : 0; }
-  function deltaBadge(el,curr,prev){
-    if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
-    const p=((curr-prev)/prev)*100;
-    el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
-    el.className='delta '+(p>=0?'up':'down');
-  }
   function parseBR(v){
     if(v==null) return 0;
     if(typeof v==='number' && isFinite(v)) return v;
@@ -329,12 +319,10 @@
     return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
   }
   function dowFromISO(s){
-    const d = dayOnly(s);
-    if(!d) return null;
-    // usar local time para evitar dia "vazar" pelo UTC
+    const d = dayOnly(s); if(!d) return null;
     const [Y,M,D]=d.split('-').map(Number);
-    const dt = new Date(Y, M-1, D);
-    return dt.getDay(); // 0..6
+    const dt = new Date(Y, M-1, D); // local time para não “vazar” UTC
+    return dt.getDay();
   }
   function normCancel(v){
     const s=String(v??'').trim().toLowerCase();
@@ -453,60 +441,42 @@
     const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/P.ped) : 0;
     const partCancN = N.ped? (CN.ped/N.ped) : 0, partCancP = P.ped? (CP.ped/P.ped) : 0;
 
-    // ROI conforme pedido: produto (incentivos × faturamento)
     let roiN, roiP;
     if(ROI_MODE==='product'){ roiN = (N.des||0)*(N.fat||0); roiP = (P.des||0)*(P.fat||0); }
     else if(ROI_MODE==='ratio'){ roiN = N.des? (N.fat/N.des):0; roiP = P.des? (P.fat/P.des):0; }
     else { roiN = N.des? ((N.fat-N.des)/N.des):0; roiP = P.des? ((P.fat-P.des)/P.des):0; }
 
-    $('k_ped').textContent=num(N.ped);
-    $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
-
-    $('k_tkt').textContent=money(tktN);
-    $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
-
-    $('k_fat').textContent=money(N.fat);
-    $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
-
-    $('k_fatmed').textContent=money(fatMedN);
-    $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
-
-    $('k_des').textContent=money(N.des);
-    $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
-
-    $('k_desperc').textContent=pctf(desPercN);
-    $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
-
-    $('k_fre').textContent=money(N.fre);
-    $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-
-    $('k_fremed').textContent=money(freMedN);
-    $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
-
+    $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
+    $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
+    $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
+    $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
+    $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
+    $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
+    $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
+    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
-    $('k_canc_val').textContent=money(CN.fat);
-    $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
+    $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
 
-    if(ROI_MODE==='product'){
-      $('k_roi').textContent=money(roiN);
-      $('p_roi').textContent=money(roiP);
-    }else if(ROI_MODE==='ratio'){
-      $('k_roi').textContent=multf(roiN);
-      $('p_roi').textContent=multf(roiP);
-    }else{
-      $('k_roi').textContent=pctf(roiN);
-      $('p_roi').textContent=pctf(roiP);
-    }
+    if(ROI_MODE==='product'){ $('k_roi').textContent=money(roiN); $('p_roi').textContent=money(roiP); }
+    else if(ROI_MODE==='ratio'){ $('k_roi').textContent=multf(roiN); $('p_roi').textContent=multf(roiP); }
+    else { $('k_roi').textContent=pctf(roiN); $('p_roi').textContent=pctf(roiP); }
     deltaBadge($('d_roi'), roiN, roiP);
   }
 
   /* ===== Descoberta p/ gráficos ===== */
   function uniq(arr){ return [...new Set(arr.filter(Boolean))]; }
-  function pickFirstNumber(row, keys){
-    for(const k of keys){ const v=row[k]; const n=parseBR(v);
-      if (Number.isFinite(n)) return n;
+  // pega “melhor” valor entre vários campos candidatos
+  function pickBestNumber(row, keys){
+    let best = 0, foundPos = false;
+    for(const k of keys){
+      if(!(k in row)) continue;
+      const n = parseBR(row[k]);
+      if(!Number.isFinite(n)) continue;
+      if(n > 0 && !foundPos){ best = n; foundPos = true; } // primeiro positivo
+      if(!foundPos && Math.abs(n) > Math.abs(best)) best = n; // senão, maior absoluto
+      if(foundPos) break;
     }
-    return 0;
+    return Number(best)||0;
   }
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
@@ -543,7 +513,7 @@
     ]).join(',');
 
     const dateCol = map.dateKeys[0];
-    const ateNext = addDaysISO(ate, 1); // fim exclusivo => inclui todo o "ate"
+    const ateNext = addDaysISO(ate, 1); // inclui o dia final
     let q = supa.from(source)
       .select(sel)
       .gte(dateCol, de)
@@ -555,7 +525,7 @@
     const canais= ms.canais.get(); if(canais.length && map.canalKeys.length)q = q.in(map.canalKeys[0], canais);
     const pags  = ms.pags.get();   if(pags.length && map.pagKeys.length)    q = q.in(map.pagKeys[0], pags);
 
-    q = q.limit(200000);
+    q = q.limit(1_000_000);
 
     const r = await q;
     if(r.error) return null;
@@ -572,15 +542,16 @@
         return norm === needCancel;
       })
       .map(x=>{
-        const dia = dayOnly(x[map.dateKeys[0]]);
-        let h = NaN;
-        if (map.hourKeys.length) h = parseHour(x[map.hourKeys[0]]);
+        const dRaw = x[map.dateKeys[0]];
+        const dia = dayOnly(dRaw);
+        // hora: coluna própria OU extraída do timestamp (T..:)
+        let h = map.hourKeys.length ? parseHour(x[map.hourKeys[0]]) : NaN;
         if (!Number.isFinite(h)) {
-          const m = String(x[map.dateKeys[0]]).match(/(?:\s|T)(\d{1,2})[:h]/);
+          const m = String(dRaw).match(/(?:\s|T)(\d{1,2})[:h]/);
           if (m) h = Math.max(0,Math.min(23, +m[1]));
         }
-        const fat = pickFirstNumber(x, map.fatKeys);
-        const ped = pickFirstNumber(x, map.pedKeys);
+        const fat = pickBestNumber(x, map.fatKeys);
+        const ped = pickBestNumber(x, map.pedKeys);
         const t   = map.turnoKeys.length && x[map.turnoKeys[0]] ? String(x[map.turnoKeys[0]]) : inferTurno(h);
         return { dia, hora:Number.isFinite(h)?h:NaN, turno:t, fat:Number(fat)||0, pedidos:Number(ped)||0 };
       });
@@ -619,18 +590,18 @@
     const sums=new Map(), days=new Map();
     for(const r of rows){
       const d = dayOnly(r.dia); if(!d) continue;
-      const ym=d.slice(0,7);
+      const ym=d.slice(0,7); // YYYY-MM (chave crua, estável)
       const v=+r[metric]||0;
       sums.set(ym,(sums.get(ym)||0)+v);
       if(!days.has(ym)) days.set(ym,new Set());
       days.get(ym).add(d);
     }
-    const labels=[...sums.keys()].sort();
-    const vals = labels.map(k=>{
+    const raw=[...sums.keys()].sort(); // ordem cronológica correta
+    const vals = raw.map(k=>{
       const denom = ((days.get(k) || new Set()).size) || 1;
       return mode==='media' ? ((sums.get(k) || 0) / denom) : (sums.get(k) || 0);
     });
-    return {labels:labels.map(monthLabel), vals};
+    return {raw, labels:raw.map(monthLabel), vals};
   }
   function groupHour(rows, metric='fat', mode='total'){
     const sums=Array(24).fill(0), days=Array.from({length:24},()=>new Set());
@@ -667,16 +638,13 @@
     if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
     const ctx=canvas.getContext('2d');
 
-    // garante números (evita strings)
     const _now = nowArr.map(v=>Number(v)||0);
     const _prev= prevArr.map(v=>Number(v)||0);
 
     const chart=new Chart(ctx,{
       type:'bar',
       data:{ labels, datasets:[
-        // Anterior como “sombra” (mais largo, translúcido e overlay)
         {label:'Anterior', data:_prev, backgroundColor:'rgba(47,110,247,0.18)', grouped:false, order:0, borderWidth:0, borderRadius:7, maxBarThickness:28},
-        // Atual por cima, mais estreito
         {label:'Atual',    data:_now,  backgroundColor:'rgba(47,110,247,0.85)', grouped:false, order:1, borderWidth:0, borderRadius:7, maxBarThickness:18}
       ]},
       options:{
@@ -712,10 +680,10 @@
     if(!only || only==='month'){
       const gN=groupMonth(chartCacheNow,'fat',chartMode.month);
       const gP=groupMonth(chartCachePrev,'fat',chartMode.month);
-      const all=[...new Set([...gN.labels,...gP.labels])];
-      const mN=new Map(gN.labels.map((l,i)=>[l,gN.vals[i]]));
-      const mP=new Map(gP.labels.map((l,i)=>[l,gP.vals[i]]));
-      ensureChart('ch_month', all, all.map(l=>mN.get(l)||0), all.map(l=>mP.get(l)||0));
+      const allRaw=[...new Set([...gN.raw,...gP.raw])].sort();
+      const mapN=new Map(gN.raw.map((r,i)=>[r,gN.vals[i]]));
+      const mapP=new Map(gP.raw.map((r,i)=>[r,gP.vals[i]]));
+      ensureChart('ch_month', allRaw.map(monthLabel), allRaw.map(r=>mapN.get(r)||0), allRaw.map(r=>mapP.get(r)||0));
     }
     if(!only || only==='hour'){
       const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
