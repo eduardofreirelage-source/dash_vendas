@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.10.2 — fix gráficos)</title>
+  <title>DASHBOARD — CFO (v2.11.0 — gráficos fix + KPI ROI)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{
@@ -62,6 +62,7 @@
     .seg button{padding:6px 10px;border:0;background:#fff;cursor:pointer;font-weight:700}
     .seg button.active{background:var(--pri);color:#fff}
     .chart-box{height:280px}
+    .diag{font-size:12px;color:#475569;margin-left:8px}
   </style>
 </head>
 <body>
@@ -113,7 +114,10 @@
           <svg class="ico" viewBox="0 0 24 24" fill="none"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
           Filtros
         </div>
-        <div id="status" class="muted">—</div>
+        <div>
+          <span id="status" class="muted">—</span>
+          <span id="diag" class="diag"> </span>
+        </div>
       </div>
       <div class="row cols-3">
         <div>
@@ -213,6 +217,13 @@
         <div class="val" id="k_canc_val">—</div>
         <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
       </div>
+      <!-- NOVO KPI ROI -->
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>ROI (base: incentivos)</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
+        <div class="val" id="k_roi">—</div>
+        <div class="sub">Anterior: <span id="p_roi">—</span></div>
+      </div>
+      <div></div>
     </div>
 
     <!-- GRÁFICOS -->
@@ -273,11 +284,13 @@
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
   const $ = id => document.getElementById(id);
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
+  const setDiag=(nowRows,prevRows)=>{ const n = (nowRows||[]).reduce((a,b)=>a+(+b.fat||0),0); const p=(prevRows||[]).reduce((a,b)=>a+(+b.fat||0),0); $('diag').textContent=`(linhas: atual ${nowRows?.length||0} / ant ${prevRows?.length||0} | soma fat: ${money(n)} / ${money(p)})`; };
 
   /* ===== UTIL ===== */
   const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const num =v=>(v==null||+v===0||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
   const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+
   function iso(d){return d.toISOString().slice(0,10);}
   function addDaysISO(isoStr,n){const d=new Date(isoStr+'T00:00:00'); d.setDate(d.getDate()+n); return iso(d);}
   function daysLen(de,ate){const d1=new Date(de+'T00:00:00'), d2=new Date(ate+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24))+1;}
@@ -285,7 +298,29 @@
   function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 17l-5-6h3V3h4v8h3l-5 6z"/></svg>';}
   function parseHour(val){ if(val==null) return NaN; const m=String(val).match(/\d{1,2}/); const h=m?+m[0]:NaN; return (h>=0&&h<=23)?h:NaN; }
   function inferTurno(h){ if(!isFinite(h)) return 'Dia'; if(h<=5) return 'Madrugada'; if(h<=11) return 'Manhã'; if(h<=17) return 'Tarde'; return 'Noite'; }
-  function parseBR(v){ if(v==null) return 0; if(typeof v==='number' && isFinite(v)) return v;
+
+  // forçar dia no formato YYYY-MM-DD
+  function dayOnly(v){
+    if(v==null) return '';
+    if(v instanceof Date) return iso(v);
+    const s = String(v);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+    // tenta extrair AAAA-MM-DD no meio da string
+    const m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
+  }
+  // cálculo de DOW sem timezone
+  function dowFromISO(s){
+    const d = dayOnly(s);
+    if(!d) return null;
+    const [Y,M,D]=d.split('-').map(Number);
+    const dt = new Date(Date.UTC(Y, M-1, D));
+    return dt.getUTCDay(); // 0..6
+  }
+
+  function parseBR(v){
+    if(v==null) return 0;
+    if(typeof v==='number' && isFinite(v)) return v;
     let s=String(v).trim(); if(!s) return 0; s=s.replace(/[^\d,.\-]/g,'');
     const lastC=s.lastIndexOf(','), lastD=s.lastIndexOf('.');
     if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
@@ -295,8 +330,7 @@
     const s=String(v??'').trim().toLowerCase();
     if(['sim','s','true','1','y','yes'].includes(s)) return 'Sim';
     if(['nao','não','n','false','0','no'].includes(s)) return 'Não';
-    // valores diferentes tratamos como "Não" por padrão
-    return s==='sim' ? 'Sim' : 'Não';
+    return 'Não';
   }
 
   /* ===== MULTISELECT ===== */
@@ -387,6 +421,8 @@
 
   /* ===== KPIs ===== */
   function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
+  function safeDiv(a,b){ return (b && isFinite(a) && isFinite(b)) ? (a/b) : 0; }
+
   async function updateKPIs(de, ate, dePrev, atePrev){
     const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
     const nameNow=rpcName(pNow),     namePrev=rpcName(pPrev);
@@ -405,16 +441,15 @@
     const CN=agg(cNow.data||[]), CP=agg(cPrev.data||[]);
 
     const len=daysLen(de,ate);
-    const tktN = N.ped>0 ? (N.fat/N.ped) : 0;
-    const tktP = P.ped>0 ? (P.fat/P.ped) : 0;
-    const fatMedN = len>0 ? (N.fat/len) : 0;
-    const fatMedP = len>0 ? (P.fat/len) : 0;
-    const desPercN = N.fat>0 ? (N.des/N.fat) : 0;
-    const desPercP = P.fat>0 ? (P.des/P.fat) : 0;
-    const freMedN = N.ped>0 ? (N.fre/N.ped) : 0;
-    const freMedP = P.ped>0 ? (P.fre/P.ped) : 0;
-    const partCancN = N.ped>0 ? (CN.ped/N.ped) : 0;
-    const partCancP = P.ped>0 ? (CP.ped/P.ped) : 0;
+    const tktN = safeDiv(N.fat,N.ped), tktP = safeDiv(P.fat,P.ped);
+    const fatMedN = safeDiv(N.fat,len), fatMedP = safeDiv(P.fat,len);
+    const desPercN = safeDiv(N.des,N.fat), desPercP = safeDiv(P.des,P.fat);
+    const freMedN = safeDiv(N.fre,N.ped), freMedP = safeDiv(P.fre,P.ped);
+    const partCancN = safeDiv(CN.ped,N.ped), partCancP = safeDiv(CP.ped,P.ped);
+
+    // NOVO ROI: (Faturamento - Incentivos) / Incentivos
+    const roiN = safeDiv((N.fat - N.des), N.des);
+    const roiP = safeDiv((P.fat - P.des), P.des);
 
     $('k_ped').textContent=num(N.ped);
     $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
@@ -446,6 +481,11 @@
 
     $('k_canc_part').textContent=pctf(partCancN);
     $('p_canc_part').textContent=pctf(partCancP);
+
+    // Exibir ROI
+    $('k_roi').textContent=pctf(roiN);
+    $('p_roi').textContent=pctf(roiP);
+    deltaBadge($('d_roi'), roiN, roiP);
   }
   function deltaBadge(el,curr,prev){
     if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
@@ -463,15 +503,13 @@
     if (!cols.length) return null;
     const pick = (...cands)=> cands.find(c=> cols.includes(c)) || null;
 
-    const dateCol = pick('dia','data','dt','date','data_venda','data_pedido');
-    if(!dateCol) return null; // sem data não seguimos
+    const dateCol = pick('dia','data','dt','date','data_venda','data_pedido','datahora');
+    if(!dateCol) return null;
 
     const hourCol = pick('hora','hr','hour','horario','time_hour','hora_venda');
     const turnoCol= pick('turno','periodo','shift');
-
     const fatCol  = pick('fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido');
     const pedCol  = pick('pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido');
-
     const lojaCol = pick('loja','loja_nome','nome_loja','loja_fantasia');
     const unidCol = pick('unidade','unid','filial','cod_unidade','empresa');
     const canalCol= pick('canal','canal_venda','origem','meio','canal_vendas');
@@ -485,20 +523,17 @@
     const map = await discoverColumns(source);
     if(!map) return null;
 
-    // monte SELECT apenas com colunas existentes
     const sel = [map.dateCol,map.hourCol,map.turnoCol,map.fatCol,map.pedCol,map.lojaCol,map.unidCol,map.canalCol,map.pagCol,map.cancCol]
       .filter(Boolean).join(',');
 
     let q = supa.from(source).select(sel).gte(map.dateCol, de).lte(map.dateCol, ate);
 
-    // aplique filtros somente quando a coluna existir
     const unids = ms.unids.get();  if(unids.length && map.unidCol)  q = q.in(map.unidCol, unids);
     const lojas = ms.lojas.get();  if(lojas.length && map.lojaCol)  q = q.in(map.lojaCol, lojas);
     const turnos= ms.turnos.get(); if(turnos.length && map.turnoCol)q = q.in(map.turnoCol, turnos);
     const canais= ms.canais.get(); if(canais.length && map.canalCol)q = q.in(map.canalCol, canais);
     const pags  = ms.pags.get();   if(pags.length && map.pagCol)    q = q.in(map.pagCol, pags);
 
-    // NÃO filtramos cancelado no SQL para evitar mismatch (bool/0-1 vs 'Sim/Não')
     q = q.limit(200000);
 
     const r = await q;
@@ -513,8 +548,16 @@
         return normCancel(x[map.cancCol]) === needCancel;
       })
       .map(x=>{
-        const dia = String(x[map.dateCol]);
-        const h   = map.hourCol!=null ? parseHour(x[map.hourCol]) : NaN;
+        // *** CRÍTICO: normalizar a data para YYYY-MM-DD ***
+        const dia = dayOnly(x[map.dateCol]);
+        // tentar hora de forma segura
+        let h = NaN;
+        if (map.hourCol) h = parseHour(x[map.hourCol]);
+        if (!isFinite(h)) {
+          // alguns datasets trazem HH:MM:SS dentro da própria coluna de data/hora
+          const m = String(x[map.dateCol]).match(/(?:\s|T)(\d{1,2})[:h]/);
+          if (m) h = Math.max(0,Math.min(23, +m[1]));
+        }
         const fat = parseBR(map.fatCol ? x[map.fatCol] : 0);
         const ped = parseBR(map.pedCol ? x[map.pedCol] : 0);
         const turno = (map.turnoCol && x[map.turnoCol]) ? String(x[map.turnoCol]) : inferTurno(h);
@@ -530,7 +573,6 @@
       try{
         const res = await trySource(src, de, ate);
         if(res && res.rows.length){
-          // mostre de forma útil qual fonte foi usada e qual coluna de faturamento
           setStatus(`OK — gráficos: ${res.source} (linhas ${res.rows.length}, métrica: ${res.map.fatCol||'—'})`,'ok');
           return res.rows;
         }
@@ -546,25 +588,47 @@
 
   function groupDOW(rows, metric='fat', mode='total'){
     const sums=Array(7).fill(0), days=Array.from({length:7},()=>new Set());
-    for(const r of rows){ if(!r.dia) continue; const dow=new Date(r.dia+'T00:00:00').getDay(); const v=+r[metric]||0; sums[dow]+=v; days[dow].add(r.dia); }
+    for(const r of rows){
+      const dow = dowFromISO(r.dia);
+      if(dow==null) continue;
+      const v=+r[metric]||0;
+      sums[dow]+=v; days[dow].add(r.dia);
+    }
     return mode==='media' ? sums.map((v,i)=>days[i].size? v/days[i].size:0) : sums;
   }
   function groupMonth(rows, metric='fat', mode='total'){
     const sums=new Map(), days=new Map();
-    for(const r of rows){ if(!r.dia) continue; const ym=r.dia.slice(0,7); const v=+r[metric]||0; sums.set(ym,(sums.get(ym)||0)+v); if(!days.has(ym)) days.set(ym,new Set()); days.get(ym).add(r.dia); }
+    for(const r of rows){
+      const d = dayOnly(r.dia); if(!d) continue;
+      const ym=d.slice(0,7);
+      const v=+r[metric]||0;
+      sums.set(ym,(sums.get(ym)||0)+v);
+      if(!days.has(ym)) days.set(ym,new Set());
+      days.get(ym).add(d);
+    }
     const labels=[...sums.keys()].sort();
     const vals=labels.map(k=> mode==='media' ? (sums.get(k)/(days.get(k)||new Set()).size||1) : sums.get(k));
     return {labels:labels.map(monthLabel), vals};
   }
   function groupHour(rows, metric='fat', mode='total'){
     const sums=Array(24).fill(0), days=Array.from({length:24},()=>new Set());
-    for(const r of rows){ const h=isFinite(r.hora)?r.hora:NaN; if(!isFinite(h)) continue; const v=+r[metric]||0; sums[h]+=v; days[h].add(r.dia); }
+    for(const r of rows){
+      const h=isFinite(r.hora)?r.hora:NaN; if(!isFinite(h)) continue;
+      const v=+r[metric]||0;
+      sums[h]+=v; days[h].add(dayOnly(r.dia));
+    }
     return mode==='media' ? sums.map((v,i)=>days[i].size? v/days[i].size:0) : sums;
   }
   const TURNO_ORDER=['Manhã','Tarde','Noite','Madrugada','Dia'];
   function groupTurno(rows, metric='fat', mode='total'){
     const sums=new Map(TURNO_ORDER.map(t=>[t,0])), days=new Map(TURNO_ORDER.map(t=>[t,new Set()]));
-    for(const r of rows){ const t=r.turno || inferTurno(r.hora); const key=TURNO_ORDER.includes(t)?t:'Dia'; const v=+r[metric]||0; sums.set(key,(sums.get(key)||0)+v); if(r.dia) days.get(key).add(r.dia); }
+    for(const r of rows){
+      const t=r.turno || inferTurno(r.hora);
+      const key=TURNO_ORDER.includes(t)?t:'Dia';
+      const v=+r[metric]||0;
+      sums.set(key,(sums.get(key)||0)+v);
+      const d = dayOnly(r.dia); if(d) days.get(key).add(d);
+    }
     const labels=TURNO_ORDER.filter(t=> (sums.get(t)||0)>0 || (days.get(t)||new Set()).size>0);
     const vals=labels.map(k=> mode==='media'? ((days.get(k)||new Set()).size? (sums.get(k)/(days.get(k).size)):0) : (sums.get(k)||0));
     return {labels, vals};
@@ -588,6 +652,7 @@
         {label:'Anterior', data:prevArr, backgroundColor:'rgba(2,132,199,0.6)'}
       ]},
       options:{
+        indexAxis:'x',
         responsive:true, maintainAspectRatio:false, animation:false, parsing:false,
         scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:formatCurrencyTick}}},
         plugins:{ legend:{position:'top'}, tooltip:{mode:'index',intersect:false,callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${money(ctx.parsed.y||0)}`}}}
@@ -610,6 +675,7 @@
   /* ===== Cache de linhas para gráficos ===== */
   let chartCacheNow=[], chartCachePrev=[];
   function updateChartsFromCache(only){
+    setDiag(chartCacheNow, chartCachePrev); // auto-teste visível
     if(!only || only==='dow'){
       const now=groupDOW(chartCacheNow,'fat',chartMode.dow);
       const prev=groupDOW(chartCachePrev,'fat',chartMode.dow);
@@ -650,7 +716,7 @@
 
       setStatus('Consultando…');
 
-      // KPIs e Linhas para gráficos em paralelo (gráficos usam discovery de colunas e fontes)
+      // KPIs e Linhas para gráficos em paralelo
       const kpiPromise = updateKPIs(de,ate,dePrev,atePrev);
       const rowsPromise = Promise.all([fetchRows(de,ate), fetchRows(dePrev,atePrev)]);
 
