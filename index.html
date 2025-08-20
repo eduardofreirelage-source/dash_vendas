@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.13 — lojas por período + alfabético)</title>
+  <title>DASHBOARD — CFO (v2.12.14 — fix lojas + meses alinhados + esconder zeros)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -166,7 +166,7 @@
       </div>
     </div>
 
-    <!-- KPIs (mantidos) -->
+    <!-- KPIs -->
     <div class="krow">
       <div class="kpi"><span class="bar"></span>
         <h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4>
@@ -289,13 +289,14 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 
   <script>
-  /* ============ CONFIG ============ */
+  /* ===== CONFIG ===== */
   const DEST_TABLE    = 'vendas_canon';
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
+  const HIDE_ZERO_BINS = true; // oculta bins em que agora e anterior são zero
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  /* ============ HELPERS ============ */
+  /* ===== HELPERS ===== */
   const $ = id => document.getElementById(id);
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
   const setDiag=(msg)=>{ $('diag').textContent = msg || ''; };
@@ -322,7 +323,7 @@
     return 'Não';
   }
 
-  // ======== Normalização canônica (hífens, espaços, acentos + burguer→burger) ========
+  // normalização de nomes
   const HYPHENS = /[\u2010-\u2015\u2212\u2043\u2053\uFE58\uFE63\uFF0D]/g;
   const APOSTR  = /[\u2018\u2019\u201B\u2032]/g;
   function cleanSpaces(s){
@@ -331,19 +332,20 @@
       .replace(/\s+/g,' ')
       .trim();
   }
+  function displayNormalize(s){
+    return cleanSpaces(String(s||'').normalize('NFKC').replace(HYPHENS,'-'));
+  }
   function canonText(s){
     let t = String(s||'').normalize('NFKC');
     t = t.replace(HYPHENS,'-').replace(APOSTR,"'");
     t = cleanSpaces(t);
     t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     t = t.toLowerCase();
-    t = t.replace(/\bburguer\b/g,'burger');  // <— unifica grafia
+    t = t.replace(/\bburguer\b/g,'burger');  // unifica grafia
     t = t.replace(/\s*-\s*/g,'-').replace(/-+/g,'-');
     return t;
   }
-  function displayNormalize(s){
-    return cleanSpaces(String(s||'').normalize('NFKC').replace(HYPHENS,'-'));
-  }
+
   function parseBR(v){
     if(v==null) return 0;
     if(typeof v==='number' && isFinite(v)) return v;
@@ -356,8 +358,18 @@
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
   const canonMaps = { unids:{}, lojas:{}, canais:{}, pags:{}, turnos:{} };
+  function mapCollect(obj, key, raw){
+    const disp = displayNormalize(raw);
+    const canon = canonText(raw);
+    if(!obj[key][canon]) obj[key][canon] = { originals:new Set(), display:disp, count:0 };
+    obj[key][canon].originals.add(raw);
+    obj[key][canon].count++;
+    if(disp && obj[key][canon].display!==disp){
+      if(disp.length > obj[key][canon].display.length) obj[key][canon].display = disp;
+    }
+  }
 
-  /* ============ MULTISELECT ============ */
+  /* ===== MULTISELECT ===== */
   function MultiSelect(rootId, placeholder){
     const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
     let options=[], selected=new Set(), filtered=[];
@@ -387,7 +399,7 @@
     };
   }
 
-  /* ============ ESTADO / PERÍODO ============ */
+  /* ===== ESTADO / PERÍODO ===== */
   let firstDay='', lastDay='';
   const chips=[...document.querySelectorAll('.chip')];
   const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
@@ -420,7 +432,7 @@
     applyAll();
   }));
 
-  /* ============ PARAMS ============ */
+  /* ===== PARAMS / RPC ===== */
   function expandSelected(kind, arr){
     const map = canonMaps[kind]||{};
     const out = [];
@@ -456,7 +468,7 @@
   function prepareArgs(name, params){ if(name==='kpi_vendas'){ const {p_unids, ...rest}=params; return rest; } return params; }
   function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
 
-  /* ============ KPIs ============ */
+  /* ===== KPIs ===== */
   async function kpiCancelFallback(de,ate,dePrev,atePrev){
     const rowsNow = await fetchRowsLocal(de,ate,'Sim');
     const rowsPrev= await fetchRowsLocal(dePrev,atePrev,'Sim');
@@ -517,7 +529,7 @@
     deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
   }
 
-  /* ============ Período anterior exato ============ */
+  /* ===== Período anterior exato ===== */
   function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
   function isFullYear(d1,d2){ return d1.getMonth()===0 && d1.getDate()===1 && d2.getMonth()===11 && d2.getDate()===31 && d1.getFullYear()===d2.getFullYear(); }
   function isFullMonthsAligned(d1,d2){ return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth()); }
@@ -534,7 +546,7 @@
     return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
   }
 
-  /* ============ GRÁFICOS via RPC ============ */
+  /* ===== GRÁFICOS (via RPC) ===== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -577,13 +589,30 @@
     turno: 'chart_vendas_turno_v1',
   };
 
+  // util: remove bins onde NOW e PREV são zero
+  function filterZeroBins(labels, nowArr, prevArr){
+    if(!HIDE_ZERO_BINS) return {labels, nowArr, prevArr};
+    const L=[], N=[], P=[];
+    for(let i=0;i<labels.length;i++){
+      const nv=+nowArr[i]||0, pv=+prevArr[i]||0;
+      if(nv===0 && pv===0) continue;
+      L.push(labels[i]); N.push(nv); P.push(pv);
+    }
+    return {labels:L, nowArr:N, prevArr:P};
+  }
+
+  function ymShiftYear(ym, delta){
+    const [y,m]=ym.split('-').map(Number);
+    return `${String(y+delta)}-${String(m).padStart(2,'0')}`;
+  }
+  function ymToLabel(ym){ const [y,m]=ym.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
+
   async function fetchChartRPC(kind, de, ate){
     const params = buildParams(de, ate);
     const { data, error } = await supa.rpc(RPC_FN[kind], params);
     if(error){ console.warn('[chart rpc]', kind, error.message); throw error; }
     return data||[];
   }
-  function ymToLabel(ym){ const [y,m]=ym.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
 
   async function updateChartsServer(only){
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
@@ -599,44 +628,60 @@
         return {k, now, prev};
       }));
 
-      const pD = packs.find(p=>p.k==='dow');
+      // DOW
       if(!only || only==='dow'){
+        const pD = packs.find(p=>p.k==='dow');
         const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
         const nArr = Array(7).fill(0), pArr = Array(7).fill(0), nMed=Array(7).fill(0), pMed=Array(7).fill(0);
         (pD?.now||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; });
         (pD?.prev||[]).forEach(r=>{ pArr[r.dow]=+r.total||0; pMed[r.dow]=+r.media||0; });
-        ensureChart('ch_dow', labels, (chartMode.dow==='media'?nMed:nArr), (chartMode.dow==='media'?pMed:pArr));
+        const nowS = (chartMode.dow==='media'?nMed:nArr), prevS = (chartMode.dow==='media'?pMed:pArr);
+        const f = filterZeroBins(labels, nowS, prevS);
+        ensureChart('ch_dow', f.labels, f.nowArr, f.prevArr);
       }
 
-      const pM = packs.find(p=>p.k==='month');
+      // MONTH — alinha anterior por mês do período atual - 1 ano
       if(!only || only==='month'){
+        const pM = packs.find(p=>p.k==='month');
         const n = pM?.now||[], p = pM?.prev||[];
-        const all = [...new Set([...n.map(r=>r.ym), ...p.map(r=>r.ym)])].sort();
-        const mapN=new Map(n.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
-        const mapP=new Map(p.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
-        ensureChart('ch_month', all.map(ymToLabel), all.map(x=>mapN.get(x)||0), all.map(x=>mapP.get(x)||0));
+        const nowMap = new Map(n.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
+        const prevMap= new Map(p.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
+
+        const nowLabels = [...nowMap.keys()].sort();
+        const prevForNow = nowLabels.map(ym=> prevMap.get(ymShiftYear(ym,-1)) || 0);
+        const nowVals    = nowLabels.map(ym=> nowMap.get(ym) || 0);
+
+        const shownLabels = nowLabels.map(ymToLabel);
+        const f = filterZeroBins(shownLabels, nowVals, prevForNow);
+        ensureChart('ch_month', f.labels, f.nowArr, f.prevArr);
       }
 
-      const pH = packs.find(p=>p.k==='hour');
+      // HOUR
       if(!only || only==='hour'){
+        const pH = packs.find(p=>p.k==='hour');
         const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
         const nArr = Array(24).fill(0), pArr = Array(24).fill(0), nMed=Array(24).fill(0), pMed=Array(24).fill(0);
         (pH?.now||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; });
         (pH?.prev||[]).forEach(r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; });
-        ensureChart('ch_hour', labels, (chartMode.hour==='media'?nMed:nArr), (chartMode.hour==='media'?pMed:pArr));
+        const nowS = (chartMode.hour==='media'?nMed:nArr), prevS = (chartMode.hour==='media'?pMed:pArr);
+        const f = filterZeroBins(labels, nowS, prevS);
+        ensureChart('ch_hour', f.labels, f.nowArr, f.prevArr);
       }
 
-      const pT = packs.find(p=>p.k==='turno');
+      // TURNO
       if(!only || only==='turno'){
+        const pT = packs.find(p=>p.k==='turno');
         const order=['Manhã','Tarde','Noite','Madrugada','Dia'];
         const n = new Map((pT?.now||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
         const p = new Map((pT?.prev||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
         const labels = order.filter(x=> n.has(x) || p.has(x));
-        ensureChart('ch_turno', labels, labels.map(l=>n.get(l)||0), labels.map(l=>p.get(l)||0));
+        const nowS = labels.map(l=>n.get(l)||0), prevS = labels.map(l=>p.get(l)||0);
+        const f = filterZeroBins(labels, nowS, prevS);
+        ensureChart('ch_turno', f.labels, f.nowArr, f.prevArr);
       }
 
       const sum = a => (a||[]).reduce((acc,r)=> acc + (+r.total||0), 0);
-      setDiag(`(RPC charts ✓ | soma DOW atual/ant: ${money(sum(packs.find(p=>p.k==='dow')?.now))} / ${money(sum(packs.find(p=>p.k==='dow')?.prev))})`);
+      setDiag(`(RPC charts ✓ | soma atual/ant DOW: ${money(sum(packs.find(p=>p.k==='dow')?.now))} / ${money(sum(packs.find(p=>p.k==='dow')?.prev))})`);
       setStatus('OK — gráficos via RPC','ok');
     }catch(e){
       console.error(e);
@@ -645,7 +690,7 @@
     }
   }
 
-  /* ============ Fallback local p/ contagem cancelados ============ */
+  /* ===== Descoberta de colunas (fallback/local) ===== */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -670,6 +715,7 @@
 
     return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, unidKeys, lojaKeys, canalKeys, pagKeys, cancKeys};
   }
+
   async function trySourceLocal(source, de, ate, onlyCancel){
     const map = await discoverColumns(source);
     if(!map) return null;
@@ -687,6 +733,7 @@
     });
     return rows;
   }
+
   async function fetchRowsLocal(de, ate, onlyCancelValue){
     const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
     const onlyCancel = (onlyCancelValue==='Sim') ? 'Sim' : null;
@@ -699,84 +746,56 @@
     return [];
   }
 
-  /* ============ OPÇÕES DINÂMICAS POR PERÍODO (somente período + cancelado; ordenação alfabética) ============ */
-  async function detectSourceForOptions(de,ate){
-    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
-    for(const src of sources){
-      const map = await discoverColumns(src);
-      if(map && map.dateKeys.length && (map.lojaKeys.length || map.unidKeys.length || map.canalKeys.length || map.pagKeys.length)) {
-        return { src, map };
-      }
-    }
-    return null;
-  }
-  function mapCollect(obj, key, raw){
-    const disp = displayNormalize(raw);
-    const canon = canonText(raw);
-    if(!obj[key][canon]) obj[key][canon] = { originals:new Set(), display:disp, count:0 };
-    obj[key][canon].originals.add(raw);
-    obj[key][canon].count++;
-    if(disp && obj[key][canon].display!==disp){
-      if(disp.length > obj[key][canon].display.length) obj[key][canon].display = disp;
-    }
-  }
+  /* ===== OPCÕES DINÂMICAS POR PERÍODO — agregando TODAS as fontes ===== */
   async function refreshOptionsByPeriod(de,ate){
-    const found = await detectSourceForOptions(de,ate);
-    if(!found) return;
-    const {src, map} = found;
-
-    const prev = {
+    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
+    const prevSel = {
       unids: ms.unids.get(), lojas: ms.lojas.get(), canais: ms.canais.get(),
       turnos: ms.turnos.get(), pags: ms.pags.get()
     };
-
     canonMaps.unids = {}; canonMaps.lojas = {}; canonMaps.canais = {}; canonMaps.pags = {}; canonMaps.turnos = {};
-
-    const cols = uniq([
-      ...map.dateKeys,
-      ...(map.unidKeys||[]),
-      ...(map.lojaKeys||[]),
-      ...(map.canalKeys||[]),
-      ...(map.pagKeys||[]),
-      ...(map.turnoKeys||[]),
-      ...(map.cancKeys||[])
-    ]).join(',');
-
-    // Apenas período (NÃO filtra outros campos). Cancelado será filtrado no cliente (normalizado).
-    let q = supa.from(src).select(cols).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(200000);
-    const r = await q;
-    if(r.error){ console.warn('options by period error', r.error.message); return; }
-    let rows = r.data||[];
 
     const cancSel = ms.cancel.get();
     const needCancel = (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não')) ? cancSel[0] : null;
-    if(needCancel && map.cancKeys.length){
-      rows = rows.filter(x => normCancel(x[map.cancKeys[0]]) === needCancel);
+
+    for(const src of sources){
+      const map = await discoverColumns(src);
+      if(!map) continue;
+      const cols = uniq([
+        ...map.dateKeys,
+        ...(map.unidKeys||[]), ...(map.lojaKeys||[]),
+        ...(map.canalKeys||[]), ...(map.pagKeys||[]),
+        ...(map.turnoKeys||[]), ...(map.cancKeys||[])
+      ]).join(',');
+
+      let r = await supa.from(src).select(cols).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(100000);
+      if(r.error) continue;
+      let rows = r.data||[];
+
+      if(needCancel && map.cancKeys.length){
+        rows = rows.filter(x => normCancel(x[map.cancKeys[0]]) === needCancel);
+      }
+
+      rows.forEach(x=>{
+        if(map.unidKeys.length && x[map.unidKeys[0]]!=null)  mapCollect(canonMaps,'unids',  x[map.unidKeys[0]]);
+        if(map.lojaKeys.length && x[map.lojaKeys[0]]!=null)  mapCollect(canonMaps,'lojas',  x[map.lojaKeys[0]]);
+        if(map.canalKeys.length && x[map.canalKeys[0]]!=null)mapCollect(canonMaps,'canais', x[map.canalKeys[0]]);
+        if(map.pagKeys.length && x[map.pagKeys[0]]!=null)    mapCollect(canonMaps,'pags',   x[map.pagKeys[0]]);
+        if(map.turnoKeys.length && x[map.turnoKeys[0]]!=null)mapCollect(canonMaps,'turnos', x[map.turnoKeys[0]]);
+      });
     }
 
-    rows.forEach(x=>{
-      if(map.unidKeys.length && x[map.unidKeys[0]]!=null)  mapCollect(canonMaps,'unids',  x[map.unidKeys[0]]);
-      if(map.lojaKeys.length && x[map.lojaKeys[0]]!=null)  mapCollect(canonMaps,'lojas',  x[map.lojaKeys[0]]);
-      if(map.canalKeys.length && x[map.canalKeys[0]]!=null)mapCollect(canonMaps,'canais', x[map.canalKeys[0]]);
-      if(map.pagKeys.length && x[map.pagKeys[0]]!=null)    mapCollect(canonMaps,'pags',   x[map.pagKeys[0]]);
-      if(map.turnoKeys.length && x[map.turnoKeys[0]]!=null)mapCollect(canonMaps,'turnos', x[map.turnoKeys[0]]);
-    });
+    function alpha(arr){ return (arr||[]).sort((a,b)=> a.localeCompare(b,'pt-BR',{sensitivity:'base'})); }
+    const toDisp = obj => alpha(Object.values(obj).map(v=>v.display));
 
-    function sortedDisplaysAlpha(obj){
-      // Ordenação puramente alfabética (pt-BR), sem priorizar frequência
-      return Object.values(obj)
-        .map(v=>v.display)
-        .sort((a,b)=> a.localeCompare(b,'pt-BR',{sensitivity:'base'}));
-    }
-
-    ms.unids.setOptions( sortedDisplaysAlpha(canonMaps.unids) );   ms.unids.set(prev.unids);
-    ms.lojas.setOptions( sortedDisplaysAlpha(canonMaps.lojas) );   ms.lojas.set(prev.lojas);
-    ms.canais.setOptions( sortedDisplaysAlpha(canonMaps.canais) ); ms.canais.set(prev.canais);
-    ms.pags.setOptions(   sortedDisplaysAlpha(canonMaps.pags) );   ms.pags.set(prev.pags);
-    ms.turnos.setOptions( sortedDisplaysAlpha(canonMaps.turnos) ); ms.turnos.set(prev.turnos);
+    ms.unids.setOptions( toDisp(canonMaps.unids) );   ms.unids.set(prevSel.unids);
+    ms.lojas.setOptions( toDisp(canonMaps.lojas) );   ms.lojas.set(prevSel.lojas);
+    ms.canais.setOptions( toDisp(canonMaps.canais) ); ms.canais.set(prevSel.canais);
+    ms.pags.setOptions(   toDisp(canonMaps.pags) );   ms.pags.set(prevSel.pags);
+    ms.turnos.setOptions( toDisp(canonMaps.turnos) ); ms.turnos.set(prevSel.turnos);
   }
 
-  /* ============ Excel → DB (sempre grava) ============ */
+  /* ===== Upload Excel → DB (sempre grava em vendas_canon) ===== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -895,7 +914,7 @@
     }
   });
 
-  /* ============ LOOP ============ */
+  /* ===== LOOP ===== */
   async function applyAll(){
     try{
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
@@ -903,7 +922,9 @@
 
       setStatus('Consultando…');
 
-      await refreshOptionsByPeriod(de,ate);  // período + cancelado (client-side), com ordenação alfabética
+      // opções baseadas no período (agregando todas as fontes)
+      await refreshOptionsByPeriod(de,ate);
+
       let kpiOk=true;
       await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
       await updateChartsServer();
