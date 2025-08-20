@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.12 — lojas por período + cancelado)</title>
+  <title>DASHBOARD — CFO (v2.12.13 — lojas por período + alfabético)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -166,7 +166,7 @@
       </div>
     </div>
 
-    <!-- KPIs -->
+    <!-- KPIs (mantidos) -->
     <div class="krow">
       <div class="kpi"><span class="bar"></span>
         <h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4>
@@ -322,7 +322,7 @@
     return 'Não';
   }
 
-  // ======== Normalização canônica (hífens, espaços, acentos) ========
+  // ======== Normalização canônica (hífens, espaços, acentos + burguer→burger) ========
   const HYPHENS = /[\u2010-\u2015\u2212\u2043\u2053\uFE58\uFE63\uFF0D]/g;
   const APOSTR  = /[\u2018\u2019\u201B\u2032]/g;
   function cleanSpaces(s){
@@ -337,6 +337,7 @@
     t = cleanSpaces(t);
     t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     t = t.toLowerCase();
+    t = t.replace(/\bburguer\b/g,'burger');  // <— unifica grafia
     t = t.replace(/\s*-\s*/g,'-').replace(/-+/g,'-');
     return t;
   }
@@ -674,12 +675,14 @@
     if(!map) return null;
     const sel = uniq([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys]).join(',');
     let q = supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
-    if(map.cancKeys.length && onlyCancel==='Sim'){ q = q.eq(map.cancKeys[0],'Sim'); }
     const r = await q;
     if(r.error) return null;
-    const rows = (r.data||[]).map(x=>{
+    const rows = (r.data||[]).filter(x=>{
+      if(!onlyCancel || !map.cancKeys.length) return true;
+      return normCancel(x[map.cancKeys[0]])===onlyCancel;
+    }).map(x=>{
       const fat = (map.fatKeys.length)? parseBR(x[map.fatKeys[0]]) : 0;
-      const ped = (map.pedKeys.length)? parseBR(x[map.pedKeys[0]]) : 1;
+      const ped = (map.pedKeys.length)? parseBR(x[map.pedKeys[0]] ?? 1) : 1;
       return { fat, pedidos: ped };
     });
     return rows;
@@ -696,7 +699,7 @@
     return [];
   }
 
-  /* ============ OPÇÕES DINÂMICAS POR PERÍODO (SOMENTE período + cancelado) ============ */
+  /* ============ OPÇÕES DINÂMICAS POR PERÍODO (somente período + cancelado; ordenação alfabética) ============ */
   async function detectSourceForOptions(de,ate){
     const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
     for(const src of sources){
@@ -739,17 +742,17 @@
       ...(map.cancKeys||[])
     ]).join(',');
 
-    // <<< REGRA: só período + cancelado >>> (NÃO aplica demais filtros)
+    // Apenas período (NÃO filtra outros campos). Cancelado será filtrado no cliente (normalizado).
     let q = supa.from(src).select(cols).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(200000);
-
-    const cancSel = ms.cancel.get();
-    if (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não') && map.cancKeys.length){
-      q = q.eq(map.cancKeys[0], cancSel[0]);
-    }
-
     const r = await q;
     if(r.error){ console.warn('options by period error', r.error.message); return; }
-    const rows = r.data||[];
+    let rows = r.data||[];
+
+    const cancSel = ms.cancel.get();
+    const needCancel = (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não')) ? cancSel[0] : null;
+    if(needCancel && map.cancKeys.length){
+      rows = rows.filter(x => normCancel(x[map.cancKeys[0]]) === needCancel);
+    }
 
     rows.forEach(x=>{
       if(map.unidKeys.length && x[map.unidKeys[0]]!=null)  mapCollect(canonMaps,'unids',  x[map.unidKeys[0]]);
@@ -759,15 +762,18 @@
       if(map.turnoKeys.length && x[map.turnoKeys[0]]!=null)mapCollect(canonMaps,'turnos', x[map.turnoKeys[0]]);
     });
 
-    function sortedDisplays(obj){
-      return Object.values(obj).sort((a,b)=> b.count - a.count || a.display.localeCompare(b.display,'pt-BR')).map(v=>v.display);
+    function sortedDisplaysAlpha(obj){
+      // Ordenação puramente alfabética (pt-BR), sem priorizar frequência
+      return Object.values(obj)
+        .map(v=>v.display)
+        .sort((a,b)=> a.localeCompare(b,'pt-BR',{sensitivity:'base'}));
     }
 
-    ms.unids.setOptions( sortedDisplays(canonMaps.unids) );  ms.unids.set(prev.unids);
-    ms.lojas.setOptions( sortedDisplays(canonMaps.lojas) );  ms.lojas.set(prev.lojas);
-    ms.canais.setOptions( sortedDisplays(canonMaps.canais) );ms.canais.set(prev.canais);
-    ms.pags.setOptions(   sortedDisplays(canonMaps.pags) );  ms.pags.set(prev.pags);
-    ms.turnos.setOptions( sortedDisplays(canonMaps.turnos) );ms.turnos.set(prev.turnos);
+    ms.unids.setOptions( sortedDisplaysAlpha(canonMaps.unids) );   ms.unids.set(prev.unids);
+    ms.lojas.setOptions( sortedDisplaysAlpha(canonMaps.lojas) );   ms.lojas.set(prev.lojas);
+    ms.canais.setOptions( sortedDisplaysAlpha(canonMaps.canais) ); ms.canais.set(prev.canais);
+    ms.pags.setOptions(   sortedDisplaysAlpha(canonMaps.pags) );   ms.pags.set(prev.pags);
+    ms.turnos.setOptions( sortedDisplaysAlpha(canonMaps.turnos) ); ms.turnos.set(prev.turnos);
   }
 
   /* ============ Excel → DB (sempre grava) ============ */
@@ -897,7 +903,7 @@
 
       setStatus('Consultando…');
 
-      await refreshOptionsByPeriod(de,ate);  // agora: período + cancelado (sem apertar por outros filtros)
+      await refreshOptionsByPeriod(de,ate);  // período + cancelado (client-side), com ordenação alfabética
       let kpiOk=true;
       await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
       await updateChartsServer();
@@ -924,7 +930,7 @@
         supa.from('vw_vendas_turnos').select('turno').order('turno'),
         supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
       ]);
-      const setOpts=(res,field,msel)=> msel.setOptions((res.data||[]).map(r=>displayNormalize(r[field])));
+      const setOpts=(res,field,msel)=> msel.setOptions((res.data||[]).map(r=>displayNormalize(r[field])).sort((a,b)=>a.localeCompare(b,'pt-BR',{sensitivity:'base'})));
       if(!unids.error) setOpts(unids,'unidade',ms.unids);
       if(!lojas.error) setOpts(lojas,'loja',ms.lojas);
       if(!canais.error) setOpts(canais,'canal',ms.canais);
