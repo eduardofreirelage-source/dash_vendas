@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>DASHBOARD — CFO (v2.9.10 Light)</title>
+<title>DASHBOARD — CFO (v2.9.11 Light)</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
 <style>
 :root{
@@ -299,6 +299,25 @@ function daysLen(de,ate){const d1=new Date(de+'T00:00:00'), d2=new Date(ate+'T00
 function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l5 6h-3v8H8V9H5l5-6z"/></svg>';}
 function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 17l-5-6h3V3h4v8h3l-5 6z"/></svg>';}
 
+/* parseBR — números em formato PT-BR (ex.: "1.234,56", "R$ 9.876,00") */
+function parseBR(v){
+  if (v==null) return 0;
+  if (typeof v === 'number' && isFinite(v)) return v;
+  let s = String(v).trim();
+  if (s === '') return 0;
+  s = s.replace(/[^\d,.\-]/g,'');           // remove R$, espaços, etc
+  const lastComma = s.lastIndexOf(',');
+  const lastDot   = s.lastIndexOf('.');
+  if (lastDot > lastComma) {                // "1,234.56"  -> US
+    s = s.replace(/,/g,'');
+  } else {                                  // "1.234,56"  -> BR
+    s = s.replace(/\./g,'');
+    s = s.replace(',', '.');
+  }
+  const n = Number(s);
+  return isFinite(n) ? n : 0;
+}
+
 function parseHour(val){
   if(val==null) return NaN;
   const m=String(val).match(/\d{1,2}/);
@@ -312,7 +331,6 @@ function inferTurno(h){
   if(h<=17) return 'Tarde';
   return 'Noite';
 }
-
 /* Date robusto: aceita 'YYYY-MM-DD', 'YYYY-MM-DDTHH', 'DD/MM/YYYY' */
 function toDate(s){
   if (s instanceof Date) return s;
@@ -464,7 +482,7 @@ async function applyAll(){
     const partCancN = N.ped>0 ? (CN.ped/N.ped) : 0;
     const partCancP = P.ped>0 ? (CP.ped/P.ped) : 0;
 
-    // ROI % = ((fat / incentivos) - 1) * 100  (somente se incentivos > 0)
+    // ROI % = ((fat / incentivos) - 1) * 100 (se incentivos>0)
     const roiPercN = (N.des>0) ? ((N.fat / N.des - 1) * 100) : NaN;
     const roiPercP = (P.des>0) ? ((P.fat / P.des - 1) * 100) : NaN;
 
@@ -484,11 +502,8 @@ async function applyAll(){
     $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
     $('k_canc_part').textContent=pctf(partCancN*100); $('p_canc_part').textContent=pctf(partCancP*100);
 
-    // ROI KPI (texto apenas %)
-    if (isFinite(roiPercN)) $('k_roi').textContent = pctf(roiPercN);
-    else $('k_roi').textContent = '—';
-    if (isFinite(roiPercP)) $('p_roi').textContent = pctf(roiPercP);
-    else $('p_roi').textContent = '—';
+    if (isFinite(roiPercN)) $('k_roi').textContent = pctf(roiPercN); else $('k_roi').textContent = '—';
+    if (isFinite(roiPercP)) $('p_roi').textContent = pctf(roiPercP); else $('p_roi').textContent = '—';
     deltaBadge($('d_roi'), isFinite(roiPercN)?roiPercN:0, isFinite(roiPercP)?roiPercP:0);
 
     setStatus('OK','ok');
@@ -507,8 +522,7 @@ async function discoverColumns(source){
     const row = (r.data||[])[0] || {};
     const cols = Object.keys(row); if (!cols.length) return null;
     const pick = (...c)=> c.find(k=>cols.includes(k)) || null;
-    const dateCol = pick('dia','data','dt','date');
-    if(!dateCol) return null;
+    const dateCol = pick('dia','data','dt','date'); if(!dateCol) return null;
     const hourCol = pick('hora','hr','hour','horario','time_hour');
     const turnoCol = pick('turno','periodo','shift');
     const fatCol = pick('fat','faturamento','valor_total','valor','total','vlr_total','vl_total');
@@ -517,7 +531,7 @@ async function discoverColumns(source){
     const canalCol= pick('canal','canal_venda','origem');
     const pagCol  = pick('pagamento_base','tipo_pagamento','pagamento');
     const cancCol = pick('cancelado','canceled','is_cancel','cancel');
-    return { dateCol,hourCol,turnoCol,fatCol,pedCol,lojaCol,canalCol,pagCol,cancCol, cols };
+    return { dateCol,hourCol,turnoCol,fatCol,pedCol,lojaCol,canalCol,pagCol,cancCol };
   }catch(e){ return null; }
 }
 async function trySource(source, de, ate){
@@ -547,20 +561,17 @@ async function fetchVendas(de, ate){
     const data = rows
       .filter(x => !needCancel || !map.cancCol || normCancel(x[map.cancCol])===needCancel)
       .map(x=>{
-        const dRaw = x[map.dateCol];
-        const dObj = toDate(dRaw);
+        const dObj = toDate(x[map.dateCol]);
         const dIso = iso(dObj);
         let h = map.hourCol ? parseHour(x[map.hourCol]) : NaN;
         h = (isFinite(h)?h:0);
-        const fat = Number(x[map.fatCol] ?? 0) || 0;
-        const ped = Number(x[map.pedCol] ?? 0) || 0;
+        const fat = parseBR(map.fatCol ? x[map.fatCol] : 0);     // <<< FIX AQUI (parseBR)
+        const ped = parseBR(map.pedCol ? x[map.pedCol] : 0);     // <<< FIX AQUI (parseBR)
         const turno = map.turnoCol && x[map.turnoCol] ? String(x[map.turnoCol]) : inferTurno(h);
         return { dia:dIso, hora:h, turno, fat, pedidos: ped };
       });
 
-    // Comentário de diagnóstico leve (pode remover se quiser)
     console.log(`OK — gráficos: ${src} (linhas ${data.length})`);
-
     return data;
   }
   return [];
@@ -643,10 +654,8 @@ function ensureChart(canvasId, labels, nowArr, prevArr){
     data:{
       labels,
       datasets:[
-        // Sombra (Anterior) – aparece atrás e translúcida
         {label:'Anterior', data:prevArr, backgroundColor:'rgba(47,110,247,0.18)', borderWidth:0, order:0, borderRadius:6, barPercentage:0.9, categoryPercentage:0.8},
-        // Atual por cima
-        {label:'Atual', data:nowArr, backgroundColor:'rgba(47,110,247,0.85)', borderWidth:0, order:1, borderRadius:6, barPercentage:0.6, categoryPercentage:0.8}
+        {label:'Atual',    data:nowArr,  backgroundColor:'rgba(47,110,247,0.85)', borderWidth:0, order:1, borderRadius:6, barPercentage:0.6, categoryPercentage:0.8}
       ]
     },
     options:{
@@ -672,7 +681,6 @@ document.querySelectorAll('.seg').forEach(seg=>{
 });
 
 async function updateCharts(only){
-  // Precisamos dos períodos atual e anterior (já escolhidos em applyAll)
   const de=fDe.value||firstDay, ate=fAte.value||lastDay;
   const len=daysLen(de,ate);
   const atePrevISO=new Date(new Date(de+'T00:00:00').getTime()-24*60*60*1000);
@@ -692,7 +700,6 @@ async function updateCharts(only){
     const mode=chartMode.month;
     const gN=groupMonth(nowRows,'fat',mode);
     const gP=groupMonth(prevRows,'fat',mode);
-    // Alinhar por rawLabels (YYYY-MM) e mostrar rótulo amigável
     const allRaw=[...new Set([...(gN.rawLabels||[]),...(gP.rawLabels||[])])].sort();
     const mapN=new Map((gN.rawLabels||[]).map((r,i)=>[r,gN.vals[i]]));
     const mapP=new Map((gP.rawLabels||[]).map((r,i)=>[r,gP.vals[i]]));
