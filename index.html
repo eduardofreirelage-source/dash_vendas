@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.13.3 — opções por período + upload seguro)</title>
+  <title>DASHBOARD — CFO (v2.13.2 — null-safety + dedupe)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -14,6 +14,7 @@
     h1{margin:0;font-size:28px;letter-spacing:.2px}
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
     .btn.clear{gap:6px}
+
     .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px}
     .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap}
     .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
@@ -22,10 +23,11 @@
     .row{display:grid;gap:12px}
     .cols-3{grid-template-columns:repeat(3,1fr)}
     .cols-2{grid-template-columns:repeat(2,1fr)}
-    input[type="date"], .msel-btn{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+    input[type="date"], .msel-btn, .input{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
     .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
     .chip{padding:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:700}
     .chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
+
     .msel{position:relative}
     .msel-btn{cursor:pointer;text-align:left}
     .msel-btn:after{content:"▾";float:right;color:#475569}
@@ -34,6 +36,7 @@
     .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
     .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
     .msel-opt:hover{background:#f3f4f6}
+
     .krow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
     .kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .kpi .bar{position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:14px 0 0 14px;background:var(--bar)}
@@ -46,6 +49,7 @@
     .delta.up{color:var(--ok);border-color:#86efac}
     .delta.down{color:#ef4444;border-color:#fecaca}
     .delta.flat{color:#64748b}
+
     .chart-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
     .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
@@ -54,10 +58,19 @@
     .chart-box{height:280px}
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
     .diag{font-size:12px;color:#475569;margin-left:8px}
+
     .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .upload-info{margin-top:8px;font-size:12px;color:#475569}
-    @media (max-width:1024px){ .cols-3{grid-template-columns:repeat(2,1fr)} .cols-2{grid-template-columns:1fr} .krow{grid-template-columns:repeat(2,1fr)} }
-    @media (max-width:640px){ .cols-3{grid-template-columns:1fr} .krow{grid-template-columns:1fr} }
+
+    @media (max-width:1024px){
+      .cols-3{grid-template-columns:repeat(2,1fr)}
+      .cols-2{grid-template-columns:1fr}
+      .krow{grid-template-columns:repeat(2,1fr)}
+    }
+    @media (max-width:640px){
+      .cols-3{grid-template-columns:1fr}
+      .krow{grid-template-columns:1fr}
+    }
   </style>
 </head>
 <body>
@@ -70,6 +83,7 @@
       </div>
     </div>
 
+    <!-- Filtros de Data -->
     <div class="section">
       <div class="sec-head">
         <div class="sec-title">
@@ -79,20 +93,30 @@
         <button id="btnClear" class="btn clear">✖ Limpar filtros</button>
       </div>
       <div class="row cols-3">
-        <div><div class="muted" style="margin-bottom:6px;">Intervalo (início)</div><input type="date" id="fDe"></div>
-        <div><div class="muted" style="margin-bottom:6px;">Intervalo (fim)</div><input type="date" id="fAte"></div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Intervalo (início)</div>
+          <input type="date" id="fDe">
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Intervalo (fim)</div>
+          <input type="date" id="fAte">
+        </div>
         <div>
           <div class="muted" style="margin-bottom:6px;">Período rápido</div>
           <div class="chips">
-            <button class="chip" data-q="7">07</button><button class="chip" data-q="15">15</button>
-            <button class="chip active" data-q="30">30</button><button class="chip" data-q="60">60</button>
-            <button class="chip" data-q="90">90</button><button class="chip" data-q="120">120</button>
+            <button class="chip" data-q="7">07</button>
+            <button class="chip" data-q="15">15</button>
+            <button class="chip active" data-q="30">30</button>
+            <button class="chip" data-q="60">60</button>
+            <button class="chip" data-q="90">90</button>
+            <button class="chip" data-q="120">120</button>
           </div>
           <div id="periodoInfo" class="muted" style="margin-top:6px;font-size:12px;">—</div>
         </div>
       </div>
     </div>
 
+    <!-- Filtros -->
     <div class="section">
       <div class="sec-head">
         <div class="sec-title">
@@ -106,13 +130,28 @@
         </div>
       </div>
       <div class="row cols-3">
-        <div><div class="muted" style="margin-bottom:6px;">Unidade</div><div id="ms-unids" class="msel"><button class="msel-btn">Todas as unidades</button><div class="msel-panel"></div></div></div>
-        <div><div class="muted" style="margin-bottom:6px;">Nome da Loja</div><div id="ms-lojas" class="msel"><button class="msel-btn">Todas as lojas</button><div class="msel-panel"></div></div></div>
-        <div><div class="muted" style="margin-bottom:6px;">Turno da Venda</div><div id="ms-turnos" class="msel"><button class="msel-btn">Todos os turnos</button><div class="msel-panel"></div></div></div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Unidade</div>
+          <div id="ms-unids" class="msel"><button class="msel-btn">Todas as unidades</button><div class="msel-panel"></div></div>
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Nome da Loja</div>
+          <div id="ms-lojas" class="msel"><button class="msel-btn">Todas as lojas</button><div class="msel-panel"></div></div>
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Turno da Venda</div>
+          <div id="ms-turnos" class="msel"><button class="msel-btn">Todos os turnos</button><div class="msel-panel"></div></div>
+        </div>
       </div>
       <div class="row cols-3" style="margin-top:10px;">
-        <div><div class="muted" style="margin-bottom:6px;">Canal de Venda</div><div id="ms-canais" class="msel"><button class="msel-btn">Todos os canais</button><div class="msel-panel"></div></div></div>
-        <div><div class="muted" style="margin-bottom:6px;">Tipo de Pagamento</div><div id="ms-pags" class="msel"><button class="msel-btn">Todos os tipos</button><div class="msel-panel"></div></div></div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Canal de Venda</div>
+          <div id="ms-canais" class="msel"><button class="msel-btn">Todos os canais</button><div class="msel-panel"></div></div>
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Tipo de Pagamento</div>
+          <div id="ms-pags" class="msel"><button class="msel-btn">Todos os tipos</button><div class="msel-panel"></div></div>
+        </div>
         <div>
           <div class="muted" style="margin-bottom:6px;">Cancelado</div>
           <div id="ms-cancel" class="msel">
@@ -129,53 +168,114 @@
 
     <!-- KPIs -->
     <div class="krow">
-      <div class="kpi"><span class="bar"></span><h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4><div class="val" id="k_ped">—</div><div class="sub">Anterior: <span id="p_ped">—</span></div></div>
-      <div class="kpi"><span class="bar"></span><h4><span>Ticket Médio</span><span class="spacer"></span><span id="d_tkt" class="delta flat">—</span></h4><div class="val" id="k_tkt">—</div><div class="sub">Anterior: <span id="p_tkt">—</span></div></div>
-      <div class="kpi"><span class="bar"></span><h4><span>Faturamento</span><span class="spacer"></span><span id="d_fat" class="delta flat">—</span></h4><div class="val" id="k_fat">—</div><div class="sub">Anterior: <span id="p_fat">—</span></div></div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4>
+        <div class="val" id="k_ped">—</div>
+        <div class="sub">Anterior: <span id="p_ped">—</span></div>
+      </div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Ticket Médio</span><span class="spacer"></span><span id="d_tkt" class="delta flat">—</span></h4>
+        <div class="val" id="k_tkt">—</div>
+        <div class="sub">Anterior: <span id="p_tkt">—</span></div>
+      </div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Faturamento</span><span class="spacer"></span><span id="d_fat" class="delta flat">—</span></h4>
+        <div class="val" id="k_fat">—</div>
+        <div class="sub">Anterior: <span id="p_fat">—</span></div>
+      </div>
     </div>
 
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi"><span class="bar"></span><h4><span>Faturamento Médio</span><span class="spacer"></span><span id="d_fatmed" class="delta flat">—</span></h4><div class="val" id="k_fatmed">—</div><div class="sub">Anterior: <span id="p_fatmed">—</span></div></div>
-      <div class="kpi"><span class="bar"></span><h4><span>Incentivos</span><span class="spacer"></span><span id="d_des" class="delta flat">—</span></h4><div class="val" id="k_des">—</div><div class="sub">Anterior: <span id="p_des">—</span></div></div>
-      <div class="kpi"><span class="bar"></span><h4><span>% de Incentivos</span><span class="spacer"></span><span id="d_desperc" class="delta flat">—</span></h4><div class="val" id="k_desperc">—</div><div class="sub">Anterior: <span id="p_desperc">—</span></div></div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Faturamento Médio</span><span class="spacer"></span><span id="d_fatmed" class="delta flat">—</span></h4>
+        <div class="val" id="k_fatmed">—</div>
+        <div class="sub">Anterior: <span id="p_fatmed">—</span></div>
+      </div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Incentivos</span><span class="spacer"></span><span id="d_des" class="delta flat">—</span></h4>
+        <div class="val" id="k_des">—</div>
+        <div class="sub">Anterior: <span id="p_des">—</span></div>
+      </div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>% de Incentivos</span><span class="spacer"></span><span id="d_desperc" class="delta flat">—</span></h4>
+        <div class="val" id="k_desperc">—</div>
+        <div class="sub">Anterior: <span id="p_desperc">—</span></div>
+      </div>
     </div>
 
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi"><span class="bar"></span><h4><span>Frete</span><span class="spacer"></span><span id="d_fre" class="delta flat">—</span></h4><div class="val" id="k_fre">—</div><div class="sub">Anterior: <span id="p_fre">—</span></div></div>
-      <div class="kpi"><span class="bar"></span><h4><span>Frete Médio</span><span class="spacer"></span><span id="d_fremed" class="delta flat">—</span></h4><div class="val" id="k_fremed">—</div><div class="sub">Anterior: <span id="p_fremed">—</span></div></div>
-      <div class="kpi"><span class="bar"></span><h4><span>Pedidos Cancelados</span><span class="spacer"></span><span id="d_canc_ped" class="delta flat">—</span></h4><div class="val" id="k_canc_ped">—</div><div class="sub">Participação: <span id="k_canc_part">—</span> (Anterior: <span id="p_canc_part">—</span>)</div></div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Frete</span><span class="spacer"></span><span id="d_fre" class="delta flat">—</span></h4>
+        <div class="val" id="k_fre">—</div>
+        <div class="sub">Anterior: <span id="p_fre">—</span></div>
+      </div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Frete Médio</span><span class="spacer"></span><span id="d_fremed" class="delta flat">—</span></h4>
+        <div class="val" id="k_fremed">—</div>
+        <div class="sub">Anterior: <span id="p_fremed">—</span></div>
+      </div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Pedidos Cancelados</span><span class="spacer"></span><span id="d_canc_ped" class="delta flat">—</span></h4>
+        <div class="val" id="k_canc_ped">—</div>
+        <div class="sub">Participação: <span id="k_canc_part">—</span> (Anterior: <span id="p_canc_part">—</span>)</div>
+      </div>
     </div>
 
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi"><span class="bar"></span><h4><span>Valor de Cancelados</span><span class="spacer"></span><span id="d_canc_val" class="delta flat">—</span></h4><div class="val" id="k_canc_val">—</div><div class="sub">Anterior: <span id="p_canc_val">—</span></div></div>
-      <div class="kpi"><span class="bar"></span><h4><span>ROI</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4><div class="val" id="k_roi">—</div><div class="sub">Anterior: <span id="p_roi">—</span></div></div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>Valor de Cancelados</span><span class="spacer"></span><span id="d_canc_val" class="delta flat">—</span></h4>
+        <div class="val" id="k_canc_val">—</div>
+        <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
+      </div>
+      <div class="kpi"><span class="bar"></span>
+        <h4><span>ROI</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
+        <div class="val" id="k_roi">—</div>
+        <div class="sub">Anterior: <span id="p_roi">—</span></div>
+      </div>
       <div></div>
     </div>
 
+    <!-- GRÁFICOS -->
     <div class="section">
       <div class="sec-head"><div class="sec-title">Gráficos</div></div>
       <div class="row cols-2">
         <div class="chart-card">
-          <div class="chart-head"><div class="muted">Vendas por dia da semana</div>
-            <div class="seg" data-chart="dow"><button class="seg-btn active" data-mode="total">Total</button><button class="seg-btn" data-mode="media">Média</button></div>
+          <div class="chart-head">
+            <div class="muted">Vendas por dia da semana</div>
+            <div class="seg" data-chart="dow">
+              <button class="seg-btn active" data-mode="total">Total</button>
+              <button class="seg-btn" data-mode="media">Média</button>
+            </div>
           </div>
           <div class="chart-box"><canvas id="ch_dow"></canvas></div>
         </div>
         <div class="chart-card">
-          <div class="chart-head"><div class="muted">Vendas por mês</div>
-            <div class="seg" data-chart="month"><button class="seg-btn active" data-mode="total">Total</button><button class="seg-btn" data-mode="media">Média</button></div>
+          <div class="chart-head">
+            <div class="muted">Vendas por mês</div>
+            <div class="seg" data-chart="month">
+              <button class="seg-btn active" data-mode="total">Total</button>
+              <button class="seg-btn" data-mode="media">Média</button>
+            </div>
           </div>
           <div class="chart-box"><canvas id="ch_month"></canvas></div>
         </div>
         <div class="chart-card">
-          <div class="chart-head"><div class="muted">Vendas por hora</div>
-            <div class="seg" data-chart="hour"><button class="seg-btn active" data-mode="total">Total</button><button class="seg-btn" data-mode="media">Média</button></div>
+          <div class="chart-head">
+            <div class="muted">Vendas por hora</div>
+            <div class="seg" data-chart="hour">
+              <button class="seg-btn active" data-mode="total">Total</button>
+              <button class="seg-btn" data-mode="media">Média</button>
+            </div>
           </div>
           <div class="chart-box"><canvas id="ch_hour"></canvas></div>
         </div>
         <div class="chart-card">
-          <div class="chart-head"><div class="muted">Vendas por turno</div>
-            <div class="seg" data-chart="turno"><button class="seg-btn active" data-mode="total">Total</button><button class="seg-btn" data-mode="media">Média</button></div>
+          <div class="chart-head">
+            <div class="muted">Vendas por turno</div>
+            <div class="seg" data-chart="turno">
+              <button class="seg-btn active" data-mode="total">Total</button>
+              <button class="seg-btn" data-mode="media">Média</button>
+            </div>
           </div>
           <div class="chart-box"><canvas id="ch_turno"></canvas></div>
         </div>
@@ -183,15 +283,17 @@
     </div>
   </div>
 
+  <!-- libs -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 
   <script>
   /* ===================== CONFIG ===================== */
-  const READ_VIEW         = 'vendas_canon';   // leitura
-  const DEST_INSERT_TABLE = 'vendas_xlsx';    // ingestão real (nunca a view)
-  // const REFRESH_RPC    = 'refresh_sales_materialized'; // **desativado**
+  const READ_VIEW         = 'vendas_canon';     // leitura (views/gráficos/filtros)
+  const DEST_INSERT_TABLE = 'vendas_xlsx';      // tabela real de ingestão (NUNCA a view)
+  const REFRESH_RPC       = 'refresh_sales_materialized';
+  const DO_REFRESH_AFTER_UPLOAD = false;        // <- deixe false para evitar tocar em views/materializadas
 
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
@@ -202,10 +304,11 @@
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
   const setDiag=(msg)=>{ $('diag').textContent = msg || ''; };
   const info=(msg)=>{ $('uploadInfo').textContent = msg || ''; };
+
   const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const num =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
   const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
-  const iso=d=>d.toISOString().slice(0,10);
+  function iso(d){return d.toISOString().slice(0,10);}
   function addDaysISO(isoStr,n){const d=new Date(isoStr+'T00:00:00'); d.setDate(d.getDate()+n); return iso(d);}
   function daysLen(de,ate){const d1=new Date(de+'T00:00:00'), d2=new Date(ate+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24))+1;}
   function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l5 6h-3v8H8V9H5l5-6z"/></svg>';}
@@ -222,10 +325,15 @@
     if(['nao','não','n','false','0','no','nao/não'].includes(s)) return 'Não';
     return 'Não';
   }
-  const rmAcc = s=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  const normHeader = s=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
-  const cleanSpaces = s=> String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim();
-  const displayNormalize=s=> cleanSpaces(s);
+  const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const normHeader = (s)=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  function cleanSpaces(s){
+    return String(s||'')
+      .replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ')
+      .replace(/\s+/g,' ')
+      .trim();
+  }
+  function displayNormalize(s){ return cleanSpaces(s); }
   function parseBR(v){
     if(v==null) return 0;
     if(typeof v==='number' && isFinite(v)) return v;
@@ -234,15 +342,16 @@
     if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
     const n=Number(s); return isFinite(n)?n:0;
   }
-  const toInt=v=> Math.max(1, Math.round(parseBR(v) || 1));
-  const uniq=arr=> [...new Set((arr||[]).filter(v=>v!=null && v!==''))];
+  function toInt(v){ const n=parseBR(v); if(!isFinite(n)) return 0; return Math.max(1, Math.round(n||1)); }
+
+  function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
   /* ===================== MULTISELECT ===================== */
   function MultiSelect(rootId, placeholder){
     const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
     let options=[], selected=new Set(), filtered=[];
     function render(){ panel.innerHTML=''; const q=document.createElement('input'); q.className='msel-search'; q.placeholder='Filtrar…';
-      q.addEventListener('input',()=>{filtered=options.filter(v=>String(v).toLowerCase().includes(q.value.toLowerCase())); draw();});
+      q.addEventListener('input',()=>{filtered=options.filter(v=>v.toLowerCase().includes(q.value.toLowerCase())); draw();});
       panel.appendChild(q); draw();
     }
     function draw(){
@@ -261,9 +370,13 @@
     btn.addEventListener('click',()=>root.classList.toggle('open'));
     document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
     return {
-      setOptions(list){ options=(list||[]).map(v=>String(v)).sort((a,b)=>a.localeCompare(b,'pt-BR')); filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh();},
+      setOptions(list){
+        options=(list||[]).filter(v=>v!=null).map(String).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+        filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v)));
+        render(); refresh();
+      },
       get(){return [...selected];},
-      set(vals){ selected=new Set((vals||[]).map(String)); refresh(); draw();}
+      set(vals){selected=new Set((vals||[]).map(String)); refresh(); draw();}
     };
   }
 
@@ -301,8 +414,8 @@
   }));
 
   /* ===================== KPIs ===================== */
-  function buildParams(de, ate) {
-    const canc = ms.cancel.get();
+  function buildParams(de, ate, overrideCancel = null) {
+    const canc = overrideCancel != null ? [overrideCancel] : ms.cancel.get();
     let p_cancelado = null;
     if (canc.length === 1 && (canc[0] === 'Não' || canc[0] === 'Sim')) p_cancelado = canc[0];
     return {
@@ -378,17 +491,33 @@
 
   /* ===== comparativo período anterior ===== */
   function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
-  function isFullYear(d1,d2){ return d1.getMonth()===0 && d1.getDate()===1 && d2.getMonth()===11 && d2.getDate()===31 && d1.getFullYear()===d2.getFullYear(); }
-  function isFullMonthsAligned(d1,d2){ return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth()); }
-  function shiftYear(date,delta){ const d=new Date(date); d.setFullYear(d.getFullYear()+delta); const ld = lastDayOfMonth(d.getFullYear(), d.getMonth()); if(d.getDate()>ld) d.setDate(ld); return d; }
+  function isFullYear(d1,d2){
+    return d1.getMonth()===0 && d1.getDate()===1 &&
+           d2.getMonth()===11 && d2.getDate()===31 &&
+           d1.getFullYear()===d2.getFullYear();
+  }
+  function isFullMonthsAligned(d1,d2){
+    return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth());
+  }
+  function shiftYear(date,delta){
+    const d=new Date(date); d.setFullYear(d.getFullYear()+delta);
+    const ld = lastDayOfMonth(d.getFullYear(), d.getMonth());
+    if(d.getDate()>ld) d.setDate(ld);
+    return d;
+  }
   function computePrevRangeISO(deISO, ateISO){
     const d1=new Date(deISO+'T00:00:00'), d2=new Date(ateISO+'T00:00:00');
-    if(isFullYear(d1,d2) || isFullMonthsAligned(d1,d2)){ const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1); return { dePrev: iso(p1), atePrev: iso(p2) }; }
-    const len=daysLen(deISO,ateISO); const atePrev=new Date(d1.getTime()-24*60*60*1000); const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);
+    if(isFullYear(d1,d2) || isFullMonthsAligned(d1,d2)){
+      const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1);
+      return { dePrev: iso(p1), atePrev: iso(p2) };
+    }
+    const len=daysLen(deISO,ateISO);
+    const atePrev=new Date(d1.getTime()-24*60*60*1000);
+    const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);
     return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
   }
 
-  /* ===================== GRÁFICOS (RPC) ===================== */
+  /* ===================== GRÁFICOS VIA RPC ===================== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -424,19 +553,33 @@
     });
   });
 
-  const RPC_FN = { dow:'chart_vendas_dow_v1', month:'chart_vendas_mes_v1', hour:'chart_vendas_hora_v1', turno:'chart_vendas_turno_v1' };
+  const RPC_FN = {
+    dow:   'chart_vendas_dow_v1',
+    month: 'chart_vendas_mes_v1',
+    hour:  'chart_vendas_hora_v1',
+    turno: 'chart_vendas_turno_v1',
+  };
 
   async function fetchChartRPC(kind, de, ate){
-    const params = buildParams(de, ate);
+    const params = {
+      p_dini: de, p_dfim: ate,
+      p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
+      p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
+      p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
+      p_canais: ms.canais.get().length ? ms.canais.get() : null,
+      p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
+      p_cancelado: (ms.cancel.get().length===1 && (ms.cancel.get()[0]==='Sim' || ms.cancel.get()[0]==='Não')) ? ms.cancel.get()[0] : null
+    };
     const { data, error } = await supa.rpc(RPC_FN[kind], params);
     if(error){ console.warn('[chart rpc]', kind, error.message); throw error; }
     return data||[];
   }
-  const ymToLabel=ym=>{ const [y,m]=ym.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; };
+  function ymToLabel(ym){ const [y,m]=ym.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
 
   async function updateChartsServer(only){
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
     const {dePrev, atePrev} = computePrevRangeISO(de,ate);
+
     try{
       setDiag('');
       const kinds = ['dow','month','hour','turno'];
@@ -469,8 +612,8 @@
       if(!only || only==='hour'){
         const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
         const nArr = Array(24).fill(0), pArr = Array(24).fill(0), nMed=Array(24).fill(0), pMed=Array(24).fill(0);
-        (pH?.now||[]).forEach	r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; };
-        (pH?.prev||[]).forEach r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; };
+        (pH?.now||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; });
+        (pH?.prev||[]).forEach(r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; });
         ensureChart('ch_hour', labels, (chartMode.hour==='media'?nMed:nArr), (chartMode.hour==='media'?pMed:pArr));
       }
 
@@ -493,7 +636,7 @@
     }
   }
 
-  /* ===================== FALLBACK LOCAL (para canc.) ===================== */
+  /* ===================== FALLBACK LOCAL (cancelados) ===================== */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -518,7 +661,9 @@
     if(q.error) return null;
     const rows = (q.data||[]).filter(x=>{
       if(!onlyCancel) return true;
-      const k = map.cancKeys[0]; return normCancel(x[k]) === 'Sim';
+      const k = map.cancKeys[0];
+      const norm = normCancel(x[k]);
+      return norm === 'Sim';
     }).map(x=>{
       const fat = (map.fatKeys.length)? parseBR(x[map.fatKeys[0]]) : 0;
       const ped = (map.pedKeys.length)? toInt(x[map.pedKeys[0]]) : 1;
@@ -538,40 +683,43 @@
     return [];
   }
 
-  /* ===================== OPÇÕES DINÂMICAS POR PERÍODO ===================== */
-  async function refreshOptionsByPeriod(de,ate){
-    try{
-      // fonte preferida: MV agregadora (rápida)
-      const { data, error } = await supa.from('mv_vendas_canon')
-        .select('unidade, loja, canal, pagamento_base, turno')
-        .gte('dia', de).lte('dia', ate).limit(200000);
-      if(error) throw error;
-      const rows=data||[];
-      const col = (k)=> [...new Set(rows.map(r=>r[k]).filter(v=>v!=null && String(v).trim()!==''))].sort((a,b)=>String(a).localeCompare(String(b),'pt-BR'));
-      const prev = { unids:ms.unids.get(), lojas:ms.lojas.get(), canais:ms.canais.get(), pags:ms.pags.get(), turnos:ms.turnos.get() };
-      ms.unids.setOptions(col('unidade')); ms.unids.set(prev.unids);
-      ms.lojas.setOptions(col('loja'));     ms.lojas.set(prev.lojas);
-      ms.canais.setOptions(col('canal'));   ms.canais.set(prev.canais);
-      ms.pags.setOptions(col('pagamento_base')); ms.pags.set(prev.pags);
-      ms.turnos.setOptions(col('turno'));   ms.turnos.set(prev.turnos);
-    }catch(e){
-      // fallback: tenta a própria view base
+  /* ===================== OPÇÕES (com fallback reforçado) ===================== */
+  async function reloadStaticOptions(){
+    const reqs = await Promise.allSettled([
+      supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
+      supa.from('vw_vendas_lojas').select('loja').order('loja'),
+      supa.from('vw_vendas_canais').select('canal').order('canal'),
+      supa.from('vw_vendas_turnos').select('turno').order('turno'),
+      supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
+    ]);
+    const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
+
+    let anyError=false;
+    const [unids,lojas,canais,turnos,pags]=reqs;
+
+    if(ok(unids))  ms.unids.setOptions((unids.value.data||[]).map(r=>r.unidade)); else anyError=true;
+    if(ok(lojas))  ms.lojas.setOptions((lojas.value.data||[]).map(r=>r.loja)); else anyError=true;
+    if(ok(canais)) ms.canais.setOptions((canais.value.data||[]).map(r=>r.canal)); else anyError=true;
+    if(ok(turnos)) ms.turnos.setOptions((turnos.value.data||[]).map(r=>r.turno)); else anyError=true;
+    if(ok(pags))   ms.pags.setOptions((pags.value.data||[]).map(r=>r.pagamento_base)); else anyError=true;
+
+    if(anyError){
       try{
-        const { data } = await supa.from(READ_VIEW)
-          .select('unidade, loja, canal, pagamento_base, turno')
-          .gte('dia', de).lte('dia', ate).limit(200000);
-        const rows=data||[];
-        const col = (k)=> [...new Set(rows.map(r=>r[k]).filter(v=>v!=null && String(v).trim()!==''))].sort((a,b)=>String(a).localeCompare(String(b),'pt-BR'));
-        ms.unids.setOptions(col('unidade'));
-        ms.lojas.setOptions(col('loja'));
-        ms.canais.setOptions(col('canal'));
-        ms.pags.setOptions(col('pagamento_base'));
-        ms.turnos.setOptions(col('turno'));
-      }catch(_e2){}
+        const { data, error } = await supa.from(READ_VIEW)
+          .select('unidade, loja, canal, pagamento_base, turno').limit(200000);
+        if(!error && Array.isArray(data)){
+          const uniqBy = (arr, key)=> [...new Set(arr.map(x=>x[key]).filter(v=>v!=null && v!==''))];
+          ms.unids.setOptions( uniqBy(data,'unidade') );
+          ms.lojas.setOptions( uniqBy(data,'loja') );
+          ms.canais.setOptions( uniqBy(data,'canal') );
+          ms.pags.setOptions( uniqBy(data,'pagamento_base') );
+          ms.turnos.setOptions( uniqBy(data,'turno') );
+        }
+      }catch(e){ console.warn('fallback options error', e?.message||e); }
     }
   }
 
-  /* ===================== EXCEL → vendas_xlsx (UPSERT) ===================== */
+  /* ===================== EXCEL → DB (upsert c/ dedupe + null-safety) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -580,14 +728,20 @@
     const s=String(v).trim();
     if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
     const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
-    if(m){ const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m; const d=new Date(Number(yy),Number(mm)-1,Number(dd),Number(HH),Number(MM),Number(SS)); return iso(d); }
-    if(!isNaN(+s)){ const serial=+s; const base=new Date(Date.UTC(1899,11,30)); const d=new Date(base.getTime()+serial*24*60*60*1000); return iso(d); }
-    const t=new Date(s); return isNaN(t.getTime()) ? null : iso(t);
+    if(m){
+      const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
+      const d = new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
+      return iso(d);
+    }
+    if(!isNaN(+s)){ const serial = +s; const base = new Date(Date.UTC(1899,11,30)); const d = new Date(base.getTime() + serial*24*60*60*1000); return iso(d); }
+    const t=new Date(s);
+    return isNaN(t.getTime()) ? null : iso(t);
   }
   function parseHourUpload(v){
     if(v==null) return null;
     if(typeof v==='number' && v>=0 && v<=23) return Math.floor(v);
-    const s=String(v); const m=s.match(/(\d{1,2})/); if(!m) return null; const h=+m[1]; return (h>=0 && h<=23) ? h : null;
+    const s=String(v); const m=s.match(/(\d{1,2})/); if(!m) return null;
+    const h=+m[1]; return (h>=0 && h<=23) ? h : null;
   }
 
   const headerAlts = {
@@ -607,10 +761,14 @@
   };
   function pickColumn(headers, alts){
     const map = headers.map(h=>({orig:h, key:normHeader(h)}));
-    for(const a of alts){ const ex = map.find(m=>m.key===a); if(ex) return ex.orig; const cont = map.find(m=>m.key.includes(a)); if(cont) return cont.orig; }
+    for(const a of alts){
+      const ex = map.find(m=>m.key===a); if(ex) return ex.orig;
+      const cont = map.find(m=>m.key.includes(a)); if(cont) return cont.orig;
+    }
     return null;
   }
-  const nonEmptyOr=(v, fb)=>{ const s=displayNormalize(v); return s ? s : fb; };
+
+  function nonEmptyOr(v, fallback){ const s = displayNormalize(v); return s ? s : fallback; }
 
   function makeRowKey(x){
     const parts = [
@@ -621,21 +779,27 @@
     ].map(v=>String(v).trim().toLowerCase());
     return parts.join('|');
   }
+
   function dedupeByRowKey(rows){
     const map = new Map();
-    for(const r of rows){ if(!r.row_key || String(r.row_key).trim()===''){ r.row_key = makeRowKey(r); } map.set(r.row_key, r); }
+    for(const r of rows){
+      if(!r.row_key || String(r.row_key).trim()===''){ r.row_key = makeRowKey(r); }
+      map.set(r.row_key, r); // mantém a última ocorrência
+    }
     return [...map.values()];
   }
+
   async function uploadBatch(rows){
+    // dedupe extra por slice (evita "ON CONFLICT ... second time")
     const chunk = 500;
     for(let i=0;i<rows.length;i+=chunk){
       const slice = rows.slice(i,i+chunk);
-      const { error } = await supa.from(DEST_INSERT_TABLE).upsert(slice, { onConflict: 'row_key' });
+      const ded = dedupeByRowKey(slice);
+      const { error } = await supa.from(DEST_INSERT_TABLE).upsert(ded, { onConflict: 'row_key', returning: 'minimal' });
       if(error){ throw error; }
     }
   }
 
-  $('btnUpload').addEventListener('change', ()=> $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file){ info(''); return; }
@@ -647,6 +811,7 @@
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
       const headers = json.length ? Object.keys(json[0]) : [];
+
       const kDia  = pickColumn(headers, headerAlts.dia);
       const kHora = pickColumn(headers, headerAlts.hora);
       const kTurn = pickColumn(headers, headerAlts.turno);
@@ -663,16 +828,21 @@
 
       let missingLoja=0, missingCanal=0, missingUnid=0;
 
-      const mapped = json.map(r=>{
+      let mapped = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
+
         const dia  = normalizeDateCell(get(kDia));
         const hora = parseHourUpload(get(kHora));
+
+        // Campos “sensíveis” a NOT NULL → garantimos placeholder
         const unidade = nonEmptyOr(get(kUni),  'UNID_ND');
         const loja    = nonEmptyOr(get(kLoja), 'LOJA_DESCONHECIDA');
         const canal   = nonEmptyOr(get(kCan),  'CANAL_ND');
+
         if(!displayNormalize(get(kLoja))) missingLoja++;
         if(!displayNormalize(get(kCan)))  missingCanal++;
         if(!displayNormalize(get(kUni)))  missingUnid++;
+
         const pago    = displayNormalize(get(kPag));
         const pid     = displayNormalize(get(kPid));
         const cancel  = normCancel(get(kCanc));
@@ -699,39 +869,44 @@
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
       const dedup = dedupeByRowKey(ok);
 
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, deduplicadas: ${dedup.length}). Substituições → loja:${missingLoja}, canal:${missingCanal}, unidade:${missingUnid}. Enviando…`);
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, deduplicadas: ${dedup.length}). Substituições → loja:${missingLoja}, canal:${missingCanal}, unidade:${missingUnid}. Enviando a ${DEST_INSERT_TABLE}…`);
       if(dedup.length===0){ setStatus('Nada para gravar (0 linhas válidas).','err'); return; }
 
       setStatus('Enviando Excel…');
       await uploadBatch(dedup);
       setStatus('Upload concluído','ok');
-      info(`Gravado/atualizado em "${DEST_INSERT_TABLE}": ${dedup.length} linha(s).`);
+      info(`Gravado/atualizado em "${DEST_INSERT_TABLE}": ${dedup.length} linhas.`);
 
-      // NÃO chamar REFRESH_RPC aqui (evita INSERT/REFRESH na view)
+      if(DO_REFRESH_AFTER_UPLOAD){
+        try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
+      }
 
-      // Atualiza período carregado (se a view de daterange existir)
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
         if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`; }
       }catch(_e){}
+      await reloadStaticOptions();
       await applyAll();
     }catch(e){
       console.error(e);
-      setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
+      const msg = (e && (e.message || e.error_description || e.error)) ? (e.message || e.error_description || e.error) : String(e);
+      const extra = (e && e.code) ? ` (code ${e.code}${e.details? ' | '+e.details:''}${e.hint? ' | '+e.hint:''})` : '';
+      setStatus('Erro ao ler/enviar Excel: '+msg+extra,'err');
       info('');
     }finally{
       $('fileExcel').value='';
     }
   });
 
-  /* ===================== LOOP ===================== */
+  /* ===================== LOOP PRINCIPAL ===================== */
   async function applyAll(){
     try{
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
       const {dePrev, atePrev} = computePrevRangeISO(de,ate);
 
       setStatus('Consultando…');
-      await refreshOptionsByPeriod(de,ate);
+
+      await reloadStaticOptions();
 
       let kpiOk=true;
       await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
@@ -749,8 +924,13 @@
     try{
       setStatus('Carregando…');
       const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
-      if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
+      if(dr.error) throw dr.error;
+      if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
+
+      await reloadStaticOptions();
+
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
+
       $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
       applyQuick('30');
     }catch(e){
