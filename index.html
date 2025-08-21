@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.13.0 — upload em vendas_xlsx + filtros por período)</title>
+  <title>DASHBOARD — CFO (v2.13.1 — fix int coercion pedidos/hora)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -290,8 +290,7 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  // leitura usa suas views/RPCs existentes; upload agora vai na TABELA REAL:
-  const DEST_INSERT_TABLE = 'vendas_xlsx';   // base da view "vendas_canon" (do seu pg_get_viewdef)
+  const DEST_INSERT_TABLE = 'vendas_xlsx';   // base da view "vendas_canon"
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -322,7 +321,6 @@
     if(['nao','não','n','false','0','no','nao/não'].includes(s)) return 'Não';
     return 'Não';
   }
-  // normalização p/ rótulos (hífens/acentos/espaços)
   const __HYPHENS = /[\u2010-\u2015\u2212\u2043\u2053\uFE58\uFE63\uFF0D]/g;
   const __APOSTR  = /[\u2018\u2019\u201B\u2032]/g;
   function __cleanSpaces(s){
@@ -338,7 +336,7 @@
     let t = String(s||'').normalize('NFKC');
     t = t.replace(__HYPHENS,'-').replace(__APOSTR,"'");
     t = __cleanSpaces(t);
-    t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,''); // sem acento
+    t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     t = t.toLowerCase().replace(/\s*-\s*/g,'-').replace(/-+/g,'-');
     return t;
   }
@@ -350,6 +348,7 @@
     if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
     const n=Number(s); return isFinite(n)?n:0;
   }
+  function toInt(n){ const v = Number(n); return Number.isFinite(v) ? Math.trunc(v) : 0; }
   function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
@@ -493,7 +492,7 @@
     deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
   }
 
-  /* ===== Comparativo: período anterior exato (ano/mês cheios → -1 ano) ===== */
+  /* ===== Comparativo: período anterior exato ===== */
   function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
   function isFullYear(d1,d2){
     return d1.getMonth()===0 && d1.getDate()===1 &&
@@ -557,12 +556,7 @@
     });
   });
 
-  const RPC_FN = {
-    dow:   'chart_vendas_dow_v1',
-    month: 'chart_vendas_mes_v1',
-    hour:  'chart_vendas_hora_v1',
-    turno: 'chart_vendas_turno_v1',
-  };
+  const RPC_FN = { dow:'chart_vendas_dow_v1', month:'chart_vendas_mes_v1', hour:'chart_vendas_hora_v1', turno:'chart_vendas_turno_v1' };
 
   async function fetchChartRPC(kind, de, ate){
     const params = {
@@ -659,8 +653,8 @@
     const cancKeys  = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
 
     const unidKeys  = ['unidade','unid','filial','cod_unidade','empresa'].filter(has);
-    const lojaKeys  = ['loja','Nome da loja','loja_nome','nome_loja','loja_fantasia'].filter(has); // inclui base
-    const canalKeys = ['canal','Canal de venda','canal_venda','origem','meio','canal_vendas'].filter(has); // inclui base
+    const lojaKeys  = ['loja','Nome da loja','loja_nome','nome_loja','loja_fantasia'].filter(has);
+    const canalKeys = ['canal','Canal de venda','canal_venda','origem','meio','canal_vendas'].filter(has);
     const pagKeys   = ['pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto'].filter(has);
 
     return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, cancKeys, unidKeys, lojaKeys, canalKeys, pagKeys};
@@ -697,7 +691,6 @@
 
   /* ===================== OPÇÕES POR PERÍODO ===================== */
   const __initOpts = { unids:[], lojas:[], canais:[], turnos:[], pags:[] };
-
   function __mapCollect(bucket, raw){
     const disp = displayNormalize(raw);
     const canon = canonText(raw);
@@ -708,7 +701,6 @@
       if(disp.length > bucket[canon].display.length) bucket[canon].display = disp;
     }
   }
-
   async function refreshOptionsByPeriod(de,ate){
     const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
     let chosen=null, map=null;
@@ -772,7 +764,7 @@
     ms.pags.setOptions(l_pags);     ms.pags.set(prev.pags);
   }
 
-  /* ===================== EXCEL → DB (sempre grava em vendas_xlsx) ===================== */
+  /* ===================== EXCEL → DB (grava em vendas_xlsx) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -802,7 +794,6 @@
     const h=+m[1]; return (h>=0 && h<=23) ? h : null;
   }
 
-  // cabeçalhos alternativos
   const headerAlts = {
     dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
     hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
@@ -828,7 +819,6 @@
     return null;
   }
 
-  // hash simples para row_key estável
   function hashKey(s){
     let h = 2166136261>>>0;
     for(let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -871,33 +861,34 @@
         const canD  = displayNormalize(get(kCan));
         const pag   = displayNormalize(get(kPag));
         const canc  = normCancel(get(kCanc));
-        const ped   = parseBR(get(kPed) ?? 1);
+
+        // >>> coercivo p/ inteiros (evita "invalid input syntax for type integer")
+        const pedRaw = parseBR(get(kPed) ?? 1);
+        const ped    = toInt(pedRaw);
+
         const fat   = parseBR(get(kFat));
         const des   = parseBR(get(kDes));
         const fre   = parseBR(get(kFre));
         const pid   = get(kPid) != null ? String(get(kPid)) : '';
 
-        // row_key — usa partes estáveis para deduplicação
-        const keyBase = [dia,hora??'',unid??'',lojaD??'',canD??'',pag??'',pid??'',ped??0,fat??0,canc??''].join('|');
+        const keyBase = [dia,(hora??''),unid??'',lojaD??'',canD??'',pag??'',pid??'',ped??0,fat??0,canc??''].join('|');
         const row_key = 'rk_'+hashKey(keyBase);
 
-        // objeto com colunas da TABELA REAL "vendas_xlsx"
         const o = {
           dia,
-          hora,
+          hora: (hora==null? null : toInt(hora)),
           unidade: unid,
           pagamento_base: pag,
           cancelado: canc,
-          pedidos: ped,
-          fat: fat,
-          des: des,
-          fre: fre,
+          pedidos: ped,            // <-- inteiro
+          fat: fat,                // decimal
+          des: des,                // decimal
+          fre: fre,                // decimal
           pedido_id: pid,
           created_at: new Date().toISOString(),
           row_key
         };
-        // colunas com espaços — precisam ser atribuídas via bracket
-        o['Nome da loja']  = lojaD;
+        o['Nome da loja']   = lojaD;
         o['Canal de venda'] = canD;
         return o;
       });
@@ -913,15 +904,15 @@
         const slice = ok.slice(i,i+chunk);
         const { error } = await supa.from(DEST_INSERT_TABLE).insert(slice);
         if(error){
-          console.error(error);
+          console.error(error, {exemplo:slice[0]});
           setStatus('Erro no upload: '+error.message,'err');
+          info('Se o erro for "type integer", verifique colunas inteiras (ex.: pedidos/hora). Já coercionamos para inteiro; se persistir, a tabela pode ter outra coluna INTEGER recebendo decimal.');
           throw error;
         }
       }
       setStatus('Upload concluído','ok');
       info(`Gravado: ${ok.length} linhas em "${DEST_INSERT_TABLE}".`);
 
-      // Recarrega range e filtros/gráficos
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
         if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`; }
@@ -980,7 +971,6 @@
       if(!turnos.error) setOpts(turnos,'turno',ms.turnos);
       if(!pags.error) setOpts(pags,'pagamento_base',ms.pags);
 
-      // salva fallback inicial
       __initOpts.unids  = (unids.data||[]).map(r=>displayNormalize(r.unidade));
       __initOpts.lojas  = (lojas.data||[]).map(r=>displayNormalize(r.loja));
       __initOpts.canais = (canais.data||[]).map(r=>displayNormalize(r.canal));
