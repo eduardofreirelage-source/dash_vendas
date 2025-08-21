@@ -3,49 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.8-p1 — upload via RPC/tabela base)</title>
-
-  <!--
-  ===========================================================
-  SQL RECOMENDADO (RPC) — cole no Supabase antes de testar
-  -----------------------------------------------------------
-  - Ajuste "public.vendas_canon_base" para o NOME da sua TABELA REAL
-    (não use a view). Essa tabela deve alimentar suas views.
-  - Dê GRANT no RPC para o role "anon".
-  ===========================================================
-
-  create or replace function public.ingest_vendas_canon(rows jsonb)
-  returns void
-  language plpgsql
-  security definer
-  as $$
-  declare
-    r jsonb;
-  begin
-    foreach r in array (select array_agg(value) from jsonb_array_elements(rows)) loop
-      insert into public.vendas_canon_base
-        (dia, hora, turno, fat, pedidos, unidade, loja, canal, pagamento_base, cancelado)
-      values
-        (
-          nullif(r->>'dia','')::date,
-          nullif(r->>'hora','')::int,
-          nullif(r->>'turno',''),
-          coalesce((r->>'fat')::numeric,0),
-          coalesce((r->>'pedidos')::numeric,0),
-          nullif(r->>'unidade',''),
-          nullif(r->>'loja',''),
-          nullif(r->>'canal',''),
-          nullif(r->>'pagamento_base',''),
-          nullif(r->>'cancelado','')
-        );
-    end loop;
-  end;
-  $$;
-
-  grant execute on function public.ingest_vendas_canon(jsonb) to anon;
-
-  -->
-
+  <title>DASHBOARD — CFO (v2.13.0 — upload em vendas_xlsx + filtros por período)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -332,18 +290,13 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  // Se você NÃO criar o RPC, informe aqui o nome da TABELA REAL (não view) para fallback.
-  // Exemplo: 'vendas_canon_base'. Se deixar vazio, o código exige o RPC.
-  const DEST_INSERT_TABLE = ''; // ← ajuste se quiser fallback direto na tabela
-
-  // Nome do RPC recomendado
-  const DEST_RPC = 'ingest_vendas_canon';
-
+  // leitura usa suas views/RPCs existentes; upload agora vai na TABELA REAL:
+  const DEST_INSERT_TABLE = 'vendas_xlsx';   // base da view "vendas_canon" (do seu pg_get_viewdef)
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  /* ===================== HELPERS (ÚNICOS) ===================== */
+  /* ===================== HELPERS ===================== */
   const $ = id => document.getElementById(id);
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
   const setDiag=(msg)=>{ $('diag').textContent = msg || ''; };
@@ -369,8 +322,26 @@
     if(['nao','não','n','false','0','no','nao/não'].includes(s)) return 'Não';
     return 'Não';
   }
-  const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  const normHeader = (s)=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  // normalização p/ rótulos (hífens/acentos/espaços)
+  const __HYPHENS = /[\u2010-\u2015\u2212\u2043\u2053\uFE58\uFE63\uFF0D]/g;
+  const __APOSTR  = /[\u2018\u2019\u201B\u2032]/g;
+  function __cleanSpaces(s){
+    return String(s||'')
+      .replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ')
+      .replace(/\s+/g,' ')
+      .trim();
+  }
+  function displayNormalize(s){
+    return __cleanSpaces(String(s||'').normalize('NFKC').replace(__HYPHENS,'-'));
+  }
+  function canonText(s){
+    let t = String(s||'').normalize('NFKC');
+    t = t.replace(__HYPHENS,'-').replace(__APOSTR,"'");
+    t = __cleanSpaces(t);
+    t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,''); // sem acento
+    t = t.toLowerCase().replace(/\s*-\s*/g,'-').replace(/-+/g,'-');
+    return t;
+  }
   function parseBR(v){
     if(v==null) return 0;
     if(typeof v==='number' && isFinite(v)) return v;
@@ -380,13 +351,14 @@
     const n=Number(s); return isFinite(n)?n:0;
   }
   function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
+  function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
   /* ===================== MULTISELECT ===================== */
   function MultiSelect(rootId, placeholder){
     const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
     let options=[], selected=new Set(), filtered=[];
     function render(){ panel.innerHTML=''; const q=document.createElement('input'); q.className='msel-search'; q.placeholder='Filtrar…';
-      q.addEventListener('input',()=>{filtered=options.filter(v=>v.toLowerCase().includes(q.value.toLowerCase())); draw();});
+      q.addEventListener('input',()=>{filtered=options.filter(v=>String(v).toLowerCase().includes(q.value.toLowerCase())); draw();});
       panel.appendChild(q); draw();
     }
     function draw(){
@@ -405,9 +377,9 @@
     btn.addEventListener('click',()=>root.classList.toggle('open'));
     document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
     return {
-      setOptions(list){options=(list||[]).filter(v=>v!=null).map(String); filtered=options.slice(); selected=new Set(); render(); refresh();},
+      setOptions(list){ options=(list||[]).map(v=>String(v)); filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh();},
       get(){return [...selected];},
-      set(vals){selected=new Set((vals||[]).map(String)); refresh(); draw();}
+      set(vals){selected=new Set((vals||[]).map(String).filter(v=>options.includes(v))); refresh(); draw();}
     };
   }
 
@@ -463,51 +435,6 @@
   function prepareArgs(name, params){ if(name==='kpi_vendas'){ const {p_unids, ...rest}=params; return rest; } return params; }
   function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
 
-  async function discoverColumns(source){
-    const r = await supa.from(source).select('*').limit(1);
-    if(r.error) return null;
-    const row = (r.data||[{}])[0];
-    const cols = Object.keys(row||{});
-    if (!cols.length) return null;
-    const has = c => cols.includes(c);
-    const dateKeys = ['dia','data','dt','date','data_venda','data_pedido','datahora'].filter(has);
-    if(!dateKeys.length) return null;
-    const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
-    const turnoKeys= ['turno','periodo','shift'].filter(has);
-    const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
-    const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
-    const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
-    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, cancKeys};
-  }
-  async function trySourceLocal(source, de, ate, onlyCancel){
-    const map = await discoverColumns(source);
-    if(!map) return null;
-    const sel = [...new Set([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys])].join(',');
-    const q = await supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
-    if(q.error) return null;
-    const rows = (q.data||[]).filter(x=>{
-      if(!onlyCancel) return true;
-      const k = map.cancKeys[0];
-      const norm = normCancel(x[k]);
-      return norm === 'Sim';
-    }).map(x=>{
-      const fat = (map.fatKeys.length)? parseBR(x[map.fatKeys[0]]) : 0;
-      const ped = (map.pedKeys.length)? parseBR(x[map.pedKeys[0]]) : 1;
-      return { fat, pedidos: ped };
-    });
-    return rows;
-  }
-  async function fetchRowsLocal(de, ate, onlyCancelValue){
-    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
-    const onlyCancel = (onlyCancelValue==='Sim');
-    for(const src of sources){
-      try{
-        const res = await trySourceLocal(src, de, ate, onlyCancel);
-        if(res) return res;
-      }catch(_e){}
-    }
-    return [];
-  }
   async function kpiCancelFallback(de,ate,dePrev,atePrev){
     const rowsNow = await fetchRowsLocal(de,ate,'Sim');
     const rowsPrev= await fetchRowsLocal(dePrev,atePrev,'Sim');
@@ -549,8 +476,10 @@
     $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
     $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
     $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
+
     $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
+
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
     $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
 
@@ -711,7 +640,139 @@
     }
   }
 
-  /* ===================== EXCEL → DB (sempre grava) ===================== */
+  /* ===================== FALLBACK LOCAL (cancelados) ===================== */
+  async function discoverColumns(source){
+    const r = await supa.from(source).select('*').limit(1);
+    if(r.error) return null;
+    const row = (r.data||[{}])[0];
+    const cols = Object.keys(row||{});
+    if (!cols.length) return null;
+    const has = c => cols.includes(c);
+
+    const dateKeys = ['dia','data','dt','date','data_venda','data_pedido','datahora'].filter(has);
+    if(!dateKeys.length) return null;
+
+    const hourKeys  = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
+    const turnoKeys = ['turno','periodo','shift'].filter(has);
+    const fatKeys   = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
+    const pedKeys   = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
+    const cancKeys  = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
+
+    const unidKeys  = ['unidade','unid','filial','cod_unidade','empresa'].filter(has);
+    const lojaKeys  = ['loja','Nome da loja','loja_nome','nome_loja','loja_fantasia'].filter(has); // inclui base
+    const canalKeys = ['canal','Canal de venda','canal_venda','origem','meio','canal_vendas'].filter(has); // inclui base
+    const pagKeys   = ['pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto'].filter(has);
+
+    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, cancKeys, unidKeys, lojaKeys, canalKeys, pagKeys};
+  }
+  async function trySourceLocal(source, de, ate, onlyCancel){
+    const map = await discoverColumns(source);
+    if(!map) return null;
+    const sel = uniq([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys]).join(',');
+    const q = await supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
+    if(q.error) return null;
+    const rows = (q.data||[]).filter(x=>{
+      if(!onlyCancel) return true;
+      const k = map.cancKeys[0];
+      const norm = normCancel(x[k]);
+      return norm === 'Sim';
+    }).map(x=>{
+      const fat = (map.fatKeys.length)? parseBR(x[map.fatKeys[0]]) : 0;
+      const ped = (map.pedKeys.length)? parseBR(x[map.pedKeys[0]]) : 1;
+      return { fat, pedidos: ped };
+    });
+    return rows;
+  }
+  async function fetchRowsLocal(de, ate, onlyCancelValue){
+    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
+    const onlyCancel = (onlyCancelValue==='Sim');
+    for(const src of sources){
+      try{
+        const res = await trySourceLocal(src, de, ate, onlyCancel);
+        if(res) return res;
+      }catch(_e){}
+    }
+    return [];
+  }
+
+  /* ===================== OPÇÕES POR PERÍODO ===================== */
+  const __initOpts = { unids:[], lojas:[], canais:[], turnos:[], pags:[] };
+
+  function __mapCollect(bucket, raw){
+    const disp = displayNormalize(raw);
+    const canon = canonText(raw);
+    if(!bucket[canon]) bucket[canon] = { originals:new Set(), display:disp, count:0 };
+    bucket[canon].originals.add(raw);
+    bucket[canon].count++;
+    if(disp && bucket[canon].display!==disp){
+      if(disp.length > bucket[canon].display.length) bucket[canon].display = disp;
+    }
+  }
+
+  async function refreshOptionsByPeriod(de,ate){
+    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
+    let chosen=null, map=null;
+    for(const s of sources){
+      const m = await discoverColumns(s);
+      if(m && m.dateKeys.length && (m.lojaKeys.length || m.unidKeys.length || m.canalKeys.length || m.pagKeys.length || m.turnoKeys.length)){
+        chosen=s; map=m; break;
+      }
+    }
+    if(!chosen) return;
+
+    const cols = uniq([
+      ...map.dateKeys,
+      ...(map.unidKeys||[]),
+      ...(map.lojaKeys||[]),
+      ...(map.canalKeys||[]),
+      ...(map.pagKeys||[]),
+      ...(map.turnoKeys||[]),
+      ...(map.cancKeys||[])
+    ]).join(',');
+
+    let q = supa.from(chosen).select(cols).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(250000);
+    const cancSel = ms.cancel.get();
+    if (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não') && map.cancKeys.length){
+      q = q.eq(map.cancKeys[0], cancSel[0]);
+    }
+
+    const r = await q;
+    if(r.error){ console.warn('[opts] erro:', r.error.message); return; }
+    const rows = r.data||[];
+
+    const buckets = { unids:{}, lojas:{}, canais:{}, turnos:{}, pags:{} };
+    rows.forEach(x=>{
+      if(map.unidKeys.length  && x[map.unidKeys[0]]!=null)  __mapCollect(buckets.unids,  x[map.unidKeys[0]]);
+      if(map.lojaKeys.length  && x[map.lojaKeys[0]]!=null)  __mapCollect(buckets.lojas,  x[map.lojaKeys[0]]);
+      if(map.canalKeys.length && x[map.canalKeys[0]]!=null) __mapCollect(buckets.canais, x[map.canalKeys[0]]);
+      if(map.turnoKeys.length && x[map.turnoKeys[0]]!=null) __mapCollect(buckets.turnos, x[map.turnoKeys[0]]);
+      if(map.pagKeys.length   && x[map.pagKeys[0]]!=null)   __mapCollect(buckets.pags,   x[map.pagKeys[0]]);
+    });
+
+    const toSortedList = obj => Object.values(obj)
+      .map(v=>v.display)
+      .filter(Boolean)
+      .sort((a,b)=> a.localeCompare(b,'pt-BR'));
+
+    const prev = {
+      unids: ms.unids.get(), lojas: ms.lojas.get(), canais: ms.canais.get(),
+      turnos: ms.turnos.get(), pags: ms.pags.get()
+    };
+
+    const l_unids  = Object.keys(buckets.unids ).length ? toSortedList(buckets.unids ) : (__initOpts.unids  || []);
+    const l_lojas  = Object.keys(buckets.lojas ).length ? toSortedList(buckets.lojas ) : (__initOpts.lojas  || []);
+    const l_canais = Object.keys(buckets.canais).length ? toSortedList(buckets.canais) : (__initOpts.canais || []);
+    const l_turnos = Object.keys(buckets.turnos).length ? toSortedList(buckets.turnos) : (__initOpts.turnos || []);
+    const l_pags   = Object.keys(buckets.pags  ).length ? toSortedList(buckets.pags  ) : (__initOpts.pags   || []);
+
+    ms.unids.setOptions(l_unids);   ms.unids.set(prev.unids);
+    ms.lojas.setOptions(l_lojas);   ms.lojas.set(prev.lojas);
+    ms.canais.setOptions(l_canais); ms.canais.set(prev.canais);
+    ms.turnos.setOptions(l_turnos); ms.turnos.set(prev.turnos);
+    ms.pags.setOptions(l_pags);     ms.pags.set(prev.pags);
+  }
+
+  /* ===================== EXCEL → DB (sempre grava em vendas_xlsx) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -741,18 +802,23 @@
     const h=+m[1]; return (h>=0 && h<=23) ? h : null;
   }
 
+  // cabeçalhos alternativos
   const headerAlts = {
     dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
     hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
-    turno:['turno','periodo','shift'],
     fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
+    des:  ['des','desconto','descontos','vl desconto','vl_desconto'],
+    fre:  ['fre','frete','taxa entrega','taxa_entrega'],
     ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
     unid: ['unidade','unid','filial','cod_unidade','empresa'],
-    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia'],
-    canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas'],
+    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja'],
+    canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
     pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
-    canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada']
+    canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
+    pedido_id: ['pedido','pedido id','pedido_id','id_pedido','nro pedido','numero do pedido','order id','order_id','id','doc','nf','nota','ordem']
   };
+  const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const normHeader = (s)=> rmAcc(String(s||'')).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
   function pickColumn(headers, alts){
     const map = headers.map(h=>({orig:h, key:normHeader(h)}));
     for(const a of alts){
@@ -761,6 +827,15 @@
     }
     return null;
   }
+
+  // hash simples para row_key estável
+  function hashKey(s){
+    let h = 2166136261>>>0;
+    for(let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h>>>0).toString(36);
+  }
+
+  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
@@ -773,69 +848,80 @@
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
       const headers = json.length ? Object.keys(json[0]) : [];
-
       const kDia  = pickColumn(headers, headerAlts.dia);
       const kHora = pickColumn(headers, headerAlts.hora);
-      const kTurn = pickColumn(headers, headerAlts.turno);
       const kFat  = pickColumn(headers, headerAlts.fat);
+      const kDes  = pickColumn(headers, headerAlts.des);
+      const kFre  = pickColumn(headers, headerAlts.fre);
       const kPed  = pickColumn(headers, headerAlts.ped);
       const kUni  = pickColumn(headers, headerAlts.unid);
       const kLoja = pickColumn(headers, headerAlts.loja);
       const kCan  = pickColumn(headers, headerAlts.canal);
       const kPag  = pickColumn(headers, headerAlts.pag);
       const kCanc = pickColumn(headers, headerAlts.canc);
+      const kPid  = pickColumn(headers, headerAlts.pedido_id);
 
-      let mapped = json.map(r=>{
+      const rows = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
-        return {
-          dia: normalizeDateCell(get(kDia)),
-          hora: parseHourUpload(get(kHora)),
-          turno: get(kTurn),
-          fat: parseBR(get(kFat)),
-          pedidos: parseBR(get(kPed) ?? 1),
-          unidade: get(kUni),
-          loja: get(kLoja),
-          canal: get(kCan),
-          pagamento_base: get(kPag),
-          cancelado: normCancel(get(kCanc))
+
+        const dia   = normalizeDateCell(get(kDia));
+        const hora  = parseHourUpload(get(kHora));
+        const unid  = displayNormalize(get(kUni));
+        const lojaD = displayNormalize(get(kLoja));
+        const canD  = displayNormalize(get(kCan));
+        const pag   = displayNormalize(get(kPag));
+        const canc  = normCancel(get(kCanc));
+        const ped   = parseBR(get(kPed) ?? 1);
+        const fat   = parseBR(get(kFat));
+        const des   = parseBR(get(kDes));
+        const fre   = parseBR(get(kFre));
+        const pid   = get(kPid) != null ? String(get(kPid)) : '';
+
+        // row_key — usa partes estáveis para deduplicação
+        const keyBase = [dia,hora??'',unid??'',lojaD??'',canD??'',pag??'',pid??'',ped??0,fat??0,canc??''].join('|');
+        const row_key = 'rk_'+hashKey(keyBase);
+
+        // objeto com colunas da TABELA REAL "vendas_xlsx"
+        const o = {
+          dia,
+          hora,
+          unidade: unid,
+          pagamento_base: pag,
+          cancelado: canc,
+          pedidos: ped,
+          fat: fat,
+          des: des,
+          fre: fre,
+          pedido_id: pid,
+          created_at: new Date().toISOString(),
+          row_key
         };
+        // colunas com espaços — precisam ser atribuídas via bracket
+        o['Nome da loja']  = lojaD;
+        o['Canal de venda'] = canD;
+        return o;
       });
 
-      const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Enviando…`);
+      const ok = rows.filter(x => x.dia!=null && String(x.dia).trim()!=='');
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Enviando para "${DEST_INSERT_TABLE}"…`);
 
       if(ok.length===0){ setStatus('Nada para gravar (0 linhas mapeadas).','err'); return; }
 
       setStatus('Enviando Excel…');
-
-      // envia por lote usando RPC e fallback p/ tabela real se configurada
-      async function uploadBatch(slice){
-        // 1) tenta RPC
-        try{
-          const { error } = await supa.rpc(DEST_RPC, { rows: slice });
-          if(!error) return; // sucesso
-          throw error;
-        }catch(e){
-          // 2) fallback: TABELA REAL (não view)
-          if(!DEST_INSERT_TABLE){
-            throw new Error(
-              `Falha no RPC "${DEST_RPC}": ${(e&&e.message)||e}. `+
-              `Informe DEST_INSERT_TABLE com o nome da sua TABELA REAL ou crie o RPC (vide comentário no topo).`
-            );
-          }
-          const { error: e2 } = await supa.from(DEST_INSERT_TABLE).insert(slice);
-          if(e2) throw new Error('Falha no upload na tabela base: '+(e2.message||e2));
-        }
-      }
-
-      const chunk = 500;
+      const chunk = 400;
       for(let i=0;i<ok.length;i+=chunk){
         const slice = ok.slice(i,i+chunk);
-        await uploadBatch(slice);
+        const { error } = await supa.from(DEST_INSERT_TABLE).insert(slice);
+        if(error){
+          console.error(error);
+          setStatus('Erro no upload: '+error.message,'err');
+          throw error;
+        }
       }
       setStatus('Upload concluído','ok');
-      info(`Gravado: ${ok.length} linhas.`);
+      info(`Gravado: ${ok.length} linhas em "${DEST_INSERT_TABLE}".`);
 
+      // Recarrega range e filtros/gráficos
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
         if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`; }
@@ -857,6 +943,8 @@
       const {dePrev, atePrev} = computePrevRangeISO(de,ate);
 
       setStatus('Consultando…');
+
+      await refreshOptionsByPeriod(de,ate);
 
       let kpiOk=true;
       await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
@@ -885,12 +973,19 @@
         supa.from('vw_vendas_turnos').select('turno').order('turno'),
         supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
       ]);
-      const setOpts=(res,field,msel)=> msel.setOptions((res.data||[]).map(r=>r[field]));
+      const setOpts=(res,field,msel)=> msel.setOptions((res.data||[]).map(r=>displayNormalize(r[field])));
       if(!unids.error) setOpts(unids,'unidade',ms.unids);
       if(!lojas.error) setOpts(lojas,'loja',ms.lojas);
       if(!canais.error) setOpts(canais,'canal',ms.canais);
       if(!turnos.error) setOpts(turnos,'turno',ms.turnos);
       if(!pags.error) setOpts(pags,'pagamento_base',ms.pags);
+
+      // salva fallback inicial
+      __initOpts.unids  = (unids.data||[]).map(r=>displayNormalize(r.unidade));
+      __initOpts.lojas  = (lojas.data||[]).map(r=>displayNormalize(r.loja));
+      __initOpts.canais = (canais.data||[]).map(r=>displayNormalize(r.canal));
+      __initOpts.turnos = (turnos.data||[]).map(r=>displayNormalize(r.turno));
+      __initOpts.pags   = (pags.data||[]).map(r=>displayNormalize(r.pagamento_base));
 
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
 
