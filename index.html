@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.13.0 — loja fallback + RPC upload)</title>
+  <title>DASHBOARD — CFO (v2.13.1 — fix canonMaps dup + loja fallback + RPC upload)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -16,7 +16,7 @@
     .btn.clear{gap:6px}
 
     .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px}
-    .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap}
+    .sec-head{display:flex;justify-content:flex-start;align-items:center;gap:12px;flex-wrap:wrap}
     .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
     .ico{width:16px;height:16px;color:#475569}
     .muted{color:var(--muted)}
@@ -51,7 +51,7 @@
     .delta.down{color:#ef4444;border-color:#fecaca}
     .delta.flat{color:#64748b}
 
-    .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
+    .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(0,0,0,.05)}
     .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
     .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
     .seg button{padding:6px 10px;border:0;background:#fff;cursor:pointer;font-weight:700}
@@ -354,6 +354,7 @@
   function computeROI(fr){ const d=Math.abs(fr.des||0); if(!d) return NaN; return (fr.fat - d) / d; }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
+  // ======== Mapa canônico (ÚNICA declaração) ========
   const canonMaps = { unids:{}, lojas:{}, canais:{}, pags:{}, turnos:{} };
 
   /* ============ MULTISELECT ============ */
@@ -552,7 +553,7 @@
     if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
     const ctx=canvas.getContext('2d');
 
-    // oculta categorias 100% zeradas (períodos sem venda)
+    // oculta categorias sem venda
     const n=nowArr.map(v=>+v||0), p=prevArr.map(v=>+v||0);
     const keep = labels.map((_,i)=>i).filter(i=> (n[i]!==0) || (p[i]!==0));
     const L = keep.map(i=>labels[i]);
@@ -726,7 +727,6 @@
     console.error('[options] Nenhuma fonte válida encontrada');
     return null;
   }
-  const canonMaps = { unids:{}, lojas:{}, canais:{}, pags:{}, turnos:{} };
   function mapCollect(obj, key, raw){
     const disp = displayNormalize(raw);
     const canon = canonText(raw);
@@ -850,7 +850,6 @@
   }
 
   async function callIngestRPC(batch){
-    // Tenta RPC; se não existir, retorna o erro para mostrar o SQL
     const { error } = await supa.rpc('ingest_vendas_canon', { rows: batch });
     return error || null;
   }
@@ -906,7 +905,7 @@
         const rpcErr = await callIngestRPC(slice);
         if(rpcErr){
           setStatus('Erro no upload (RPC): '+rpcErr.message,'err');
-          info('Crie a função SQL "public.ingest_vendas_canon(jsonb)" conforme o bloco SQL abaixo.');
+          info('Crie a função SQL "public.ingest_vendas_canon(jsonb)" conforme o bloco SQL indicado anteriormente.');
           throw rpcErr;
         }
       }
