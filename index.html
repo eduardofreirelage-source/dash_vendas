@@ -1,9 +1,9 @@
-=<!doctype html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.13.1 — upsert de-dup fix)</title>
+  <title>DASHBOARD — CFO (v2.13.2 — null-safety + dedupe)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -290,9 +290,9 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  const READ_VIEW        = 'vendas_canon';     // leitura (views/gráficos/filtros)
-  const DEST_INSERT_TABLE= 'vendas_xlsx';      // tabela real de ingestão
-  const REFRESH_RPC      = 'refresh_sales_materialized';
+  const READ_VIEW         = 'vendas_canon';     // leitura (views/gráficos/filtros)
+  const DEST_INSERT_TABLE = 'vendas_xlsx';      // tabela real de ingestão (NUNCA a view)
+  const REFRESH_RPC       = 'refresh_sales_materialized';
 
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
@@ -475,8 +475,7 @@
     $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,fremedP);
-    function fremedP(){return 0} // (prevents ref error if minified; not used)
+    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
 
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
     $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
@@ -682,7 +681,7 @@
     return [];
   }
 
-  /* ===================== EXCEL → DB (upsert com deduplicação) ===================== */
+  /* ===================== EXCEL → DB (upsert c/ dedupe + null-safety) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -731,6 +730,8 @@
     return null;
   }
 
+  function nonEmptyOr(v, fallback){ const s = displayNormalize(v); return s ? s : fallback; }
+
   function makeRowKey(x){
     const parts = [
       x.dia||'', x.hora??'', x.unidade||'',
@@ -745,8 +746,7 @@
     const map = new Map();
     for(const r of rows){
       if(!r.row_key || String(r.row_key).trim()===''){ r.row_key = makeRowKey(r); }
-      // Mantém a última ocorrência (substitui a anterior)
-      map.set(r.row_key, r);
+      map.set(r.row_key, r); // mantém a última ocorrência
     }
     return [...map.values()];
   }
@@ -755,13 +755,11 @@
     const chunk = 500;
     for(let i=0;i<rows.length;i+=chunk){
       const slice = rows.slice(i,i+chunk);
-      const { error } = await supa.from(DEST_INSERT_TABLE)
-        .upsert(slice, { onConflict: 'row_key' });
+      const { error } = await supa.from(DEST_INSERT_TABLE).upsert(slice, { onConflict: 'row_key' });
       if(error){ throw error; }
     }
   }
 
-  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file){ info(''); return; }
@@ -788,13 +786,23 @@
       const kCanc = pickColumn(headers, headerAlts.canc);
       const kPid  = pickColumn(headers, headerAlts.pid);
 
+      let missingLoja=0, missingCanal=0, missingUnid=0;
+
       let mapped = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
+
         const dia  = normalizeDateCell(get(kDia));
         const hora = parseHourUpload(get(kHora));
-        const unidade = displayNormalize(get(kUni));
-        const loja    = displayNormalize(get(kLoja));
-        const canal   = displayNormalize(get(kCan));
+
+        // Campos “sensíveis” a NOT NULL → garantimos placeholder
+        const unidade = nonEmptyOr(get(kUni),  'UNID_ND');
+        const loja    = nonEmptyOr(get(kLoja), 'LOJA_DESCONHECIDA');
+        const canal   = nonEmptyOr(get(kCan),  'CANAL_ND');
+
+        if(!displayNormalize(get(kLoja))) missingLoja++;
+        if(!displayNormalize(get(kCan)))  missingCanal++;
+        if(!displayNormalize(get(kUni)))  missingUnid++;
+
         const pago    = displayNormalize(get(kPag));
         const pid     = displayNormalize(get(kPid));
         const cancel  = normCancel(get(kCanc));
@@ -807,7 +815,7 @@
           dia, hora, unidade,
           "Nome da loja": loja,
           "Canal de venda": canal,
-          pagamento_base: pago,
+          pagamento_base: pago || null,
           cancelado: cancel,
           pedidos: ped,
           fat, des, fre,
@@ -820,7 +828,8 @@
 
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
       const dedup = dedupeByRowKey(ok);
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, deduplicadas por row_key: ${dedup.length}). Enviando a ${DEST_INSERT_TABLE}…`);
+
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, deduplicadas: ${dedup.length}). Substituições → loja:${missingLoja}, canal:${missingCanal}, unidade:${missingUnid}. Enviando a ${DEST_INSERT_TABLE}…`);
       if(dedup.length===0){ setStatus('Nada para gravar (0 linhas válidas).','err'); return; }
 
       setStatus('Enviando Excel…');
