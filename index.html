@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.13.2 — null-safety + dedupe)</title>
+  <title>DASHBOARD — CFO (v2.13.3 — dual-write loja/canal + null-safety + dedupe)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -293,7 +293,6 @@
   const READ_VIEW         = 'vendas_canon';     // leitura (views/gráficos/filtros)
   const DEST_INSERT_TABLE = 'vendas_xlsx';      // tabela real de ingestão (NUNCA a view)
   const REFRESH_RPC       = 'refresh_sales_materialized';
-  const DO_REFRESH_AFTER_UPLOAD = false;        // <- deixe false para evitar tocar em views/materializadas
 
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
@@ -342,8 +341,8 @@
     if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
     const n=Number(s); return isFinite(n)?n:0;
   }
-  function toInt(v){ const n=parseBR(v); if(!isFinite(n)) return 0; return Math.max(1, Math.round(n||1)); }
-
+  function toInt(v){ const n=parseBR(v); if(!isFinite(n)) return 0; return Math.round(n); }
+  function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
   /* ===================== MULTISELECT ===================== */
@@ -482,8 +481,7 @@
     $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
     $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
 
-    const roiN = (N.des>0)? (N.fat-N.des)/N.des : NaN;
-    const roiP = (P.des>0)? (P.fat-P.des)/P.des : NaN;
+    const roiN = computeROI(N), roiP = computeROI(P);
     $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
     $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
     deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
@@ -683,43 +681,7 @@
     return [];
   }
 
-  /* ===================== OPÇÕES (com fallback reforçado) ===================== */
-  async function reloadStaticOptions(){
-    const reqs = await Promise.allSettled([
-      supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
-      supa.from('vw_vendas_lojas').select('loja').order('loja'),
-      supa.from('vw_vendas_canais').select('canal').order('canal'),
-      supa.from('vw_vendas_turnos').select('turno').order('turno'),
-      supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
-    ]);
-    const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
-
-    let anyError=false;
-    const [unids,lojas,canais,turnos,pags]=reqs;
-
-    if(ok(unids))  ms.unids.setOptions((unids.value.data||[]).map(r=>r.unidade)); else anyError=true;
-    if(ok(lojas))  ms.lojas.setOptions((lojas.value.data||[]).map(r=>r.loja)); else anyError=true;
-    if(ok(canais)) ms.canais.setOptions((canais.value.data||[]).map(r=>r.canal)); else anyError=true;
-    if(ok(turnos)) ms.turnos.setOptions((turnos.value.data||[]).map(r=>r.turno)); else anyError=true;
-    if(ok(pags))   ms.pags.setOptions((pags.value.data||[]).map(r=>r.pagamento_base)); else anyError=true;
-
-    if(anyError){
-      try{
-        const { data, error } = await supa.from(READ_VIEW)
-          .select('unidade, loja, canal, pagamento_base, turno').limit(200000);
-        if(!error && Array.isArray(data)){
-          const uniqBy = (arr, key)=> [...new Set(arr.map(x=>x[key]).filter(v=>v!=null && v!==''))];
-          ms.unids.setOptions( uniqBy(data,'unidade') );
-          ms.lojas.setOptions( uniqBy(data,'loja') );
-          ms.canais.setOptions( uniqBy(data,'canal') );
-          ms.pags.setOptions( uniqBy(data,'pagamento_base') );
-          ms.turnos.setOptions( uniqBy(data,'turno') );
-        }
-      }catch(e){ console.warn('fallback options error', e?.message||e); }
-    }
-  }
-
-  /* ===================== EXCEL → DB (upsert c/ dedupe + null-safety) ===================== */
+  /* ===================== EXCEL → DB (upsert c/ dedupe + dual-write) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -773,7 +735,8 @@
   function makeRowKey(x){
     const parts = [
       x.dia||'', x.hora??'', x.unidade||'',
-      x["Nome da loja"]||'', x["Canal de venda"]||'',
+      // usa os campos "internos" sem espaço
+      x.loja||'', x.canal||'',
       x.pagamento_base||'', x.pedido_id||'',
       x.pedidos??'', x.cancelado||''
     ].map(v=>String(v).trim().toLowerCase());
@@ -790,12 +753,10 @@
   }
 
   async function uploadBatch(rows){
-    // dedupe extra por slice (evita "ON CONFLICT ... second time")
     const chunk = 500;
     for(let i=0;i<rows.length;i+=chunk){
       const slice = rows.slice(i,i+chunk);
-      const ded = dedupeByRowKey(slice);
-      const { error } = await supa.from(DEST_INSERT_TABLE).upsert(ded, { onConflict: 'row_key', returning: 'minimal' });
+      const { error } = await supa.from(DEST_INSERT_TABLE).upsert(slice, { onConflict: 'row_key' });
       if(error){ throw error; }
     }
   }
@@ -836,8 +797,8 @@
 
         // Campos “sensíveis” a NOT NULL → garantimos placeholder
         const unidade = nonEmptyOr(get(kUni),  'UNID_ND');
-        const loja    = nonEmptyOr(get(kLoja), 'LOJA_DESCONHECIDA');
-        const canal   = nonEmptyOr(get(kCan),  'CANAL_ND');
+        const lojaVal = nonEmptyOr(get(kLoja), 'LOJA_DESCONHECIDA');
+        const canalVal= nonEmptyOr(get(kCan),  'CANAL_ND');
 
         if(!displayNormalize(get(kLoja))) missingLoja++;
         if(!displayNormalize(get(kCan)))  missingCanal++;
@@ -851,10 +812,13 @@
         const des     = parseBR(get(kDes));
         const fre     = parseBR(get(kFre));
 
+        // Escrevemos **duas** chaves para ser compatível com esquemas com/sem espaço
         const row = {
           dia, hora, unidade,
-          "Nome da loja": loja,
-          "Canal de venda": canal,
+          loja: lojaVal,
+          canal: canalVal,
+          "Nome da loja": lojaVal,
+          "Canal de venda": canalVal,
           pagamento_base: pago || null,
           cancelado: cancel,
           pedidos: ped,
@@ -877,9 +841,7 @@
       setStatus('Upload concluído','ok');
       info(`Gravado/atualizado em "${DEST_INSERT_TABLE}": ${dedup.length} linhas.`);
 
-      if(DO_REFRESH_AFTER_UPLOAD){
-        try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
-      }
+      try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
 
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
@@ -889,14 +851,45 @@
       await applyAll();
     }catch(e){
       console.error(e);
-      const msg = (e && (e.message || e.error_description || e.error)) ? (e.message || e.error_description || e.error) : String(e);
-      const extra = (e && e.code) ? ` (code ${e.code}${e.details? ' | '+e.details:''}${e.hint? ' | '+e.hint:''})` : '';
-      setStatus('Erro ao ler/enviar Excel: '+msg+extra,'err');
+      setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
       info('');
     }finally{
       $('fileExcel').value='';
     }
   });
+
+  /* ===================== OPÇÕES (com fallback) ===================== */
+  async function reloadStaticOptions(){
+    const [unids,lojas,canais,turnos,pags] = await Promise.allSettled([
+      supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
+      supa.from('vw_vendas_lojas').select('loja').order('loja'),
+      supa.from('vw_vendas_canais').select('canal').order('canal'),
+      supa.from('vw_vendas_turnos').select('turno').order('turno'),
+      supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
+    ]);
+    const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
+    if(ok(unids))  ms.unids.setOptions((unids.value.data||[]).map(r=>r.unidade));
+    if(ok(lojas))  ms.lojas.setOptions((lojas.value.data||[]).map(r=>r.loja));
+    if(ok(canais)) ms.canais.setOptions((canais.value.data||[]).map(r=>r.canal));
+    if(ok(turnos)) ms.turnos.setOptions((turnos.value.data||[]).map(r=>r.turno));
+    if(ok(pags))   ms.pags.setOptions((pags.value.data||[]).map(r=>r.pagamento_base));
+
+    const needFallback = !(ok(unids)&&ok(lojas)&&ok(canais)&&ok(turnos)&&ok(pags));
+    if(needFallback){
+      try{
+        const { data, error } = await supa.from(READ_VIEW)
+          .select('unidade, loja, canal, pagamento_base, turno').limit(200000);
+        if(!error && Array.isArray(data)){
+          const uniqBy = (arr, key)=> [...new Set(arr.map(x=>x[key]).filter(v=>v!=null && v!==''))];
+          ms.unids.setOptions( uniqBy(data,'unidade') );
+          ms.lojas.setOptions( uniqBy(data,'loja') );
+          ms.canais.setOptions( uniqBy(data,'canal') );
+          ms.pags.setOptions( uniqBy(data,'pagamento_base') );
+          ms.turnos.setOptions( uniqBy(data,'turno') );
+        }
+      }catch(e){ console.warn('fallback options error', e?.message||e); }
+    }
+  }
 
   /* ===================== LOOP PRINCIPAL ===================== */
   async function applyAll(){
@@ -905,8 +898,6 @@
       const {dePrev, atePrev} = computePrevRangeISO(de,ate);
 
       setStatus('Consultando…');
-
-      await reloadStaticOptions();
 
       let kpiOk=true;
       await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
