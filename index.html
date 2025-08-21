@@ -3,31 +3,35 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.13.1 — fix canonMaps dup + loja fallback + RPC upload)</title>
+  <title>DASHBOARD — CFO (v2.12.1 — gráficos fix + ROI produto)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
-    :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
+    :root{
+      --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085;
+      --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444;
+      --chip:#eef2ff; --bar:#334155;
+    }
     *{box-sizing:border-box}
     html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
     .wrap{max-width:1200px;margin:28px auto;padding:0 16px}
-    .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap}
+    .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
     h1{margin:0;font-size:28px;letter-spacing:.2px}
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
     .btn.clear{gap:6px}
-
     .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px}
-    .sec-head{display:flex;justify-content:flex-start;align-items:center;gap:12px;flex-wrap:wrap}
+    .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
     .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
     .ico{width:16px;height:16px;color:#475569}
     .muted{color:var(--muted)}
     .row{display:grid;gap:12px}
     .cols-3{grid-template-columns:repeat(3,1fr)}
     .cols-2{grid-template-columns:repeat(2,1fr)}
-    input[type="date"], .msel-btn, .input{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+    input[type="date"], .msel-btn{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
     .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
     .chip{padding:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:700}
     .chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
 
+    /* multiselect */
     .msel{position:relative}
     .msel-btn{cursor:pointer;text-align:left}
     .msel-btn:after{content:"▾";float:right;color:#475569}
@@ -36,8 +40,8 @@
     .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
     .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
     .msel-opt:hover{background:#f3f4f6}
-    .empty{font-size:12px;color:#64748b;padding:6px 2px}
 
+    /* KPIs */
     .krow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
     .kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .kpi .bar{position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:14px 0 0 14px;background:var(--bar)}
@@ -48,39 +52,27 @@
     .delta{display:inline-flex;gap:6px;align-items:center;padding:2px 10px;border-radius:999px;border:1px solid var(--line);font-weight:800;font-size:13px;margin-left:12px}
     .delta svg{width:12px;height:12px}
     .delta.up{color:var(--ok);border-color:#86efac}
-    .delta.down{color:#ef4444;border-color:#fecaca}
+    .delta.down{color:var(--down);border-color:#fecaca}
     .delta.flat{color:#64748b}
 
-    .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(0,0,0,.05)}
+    /* Gráficos */
+    .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
     .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
     .seg button{padding:6px 10px;border:0;background:#fff;cursor:pointer;font-weight:700}
     .seg button.active{background:var(--pri);color:#fff}
     .chart-box{height:280px}
+    /* >>> Fix de responsividade do canvas (evita canvas com altura/largura 0) */
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
     .diag{font-size:12px;color:#475569;margin-left:8px}
-
-    .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    .upload-info{margin-top:8px;font-size:12px;color:#475569}
-
-    @media (max-width:1024px){
-      .cols-3{grid-template-columns:repeat(2,1fr)}
-      .cols-2{grid-template-columns:1fr}
-      .krow{grid-template-columns:repeat(2,1fr)}
-    }
-    @media (max-width:640px){
-      .cols-3{grid-template-columns:1fr}
-      .krow{grid-template-columns:1fr}
-    }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="top">
       <h1>DASHBOARD</h1>
-      <div class="upload-bar">
+      <div class="right">
         <button id="btnUpload" class="btn">📤 Carregar Excel</button>
-        <input id="fileExcel" type="file" accept=".xlsx,.xls,.csv" style="display:none">
       </div>
     </div>
 
@@ -127,7 +119,6 @@
         <div>
           <span id="status" class="muted">—</span>
           <span id="diag" class="diag"></span>
-          <div id="uploadInfo" class="upload-info"></div>
         </div>
       </div>
       <div class="row cols-3">
@@ -228,8 +219,9 @@
         <div class="val" id="k_canc_val">—</div>
         <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
       </div>
+      <!-- ROI — agora como produto (Incentivos × Faturamento), conforme pedido -->
       <div class="kpi"><span class="bar"></span>
-        <h4><span>ROI</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
+        <h4><span>ROI (incentivos × fat)</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
         <div class="val" id="k_roi">—</div>
         <div class="sub">Anterior: <span id="p_roi">—</span></div>
       </div>
@@ -285,63 +277,40 @@
   </div>
 
   <!-- libs -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <script>
-  /* ============ CONFIG ============ */
+  /* ===== Config ===== */
+  const ROI_MODE = 'product'; // 'product' => incentivos × faturamento | 'ratio' => fat ÷ incentivos | 'delta' => (fat - incentivos) ÷ incentivos
+
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-
-  /* ============ HELPERS ============ */
   const $ = id => document.getElementById(id);
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
-  const setDiag=(msg)=>{ $('diag').textContent = msg || ''; };
-  const info=(msg)=>{ $('uploadInfo').textContent = msg || ''; };
+  const setDiag=(nowRows,prevRows, metricKey)=>{
+    const sum = (arr)=> (arr||[]).reduce((a,b)=> a + (+b[metricKey]||0), 0);
+    $('diag').textContent = `(linhas: atual ${nowRows?.length||0} / ant ${prevRows?.length||0} | soma ${metricKey}: ${money(sum(nowRows))} / ${money(sum(prevRows))})`;
+  };
 
+  /* ===== Util ===== */
   const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const num =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
   const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+  const multf=v=>(v==null||!isFinite(+v))?'—':(+v).toLocaleString('pt-BR',{maximumFractionDigits:2})+'x';
   function iso(d){return d.toISOString().slice(0,10);}
   function addDaysISO(isoStr,n){const d=new Date(isoStr+'T00:00:00'); d.setDate(d.getDate()+n); return iso(d);}
   function daysLen(de,ate){const d1=new Date(de+'T00:00:00'), d2=new Date(ate+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24))+1;}
   function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l5 6h-3v8H8V9H5l5-6z"/></svg>';}
   function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 17l-5-6h3V3h4v8h3l-5 6z"/></svg>';}
+  function parseHour(val){ if(val==null) return NaN; const m=String(val).match(/\d{1,2}/); const h=m?+m[0]:NaN; return (h>=0&&h<=23)?h:NaN; }
+  function inferTurno(h){ if(!isFinite(h)) return 'Dia'; if(h<=5) return 'Madrugada'; if(h<=11) return 'Manhã'; if(h<=17) return 'Tarde'; return 'Noite'; }
+  function safeDiv(a,b){ return (b && isFinite(a) && isFinite(b)) ? (a/b) : 0; }
   function deltaBadge(el,curr,prev){
     if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
     const p=((curr-prev)/prev)*100;
     el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
     el.className='delta '+(p>=0?'up':'down');
-  }
-  function normCancel(v){
-    const s=String(v??'').trim().toLowerCase();
-    if(['sim','s','true','1','y','yes'].includes(s)) return 'Sim';
-    if(['nao','não','n','false','0','no','nao/não'].includes(s)) return 'Não';
-    return 'Não';
-  }
-
-  // ======== Normalização canônica ========
-  const HYPHENS = /[\u2010-\u2015\u2212\u2043\u2053\uFE58\uFE63\uFF0D]/g;
-  const APOSTR  = /[\u2018\u2019\u201B\u2032]/g;
-  function cleanSpaces(s){
-    return String(s||'')
-      .replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ')
-      .replace(/\s+/g,' ')
-      .trim();
-  }
-  function canonText(s){
-    let t = String(s||'').normalize('NFKC');
-    t = t.replace(HYPHENS,'-').replace(APOSTR,"'");
-    t = cleanSpaces(t);
-    t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    t = t.toLowerCase();
-    t = t.replace(/\s*-\s*/g,'-').replace(/-+/g,'-');
-    return t;
-  }
-  function displayNormalize(s){
-    return cleanSpaces(String(s||'').normalize('NFKC').replace(HYPHENS,'-'));
   }
   function parseBR(v){
     if(v==null) return 0;
@@ -351,50 +320,64 @@
     if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
     const n=Number(s); return isFinite(n)?n:0;
   }
-  function computeROI(fr){ const d=Math.abs(fr.des||0); if(!d) return NaN; return (fr.fat - d) / d; }
-  function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
+  function dayOnly(v){
+    if(v==null) return '';
+    if(v instanceof Date) return iso(v);
+    const s = String(v);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+    const m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
+  }
+  function dowFromISO(s){
+    const d = dayOnly(s);
+    if(!d) return null;
+    // usar local time para evitar dia "vazar" pelo UTC
+    const [Y,M,D]=d.split('-').map(Number);
+    const dt = new Date(Y, M-1, D);
+    return dt.getDay(); // 0..6
+  }
+  function normCancel(v){
+    const s=String(v??'').trim().toLowerCase();
+    if(['sim','s','true','1','y','yes'].includes(s)) return 'Sim';
+    if(['nao','não','n','false','0','no'].includes(s)) return 'Não';
+    return 'Não';
+  }
 
-  // ======== Mapa canônico (ÚNICA declaração) ========
-  const canonMaps = { unids:{}, lojas:{}, canais:{}, pags:{}, turnos:{} };
-
-  /* ============ MULTISELECT ============ */
+  /* ===== Multiselect ===== */
   function MultiSelect(rootId, placeholder){
     const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
     let options=[], selected=new Set(), filtered=[];
-    function render(){ panel.innerHTML=''; const q=document.createElement('input'); q.className='msel-search'; q.placeholder='Filtrar…';
-      q.addEventListener('input',()=>{filtered=options.filter(v=>String(v).toLowerCase().includes(q.value.toLowerCase())); draw();});
-      panel.appendChild(q); draw();
+    function render(){
+      panel.innerHTML='';
+      const q=document.createElement('input');
+      q.className='msel-search'; q.placeholder='Filtrar…';
+      q.addEventListener('input',()=>{filtered=options.filter(v=>v.toLowerCase().includes(q.value.toLowerCase())); draw();});
+      panel.appendChild(q);
+      draw();
     }
     function draw(){
       const box=document.createElement('div');
-      const list=(filtered.length?filtered:options);
-      if(!list.length){ const n=document.createElement('div'); n.className='empty'; n.textContent='Sem opções no período'; box.appendChild(n); }
-      list.forEach((v)=>{
+      (filtered.length?filtered:options).forEach((v)=>{
         const row=document.createElement('div'); row.className='msel-opt';
         const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v; cb.checked=selected.has(v);
         const lb=document.createElement('label'); lb.textContent=v;
         cb.addEventListener('change',()=>{cb.checked?selected.add(v):selected.delete(v); refresh(); applyAll();});
         row.appendChild(cb); row.appendChild(lb); box.appendChild(row);
       });
-      panel.querySelectorAll('.msel-opt,.empty').forEach(n=>n.remove());
+      panel.querySelectorAll('.msel-opt').forEach(n=>n.remove());
       panel.appendChild(box);
     }
     function refresh(){ btn.textContent = selected.size===0 ? placeholder : `${selected.size} selecionado(s)`; }
     btn.addEventListener('click',()=>root.classList.toggle('open'));
     document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
     return {
-      setOptions(list){
-        const opts=(list||[]).map(v=>String(v)).sort((a,b)=>a.localeCompare(b,'pt',{sensitivity:'base'}));
-        const keep=new Set(opts);
-        selected=new Set([...selected].filter(v=>keep.has(v)));
-        options=opts; filtered=opts.slice(); render(); refresh();
-      },
+      setOptions(list){options=(list||[]).filter(v=>v!=null).map(String); filtered=options.slice(); selected=new Set(); render(); refresh();},
       get(){return [...selected];},
-      set(vals){ const opts = new Set(options); selected=new Set((vals||[]).map(String).filter(v=>opts.has(v))); refresh(); render();}
+      set(vals){selected=new Set((vals||[]).map(String)); refresh(); draw();}
     };
   }
 
-  /* ============ ESTADO / PERÍODO ============ */
+  /* ===== Estado / período ===== */
   let firstDay='', lastDay='';
   const chips=[...document.querySelectorAll('.chip')];
   const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
@@ -421,41 +404,24 @@
     applyQuick('30');
   });
   chips.forEach(b=> b.addEventListener('click', ()=>applyQuick(b.dataset.q)));
-  ;[fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{
+  [fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{
     chips.forEach(c=>c.classList.remove('active'));
     periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
     applyAll();
   }));
 
-  /* ============ PARAMS ============ */
-  function expandSelected(kind, arr){
-    const map = canonMaps[kind]||{};
-    const out = [];
-    (arr||[]).forEach(lbl=>{
-      const c = canonText(lbl);
-      if(map[c]?.originals) out.push(...map[c].originals);
-      else out.push(lbl);
-    });
-    return [...new Map(out.map(v=>[v,v])).keys()];
-  }
+  /* ===== KPIs ===== */
   function buildParams(de, ate, overrideCancel = null) {
     const canc = overrideCancel != null ? [overrideCancel] : ms.cancel.get();
     let p_cancelado = null;
     if (canc.length === 1 && (canc[0] === 'Não' || canc[0] === 'Sim')) p_cancelado = canc[0];
-
-    const sel_unids  = expandSelected('unids',  ms.unids.get());
-    const sel_lojas  = expandSelected('lojas',  ms.lojas.get());
-    const sel_turnos = expandSelected('turnos', ms.turnos.get());
-    const sel_canais = expandSelected('canais', ms.canais.get());
-    const sel_pags   = expandSelected('pags',   ms.pags.get());
-
     return {
       p_dini: de, p_dfim: ate,
-      p_unids:  sel_unids.length  ? sel_unids  : null,
-      p_lojas:  sel_lojas.length  ? sel_lojas  : null,
-      p_turnos: sel_turnos.length ? sel_turnos : null,
-      p_canais: sel_canais.length ? sel_canais : null,
-      p_pags:   sel_pags.length   ? sel_pags   : null,
+      p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
+      p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
+      p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
+      p_canais: ms.canais.get().length ? ms.canais.get() : null,
+      p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
       p_cancelado
     };
   }
@@ -463,14 +429,6 @@
   function prepareArgs(name, params){ if(name==='kpi_vendas'){ const {p_unids, ...rest}=params; return rest; } return params; }
   function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
 
-  /* ============ KPIs ============ */
-  async function kpiCancelFallback(de,ate,dePrev,atePrev){
-    const rowsNow = await fetchRowsLocal(de,ate,'Sim');
-    const rowsPrev= await fetchRowsLocal(dePrev,atePrev,'Sim');
-    const sum = a => a.reduce((acc,x)=>({ ped:acc.ped+(+x.pedidos||0), fat:acc.fat+(+x.fat||0) }), {ped:0,fat:0});
-    const N=sum(rowsNow), P=sum(rowsPrev);
-    return { CN:N, CP:P };
-  }
   async function updateKPIs(de, ate, dePrev, atePrev){
     const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
     const nameNow=rpcName(pNow),     namePrev=rpcName(pPrev);
@@ -482,185 +440,74 @@
     ]);
     if(now.error) throw now.error;
     if(prev.error) throw prev.error;
+    if(cNow.error) throw cNow.error;
+    if(cPrev.error) throw cPrev.error;
 
     const N=agg(now.data||[]), P=agg(prev.data||[]);
-    let CN=agg((cNow?.data)||[]), CP=agg((cPrev?.data)||[]);
-
-    if((!cNow || cNow.error || (!CN.ped && !CN.fat)) && (N.ped>0 || N.fat>0)){
-      try{ const fb = await kpiCancelFallback(de,ate,dePrev,atePrev);
-        CN = { ped: fb.CN.ped, fat: fb.CN.fat, des:0, fre:0 };
-        CP = { ped: fb.CP.ped, fat: fb.CP.fat, des:0, fre:0 };
-      }catch(_e){}
-    }
-
-    const Dn = Math.abs(N.des||0), Dp = Math.abs(P.des||0);
+    const CN=agg(cNow.data||[]), CP=agg(cPrev.data||[]);
 
     const len=daysLen(de,ate);
     const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
     const fatMedN = len? (N.fat/len) : 0,    fatMedP = len? (P.fat/len) : 0;
-    const desPercN = N.fat? (Dn/N.fat) : 0, desPercP = P.fat? (Dp/P.fat) : 0;
+    const desPercN = N.fat? (N.des/N.fat) : 0, desPercP = P.fat? (P.des/P.fat) : 0;
     const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/P.ped) : 0;
     const partCancN = N.ped? (CN.ped/N.ped) : 0, partCancP = P.ped? (CP.ped/P.ped) : 0;
 
-    $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
-    $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
-    $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
-    $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
+    // ROI conforme pedido: produto (incentivos × faturamento)
+    let roiN, roiP;
+    if(ROI_MODE==='product'){ roiN = (N.des||0)*(N.fat||0); roiP = (P.des||0)*(P.fat||0); }
+    else if(ROI_MODE==='ratio'){ roiN = N.des? (N.fat/N.des):0; roiP = P.des? (P.fat/P.des):0; }
+    else { roiN = N.des? ((N.fat-N.des)/N.des):0; roiP = P.des? ((P.fat-P.des)/P.des):0; }
 
-    $('k_des').textContent=money(Dn); $('p_des').textContent=money(Dp); deltaBadge($('d_des'),Dn,Dp);
-    $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
+    $('k_ped').textContent=num(N.ped);
+    $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
 
-    $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
+    $('k_tkt').textContent=money(tktN);
+    $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
+
+    $('k_fat').textContent=money(N.fat);
+    $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
+
+    $('k_fatmed').textContent=money(fatMedN);
+    $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
+
+    $('k_des').textContent=money(N.des);
+    $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
+
+    $('k_desperc').textContent=pctf(desPercN);
+    $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
+
+    $('k_fre').textContent=money(N.fre);
+    $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
+
+    $('k_fremed').textContent=money(freMedN);
+    $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
 
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
-    $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
-    $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
+    $('k_canc_val').textContent=money(CN.fat);
+    $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
 
-    const roiN = computeROI({fat:N.fat, des: Dn});
-    const roiP = computeROI({fat:P.fat, des: Dp});
-    $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
-    $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
-    deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
-  }
-
-  /* ============ Período anterior exato ============ */
-  function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
-  function isFullYear(d1,d2){ return d1.getMonth()===0 && d1.getDate()===1 && d2.getMonth()===11 && d2.getDate()===31 && d1.getFullYear()===d2.getFullYear(); }
-  function isFullMonthsAligned(d1,d2){ return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth()); }
-  function shiftYear(date,delta){ const d=new Date(date); d.setFullYear(d.getFullYear()+delta); const ld = lastDayOfMonth(d.getFullYear(), d.getMonth()); if(d.getDate()>ld) d.setDate(ld); return d; }
-  function computePrevRangeISO(deISO, ateISO){
-    const d1=new Date(deISO+'T00:00:00'), d2=new Date(ateISO+'T00:00:00');
-    if(isFullYear(d1,d2) || isFullMonthsAligned(d1,d2)){
-      const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1);
-      return { dePrev: iso(p1), atePrev: iso(p2) };
+    if(ROI_MODE==='product'){
+      $('k_roi').textContent=money(roiN);
+      $('p_roi').textContent=money(roiP);
+    }else if(ROI_MODE==='ratio'){
+      $('k_roi').textContent=multf(roiN);
+      $('p_roi').textContent=multf(roiP);
+    }else{
+      $('k_roi').textContent=pctf(roiN);
+      $('p_roi').textContent=pctf(roiP);
     }
-    const len=daysLen(deISO,ateISO);
-    const atePrev=new Date(d1.getTime()-24*60*60*1000);
-    const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);
-    return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
+    deltaBadge($('d_roi'), roiN, roiP);
   }
 
-  /* ============ GRÁFICOS via RPC ============ */
-  function formatCurrencyTick(value){
-    const v=Number(value)||0;
-    if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
-    if(Math.abs(v)>=1_000)     return 'R$ '+(v/1_000).toFixed(1).replace('.',',')+' mil';
-    return 'R$ '+v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
-  }
-  function ensureChart(canvasId, labels, nowArr, prevArr){
-    const canvas=$(canvasId); if(!canvas) return;
-    if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
-    const ctx=canvas.getContext('2d');
-
-    // oculta categorias sem venda
-    const n=nowArr.map(v=>+v||0), p=prevArr.map(v=>+v||0);
-    const keep = labels.map((_,i)=>i).filter(i=> (n[i]!==0) || (p[i]!==0));
-    const L = keep.map(i=>labels[i]);
-    const N = keep.map(i=>n[i]);
-    const P = keep.map(i=>p[i]);
-
-    const chart=new Chart(ctx,{
-      type:'bar',
-      data:{ labels:L, datasets:[
-        {label:'Atual', data:N, backgroundColor:'rgba(47,110,247,0.85)'},
-        {label:'Anterior', data:P, backgroundColor:'rgba(2,132,199,0.6)'}
-      ]},
-      options:{
-        responsive:true, maintainAspectRatio:false, animation:false,
-        scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:formatCurrencyTick}}},
-        plugins:{ legend:{position:'top'}, tooltip:{mode:'index',intersect:false,callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${money(ctx.parsed.y||0)}`}}}
-      }
-    });
-    canvas.__chart=chart;
-  }
-
-  const chartMode={dow:'total', month:'total', hour:'total', turno:'total'};
-  document.querySelectorAll('.seg').forEach(seg=>{
-    seg.addEventListener('click',(e)=>{
-      const btn=e.target.closest('.seg-btn'); if(!btn) return;
-      const key=seg.dataset.chart; chartMode[key]=btn.dataset.mode;
-      seg.querySelectorAll('.seg-btn').forEach(b=> b.classList.toggle('active', b===btn));
-      updateChartsServer(key);
-    });
-  });
-
-  const RPC_FN = {
-    dow:   'chart_vendas_dow_v1',
-    month: 'chart_vendas_mes_v1',
-    hour:  'chart_vendas_hora_v1',
-    turno: 'chart_vendas_turno_v1',
-  };
-
-  async function fetchChartRPC(kind, de, ate){
-    const params = buildParams(de, ate);
-    const { data, error } = await supa.rpc(RPC_FN[kind], params);
-    if(error){ console.warn('[chart rpc]', kind, error.message); throw error; }
-    return data||[];
-  }
-  function ymToLabel(ym){ const [y,m]=ym.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
-
-  async function updateChartsServer(only){
-    const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-    const {dePrev, atePrev} = computePrevRangeISO(de,ate);
-
-    try{
-      setDiag('');
-      const kinds = ['dow','month','hour','turno'];
-      const toDo = only ? [only] : kinds;
-
-      const packs = await Promise.all(toDo.map(async k=>{
-        const [now, prev] = await Promise.all([ fetchChartRPC(k,de,ate), fetchChartRPC(k,dePrev,atePrev) ]);
-        return {k, now, prev};
-      }));
-
-      const pD = packs.find(p=>p.k==='dow');
-      if(!only || only==='dow'){
-        const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-        const nArr = Array(7).fill(0), pArr = Array(7).fill(0), nMed=Array(7).fill(0), pMed=Array(7).fill(0);
-        (pD?.now||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; });
-        (pD?.prev||[]).forEach(r=>{ pArr[r.dow]=+r.total||0; pMed[r.dow]=+r.media||0; });
-        ensureChart('ch_dow', labels, (chartMode.dow==='media'?nMed:nArr), (chartMode.dow==='media'?pMed:pArr));
-      }
-
-      const pM = packs.find(p=>p.k==='month');
-      if(!only || only==='month'){
-        const n = pM?.now||[], p = pM?.prev||[];
-        const all = [...new Set([...n.map(r=>r.ym), ...p.map(r=>r.ym)])].sort();
-        const mapN=new Map(n.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
-        const mapP=new Map(p.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
-        ensureChart('ch_month', all.map(ymToLabel), all.map(x=>mapN.get(x)||0), all.map(x=>mapP.get(x)||0));
-      }
-
-      const pH = packs.find(p=>p.k==='hour');
-      if(!only || only==='hour'){
-        const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
-        const nArr = Array(24).fill(0), pArr = Array(24).fill(0), nMed=Array(24).fill(0), pMed=Array(24).fill(0);
-        (pH?.now||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; });
-        (pH?.prev||[]).forEach(r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; });
-        ensureChart('ch_hour', labels, (chartMode.hour==='media'?nMed:nArr), (chartMode.hour==='media'?pMed:pArr));
-      }
-
-      const pT = packs.find(p=>p.k==='turno');
-      if(!only || only==='turno'){
-        const order=['Manhã','Tarde','Noite','Madrugada','Dia'];
-        const n = new Map((pT?.now||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
-        const p = new Map((pT?.prev||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
-        const labels = order.filter(x=> n.has(x) || p.has(x));
-        ensureChart('ch_turno', labels, labels.map(l=>n.get(l)||0), labels.map(l=>p.get(l)||0));
-      }
-
-      const sum = a => (a||[]).reduce((acc,r)=> acc + (+r.total||0), 0);
-      setDiag(`(RPC charts ✓ | soma DOW atual/ant: ${money(sum(packs.find(p=>p.k==='dow')?.now))} / ${money(sum(packs.find(p=>p.k==='dow')?.prev))})`);
-      setStatus('OK — gráficos via RPC','ok');
-    }catch(e){
-      console.error(e);
-      setStatus('OK (sem gráficos — RPC indisponível)','ok');
-      setDiag('');
+  /* ===== Descoberta p/ gráficos ===== */
+  function uniq(arr){ return [...new Set(arr.filter(Boolean))]; }
+  function pickFirstNumber(row, keys){
+    for(const k of keys){ const v=row[k]; const n=parseBR(v);
+      if (Number.isFinite(n)) return n;
     }
+    return 0;
   }
-
-  /* ============ Descoberta dos campos nas fontes ============ */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -674,279 +521,237 @@
     const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
     const turnoKeys= ['turno','periodo','shift'].filter(has);
 
-    const fatKeys  = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
-    const pedKeys  = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
+    const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
+    const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
 
-    const unidKeys = ['unidade','unid','filial','cod_unidade','empresa'].filter(has);
     const lojaKeys = ['loja','loja_nome','nome_loja','loja_fantasia'].filter(has);
+    const unidKeys = ['unidade','unid','filial','cod_unidade','empresa'].filter(has);
     const canalKeys= ['canal','canal_venda','origem','meio','canal_vendas'].filter(has);
     const pagKeys  = ['pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto'].filter(has);
     const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
 
-    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, unidKeys, lojaKeys, canalKeys, pagKeys, cancKeys};
+    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, lojaKeys, unidKeys, canalKeys, pagKeys, cancKeys};
   }
-
-  /* ============ Fallback local (para KPI cancelados) ============ */
-  async function trySourceLocal(source, de, ate, onlyCancel){
+  async function trySource(source, de, ate){
     const map = await discoverColumns(source);
     if(!map) return null;
-    const sel = uniq([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys]).join(',');
-    let q = supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(500000);
-    if(map.cancKeys.length && onlyCancel==='Sim'){ q = q.eq(map.cancKeys[0],'Sim'); }
+
+    const sel = uniq([
+      ...map.dateKeys, ...map.hourKeys, ...map.turnoKeys,
+      ...map.fatKeys,  ...map.pedKeys,
+      ...map.lojaKeys, ...map.unidKeys, ...map.canalKeys, ...map.pagKeys, ...map.cancKeys
+    ]).join(',');
+
+    let q = supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate);
+
+    const unids = ms.unids.get();  if(unids.length && map.unidKeys.length)  q = q.in(map.unidKeys[0], unids);
+    const lojas = ms.lojas.get();  if(lojas.length && map.lojaKeys.length)  q = q.in(map.lojaKeys[0], lojas);
+    const turnos= ms.turnos.get(); if(turnos.length && map.turnoKeys.length)q = q.in(map.turnoKeys[0], turnos);
+    const canais= ms.canais.get(); if(canais.length && map.canalKeys.length)q = q.in(map.canalKeys[0], canais);
+    const pags  = ms.pags.get();   if(pags.length && map.pagKeys.length)    q = q.in(map.pagKeys[0], pags);
+
+    q = q.limit(200000);
+
     const r = await q;
     if(r.error) return null;
-    const rows = (r.data||[]).map(x=>{
-      const fat = (map.fatKeys.length)? parseBR(x[map.fatKeys[0]]) : 0;
-      const ped = (map.pedKeys.length)? parseBR(x[map.pedKeys[0]]) : 1;
-      return { fat, pedidos: ped };
-    });
-    return rows;
+
+    const cancSel = ms.cancel.get();
+    const needCancel = (cancSel.length===1 && (cancSel[0]==='Sim' || cancSel[0]==='Não')) ? cancSel[0] : null;
+
+    const rows = (r.data||[])
+      .filter(x=>{
+        if(!needCancel || !map.cancKeys.length) return true;
+        const k = map.cancKeys[0];
+        const v = String(x[k]??'').trim().toLowerCase();
+        const norm = (['sim','s','true','1','y','yes'].includes(v))?'Sim': (['nao','não','n','false','0','no'].includes(v)?'Não':'Não');
+        return norm === needCancel;
+      })
+      .map(x=>{
+        const dia = dayOnly(x[map.dateKeys[0]]);
+        let h = NaN;
+        if (map.hourKeys.length) h = parseHour(x[map.hourKeys[0]]);
+        if (!Number.isFinite(h)) {
+          const m = String(x[map.dateKeys[0]]).match(/(?:\s|T)(\d{1,2})[:h]/);
+          if (m) h = Math.max(0,Math.min(23, +m[1]));
+        }
+        const fat = pickFirstNumber(x, map.fatKeys);
+        const ped = pickFirstNumber(x, map.pedKeys);
+        const t   = map.turnoKeys.length && x[map.turnoKeys[0]] ? String(x[map.turnoKeys[0]]) : inferTurno(h);
+        return { dia, hora:Number.isFinite(h)?h:NaN, turno:t, fat:Number(fat)||0, pedidos:Number(ped)||0 };
+      });
+
+    const sumFat = rows.reduce((a,b)=>a+(+b.fat||0),0);
+    setStatus(`OK — gráficos: ${source} (linhas ${rows.length}, soma fat: ${money(sumFat)})`,'ok');
+    return {source, map, rows};
   }
-  async function fetchRowsLocal(de, ate, onlyCancelValue){
+  async function fetchRows(de, ate){
     const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
-    const onlyCancel = (onlyCancelValue==='Sim') ? 'Sim' : null;
     for(const src of sources){
       try{
-        const res = await trySourceLocal(src, de, ate, onlyCancel);
-        if(res) return res;
+        const res = await trySource(src, de, ate);
+        if(res) return res.rows;
       }catch(_e){}
     }
+    setStatus('OK — gráficos sem linhas no período/filtros','ok');
     return [];
   }
 
-  /* ============ OPÇÕES DINÂMICAS POR PERÍODO (com fallback de loja ← unidade) ============ */
-  async function detectSourceForOptions(de,ate){
-    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
-    for(const src of sources){
-      const map = await discoverColumns(src);
-      if(map && map.dateKeys.length && (map.lojaKeys.length || map.unidKeys.length || map.canalKeys.length || map.pagKeys.length)) {
-        console.log('[options] Fonte:', src, 'lojaKeys:', map.lojaKeys, 'unidKeys:', map.unidKeys);
-        return { src, map };
-      }
+  /* ===== Agrupadores ===== */
+  const DOW_LABELS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  function monthLabel(isoYM){ const [y,m]=isoYM.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
+
+  function groupDOW(rows, metric='fat', mode='total'){
+    const sums=Array(7).fill(0), days=Array.from({length:7},()=>new Set());
+    for(const r of rows){
+      const dow = dowFromISO(r.dia);
+      if(dow==null) continue;
+      const v=+r[metric]||0;
+      sums[dow]+=v; days[dow].add(r.dia);
     }
-    console.error('[options] Nenhuma fonte válida encontrada');
-    return null;
+    return mode==='media' ? sums.map((v,i)=>days[i].size? v/days[i].size:0) : sums;
   }
-  function mapCollect(obj, key, raw){
-    const disp = displayNormalize(raw);
-    const canon = canonText(raw);
-    if(!obj[key][canon]) obj[key][canon] = { originals:new Set(), display:disp, count:0 };
-    obj[key][canon].originals.add(raw);
-    obj[key][canon].count++;
-    if(disp && obj[key][canon].display!==disp){
-      if(disp.length > obj[key][canon].display.length) obj[key][canon].display = disp;
+  function groupMonth(rows, metric='fat', mode='total'){
+    const sums=new Map(), days=new Map();
+    for(const r of rows){
+      const d = dayOnly(r.dia); if(!d) continue;
+      const ym=d.slice(0,7);
+      const v=+r[metric]||0;
+      sums.set(ym,(sums.get(ym)||0)+v);
+      if(!days.has(ym)) days.set(ym,new Set());
+      days.get(ym).add(d);
     }
+    const labels=[...sums.keys()].sort();
+    const vals=labels.map(k=> mode==='media' ? (sums.get(k)/(days.get(k)||new Set()).size||1) : sums.get(k));
+    return {labels:labels.map(monthLabel), vals};
   }
-  function sortAlpha(arr){ return (arr||[]).slice().sort((a,b)=>a.localeCompare(b,'pt',{sensitivity:'base'})); }
+  function groupHour(rows, metric='fat', mode='total'){
+    const sums=Array(24).fill(0), days=Array.from({length:24},()=>new Set());
+    for(const r of rows){
+      const h=Number.isFinite(r.hora)?r.hora:NaN; if(!Number.isFinite(h)) continue;
+      const v=+r[metric]||0;
+      sums[h]+=v; days[h].add(dayOnly(r.dia));
+    }
+    return mode==='media' ? sums.map((v,i)=>days[i].size? v/days[i].size:0) : sums;
+  }
+  const TURNO_ORDER=['Manhã','Tarde','Noite','Madrugada','Dia'];
+  function groupTurno(rows, metric='fat', mode='total'){
+    const sums=new Map(TURNO_ORDER.map(t=>[t,0])), days=new Map(TURNO_ORDER.map(t=>[t,new Set()]));
+    for(const r of rows){
+      const key=TURNO_ORDER.includes(r.turno)?r.turno:'Dia';
+      const v=+r[metric]||0;
+      sums.set(key,(sums.get(key)||0)+v);
+      const d = dayOnly(r.dia); if(d) days.get(key).add(d);
+    }
+    const labels=TURNO_ORDER.filter(t=> (sums.get(t)||0)>0 || (days.get(t)||new Set()).size>0);
+    const vals=labels.map(k=> mode==='media'? ((days.get(k)||new Set()).size? (sums.get(k)/(days.get(k).size)):0) : (sums.get(k)||0));
+    return {labels, vals};
+  }
 
-  async function refreshOptionsByPeriod(de,ate){
-    const found = await detectSourceForOptions(de,ate);
-    if(!found) return;
-    const {src, map} = found;
+  /* ===== Chart helpers (REMOVIDO parsing:false) ===== */
+  function formatCurrencyTick(value){
+    const v=Number(value)||0;
+    if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
+    if(Math.abs(v)>=1_000)     return 'R$ '+(v/1_000).toFixed(1).replace('.',',')+' mil';
+    return 'R$ '+v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+  }
+  function ensureChart(canvasId, labels, nowArr, prevArr){
+    const canvas=$(canvasId); if(!canvas) return;
+    if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
+    const ctx=canvas.getContext('2d');
 
-    const prev = {
-      unids: ms.unids.get(), lojas: ms.lojas.get(), canais: ms.canais.get(),
-      turnos: ms.turnos.get(), pags: ms.pags.get()
-    };
+    // garante números (evita strings)
+    const _now = nowArr.map(v=>Number(v)||0);
+    const _prev= prevArr.map(v=>Number(v)||0);
 
-    // zera mapas
-    ['unids','lojas','canais','pags','turnos'].forEach(k=> canonMaps[k] = {});
-
-    const cols = uniq([
-      ...map.dateKeys,
-      ...(map.unidKeys||[]),
-      ...(map.lojaKeys||[]),
-      ...(map.canalKeys||[]),
-      ...(map.pagKeys||[]),
-      ...(map.turnoKeys||[]),
-      ...(map.cancKeys||[])
-    ]).join(',');
-
-    // só período (não aplica cancelado aqui)
-    let q = supa.from(src).select(cols).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(500000);
-    const r = await q;
-    if(r.error){ console.warn('options by period error', r.error.message); return; }
-    const rows = r.data||[];
-
-    rows.forEach(x=>{
-      // Unidade
-      if(map.unidKeys.length && x[map.unidKeys[0]]!=null)  mapCollect(canonMaps,'unids',  x[map.unidKeys[0]]);
-      // Loja (com fallback p/ unidade se loja vier vazia)
-      let lojaVal = null;
-      if(map.lojaKeys.length){
-        const lv = x[map.lojaKeys[0]];
-        lojaVal = (lv!=null && String(lv).trim()!=='') ? lv : null;
+    const chart=new Chart(ctx,{
+      type:'bar',
+      data:{ labels, datasets:[
+        {label:'Atual', data:_now, backgroundColor:'rgba(47,110,247,0.85)'},
+        {label:'Anterior', data:_prev, backgroundColor:'rgba(2,132,199,0.6)'}
+      ]},
+      options:{
+        responsive:true, maintainAspectRatio:false, animation:false,
+        scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:formatCurrencyTick}}},
+        plugins:{ legend:{position:'top'}, tooltip:{mode:'index',intersect:false,callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${money(ctx.parsed.y||0)}`}}}
       }
-      if(!lojaVal && map.unidKeys.length){
-        const uv = x[map.unidKeys[0]];
-        lojaVal = (uv!=null && String(uv).trim()!=='') ? uv : null;
-      }
-      if(lojaVal!=null) mapCollect(canonMaps,'lojas',lojaVal);
-
-      // Demais
-      if(map.canalKeys.length && x[map.canalKeys[0]]!=null)mapCollect(canonMaps,'canais', x[map.canalKeys[0]]);
-      if(map.pagKeys.length && x[map.pagKeys[0]]!=null)    mapCollect(canonMaps,'pags',   x[map.pagKeys[0]]);
-      if(map.turnoKeys.length && x[map.turnoKeys[0]]!=null)mapCollect(canonMaps,'turnos', x[map.turnoKeys[0]]);
     });
-
-    const toDisplays = (obj)=> sortAlpha(Object.values(obj).map(v=>v.display));
-
-    ms.unids.setOptions( toDisplays(canonMaps.unids) );   ms.unids.set(prev.unids);
-    ms.lojas.setOptions( toDisplays(canonMaps.lojas) );   ms.lojas.set(prev.lojas);
-    ms.canais.setOptions( toDisplays(canonMaps.canais) ); ms.canais.set(prev.canais);
-    ms.pags.setOptions(   toDisplays(canonMaps.pags) );   ms.pags.set(prev.pags);
-    ms.turnos.setOptions( toDisplays(canonMaps.turnos) ); ms.turnos.set(prev.turnos);
+    canvas.__chart=chart;
   }
 
-  /* ============ Excel → DB via RPC (sem tentar inserir na VIEW) ============ */
-  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
-
-  function normalizeDateCell(v){
-    if(v==null) return null;
-    if(v instanceof Date) return iso(v);
-    const s=String(v).trim();
-    if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
-    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
-    if(m){
-      const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
-      const d = new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
-      return iso(d);
-    }
-    if(!isNaN(+s)){ // Excel serial
-      const serial = +s;
-      const base = new Date(Date.UTC(1899,11,30));
-      const d = new Date(base.getTime() + serial*24*60*60*1000);
-      return iso(d);
-    }
-    const t=new Date(s);
-    return isNaN(t.getTime()) ? null : iso(t);
-  }
-  function parseHourUpload(v){
-    if(v==null) return null;
-    if(typeof v==='number' && v>=0 && v<=23) return Math.floor(v);
-    const s=String(v); const m=s.match(/(\d{1,2})/); if(!m) return null;
-    const h=+m[1]; return (h>=0 && h<=23) ? h : null;
-  }
-
-  const headerAlts = {
-    dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
-    hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
-    turno:['turno','periodo','shift'],
-    fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
-    ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
-    unid: ['unidade','unid','filial','cod_unidade','empresa'],
-    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia'],
-    canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas'],
-    pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
-    canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada']
-  };
-  function pickColumn(headers, alts){
-    const map = headers.map(h=>({orig:h, key:displayNormalize(h).toLowerCase()}));
-    for(const a of alts){
-      const ex = map.find(m=>m.key===a); if(ex) return ex.orig;
-      const cont = map.find(m=>m.key.includes(a)); if(cont) return cont.orig;
-    }
-    return null;
-  }
-
-  async function callIngestRPC(batch){
-    const { error } = await supa.rpc('ingest_vendas_canon', { rows: batch });
-    return error || null;
-  }
-
-  $('fileExcel').addEventListener('change', async (ev)=>{
-    const file = ev.target.files?.[0];
-    if(!file){ info(''); return; }
-    info('Lendo arquivo…');
-    try{
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type:'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
-
-      const headers = json.length ? Object.keys(json[0]) : [];
-
-      const kDia  = pickColumn(headers, headerAlts.dia);
-      const kHora = pickColumn(headers, headerAlts.hora);
-      const kTurn = pickColumn(headers, headerAlts.turno);
-      const kFat  = pickColumn(headers, headerAlts.fat);
-      const kPed  = pickColumn(headers, headerAlts.ped);
-      const kUni  = pickColumn(headers, headerAlts.unid);
-      const kLoja = pickColumn(headers, headerAlts.loja);
-      const kCan  = pickColumn(headers, headerAlts.canal);
-      const kPag  = pickColumn(headers, headerAlts.pag);
-      const kCanc = pickColumn(headers, headerAlts.canc);
-
-      let mapped = json.map(r=>{
-        const get = (k)=> (k? r[k] : null);
-        return {
-          dia: normalizeDateCell(get(kDia)),
-          hora: parseHourUpload(get(kHora)),
-          turno: displayNormalize(get(kTurn)),
-          fat: parseBR(get(kFat)),
-          pedidos: parseBR(get(kPed) ?? 1),
-          unidade: displayNormalize(get(kUni)),
-          loja: displayNormalize(get(kLoja)),
-          canal: displayNormalize(get(kCan)),
-          pagamento_base: displayNormalize(get(kPag)),
-          cancelado: normCancel(get(kCanc))
-        };
-      });
-
-      const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Enviando via RPC…`);
-
-      if(ok.length===0){ setStatus('Nada para gravar (0 linhas mapeadas).','err'); return; }
-
-      setStatus('Enviando Excel…');
-      const chunk = 1000;
-      for(let i=0;i<ok.length;i+=chunk){
-        const slice = ok.slice(i,i+chunk);
-        const rpcErr = await callIngestRPC(slice);
-        if(rpcErr){
-          setStatus('Erro no upload (RPC): '+rpcErr.message,'err');
-          info('Crie a função SQL "public.ingest_vendas_canon(jsonb)" conforme o bloco SQL indicado anteriormente.');
-          throw rpcErr;
-        }
-      }
-      setStatus('Upload concluído','ok');
-      info(`Gravado via RPC: ${ok.length} linhas.`);
-
-      try{
-        const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
-        if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`; }
-      }catch(_e){}
-      await applyAll();
-    }catch(e){
-      console.error(e);
-      setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
-      info('');
-    }finally{
-      $('fileExcel').value='';
-    }
+  /* ===== Modo Total|Média por gráfico ===== */
+  const chartMode={dow:'total', month:'total', hour:'total', turno:'total'};
+  document.querySelectorAll('.seg').forEach(seg=>{
+    seg.addEventListener('click',(e)=>{
+      const btn=e.target.closest('.seg-btn'); if(!btn) return;
+      const key=seg.dataset.chart; chartMode[key]=btn.dataset.mode;
+      seg.querySelectorAll('.seg-btn').forEach(b=> b.classList.toggle('active', b===btn));
+      updateChartsFromCache(key);
+    });
   });
 
-  /* ============ LOOP ============ */
+  /* ===== Cache p/ gráficos ===== */
+  let chartCacheNow=[], chartCachePrev=[];
+  function updateChartsFromCache(only){
+    setDiag(chartCacheNow, chartCachePrev, 'fat');
+
+    if(!only || only==='dow'){
+      const now=groupDOW(chartCacheNow,'fat',chartMode.dow);
+      const prev=groupDOW(chartCachePrev,'fat',chartMode.dow);
+      ensureChart('ch_dow', DOW_LABELS, now, prev);
+    }
+    if(!only || only==='month'){
+      const gN=groupMonth(chartCacheNow,'fat',chartMode.month);
+      const gP=groupMonth(chartCachePrev,'fat',chartMode.month);
+      const all=[...new Set([...gN.labels,...gP.labels])];
+      const mN=new Map(gN.labels.map((l,i)=>[l,gN.vals[i]]));
+      const mP=new Map(gP.labels.map((l,i)=>[l,gP.vals[i]]));
+      ensureChart('ch_month', all, all.map(l=>mN.get(l)||0), all.map(l=>mP.get(l)||0));
+    }
+    if(!only || only==='hour'){
+      const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
+      const now=groupHour(chartCacheNow,'fat',chartMode.hour);
+      const prev=groupHour(chartCachePrev,'fat',chartMode.hour);
+      ensureChart('ch_hour', labels, now, prev);
+    }
+    if(!only || only==='turno'){
+      const gN=groupTurno(chartCacheNow,'fat',chartMode.turno);
+      const gP=groupTurno(chartCachePrev,'fat',chartMode.turno);
+      const all=[...new Set([...gN.labels,...gP.labels])];
+      const mN=new Map(gN.labels.map((l,i)=>[l,gN.vals[i]]));
+      const mP=new Map(gP.labels.map((l,i)=>[l,gP.vals[i]]));
+      ensureChart('ch_turno', all, all.map(l=>mN.get(l)||0), all.map(l=>mP.get(l)||0));
+    }
+  }
+
+  /* ===== Ciclo principal ===== */
   async function applyAll(){
     try{
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-      const {dePrev, atePrev} = computePrevRangeISO(de,ate);
+      const len=daysLen(de,ate);
+      const atePrevISO=new Date(new Date(de+'T00:00:00').getTime()-24*60*60*1000);
+      const dePrevISO=new Date(atePrevISO.getTime()-(len-1)*24*60*60*1000);
+      const dePrev=iso(dePrevISO), atePrev=iso(atePrevISO);
 
       setStatus('Consultando…');
 
-      await refreshOptionsByPeriod(de,ate);  // período apenas; loja com fallback
+      const kpiPromise = updateKPIs(de,ate,dePrev,atePrev);
+      const rowsPromise = Promise.all([fetchRows(de,ate), fetchRows(dePrev,atePrev)]);
+
       let kpiOk=true;
-      await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
-      await updateChartsServer();
+      await kpiPromise.catch(e=>{ console.error(e); kpiOk=false; });
+
+      const [nowRows, prevRows] = await rowsPromise;
+      chartCacheNow=nowRows; chartCachePrev=prevRows;
+      updateChartsFromCache();
 
       if(!kpiOk) setStatus('OK (sem KPIs — RPC indisponível)');
-      else setStatus('OK','ok');
     }catch(e){
       console.error(e);
       setStatus('Erro: '+(e.message||e),'err');
     }
   }
 
+  /* ===== Boot ===== */
   (async function init(){
     try{
       setStatus('Carregando…');
@@ -954,7 +759,6 @@
       if(dr.error) throw dr.error;
       if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
 
-      // Semeia filtros globais (se as views existirem)
       const [unids,lojas,canais,turnos,pags] = await Promise.all([
         supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
         supa.from('vw_vendas_lojas').select('loja').order('loja'),
@@ -962,14 +766,15 @@
         supa.from('vw_vendas_turnos').select('turno').order('turno'),
         supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
       ]);
-      const setOpts=(res,field,msel)=>{ if(!res.error) msel.setOptions((res.data||[]).map(r=>displayNormalize(r[field]))); };
-      setOpts(unids,'unidade',ms.unids);
-      setOpts(lojas,'loja',ms.lojas);
-      setOpts(canais,'canal',ms.canais);
-      setOpts(turnos,'turno',ms.turnos);
-      setOpts(pags,'pagamento_base',ms.pags);
+      const setOpts=(res,field,msel)=> msel.setOptions((res.data||[]).map(r=>r[field]));
+      if(!unids.error) setOpts(unids,'unidade',ms.unids);
+      if(!lojas.error) setOpts(lojas,'loja',ms.lojas);
+      if(!canais.error) setOpts(canais,'canal',ms.canais);
+      if(!turnos.error) setOpts(turnos,'turno',ms.turnos);
+      if(!pags.error) setOpts(pags,'pagamento_base',ms.pags);
 
-      ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
+      ms.cancel.setOptions(['','Não','Sim']);
+      ms.cancel.set(['Não']);
 
       $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
       applyQuick('30');
