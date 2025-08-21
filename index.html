@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.12 — lojas por período + cancelado)</title>
+  <title>DASHBOARD — CFO (v2.12.13 — lojas fix + período sem cancel + logs)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -36,6 +36,7 @@
     .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
     .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
     .msel-opt:hover{background:#f3f4f6}
+    .empty{font-size:12px;color:#64748b;padding:6px 2px}
 
     .krow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
     .kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
@@ -322,7 +323,7 @@
     return 'Não';
   }
 
-  // ======== Normalização canônica (hífens, espaços, acentos) ========
+  // ======== Normalização canônica ========
   const HYPHENS = /[\u2010-\u2015\u2212\u2043\u2053\uFE58\uFE63\uFF0D]/g;
   const APOSTR  = /[\u2018\u2019\u201B\u2032]/g;
   function cleanSpaces(s){
@@ -366,23 +367,30 @@
     }
     function draw(){
       const box=document.createElement('div');
-      (filtered.length?filtered:options).forEach((v)=>{
+      const list=(filtered.length?filtered:options);
+      if(!list.length){ const n=document.createElement('div'); n.className='empty'; n.textContent='Sem opções no período'; box.appendChild(n); }
+      list.forEach((v)=>{
         const row=document.createElement('div'); row.className='msel-opt';
         const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v; cb.checked=selected.has(v);
         const lb=document.createElement('label'); lb.textContent=v;
         cb.addEventListener('change',()=>{cb.checked?selected.add(v):selected.delete(v); refresh(); applyAll();});
         row.appendChild(cb); row.appendChild(lb); box.appendChild(row);
       });
-      panel.querySelectorAll('.msel-opt').forEach(n=>n.remove());
+      panel.querySelectorAll('.msel-opt,.empty').forEach(n=>n.remove());
       panel.appendChild(box);
     }
     function refresh(){ btn.textContent = selected.size===0 ? placeholder : `${selected.size} selecionado(s)`; }
     btn.addEventListener('click',()=>root.classList.toggle('open'));
     document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
     return {
-      setOptions(list){ options=(list||[]).map(v=>String(v)); filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh();},
+      setOptions(list){
+        const opts=(list||[]).map(v=>String(v)).sort((a,b)=>a.localeCompare(b,'pt',{sensitivity:'base'}));
+        const keep=new Set(opts);
+        selected=new Set([...selected].filter(v=>keep.has(v)));
+        options=opts; filtered=opts.slice(); render(); refresh();
+      },
       get(){return [...selected];},
-      set(vals){selected=new Set((vals||[]).map(String).filter(v=>options.includes(v))); refresh(); draw();}
+      set(vals){ const opts = new Set(options); selected=new Set((vals||[]).map(String).filter(v=>opts.has(v))); refresh(); render();}
     };
   }
 
@@ -491,7 +499,7 @@
     const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
     const fatMedN = len? (N.fat/len) : 0,    fatMedP = len? (P.fat/len) : 0;
     const desPercN = N.fat? (Dn/N.fat) : 0, desPercP = P.fat? (Dp/P.fat) : 0;
-    const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/N.ped) : 0;
+    const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/P.ped) : 0;
     const partCancN = N.ped? (CN.ped/N.ped) : 0, partCancP = P.ped? (CP.ped/P.ped) : 0;
 
     $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
@@ -502,7 +510,7 @@
     $('k_des').textContent=money(Dn); $('p_des').textContent=money(Dp); deltaBadge($('d_des'),Dn,Dp);
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
 
-    $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fat);
+    $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
     $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
 
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
@@ -544,11 +552,19 @@
     const canvas=$(canvasId); if(!canvas) return;
     if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
     const ctx=canvas.getContext('2d');
+
+    // oculta categorias totalmente zeradas
+    const n=nowArr.map(v=>+v||0), p=prevArr.map(v=>+v||0);
+    const keep = labels.map((_,i)=>i).filter(i=> (n[i]!==0) || (p[i]!==0));
+    const L = keep.map(i=>labels[i]);
+    const N = keep.map(i=>n[i]);
+    const P = keep.map(i=>p[i]);
+
     const chart=new Chart(ctx,{
       type:'bar',
-      data:{ labels, datasets:[
-        {label:'Atual', data:nowArr.map(v=>+v||0), backgroundColor:'rgba(47,110,247,0.85)'},
-        {label:'Anterior', data:prevArr.map(v=>+v||0), backgroundColor:'rgba(2,132,199,0.6)'}
+      data:{ labels:L, datasets:[
+        {label:'Atual', data:N, backgroundColor:'rgba(47,110,247,0.85)'},
+        {label:'Anterior', data:P, backgroundColor:'rgba(2,132,199,0.6)'}
       ]},
       options:{
         responsive:true, maintainAspectRatio:false, animation:false,
@@ -673,7 +689,7 @@
     const map = await discoverColumns(source);
     if(!map) return null;
     const sel = uniq([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys]).join(',');
-    let q = supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
+    let q = supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(500000);
     if(map.cancKeys.length && onlyCancel==='Sim'){ q = q.eq(map.cancKeys[0],'Sim'); }
     const r = await q;
     if(r.error) return null;
@@ -696,15 +712,19 @@
     return [];
   }
 
-  /* ============ OPÇÕES DINÂMICAS POR PERÍODO (SOMENTE período) ============ */
+  /* ============ OPÇÕES DINÂMICAS POR PERÍODO (somente período; sem cancelado) ============ */
   async function detectSourceForOptions(de,ate){
     const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
     for(const src of sources){
       const map = await discoverColumns(src);
       if(map && map.dateKeys.length && (map.lojaKeys.length || map.unidKeys.length || map.canalKeys.length || map.pagKeys.length)) {
+        console.log('[options] Fonte detectada:', src, 'lojas:', map.lojaKeys);
         return { src, map };
+      } else {
+        console.warn('[options] Fonte ignorada:', src);
       }
     }
+    console.error('[options] Nenhuma fonte válida encontrada');
     return null;
   }
   function mapCollect(obj, key, raw){
@@ -717,6 +737,8 @@
       if(disp.length > obj[key][canon].display.length) obj[key][canon].display = disp;
     }
   }
+  function sortAlpha(arr){ return (arr||[]).slice().sort((a,b)=>a.localeCompare(b,'pt',{sensitivity:'base'})); }
+
   async function refreshOptionsByPeriod(de,ate){
     const found = await detectSourceForOptions(de,ate);
     if(!found) return;
@@ -739,8 +761,8 @@
       ...(map.cancKeys||[])
     ]).join(',');
 
-    // Consulta sem filtro de cancelamento
-    const q = supa.from(src).select(cols).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(200000);
+    // >>> Somente período (sem aplicar cancelado aqui)
+    let q = supa.from(src).select(cols).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(500000);
 
     const r = await q;
     if(r.error){ console.warn('options by period error', r.error.message); return; }
@@ -754,15 +776,13 @@
       if(map.turnoKeys.length && x[map.turnoKeys[0]]!=null)mapCollect(canonMaps,'turnos', x[map.turnoKeys[0]]);
     });
 
-    function sortedDisplays(obj){
-      return Object.values(obj).sort((a,b)=> b.count - a.count || a.display.localeCompare(b.display,'pt-BR')).map(v=>v.display);
-    }
+    const toDisplays = (obj)=> sortAlpha(Object.values(obj).map(v=>v.display));
 
-    ms.unids.setOptions( sortedDisplays(canonMaps.unids) );  ms.unids.set(prev.unids);
-    ms.lojas.setOptions( sortedDisplays(canonMaps.lojas) );  ms.lojas.set(prev.lojas);
-    ms.canais.setOptions( sortedDisplays(canonMaps.canais) );ms.canais.set(prev.canais);
-    ms.pags.setOptions(   sortedDisplays(canonMaps.pags) );  ms.pags.set(prev.pags);
-    ms.turnos.setOptions( sortedDisplays(canonMaps.turnos) );ms.turnos.set(prev.turnos);
+    ms.unids.setOptions( toDisplays(canonMaps.unids) );   ms.unids.set(prev.unids);
+    ms.lojas.setOptions( toDisplays(canonMaps.lojas) );   ms.lojas.set(prev.lojas);
+    ms.canais.setOptions( toDisplays(canonMaps.canais) ); ms.canais.set(prev.canais);
+    ms.pags.setOptions(   toDisplays(canonMaps.pags) );   ms.pags.set(prev.pags);
+    ms.turnos.setOptions( toDisplays(canonMaps.turnos) ); ms.turnos.set(prev.turnos);
   }
 
   /* ============ Excel → DB (sempre grava) ============ */
@@ -892,7 +912,7 @@
 
       setStatus('Consultando…');
 
-      await refreshOptionsByPeriod(de,ate);  // agora: período (sem apertar por outros filtros)
+      await refreshOptionsByPeriod(de,ate);  // agora: só período; sem cancelado
       let kpiOk=true;
       await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
       await updateChartsServer();
@@ -905,42 +925,37 @@
     }
   }
 
-  /* ============ INICIALIZAÇÃO ============ */
-  async function init(){
-    try {
+  (async function init(){
+    try{
       setStatus('Carregando…');
       const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
       if(dr.error) throw dr.error;
       if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
 
-      // Carregar opções de lojas diretamente, sem filtros
-      const lojas = await supa.from('vw_vendas_lojas').select('loja').order('loja');
-      ms.lojas.setOptions((lojas.data||[]).map(r=>displayNormalize(r.loja)));
-
-      // Carregar outras opções (unidades, canais, etc.)
-      const [unids,canais,turnos,pags] = await Promise.all([
+      // Seed: todas as opções “globais” (se as views existirem)
+      const [unids,lojas,canais,turnos,pags] = await Promise.all([
         supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
+        supa.from('vw_vendas_lojas').select('loja').order('loja'),
         supa.from('vw_vendas_canais').select('canal').order('canal'),
         supa.from('vw_vendas_turnos').select('turno').order('turno'),
         supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
       ]);
-      const setOpts=(res,field,msel)=> msel.setOptions((res.data||[]).map(r=>displayNormalize(r[field])));
-      if(!unids.error) setOpts(unids,'unidade',ms.unids);
-      if(!canais.error) setOpts(canais,'canal',ms.canais);
-      if(!turnos.error) setOpts(turnos,'turno',ms.turnos);
-      if(!pags.error) setOpts(pags,'pagamento_base',ms.pags);
+      const setOpts=(res,field,msel)=>{ if(!res.error) msel.setOptions((res.data||[]).map(r=>displayNormalize(r[field]))); };
+      setOpts(unids,'unidade',ms.unids);
+      setOpts(lojas,'loja',ms.lojas);
+      setOpts(canais,'canal',ms.canais);
+      setOpts(turnos,'turno',ms.turnos);
+      setOpts(pags,'pagamento_base',ms.pags);
 
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
 
       $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
       applyQuick('30');
-    } catch(e) {
+    }catch(e){
       console.error(e);
       setStatus('Erro ao iniciar: '+(e.message||e),'err');
     }
-  }
-
-  init();
+  })();
   </script>
 </body>
 </html>
