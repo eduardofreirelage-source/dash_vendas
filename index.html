@@ -3,7 +3,49 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.8 — hotfix rmAcc / upload DB / RPC charts / ROI%)</title>
+  <title>DASHBOARD — CFO (v2.12.8-p1 — upload via RPC/tabela base)</title>
+
+  <!--
+  ===========================================================
+  SQL RECOMENDADO (RPC) — cole no Supabase antes de testar
+  -----------------------------------------------------------
+  - Ajuste "public.vendas_canon_base" para o NOME da sua TABELA REAL
+    (não use a view). Essa tabela deve alimentar suas views.
+  - Dê GRANT no RPC para o role "anon".
+  ===========================================================
+
+  create or replace function public.ingest_vendas_canon(rows jsonb)
+  returns void
+  language plpgsql
+  security definer
+  as $$
+  declare
+    r jsonb;
+  begin
+    foreach r in array (select array_agg(value) from jsonb_array_elements(rows)) loop
+      insert into public.vendas_canon_base
+        (dia, hora, turno, fat, pedidos, unidade, loja, canal, pagamento_base, cancelado)
+      values
+        (
+          nullif(r->>'dia','')::date,
+          nullif(r->>'hora','')::int,
+          nullif(r->>'turno',''),
+          coalesce((r->>'fat')::numeric,0),
+          coalesce((r->>'pedidos')::numeric,0),
+          nullif(r->>'unidade',''),
+          nullif(r->>'loja',''),
+          nullif(r->>'canal',''),
+          nullif(r->>'pagamento_base',''),
+          nullif(r->>'cancelado','')
+        );
+    end loop;
+  end;
+  $$;
+
+  grant execute on function public.ingest_vendas_canon(jsonb) to anon;
+
+  -->
+
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -290,7 +332,13 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  const DEST_TABLE    = 'vendas_canon'; // <<<< tabela destino fixa
+  // Se você NÃO criar o RPC, informe aqui o nome da TABELA REAL (não view) para fallback.
+  // Exemplo: 'vendas_canon_base'. Se deixar vazio, o código exige o RPC.
+  const DEST_INSERT_TABLE = ''; // ← ajuste se quiser fallback direto na tabela
+
+  // Nome do RPC recomendado
+  const DEST_RPC = 'ingest_vendas_canon';
+
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -332,7 +380,6 @@
     const n=Number(s); return isFinite(n)?n:0;
   }
   function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
-  function uniq(arr){ return [...new Set((arr||[]).filter(Boolean))]; }
 
   /* ===================== MULTISELECT ===================== */
   function MultiSelect(rootId, placeholder){
@@ -416,6 +463,51 @@
   function prepareArgs(name, params){ if(name==='kpi_vendas'){ const {p_unids, ...rest}=params; return rest; } return params; }
   function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
 
+  async function discoverColumns(source){
+    const r = await supa.from(source).select('*').limit(1);
+    if(r.error) return null;
+    const row = (r.data||[{}])[0];
+    const cols = Object.keys(row||{});
+    if (!cols.length) return null;
+    const has = c => cols.includes(c);
+    const dateKeys = ['dia','data','dt','date','data_venda','data_pedido','datahora'].filter(has);
+    if(!dateKeys.length) return null;
+    const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
+    const turnoKeys= ['turno','periodo','shift'].filter(has);
+    const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
+    const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
+    const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
+    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, cancKeys};
+  }
+  async function trySourceLocal(source, de, ate, onlyCancel){
+    const map = await discoverColumns(source);
+    if(!map) return null;
+    const sel = [...new Set([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys])].join(',');
+    const q = await supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
+    if(q.error) return null;
+    const rows = (q.data||[]).filter(x=>{
+      if(!onlyCancel) return true;
+      const k = map.cancKeys[0];
+      const norm = normCancel(x[k]);
+      return norm === 'Sim';
+    }).map(x=>{
+      const fat = (map.fatKeys.length)? parseBR(x[map.fatKeys[0]]) : 0;
+      const ped = (map.pedKeys.length)? parseBR(x[map.pedKeys[0]]) : 1;
+      return { fat, pedidos: ped };
+    });
+    return rows;
+  }
+  async function fetchRowsLocal(de, ate, onlyCancelValue){
+    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
+    const onlyCancel = (onlyCancelValue==='Sim');
+    for(const src of sources){
+      try{
+        const res = await trySourceLocal(src, de, ate, onlyCancel);
+        if(res) return res;
+      }catch(_e){}
+    }
+    return [];
+  }
   async function kpiCancelFallback(de,ate,dePrev,atePrev){
     const rowsNow = await fetchRowsLocal(de,ate,'Sim');
     const rowsPrev= await fetchRowsLocal(dePrev,atePrev,'Sim');
@@ -619,53 +711,6 @@
     }
   }
 
-  /* ===================== FALLBACK LOCAL (cancelados) ===================== */
-  async function discoverColumns(source){
-    const r = await supa.from(source).select('*').limit(1);
-    if(r.error) return null;
-    const row = (r.data||[{}])[0];
-    const cols = Object.keys(row||{});
-    if (!cols.length) return null;
-    const has = c => cols.includes(c);
-    const dateKeys = ['dia','data','dt','date','data_venda','data_pedido','datahora'].filter(has);
-    if(!dateKeys.length) return null;
-    const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
-    const turnoKeys= ['turno','periodo','shift'].filter(has);
-    const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
-    const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
-    const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
-    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, cancKeys};
-  }
-  async function trySourceLocal(source, de, ate, onlyCancel){
-    const map = await discoverColumns(source);
-    if(!map) return null;
-    const sel = uniq([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys]).join(',');
-    const q = await supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
-    if(q.error) return null;
-    const rows = (q.data||[]).filter(x=>{
-      if(!onlyCancel) return true;
-      const k = map.cancKeys[0];
-      const norm = normCancel(x[k]);
-      return norm === 'Sim';
-    }).map(x=>{
-      const fat = (map.fatKeys.length)? parseBR(x[map.fatKeys[0]]) : 0;
-      const ped = (map.pedKeys.length)? parseBR(x[map.pedKeys[0]]) : 1;
-      return { fat, pedidos: ped };
-    });
-    return rows;
-  }
-  async function fetchRowsLocal(de, ate, onlyCancelValue){
-    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
-    const onlyCancel = (onlyCancelValue==='Sim');
-    for(const src of sources){
-      try{
-        const res = await trySourceLocal(src, de, ate, onlyCancel);
-        if(res) return res;
-      }catch(_e){}
-    }
-    return [];
-  }
-
   /* ===================== EXCEL → DB (sempre grava) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
@@ -757,19 +802,39 @@
       });
 
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Enviando ao banco em ${DEST_TABLE}…`);
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Enviando…`);
 
       if(ok.length===0){ setStatus('Nada para gravar (0 linhas mapeadas).','err'); return; }
 
       setStatus('Enviando Excel…');
+
+      // envia por lote usando RPC e fallback p/ tabela real se configurada
+      async function uploadBatch(slice){
+        // 1) tenta RPC
+        try{
+          const { error } = await supa.rpc(DEST_RPC, { rows: slice });
+          if(!error) return; // sucesso
+          throw error;
+        }catch(e){
+          // 2) fallback: TABELA REAL (não view)
+          if(!DEST_INSERT_TABLE){
+            throw new Error(
+              `Falha no RPC "${DEST_RPC}": ${(e&&e.message)||e}. `+
+              `Informe DEST_INSERT_TABLE com o nome da sua TABELA REAL ou crie o RPC (vide comentário no topo).`
+            );
+          }
+          const { error: e2 } = await supa.from(DEST_INSERT_TABLE).insert(slice);
+          if(e2) throw new Error('Falha no upload na tabela base: '+(e2.message||e2));
+        }
+      }
+
       const chunk = 500;
       for(let i=0;i<ok.length;i+=chunk){
         const slice = ok.slice(i,i+chunk);
-        const { error } = await supa.from(DEST_TABLE).insert(slice);
-        if(error){ setStatus('Erro no upload: '+error.message,'err'); throw error; }
+        await uploadBatch(slice);
       }
       setStatus('Upload concluído','ok');
-      info(`Gravado em "${DEST_TABLE}": ${ok.length} linhas.`);
+      info(`Gravado: ${ok.length} linhas.`);
 
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
@@ -799,6 +864,7 @@
       await updateChartsServer();
 
       if(!kpiOk) setStatus('OK (sem KPIs — RPC indisponível)');
+      else setStatus('OK','ok');
     }catch(e){
       console.error(e);
       setStatus('Erro: '+(e.message||e),'err');
