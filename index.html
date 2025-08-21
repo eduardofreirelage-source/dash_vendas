@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.13.1 — fix int coercion pedidos/hora)</title>
+  <title>DASHBOARD — CFO (v2.14.2 — ignore duplicates / view-safe)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -480,7 +480,7 @@
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
 
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
+    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,fremedP=freMedP);
 
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
     $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
@@ -764,7 +764,7 @@
     ms.pags.setOptions(l_pags);     ms.pags.set(prev.pags);
   }
 
-  /* ===================== EXCEL → DB (grava em vendas_xlsx) ===================== */
+  /* ===================== EXCEL → DB (INSERT ignora duplicados) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -862,7 +862,6 @@
         const pag   = displayNormalize(get(kPag));
         const canc  = normCancel(get(kCanc));
 
-        // >>> coercivo p/ inteiros (evita "invalid input syntax for type integer")
         const pedRaw = parseBR(get(kPed) ?? 1);
         const ped    = toInt(pedRaw);
 
@@ -880,10 +879,10 @@
           unidade: unid,
           pagamento_base: pag,
           cancelado: canc,
-          pedidos: ped,            // <-- inteiro
-          fat: fat,                // decimal
-          des: des,                // decimal
-          fre: fre,                // decimal
+          pedidos: ped,
+          fat: fat,
+          des: des,
+          fre: fre,
           pedido_id: pid,
           created_at: new Date().toISOString(),
           row_key
@@ -894,7 +893,7 @@
       });
 
       const ok = rows.filter(x => x.dia!=null && String(x.dia).trim()!=='');
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Enviando para "${DEST_INSERT_TABLE}"…`);
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Inserindo em "${DEST_INSERT_TABLE}"… (duplicados serão ignorados)`);
 
       if(ok.length===0){ setStatus('Nada para gravar (0 linhas mapeadas).','err'); return; }
 
@@ -902,16 +901,17 @@
       const chunk = 400;
       for(let i=0;i<ok.length;i+=chunk){
         const slice = ok.slice(i,i+chunk);
-        const { error } = await supa.from(DEST_INSERT_TABLE).insert(slice);
+        // >>> IGNORA DUPLICADOS POR row_key
+        const { error } = await supa.from(DEST_INSERT_TABLE).insert(slice, { onConflict: 'row_key', ignoreDuplicates: true });
         if(error){
           console.error(error, {exemplo:slice[0]});
           setStatus('Erro no upload: '+error.message,'err');
-          info('Se o erro for "type integer", verifique colunas inteiras (ex.: pedidos/hora). Já coercionamos para inteiro; se persistir, a tabela pode ter outra coluna INTEGER recebendo decimal.');
+          info('Observação: usamos ON CONFLICT DO NOTHING (ignoreDuplicates). Se ainda assim falhar, verifique triggers/constraints adicionais.');
           throw error;
         }
       }
       setStatus('Upload concluído','ok');
-      info(`Gravado: ${ok.length} linhas em "${DEST_INSERT_TABLE}".`);
+      info(`Inserção finalizada em "${DEST_INSERT_TABLE}". Linhas duplicadas (mesmo row_key) foram ignoradas automaticamente.`);
 
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
