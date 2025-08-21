@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.12.13 — lojas fix + período sem cancel + logs)</title>
+  <title>DASHBOARD — CFO (v2.13.0 — loja fallback + RPC upload)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -285,13 +285,12 @@
   </div>
 
   <!-- libs -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <script>
   /* ============ CONFIG ============ */
-  const DEST_TABLE    = 'vendas_canon';
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -553,7 +552,7 @@
     if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
     const ctx=canvas.getContext('2d');
 
-    // oculta categorias totalmente zeradas
+    // oculta categorias 100% zeradas (períodos sem venda)
     const n=nowArr.map(v=>+v||0), p=prevArr.map(v=>+v||0);
     const keep = labels.map((_,i)=>i).filter(i=> (n[i]!==0) || (p[i]!==0));
     const L = keep.map(i=>labels[i]);
@@ -660,7 +659,7 @@
     }
   }
 
-  /* ============ Fallback local p/ contagem cancelados ============ */
+  /* ============ Descoberta dos campos nas fontes ============ */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -685,6 +684,8 @@
 
     return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, unidKeys, lojaKeys, canalKeys, pagKeys, cancKeys};
   }
+
+  /* ============ Fallback local (para KPI cancelados) ============ */
   async function trySourceLocal(source, de, ate, onlyCancel){
     const map = await discoverColumns(source);
     if(!map) return null;
@@ -712,21 +713,20 @@
     return [];
   }
 
-  /* ============ OPÇÕES DINÂMICAS POR PERÍODO (somente período; sem cancelado) ============ */
+  /* ============ OPÇÕES DINÂMICAS POR PERÍODO (com fallback de loja ← unidade) ============ */
   async function detectSourceForOptions(de,ate){
     const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas','vendas_canon'];
     for(const src of sources){
       const map = await discoverColumns(src);
       if(map && map.dateKeys.length && (map.lojaKeys.length || map.unidKeys.length || map.canalKeys.length || map.pagKeys.length)) {
-        console.log('[options] Fonte detectada:', src, 'lojas:', map.lojaKeys);
+        console.log('[options] Fonte:', src, 'lojaKeys:', map.lojaKeys, 'unidKeys:', map.unidKeys);
         return { src, map };
-      } else {
-        console.warn('[options] Fonte ignorada:', src);
       }
     }
     console.error('[options] Nenhuma fonte válida encontrada');
     return null;
   }
+  const canonMaps = { unids:{}, lojas:{}, canais:{}, pags:{}, turnos:{} };
   function mapCollect(obj, key, raw){
     const disp = displayNormalize(raw);
     const canon = canonText(raw);
@@ -749,7 +749,8 @@
       turnos: ms.turnos.get(), pags: ms.pags.get()
     };
 
-    canonMaps.unids = {}; canonMaps.lojas = {}; canonMaps.canais = {}; canonMaps.pags = {}; canonMaps.turnos = {};
+    // zera mapas
+    ['unids','lojas','canais','pags','turnos'].forEach(k=> canonMaps[k] = {});
 
     const cols = uniq([
       ...map.dateKeys,
@@ -761,16 +762,28 @@
       ...(map.cancKeys||[])
     ]).join(',');
 
-    // >>> Somente período (sem aplicar cancelado aqui)
+    // só período (não aplica cancelado aqui)
     let q = supa.from(src).select(cols).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(500000);
-
     const r = await q;
     if(r.error){ console.warn('options by period error', r.error.message); return; }
     const rows = r.data||[];
 
     rows.forEach(x=>{
+      // Unidade
       if(map.unidKeys.length && x[map.unidKeys[0]]!=null)  mapCollect(canonMaps,'unids',  x[map.unidKeys[0]]);
-      if(map.lojaKeys.length && x[map.lojaKeys[0]]!=null)  mapCollect(canonMaps,'lojas',  x[map.lojaKeys[0]]);
+      // Loja (com fallback p/ unidade se loja vier vazia)
+      let lojaVal = null;
+      if(map.lojaKeys.length){
+        const lv = x[map.lojaKeys[0]];
+        lojaVal = (lv!=null && String(lv).trim()!=='') ? lv : null;
+      }
+      if(!lojaVal && map.unidKeys.length){
+        const uv = x[map.unidKeys[0]];
+        lojaVal = (uv!=null && String(uv).trim()!=='') ? uv : null;
+      }
+      if(lojaVal!=null) mapCollect(canonMaps,'lojas',lojaVal);
+
+      // Demais
       if(map.canalKeys.length && x[map.canalKeys[0]]!=null)mapCollect(canonMaps,'canais', x[map.canalKeys[0]]);
       if(map.pagKeys.length && x[map.pagKeys[0]]!=null)    mapCollect(canonMaps,'pags',   x[map.pagKeys[0]]);
       if(map.turnoKeys.length && x[map.turnoKeys[0]]!=null)mapCollect(canonMaps,'turnos', x[map.turnoKeys[0]]);
@@ -785,7 +798,7 @@
     ms.turnos.setOptions( toDisplays(canonMaps.turnos) ); ms.turnos.set(prev.turnos);
   }
 
-  /* ============ Excel → DB (sempre grava) ============ */
+  /* ============ Excel → DB via RPC (sem tentar inserir na VIEW) ============ */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -836,6 +849,12 @@
     return null;
   }
 
+  async function callIngestRPC(batch){
+    // Tenta RPC; se não existir, retorna o erro para mostrar o SQL
+    const { error } = await supa.rpc('ingest_vendas_canon', { rows: batch });
+    return error || null;
+  }
+
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file){ info(''); return; }
@@ -876,19 +895,23 @@
       });
 
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Enviando ao banco em ${DEST_TABLE}…`);
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Enviando via RPC…`);
 
       if(ok.length===0){ setStatus('Nada para gravar (0 linhas mapeadas).','err'); return; }
 
       setStatus('Enviando Excel…');
-      const chunk = 500;
+      const chunk = 1000;
       for(let i=0;i<ok.length;i+=chunk){
         const slice = ok.slice(i,i+chunk);
-        const { error } = await supa.from(DEST_TABLE).insert(slice);
-        if(error){ setStatus('Erro no upload: '+error.message,'err'); throw error; }
+        const rpcErr = await callIngestRPC(slice);
+        if(rpcErr){
+          setStatus('Erro no upload (RPC): '+rpcErr.message,'err');
+          info('Crie a função SQL "public.ingest_vendas_canon(jsonb)" conforme o bloco SQL abaixo.');
+          throw rpcErr;
+        }
       }
       setStatus('Upload concluído','ok');
-      info(`Gravado em "${DEST_TABLE}": ${ok.length} linhas.`);
+      info(`Gravado via RPC: ${ok.length} linhas.`);
 
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
@@ -912,7 +935,7 @@
 
       setStatus('Consultando…');
 
-      await refreshOptionsByPeriod(de,ate);  // agora: só período; sem cancelado
+      await refreshOptionsByPeriod(de,ate);  // período apenas; loja com fallback
       let kpiOk=true;
       await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
       await updateChartsServer();
@@ -932,7 +955,7 @@
       if(dr.error) throw dr.error;
       if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
 
-      // Seed: todas as opções “globais” (se as views existirem)
+      // Semeia filtros globais (se as views existirem)
       const [unids,lojas,canais,turnos,pags] = await Promise.all([
         supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
         supa.from('vw_vendas_lojas').select('loja').order('loja'),
