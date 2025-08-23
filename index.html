@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.13.4 — vw_vendas_canon fix + null-safety + dedupe)</title>
+  <title>DASHBOARD — CFO (v2.13.4 — trilho v2 + null-safety + dedupe)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -290,8 +290,8 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  const READ_VIEW = 'vendas_canon_fix';   // fallback de leitura (normalizado)
-  const DEST_INSERT_TABLE = 'vendas_xlsx';       // tabela real de ingestão (NUNCA a view)
+  const READ_VIEW         = 'vw_vendas_canon2';   // <- trilho v2
+  const DEST_INSERT_TABLE = 'vendas_xlsx';        // ingestão (tabela real)
   const REFRESH_RPC       = 'refresh_sales_materialized';
 
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
@@ -475,6 +475,7 @@
     $('k_des').textContent=money(Math.abs(N.des)); $('p_des').textContent=money(Math.abs(P.des)); deltaBadge($('d_des'),Math.abs(N.des),Math.abs(P.des));
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
+
     $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
 
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
@@ -670,7 +671,13 @@
     return rows;
   }
   async function fetchRowsLocal(de, ate, onlyCancelValue){
-    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas', READ_VIEW];
+    const sources = [
+      'mv_vendas_canon',
+      'vw_vendas_canon',
+      'vw_vendas',
+      'vw_vendas_canon2', // <- novo trilho
+      READ_VIEW
+    ];
     const onlyCancel = (onlyCancelValue==='Sim');
     for(const src of sources){
       try{
@@ -689,7 +696,7 @@
     if(v instanceof Date) return iso(v);
     const s=String(v).trim();
     if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
-    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}) :?(\d{2})(?::(\d{2}))?)?$/);
+    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
     if(m){
       const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
       const d = new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
@@ -746,7 +753,7 @@
     const map = new Map();
     for(const r of rows){
       r.row_key = makeRowKey(r);
-      map.set(r.row_key, r); // mantém a última ocorrência
+      map.set(r.row_key, r); // última ocorrência vence
     }
     return [...map.values()];
   }
@@ -794,14 +801,14 @@
         const dia  = normalizeDateCell(get(kDia));
         const hora = parseHourUpload(get(kHora));
 
-        // Campos “sensíveis” a NOT NULL → garantimos placeholder
+        // NOT NULL safety → garantimos placeholder
         const unidade = nonEmptyOr(get(kUni),  'UNID_ND');
         const lojaVal = nonEmptyOr(get(kLoja), 'LOJA_DESCONHECIDA');
         const canalVal= nonEmptyOr(get(kCan),  'CANAL_ND');
 
         if(!displayNormalize(get(kLoja))) missingLoja++;
-        if(!displayNormalize(get(kCan)) ) missingCanal++;
-        if(!displayNormalize(get(kUni)) ) missingUnid++;
+        if(!displayNormalize(get(kCan)))  missingCanal++;
+        if(!displayNormalize(get(kUni)))  missingUnid++;
 
         const turno   = displayNormalize(get(kTurn)) || null;
         const pago    = displayNormalize(get(kPag));
@@ -816,8 +823,8 @@
           dia, hora, unidade,
           loja: lojaVal,
           canal: canalVal,
-          "Nome da loja": lojaVal,
-          "Canal de venda": canalVal,
+          "Nome da loja": lojaVal,     // dual-write para compatibilidade com schemas antigos
+          "Canal de venda": canalVal,  // idem
           pagamento_base: pago || null,
           cancelado: cancel,
           pedidos: ped,
@@ -830,7 +837,7 @@
         return row;
       });
 
-      const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
+      const ok    = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
       const dedup = dedupeByRowKey(ok);
 
       info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, deduplicadas: ${dedup.length}). Substituições → loja:${missingLoja}, canal:${missingCanal}, unidade:${missingUnid}. Enviando a ${DEST_INSERT_TABLE}…`);
@@ -844,7 +851,7 @@
       try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
 
       try{
-        const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
+        const dr = await supa.from('vw_vendas_daterange2').select('*').limit(1); // <- v2
         if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`; }
       }catch(_e){}
       await reloadStaticOptions();
@@ -861,11 +868,11 @@
   /* ===================== OPÇÕES (com fallback) ===================== */
   async function reloadStaticOptions(){
     const [unids,lojas,canais,turnos,pags] = await Promise.allSettled([
-      supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
-      supa.from('vw_vendas_lojas').select('loja').order('loja'),
-      supa.from('vw_vendas_canais').select('canal').order('canal'),
-      supa.from('vw_vendas_turnos').select('turno').order('turno'),
-      supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
+      supa.from('vw_vendas_unidades2').select('unidade').order('unidade'),       // <- v2
+      supa.from('vw_vendas_lojas2').select('loja').order('loja'),               // <- v2
+      supa.from('vw_vendas_canais2').select('canal').order('canal'),            // <- v2
+      supa.from('vw_vendas_turnos2').select('turno').order('turno'),            // <- v2
+      supa.from('vw_vendas_pagamentos2').select('pagamento_base').order('pagamento_base'), // <- v2
     ]);
     const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
     if(ok(unids))  ms.unids.setOptions((unids.value.data||[]).map(r=>r.unidade));
@@ -914,7 +921,7 @@
   (async function init(){
     try{
       setStatus('Carregando…');
-      const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
+      const dr = await supa.from('vw_vendas_daterange2').select('*').limit(1); // <- v2
       if(dr.error) throw dr.error;
       if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
 
