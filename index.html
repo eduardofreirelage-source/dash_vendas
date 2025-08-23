@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.13.4 — trilho v2 + null-safety + dedupe)</title>
+  <title>DASHBOARD — CFO (v2.13.4 — header-safe mapping + diag)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -58,9 +58,9 @@
     .chart-box{height:280px}
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
     .diag{font-size:12px;color:#475569;margin-left:8px}
-
     .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .upload-info{margin-top:8px;font-size:12px;color:#475569}
+    .map-info{white-space:pre-wrap; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background:#f3f4f6; border:1px solid var(--line); border-radius:8px; padding:8px; margin-top:6px;}
 
     @media (max-width:1024px){
       .cols-3{grid-template-columns:repeat(2,1fr)}
@@ -127,6 +127,7 @@
           <span id="status" class="muted">—</span>
           <span id="diag" class="diag"></span>
           <div id="uploadInfo" class="upload-info"></div>
+          <div id="mapInfo" class="map-info" style="display:none"></div>
         </div>
       </div>
       <div class="row cols-3">
@@ -290,8 +291,8 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  const READ_VIEW         = 'vw_vendas_canon2';   // <- trilho v2
-  const DEST_INSERT_TABLE = 'vendas_xlsx';        // ingestão (tabela real)
+  const READ_VIEW         = 'vendas_canon';     // leitura
+  const DEST_INSERT_TABLE = 'vendas_xlsx';      // ingestão
   const REFRESH_RPC       = 'refresh_sales_materialized';
 
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
@@ -303,6 +304,7 @@
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
   const setDiag=(msg)=>{ $('diag').textContent = msg || ''; };
   const info=(msg)=>{ $('uploadInfo').textContent = msg || ''; };
+  const showMap=(msg)=>{ const el=$('mapInfo'); el.style.display='block'; el.textContent=msg; };
 
   const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const num =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
@@ -475,7 +477,6 @@
     $('k_des').textContent=money(Math.abs(N.des)); $('p_des').textContent=money(Math.abs(P.des)); deltaBadge($('d_des'),Math.abs(N.des),Math.abs(P.des));
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-
     $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
 
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
@@ -671,13 +672,7 @@
     return rows;
   }
   async function fetchRowsLocal(de, ate, onlyCancelValue){
-    const sources = [
-      'mv_vendas_canon',
-      'vw_vendas_canon',
-      'vw_vendas',
-      'vw_vendas_canon2', // <- novo trilho
-      READ_VIEW
-    ];
+    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas', READ_VIEW];
     const onlyCancel = (onlyCancelValue==='Sim');
     for(const src of sources){
       try{
@@ -688,7 +683,7 @@
     return [];
   }
 
-  /* ===================== EXCEL → DB (upsert c/ dedupe + dual-write) ===================== */
+  /* ===================== EXCEL → DB (upsert c/ dedupe + header-safe) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -713,22 +708,65 @@
     const h=+m[1]; return (h>=0 && h<=23) ? h : null;
   }
 
+  // sinônimos base
   const headerAlts = {
     dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
     hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
     turno:['turno','periodo','shift'],
-    fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
-    des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
-    fre:  ['fre','frete','taxa entrega','taxa_entrega','entrega'],
+    // listas brutas (usadas como fallback apenas)
+    fat_fallback:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
+    des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto','voucher','parceiro desconto'],
+    fre:  ['fre','frete','taxa entrega','taxa_entrega','taxa de entrega','entrega','delivery fee','fee'],
     ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
     unid: ['unidade','unid','filial','cod_unidade','empresa'],
-    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja'],
-    canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
+    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja','store','pdv'],
+    canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda','source'],
     pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
     canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
     pid:  ['pedido id','pedido_id','id pedido','id_pedido','order id','order_id']
   };
-  function pickColumn(headers, alts){
+
+  // preferências seguras para FAT (nunca frete/desconto/fee)
+  const fatPriority = [
+    'faturamento liquido','faturamento_liquido','valor liquido','valor_liquido','fat liq','fat_liq',
+    'total nota','total_nota','valor total','valor_total','total venda','total_venda',
+    'faturamento','fat','valor venda','valor_venda','vl faturamento','vl_faturamento','vl total','vl_total','vlr total','vlr_total'
+  ];
+  const disallowFatTokens = ['frete','taxa','entrega','fee','desconto','incentivo','voucher','cancel'];
+
+  function tokens(s){ return normHeader(s).split(' '); }
+  function hasAny(hay,need){ return need.some(t=> hay.includes(t)); }
+
+  function candidates(headers, list){
+    const map = headers.map(h=>({orig:h, key:normHeader(h)}));
+    return list
+      .map(a => map.find(m=> m.key===a || m.key.includes(a)))
+      .filter(Boolean)
+      .map(x=>x.orig);
+  }
+  function pickFat(headers){
+    // 1) pegue todos possíveis
+    const cands = Array.from(new Set([
+      ...candidates(headers, fatPriority),
+      ...candidates(headers, headerAlts.fat_fallback)
+    ]));
+    // 2) elimine os que têm tokens proibidos
+    const safe = cands.filter(h=>{
+      const tk=tokens(h);
+      return !hasAny(tk, disallowFatTokens);
+    });
+    // 3) respeite prioridade
+    for(const want of fatPriority){
+      const hit = safe.find(h => {
+        const k=normHeader(h);
+        return k===want || k.includes(want);
+      });
+      if(hit) return hit;
+    }
+    // 4) se ainda não achou, último recurso: primeiro seguro
+    return safe[0] || null;
+  }
+  function pickExact(headers, alts){
     const map = headers.map(h=>({orig:h, key:normHeader(h)}));
     for(const a of alts){
       const ex = map.find(m=>m.key===a); if(ex) return ex.orig;
@@ -748,16 +786,14 @@
     ].map(v=>String(v).trim().toLowerCase());
     return parts.join('|');
   }
-
   function dedupeByRowKey(rows){
     const map = new Map();
     for(const r of rows){
       r.row_key = makeRowKey(r);
-      map.set(r.row_key, r); // última ocorrência vence
+      map.set(r.row_key, r); // mantém a última
     }
     return [...map.values()];
   }
-
   async function uploadBatch(rows){
     const chunk = 500;
     for(let i=0;i<rows.length;i+=chunk){
@@ -778,53 +814,69 @@
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
       const headers = json.length ? Object.keys(json[0]) : [];
+      // Mapeamento seguro
+      const kDia  = pickExact(headers, headerAlts.dia);
+      const kHora = pickExact(headers, headerAlts.hora);
+      const kTurn = pickExact(headers, headerAlts.turno);
+      const kFat  = pickFat(headers); // <- seguro
+      const kDes  = pickExact(headers, headerAlts.des);
+      const kFre  = pickExact(headers, headerAlts.fre);
+      const kPed  = pickExact(headers, headerAlts.ped);
+      const kUni  = pickExact(headers, headerAlts.unid);
+      const kLoja = pickExact(headers, headerAlts.loja);
+      const kCan  = pickExact(headers, headerAlts.canal);
+      const kPag  = pickExact(headers, headerAlts.pag);
+      const kCanc = pickExact(headers, headerAlts.canc);
+      const kPid  = pickExact(headers, headerAlts.pid);
 
-      const kDia  = pickColumn(headers, headerAlts.dia);
-      const kHora = pickColumn(headers, headerAlts.hora);
-      const kTurn = pickColumn(headers, headerAlts.turno);
-      const kFat  = pickColumn(headers, headerAlts.fat);
-      const kDes  = pickColumn(headers, headerAlts.des);
-      const kFre  = pickColumn(headers, headerAlts.fre);
-      const kPed  = pickColumn(headers, headerAlts.ped);
-      const kUni  = pickColumn(headers, headerAlts.unid);
-      const kLoja = pickColumn(headers, headerAlts.loja);
-      const kCan  = pickColumn(headers, headerAlts.canal);
-      const kPag  = pickColumn(headers, headerAlts.pag);
-      const kCanc = pickColumn(headers, headerAlts.canc);
-      const kPid  = pickColumn(headers, headerAlts.pid);
+      // Diagnóstico das colunas escolhidas
+      showMap(
+        `Mapeamento escolhido:
+- dia:  ${kDia||'(não encontrado)'}
+- hora: ${kHora||'(não encontrado)'}
+- turno:${kTurn||'(não encontrado)'}
+- unidade: ${kUni||'(não encontrado)'}
+- loja:    ${kLoja||'(não encontrado)'}
+- canal:   ${kCan||'(não encontrado)'}
+- pagamento: ${kPag||'(não encontrado)'}
+- cancelado: ${kCanc||'(não encontrado)'}
+- pedidos:   ${kPed||'(não encontrado)'}
+- FAT:       ${kFat||'(não encontrado)'}
+- DES:       ${kDes||'(não encontrado)'}
+- FRE:       ${kFre||'(não encontrado)'}
+`
+      );
 
       let missingLoja=0, missingCanal=0, missingUnid=0;
 
+      const get = (row,k)=> (k? row[k] : null);
+
       let mapped = json.map(r=>{
-        const get = (k)=> (k? r[k] : null);
+        const dia  = normalizeDateCell(get(r,kDia));
+        const hora = parseHourUpload(get(r,kHora));
+        const unidade = nonEmptyOr(get(r,kUni),  'UNID_ND');
+        const lojaVal = nonEmptyOr(get(r,kLoja), 'LOJA_DESCONHECIDA');
+        const canalVal= nonEmptyOr(get(r,kCan),  'CANAL_ND');
 
-        const dia  = normalizeDateCell(get(kDia));
-        const hora = parseHourUpload(get(kHora));
+        if(!displayNormalize(get(r,kLoja))) missingLoja++;
+        if(!displayNormalize(get(r,kCan)) ) missingCanal++;
+        if(!displayNormalize(get(r,kUni)) ) missingUnid++;
 
-        // NOT NULL safety → garantimos placeholder
-        const unidade = nonEmptyOr(get(kUni),  'UNID_ND');
-        const lojaVal = nonEmptyOr(get(kLoja), 'LOJA_DESCONHECIDA');
-        const canalVal= nonEmptyOr(get(kCan),  'CANAL_ND');
-
-        if(!displayNormalize(get(kLoja))) missingLoja++;
-        if(!displayNormalize(get(kCan)))  missingCanal++;
-        if(!displayNormalize(get(kUni)))  missingUnid++;
-
-        const turno   = displayNormalize(get(kTurn)) || null;
-        const pago    = displayNormalize(get(kPag));
-        const pid     = displayNormalize(get(kPid));
-        const cancel  = normCancel(get(kCanc));
-        const ped     = toInt(get(kPed) ?? 1);
-        const fat     = parseBR(get(kFat));
-        const des     = parseBR(get(kDes));
-        const fre     = parseBR(get(kFre));
+        const turno = displayNormalize(get(r,kTurn)) || null;
+        const pago  = displayNormalize(get(r,kPag));
+        const pid   = displayNormalize(get(r,kPid));
+        const cancel= normCancel(get(r,kCanc));
+        const ped   = toInt(get(r,kPed) ?? 1);
+        const fat   = parseBR(get(r,kFat));
+        const des   = parseBR(get(r,kDes));
+        const fre   = parseBR(get(r,kFre));
 
         const row = {
           dia, hora, unidade,
           loja: lojaVal,
           canal: canalVal,
-          "Nome da loja": lojaVal,     // dual-write para compatibilidade com schemas antigos
-          "Canal de venda": canalVal,  // idem
+          "Nome da loja": lojaVal,          // mantém legado
+          "Canal de venda": canalVal,       // mantém legado
           pagamento_base: pago || null,
           cancelado: cancel,
           pedidos: ped,
@@ -837,21 +889,27 @@
         return row;
       });
 
-      const ok    = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
+      // diagnóstico rápido dos números lidos ANTES do envio
+      const sum = (arr, k)=> arr.reduce((a,x)=> a + (+x[k]||0), 0);
+      const fatSum = sum(mapped,'fat'), desSum = sum(mapped,'des'), freSum = sum(mapped,'fre'), pedSum = sum(mapped,'pedidos');
+      info(`Pré-envio (soma local): FAT=${money(fatSum)} | DES=${money(desSum)} | FRE=${money(freSum)} | PED=${num(pedSum)}`);
+
+      const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
       const dedup = dedupeByRowKey(ok);
 
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, deduplicadas: ${dedup.length}). Substituições → loja:${missingLoja}, canal:${missingCanal}, unidade:${missingUnid}. Enviando a ${DEST_INSERT_TABLE}…`);
+      $('mapInfo').textContent += `\nPré-envio (dedupe): linhas válidas=${ok.length}, únicas=${dedup.length}\nSubstituições → loja:${missingLoja}, canal:${missingCanal}, unidade:${missingUnid}`;
+
       if(dedup.length===0){ setStatus('Nada para gravar (0 linhas válidas).','err'); return; }
 
       setStatus('Enviando Excel…');
       await uploadBatch(dedup);
       setStatus('Upload concluído','ok');
-      info(`Gravado/atualizado em "${DEST_INSERT_TABLE}": ${dedup.length} linhas.`);
+      info(`Gravado/atualizado: ${dedup.length} linhas em "${DEST_INSERT_TABLE}".`);
 
       try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
 
       try{
-        const dr = await supa.from('vw_vendas_daterange2').select('*').limit(1); // <- v2
+        const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
         if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`; }
       }catch(_e){}
       await reloadStaticOptions();
@@ -868,11 +926,11 @@
   /* ===================== OPÇÕES (com fallback) ===================== */
   async function reloadStaticOptions(){
     const [unids,lojas,canais,turnos,pags] = await Promise.allSettled([
-      supa.from('vw_vendas_unidades2').select('unidade').order('unidade'),       // <- v2
-      supa.from('vw_vendas_lojas2').select('loja').order('loja'),               // <- v2
-      supa.from('vw_vendas_canais2').select('canal').order('canal'),            // <- v2
-      supa.from('vw_vendas_turnos2').select('turno').order('turno'),            // <- v2
-      supa.from('vw_vendas_pagamentos2').select('pagamento_base').order('pagamento_base'), // <- v2
+      supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
+      supa.from('vw_vendas_lojas').select('loja').order('loja'),
+      supa.from('vw_vendas_canais').select('canal').order('canal'),
+      supa.from('vw_vendas_turnos').select('turno').order('turno'),
+      supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
     ]);
     const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
     if(ok(unids))  ms.unids.setOptions((unids.value.data||[]).map(r=>r.unidade));
@@ -921,7 +979,7 @@
   (async function init(){
     try{
       setStatus('Carregando…');
-      const dr = await supa.from('vw_vendas_daterange2').select('*').limit(1); // <- v2
+      const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
       if(dr.error) throw dr.error;
       if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
 
