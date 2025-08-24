@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.13.4 — RPC-8 + dual-write + dedupe)</title>
+  <title>DASHBOARD — CFO (v2.13.5 — RPC-8 + dedupe + mapeamento robusto)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -53,9 +53,9 @@
     .seg button.active{background:var(--pri);color:#fff}
     .chart-box{height:280px}
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
-    .diag{font-size:12px;color:#475569;margin-left:8px}
+    .diag{font-size:12px;color:#475569;margin-left:8px;white-space:pre-line}
     .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    .upload-info{margin-top:8px;font-size:12px;color:#475569}
+    .upload-info{margin-top:8px;font-size:12px;color:#475569;white-space:pre-line}
     @media (max-width:1024px){ .cols-3{grid-template-columns:repeat(2,1fr)} .cols-2{grid-template-columns:1fr} .krow{grid-template-columns:repeat(2,1fr)} }
     @media (max-width:640px){ .cols-3{grid-template-columns:1fr} .krow{grid-template-columns:1fr} }
   </style>
@@ -80,14 +80,8 @@
         <button id="btnClear" class="btn clear">✖ Limpar filtros</button>
       </div>
       <div class="row cols-3">
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Intervalo (início)</div>
-          <input type="date" id="fDe">
-        </div>
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Intervalo (fim)</div>
-          <input type="date" id="fAte">
-        </div>
+        <div><div class="muted" style="margin-bottom:6px;">Intervalo (início)</div><input type="date" id="fDe"></div>
+        <div><div class="muted" style="margin-bottom:6px;">Intervalo (fim)</div><input type="date" id="fAte"></div>
         <div>
           <div class="muted" style="margin-bottom:6px;">Período rápido</div>
           <div class="chips">
@@ -117,28 +111,13 @@
         </div>
       </div>
       <div class="row cols-3">
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Unidade</div>
-          <div id="ms-unids" class="msel"><button class="msel-btn">Todas as unidades</button><div class="msel-panel"></div></div>
-        </div>
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Nome da Loja</div>
-          <div id="ms-lojas" class="msel"><button class="msel-btn">Todas as lojas</button><div class="msel-panel"></div></div>
-        </div>
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Turno da Venda</div>
-          <div id="ms-turnos" class="msel"><button class="msel-btn">Todos os turnos</button><div class="msel-panel"></div></div>
-        </div>
+        <div><div class="muted" style="margin-bottom:6px;">Unidade</div><div id="ms-unids" class="msel"><button class="msel-btn">Todas as unidades</button><div class="msel-panel"></div></div></div>
+        <div><div class="muted" style="margin-bottom:6px;">Nome da Loja</div><div id="ms-lojas" class="msel"><button class="msel-btn">Todas as lojas</button><div class="msel-panel"></div></div></div>
+        <div><div class="muted" style="margin-bottom:6px;">Turno da Venda</div><div id="ms-turnos" class="msel"><button class="msel-btn">Todos os turnos</button><div class="msel-panel"></div></div></div>
       </div>
       <div class="row cols-3" style="margin-top:10px;">
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Canal de Venda</div>
-          <div id="ms-canais" class="msel"><button class="msel-btn">Todos os canais</button><div class="msel-panel"></div></div>
-        </div>
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Tipo de Pagamento</div>
-          <div id="ms-pags" class="msel"><button class="msel-btn">Todos os tipos</button><div class="msel-panel"></div></div>
-        </div>
+        <div><div class="muted" style="margin-bottom:6px;">Canal de Venda</div><div id="ms-canais" class="msel"><button class="msel-btn">Todos os canais</button><div class="msel-panel"></div></div></div>
+        <div><div class="muted" style="margin-bottom:6px;">Tipo de Pagamento</div><div id="ms-pags" class="msel"><button class="msel-btn">Todos os tipos</button><div class="msel-panel"></div></div></div>
         <div>
           <div class="muted" style="margin-bottom:6px;">Cancelado</div>
           <div id="ms-cancel" class="msel">
@@ -276,16 +255,16 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 
   <script>
-  /* ============== CONFIG ============== */
-  const READ_VIEW         = 'vendas_canon';   // view de leitura (gráficos/filtros)
-  const DEST_INSERT_TABLE = 'vendas_xlsx';    // tabela real de ingestão
+  /* ===================== CONFIG ===================== */
+  const READ_VIEW         = 'vendas_canon';
+  const DEST_INSERT_TABLE = 'vendas_xlsx';
   const REFRESH_RPC       = 'refresh_sales_materialized';
 
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  /* ============== HELPERS ============== */
+  /* ===================== HELPERS ===================== */
   const $ = id => document.getElementById(id);
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
   const setDiag=(msg)=>{ $('diag').textContent = msg || ''; };
@@ -332,7 +311,7 @@
   function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
-  /* ============== MULTISELECT ============== */
+  /* ===================== MULTISELECT ===================== */
   function MultiSelect(rootId, placeholder){
     const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
     let options=[], selected=new Set(), filtered=[];
@@ -366,7 +345,7 @@
     };
   }
 
-  /* ============== ESTADO / PERÍODO ============== */
+  /* ===================== ESTADO / PERÍODO ===================== */
   let firstDay='', lastDay='';
   const chips=[...document.querySelectorAll('.chip')];
   const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
@@ -399,7 +378,7 @@
     applyAll();
   }));
 
-  /* ============== KPIs ============== */
+  /* ===================== KPIs ===================== */
   function buildParams(de, ate, overrideCancel = null) {
     const canc = overrideCancel != null ? [overrideCancel] : ms.cancel.get();
     let p_cancelado = null;
@@ -475,19 +454,35 @@
     deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
   }
 
-  /* ============== COMPARATIVO PERÍODO ANTERIOR ============== */
+  /* ===== comparativo período anterior ===== */
   function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
-  function isFullYear(d1,d2){ return d1.getMonth()===0 && d1.getDate()===1 && d2.getMonth()===11 && d2.getDate()===31 && d1.getFullYear()===d2.getFullYear(); }
-  function isFullMonthsAligned(d1,d2){ return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth()); }
-  function shiftYear(date,delta){ const d=new Date(date); d.setFullYear(d.getFullYear()+delta); const ld = lastDayOfMonth(d.getFullYear(), d.getMonth()); if(d.getDate()>ld) d.setDate(ld); return d; }
+  function isFullYear(d1,d2){
+    return d1.getMonth()===0 && d1.getDate()===1 &&
+           d2.getMonth()===11 && d2.getDate()===31 &&
+           d1.getFullYear()===d2.getFullYear();
+  }
+  function isFullMonthsAligned(d1,d2){
+    return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth());
+  }
+  function shiftYear(date,delta){
+    const d=new Date(date); d.setFullYear(d.getFullYear()+delta);
+    const ld = lastDayOfMonth(d.getFullYear(), d.getMonth());
+    if(d.getDate()>ld) d.setDate(ld);
+    return d;
+  }
   function computePrevRangeISO(deISO, ateISO){
     const d1=new Date(deISO+'T00:00:00'), d2=new Date(ateISO+'T00:00:00');
-    if(isFullYear(d1,d2) || isFullMonthsAligned(d1,d2)){ const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1); return { dePrev: iso(p1), atePrev: iso(p2) }; }
-    const len=daysLen(deISO,ateISO); const atePrev=new Date(d1.getTime()-24*60*60*1000); const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);
+    if(isFullYear(d1,d2) || isFullMonthsAligned(d1,d2)){
+      const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1);
+      return { dePrev: iso(p1), atePrev: iso(p2) };
+    }
+    const len=daysLen(deISO,ateISO);
+    const atePrev=new Date(d1.getTime()-24*60*60*1000);
+    const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);
     return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
   }
 
-  /* ============== GRÁFICOS (RPC com 8 params) ============== */
+  /* ===================== GRÁFICOS (RPC-8) ===================== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -606,7 +601,7 @@
     }
   }
 
-  /* ============== FALLBACK LOCAL (apenas p/ cancelados) ============== */
+  /* ===================== FALLBACK LOCAL ===================== */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -619,7 +614,7 @@
     const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
     const turnoKeys= ['turno','periodo','shift'].filter(has);
     const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
-    const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
+    const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','qtd_vendas'].filter(has); // (sem itens)
     const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
     return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, cancKeys};
   }
@@ -642,7 +637,7 @@
     return rows;
   }
   async function fetchRowsLocal(de, ate, onlyCancelValue){
-    const sources = ['mv_vendas_canon', READ_VIEW]; // sem vw_vendas_canon
+    const sources = ['mv_vendas_canon', READ_VIEW];
     const onlyCancel = (onlyCancelValue==='Sim');
     for(const src of sources){
       try{
@@ -653,7 +648,7 @@
     return [];
   }
 
-  /* ============== EXCEL → DB (upsert c/ dual-write + dedupe) ============== */
+  /* ===================== EXCEL → DB (UPLOAD) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -678,16 +673,35 @@
     const h=+m[1]; return (h>=0 && h<=23) ? h : null;
   }
 
+  // ======= mapeamento inteligente (evita erros de "Itens" e "Valor Entregador") =======
+  function pickSmart(headers, prefer=[], avoid=[]){
+    const map = headers.map(h=>({orig:h, key:normHeader(h)}));
+    let best=null, bestScore=-999;
+    for(const h of map){
+      let score = 0;
+      for(const p of prefer){
+        const pk = normHeader(p);
+        if(h.key===pk) score += 6;
+        else if(h.key.includes(pk)) score += 2;
+      }
+      for(const a of avoid){
+        const ak = normHeader(a);
+        if(h.key.includes(ak)) score -= 8;
+      }
+      if(score>bestScore){ bestScore=score; best=h; }
+    }
+    return bestScore>0 ? best.orig : null;
+  }
+
   const headerAlts = {
     dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
     hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
     turno:['turno','periodo','shift'],
-    fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
+    // fat e ped serão escolhidos via pickSmart
     des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
     fre:  ['fre','frete','taxa entrega','taxa_entrega','entrega'],
-    ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
     unid: ['unidade','unid','filial','cod_unidade','empresa'],
-    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja'],
+    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja','código da loja','codigo da loja','codigo loja'],
     canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
     pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
     canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
@@ -696,8 +710,10 @@
   function pickColumn(headers, alts){
     const map = headers.map(h=>({orig:h, key:normHeader(h)}));
     for(const a of alts){
-      const ex = map.find(m=>m.key===a); if(ex) return ex.orig;
-      const cont = map.find(m=>m.key.includes(a)); if(cont) return cont.orig;
+      const ex = map.find(m=>m.key===normHeader(a)); if(ex) return ex.orig;
+    }
+    for(const a of alts){
+      const cont = map.find(m=>m.key.includes(normHeader(a))); if(cont) return cont.orig;
     }
     return null;
   }
@@ -732,6 +748,8 @@
     }
   }
 
+  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
+
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file){ info(''); return; }
@@ -747,16 +765,32 @@
       const kDia  = pickColumn(headers, headerAlts.dia);
       const kHora = pickColumn(headers, headerAlts.hora);
       const kTurn = pickColumn(headers, headerAlts.turno);
-      const kFat  = pickColumn(headers, headerAlts.fat);
+
+      // escolhas robustas:
+      const kFat  = pickSmart(
+        headers,
+        ['faturamento líquido','valor líquido','fat_liq','valor venda','faturamento','fat','total nota','vl faturamento','vl liquido','vl venda','valor_total','valor total','faturamento total'],
+        ['entregador','repasse','comissao','comissão','custo','taxa','frete','entrega','repasse entregador','taxa do entregador']
+      );
+      const kFre  = pickSmart(
+        headers,
+        ['frete','taxa de entrega','taxa entrega','entrega'],
+        ['vendedor','entregador','comissao','comissão','repasse']
+      );
       const kDes  = pickColumn(headers, headerAlts.des);
-      const kFre  = pickColumn(headers, headerAlts.fre);
-      const kPed  = pickColumn(headers, headerAlts.ped);
       const kUni  = pickColumn(headers, headerAlts.unid);
       const kLoja = pickColumn(headers, headerAlts.loja);
       const kCan  = pickColumn(headers, headerAlts.canal);
       const kPag  = pickColumn(headers, headerAlts.pag);
       const kCanc = pickColumn(headers, headerAlts.canc);
       const kPid  = pickColumn(headers, headerAlts.pid);
+
+      // Pedidos: NUNCA usar "itens"
+      const kPed  = pickSmart(
+        headers,
+        ['pedidos','qtd pedidos','qtd_pedidos','qtd pedido','qtd_pedido','quantidade de pedidos','qtd vendas','qtd_vendas'],
+        ['item','itens','qtd itens','qtd_itens']
+      );
 
       let missingLoja=0, missingCanal=0, missingUnid=0;
 
@@ -766,7 +800,6 @@
         const dia  = normalizeDateCell(get(kDia));
         const hora = parseHourUpload(get(kHora));
 
-        // placeholders para NOT NULL no backend
         const unidade = nonEmptyOr(get(kUni),  'UNID_ND');
         const lojaVal = nonEmptyOr(get(kLoja), 'LOJA_DESCONHECIDA');
         const canalVal= nonEmptyOr(get(kCan),  'CANAL_ND');
@@ -779,17 +812,18 @@
         const pago  = displayNormalize(get(kPag));
         const pid   = displayNormalize(get(kPid));
         const cancel= normCancel(get(kCanc));
-        const ped   = toInt(get(kPed) ?? 1);
-        const fat   = parseBR(get(kFat));
-        const des   = parseBR(get(kDes));
-        const fre   = parseBR(get(kFre));
+
+        const ped = toInt(get(kPed) ?? 1);
+        const fat = parseBR(get(kFat));
+        const des = parseBR(get(kDes));
+        const fre = parseBR(get(kFre));
 
         const row = {
           dia, hora, unidade,
           loja: lojaVal,
           canal: canalVal,
-          "Nome da loja": lojaVal,          // dual-write p/ compatibilidade
-          "Canal de venda": canalVal,       // dual-write p/ compatibilidade
+          "Nome da loja": lojaVal,
+          "Canal de venda": canalVal,
           pagamento_base: pago || null,
           cancelado: cancel,
           pedidos: ped,
@@ -802,10 +836,28 @@
         return row;
       });
 
+      // auditoria de mapeamento
+      const audit=[
+        `Mapeamento escolhido:`,
+        `- dia:  ${kDia||'(não encontrado)'}`,
+        `- hora: ${kHora||'(não encontrado)'}`,
+        `- turno:${kTurn||'(não encontrado)'}`,
+        `- unidade: ${kUni||'(não encontrado)'}`,
+        `- loja: ${kLoja||'(não encontrado)'}`,
+        `- canal: ${kCan||'(não encontrado)'}`,
+        `- pagamento: ${kPag||'(não encontrado)'}`,
+        `- cancelado: ${kCanc||'(não encontrado)'}`,
+        `- pedidos: ${kPed||'(não encontrado)'}  (NUNCA "itens")`,
+        `- FAT: ${kFat||'(não encontrado)'}  (evitando 'entregador/repasse/comissão/custo/taxa/frete/entrega')`,
+        `- DES: ${kDes||'(não encontrado)'}`,
+        `- FRE: ${kFre||'(não encontrado)'}  (evitando 'vendedor/entregador/comissão/repasse')`,
+        ``,
+      ].join('\n');
+
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
       const dedup = dedupeByRowKey(ok);
 
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, deduplicadas: ${dedup.length}). Substituições → loja:${missingLoja}, canal:${missingCanal}, unidade:${missingUnid}. Enviando a ${DEST_INSERT_TABLE}…`);
+      info(`${audit}Pré-envio (dedupe): linhas válidas:${ok.length}, únicas:${dedup.length}\nSubstituições → loja:${missingLoja}, canal:${missingCanal}, unidade:${missingUnid}.\nEnviando a ${DEST_INSERT_TABLE}…`);
       if(dedup.length===0){ setStatus('Nada para gravar (0 linhas válidas).','err'); return; }
 
       setStatus('Enviando Excel…');
@@ -830,7 +882,7 @@
     }
   });
 
-  /* ============== OPÇÕES (com fallback) ============== */
+  /* ===================== OPÇÕES (com fallback) ===================== */
   async function reloadStaticOptions(){
     const [unids,lojas,canais,turnos,pags] = await Promise.allSettled([
       supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
@@ -863,7 +915,7 @@
     }
   }
 
-  /* ============== LOOP PRINCIPAL ============== */
+  /* ===================== LOOP PRINCIPAL ===================== */
   async function applyAll(){
     try{
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
