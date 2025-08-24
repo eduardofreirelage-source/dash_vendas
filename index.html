@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.13.5 — RPC-8 + dedupe + mapeamento robusto)</title>
+  <title>DASHBOARD — CFO (v2.13.6 — gráficos v1/v2 + fallback full-filtros + upload robusto)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -54,7 +54,6 @@
     .chart-box{height:280px}
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
     .diag{font-size:12px;color:#475569;margin-left:8px;white-space:pre-line}
-    .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .upload-info{margin-top:8px;font-size:12px;color:#475569;white-space:pre-line}
     @media (max-width:1024px){ .cols-3{grid-template-columns:repeat(2,1fr)} .cols-2{grid-template-columns:1fr} .krow{grid-template-columns:repeat(2,1fr)} }
     @media (max-width:640px){ .cols-3{grid-template-columns:1fr} .krow{grid-template-columns:1fr} }
@@ -325,7 +324,16 @@
         const row=document.createElement('div'); row.className='msel-opt';
         const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v; cb.checked=selected.has(v);
         const lb=document.createElement('label'); lb.textContent=v;
-        cb.addEventListener('change',()=>{cb.checked?selected.add(v):selected.delete(v); refresh(); applyAll();});
+        cb.addEventListener('change',()=>{
+          if(rootId==='ms-cancel'){
+            if(v==='' && cb.checked){ selected = new Set(['']); }
+            else if(v!=='' && cb.checked){ selected.delete(''); selected.add(v); }
+            else { cb.checked ? selected.add(v) : selected.delete(v); if(selected.size===0) selected.add('Não'); }
+          }else{
+            cb.checked?selected.add(v):selected.delete(v);
+          }
+          refresh(); applyAll(); draw();
+        });
         row.appendChild(cb); row.appendChild(lb); box.appendChild(row);
       });
       panel.querySelectorAll('.msel-opt').forEach(n=>n.remove());
@@ -414,7 +422,6 @@
       supa.rpc(nameNow, prepareArgs(nameNow,{...pNow, p_cancelado:'Sim'})),
       supa.rpc(namePrev, prepareArgs(namePrev,{...pPrev, p_cancelado:'Sim'})),
     ]);
-
     if(now.error) throw now.error;
     if(prev.error) throw prev.error;
 
@@ -482,7 +489,7 @@
     return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
   }
 
-  /* ===================== GRÁFICOS (RPC-8) ===================== */
+  /* ===================== GRÁFICOS (v1/v2 dinâmico) ===================== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -518,12 +525,10 @@
     });
   });
 
-  const RPC_FN = {
-    dow:   'chart_vendas_dow_v1',
-    month: 'chart_vendas_mes_v1',
-    hour:  'chart_vendas_hora_v1',
-    turno: 'chart_vendas_turno_v1',
-  };
+  function getChartFn(kind){
+    const hasUnits = ms.unids.get().length>0;
+    return `chart_vendas_${kind}_${hasUnits ? 'v2' : 'v1'}`;
+  }
 
   async function fetchChartRPC(kind, de, ate){
     const params = {
@@ -535,9 +540,11 @@
       p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
       p_cancelado: (ms.cancel.get().length===1 && (ms.cancel.get()[0]==='Sim' || ms.cancel.get()[0]==='Não')) ? ms.cancel.get()[0] : null
     };
-    const { data, error } = await supa.rpc(RPC_FN[kind], params);
-    if(error){ console.warn('[chart rpc]', kind, error.message); throw error; }
-    return data||[];
+    const fn = getChartFn(kind);
+    if(fn.endsWith('_v1')) delete params.p_unids; // RPC v1 não aceita p_unids
+    const { data, error } = await supa.rpc(fn, params);
+    if(error){ console.warn('[chart rpc]', kind, fn, error.message); throw error; }
+    return { fn, data: data||[] };
   }
   function ymToLabel(ym){ const [y,m]=ym.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
 
@@ -546,7 +553,6 @@
     const {dePrev, atePrev} = computePrevRangeISO(de,ate);
 
     try{
-      setDiag('');
       const kinds = ['dow','month','hour','turno'];
       const toDo = only ? [only] : kinds;
 
@@ -555,44 +561,49 @@
         return {k, now, prev};
       }));
 
+      // DOW
       const pD = packs.find(p=>p.k==='dow');
       if(!only || only==='dow'){
         const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
         const nArr = Array(7).fill(0), pArr = Array(7).fill(0), nMed=Array(7).fill(0), pMed=Array(7).fill(0);
-        (pD?.now||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; });
-        (pD?.prev||[]).forEach(r=>{ pArr[r.dow]=+r.total||0; pMed[r.dow]=+r.media||0; });
+        (pD?.now.data||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; });
+        (pD?.prev.data||[]).forEach(r=>{ pArr[r.dow]=+r.total||0; pMed[r.dow]=+r.media||0; });
         ensureChart('ch_dow', labels, (chartMode.dow==='media'?nMed:nArr), (chartMode.dow==='media'?pMed:pArr));
       }
 
+      // MONTH
       const pM = packs.find(p=>p.k==='month');
       if(!only || only==='month'){
-        const n = pM?.now||[], p = pM?.prev||[];
+        const n = pM?.now.data||[], p = pM?.prev.data||[];
         const all = [...new Set([...n.map(r=>r.ym), ...p.map(r=>r.ym)])].sort();
         const mapN=new Map(n.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
         const mapP=new Map(p.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
         ensureChart('ch_month', all.map(ymToLabel), all.map(x=>mapN.get(x)||0), all.map(x=>mapP.get(x)||0));
       }
 
+      // HOUR
       const pH = packs.find(p=>p.k==='hour');
       if(!only || only==='hour'){
         const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
         const nArr = Array(24).fill(0), pArr = Array(24).fill(0), nMed=Array(24).fill(0), pMed=Array(24).fill(0);
-        (pH?.now||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; });
-        (pH?.prev||[]).forEach(r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; });
+        (pH?.now.data||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; });
+        (pH?.prev.data||[]).forEach(r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; });
         ensureChart('ch_hour', labels, (chartMode.hour==='media'?nMed:nArr), (chartMode.hour==='media'?pMed:pArr));
       }
 
+      // TURNO
       const pT = packs.find(p=>p.k==='turno');
       if(!only || only==='turno'){
         const order=['Manhã','Tarde','Noite','Madrugada','Dia'];
-        const n = new Map((pT?.now||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
-        const p = new Map((pT?.prev||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
+        const n = new Map((pT?.now.data||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
+        const p = new Map((pT?.prev.data||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
         const labels = order.filter(x=> n.has(x) || p.has(x));
         ensureChart('ch_turno', labels, labels.map(l=>n.get(l)||0), labels.map(l=>p.get(l)||0));
       }
 
       const sum = a => (a||[]).reduce((acc,r)=> acc + (+r.total||0), 0);
-      setDiag(`(RPC charts ✓ | soma DOW atual/ant: ${money(sum(packs.find(p=>p.k==='dow')?.now))} / ${money(sum(packs.find(p=>p.k==='dow')?.prev))})`);
+      const infoLines = packs.map(p=>`${p.k}: ${p.now.fn} / ${p.prev.fn}`).join(' | ');
+      setDiag(`(RPC charts ✓ | ${infoLines})`);
       setStatus('OK — gráficos via RPC','ok');
     }catch(e){
       console.error(e);
@@ -601,7 +612,7 @@
     }
   }
 
-  /* ===================== FALLBACK LOCAL ===================== */
+  /* ===================== FALLBACK LOCAL (full filtros) ===================== */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -614,21 +625,33 @@
     const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
     const turnoKeys= ['turno','periodo','shift'].filter(has);
     const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
-    const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','qtd_vendas'].filter(has); // (sem itens)
+    const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','qtd_vendas'].filter(has); // evita "itens"
     const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
-    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, cancKeys};
+    const unidKeys = ['unidade','unid','filial','cod_unidade','empresa'].filter(has);
+    const lojaKeys = ['loja','loja_nome','nome_loja','loja_fantasia','nome da loja'].filter(has);
+    const canalKeys= ['canal','canal_venda','origem','meio','canal_vendas','canal de venda'].filter(has);
+    const pagKeys  = ['pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto'].filter(has);
+    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, cancKeys, unidKeys, lojaKeys, canalKeys, pagKeys};
   }
+
   async function trySourceLocal(source, de, ate, onlyCancel){
     const map = await discoverColumns(source);
     if(!map) return null;
-    const sel = uniq([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys]).join(',');
+    const sel = uniq([
+      ...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys,
+      ...map.unidKeys, ...map.lojaKeys, ...map.canalKeys, ...map.pagKeys
+    ]).join(',');
     const q = await supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
     if(q.error) return null;
     const rows = (q.data||[]).filter(x=>{
-      if(!onlyCancel) return true;
-      const k = map.cancKeys[0];
-      const norm = normCancel(x[k]);
-      return norm === 'Sim';
+      const cancVal = normCancel(x[map.cancKeys[0]]);
+      if (onlyCancel && cancVal!=='Sim') return false;
+      if (map.unidKeys[0] && ms.unids.get().length && !ms.unids.get().includes(x[map.unidKeys[0]])) return false;
+      if (map.lojaKeys[0] && ms.lojas.get().length && !ms.lojas.get().includes(x[map.lojaKeys[0]])) return false;
+      if (map.canalKeys[0] && ms.canais.get().length && !ms.canais.get().includes(x[map.canalKeys[0]])) return false;
+      if (map.pagKeys[0] && ms.pags.get().length && !ms.pags.get().includes(x[map.pagKeys[0]])) return false;
+      if (map.turnoKeys[0] && ms.turnos.get().length && !ms.turnos.get().includes(x[map.turnoKeys[0]])) return false;
+      return true;
     }).map(x=>{
       const fat = (map.fatKeys.length)? parseBR(x[map.fatKeys[0]]) : 0;
       const ped = (map.pedKeys.length)? toInt(x[map.pedKeys[0]]) : 1;
@@ -636,6 +659,7 @@
     });
     return rows;
   }
+
   async function fetchRowsLocal(de, ate, onlyCancelValue){
     const sources = ['mv_vendas_canon', READ_VIEW];
     const onlyCancel = (onlyCancelValue==='Sim');
@@ -648,7 +672,7 @@
     return [];
   }
 
-  /* ===================== EXCEL → DB (UPLOAD) ===================== */
+  /* ===================== UPLOAD (robusto) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -673,7 +697,6 @@
     const h=+m[1]; return (h>=0 && h<=23) ? h : null;
   }
 
-  // ======= mapeamento inteligente (evita erros de "Itens" e "Valor Entregador") =======
   function pickSmart(headers, prefer=[], avoid=[]){
     const map = headers.map(h=>({orig:h, key:normHeader(h)}));
     let best=null, bestScore=-999;
@@ -697,7 +720,6 @@
     dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
     hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
     turno:['turno','periodo','shift'],
-    // fat e ped serão escolhidos via pickSmart
     des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
     fre:  ['fre','frete','taxa entrega','taxa_entrega','entrega'],
     unid: ['unidade','unid','filial','cod_unidade','empresa'],
@@ -709,17 +731,12 @@
   };
   function pickColumn(headers, alts){
     const map = headers.map(h=>({orig:h, key:normHeader(h)}));
-    for(const a of alts){
-      const ex = map.find(m=>m.key===normHeader(a)); if(ex) return ex.orig;
-    }
-    for(const a of alts){
-      const cont = map.find(m=>m.key.includes(normHeader(a))); if(cont) return cont.orig;
-    }
+    for(const a of alts){ const ex = map.find(m=>m.key===normHeader(a)); if(ex) return ex.orig; }
+    for(const a of alts){ const cont = map.find(m=>m.key.includes(normHeader(a))); if(cont) return cont.orig; }
     return null;
   }
 
   function nonEmptyOr(v, fallback){ const s = displayNormalize(v); return s ? s : fallback; }
-
   function makeRowKey(x){
     const parts = [
       x.dia||'', x.hora??'', x.unidade||'',
@@ -729,16 +746,11 @@
     ].map(v=>String(v).trim().toLowerCase());
     return parts.join('|');
   }
-
   function dedupeByRowKey(rows){
     const map = new Map();
-    for(const r of rows){
-      r.row_key = makeRowKey(r);
-      map.set(r.row_key, r); // mantém a última ocorrência
-    }
+    for(const r of rows){ r.row_key = makeRowKey(r); map.set(r.row_key, r); }
     return [...map.values()];
   }
-
   async function uploadBatch(rows){
     const chunk = 500;
     for(let i=0;i<rows.length;i+=chunk){
@@ -759,21 +771,16 @@
       const wb = XLSX.read(buf, { type:'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
-
       const headers = json.length ? Object.keys(json[0]) : [];
 
       const kDia  = pickColumn(headers, headerAlts.dia);
       const kHora = pickColumn(headers, headerAlts.hora);
       const kTurn = pickColumn(headers, headerAlts.turno);
-
-      // escolhas robustas:
-      const kFat  = pickSmart(
-        headers,
+      const kFat  = pickSmart(headers,
         ['faturamento líquido','valor líquido','fat_liq','valor venda','faturamento','fat','total nota','vl faturamento','vl liquido','vl venda','valor_total','valor total','faturamento total'],
         ['entregador','repasse','comissao','comissão','custo','taxa','frete','entrega','repasse entregador','taxa do entregador']
       );
-      const kFre  = pickSmart(
-        headers,
+      const kFre  = pickSmart(headers,
         ['frete','taxa de entrega','taxa entrega','entrega'],
         ['vendedor','entregador','comissao','comissão','repasse']
       );
@@ -784,10 +791,7 @@
       const kPag  = pickColumn(headers, headerAlts.pag);
       const kCanc = pickColumn(headers, headerAlts.canc);
       const kPid  = pickColumn(headers, headerAlts.pid);
-
-      // Pedidos: NUNCA usar "itens"
-      const kPed  = pickSmart(
-        headers,
+      const kPed  = pickSmart(headers,
         ['pedidos','qtd pedidos','qtd_pedidos','qtd pedido','qtd_pedido','quantidade de pedidos','qtd vendas','qtd_vendas'],
         ['item','itens','qtd itens','qtd_itens']
       );
@@ -796,28 +800,22 @@
 
       let mapped = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
-
         const dia  = normalizeDateCell(get(kDia));
         const hora = parseHourUpload(get(kHora));
-
         const unidade = nonEmptyOr(get(kUni),  'UNID_ND');
         const lojaVal = nonEmptyOr(get(kLoja), 'LOJA_DESCONHECIDA');
         const canalVal= nonEmptyOr(get(kCan),  'CANAL_ND');
-
         if(!displayNormalize(get(kLoja))) missingLoja++;
         if(!displayNormalize(get(kCan)) ) missingCanal++;
         if(!displayNormalize(get(kUni)) ) missingUnid++;
-
         const turno = displayNormalize(get(kTurn)) || null;
         const pago  = displayNormalize(get(kPag));
         const pid   = displayNormalize(get(kPid));
         const cancel= normCancel(get(kCanc));
-
         const ped = toInt(get(kPed) ?? 1);
         const fat = parseBR(get(kFat));
         const des = parseBR(get(kDes));
         const fre = parseBR(get(kFre));
-
         const row = {
           dia, hora, unidade,
           loja: lojaVal,
@@ -836,7 +834,6 @@
         return row;
       });
 
-      // auditoria de mapeamento
       const audit=[
         `Mapeamento escolhido:`,
         `- dia:  ${kDia||'(não encontrado)'}`,
@@ -848,16 +845,16 @@
         `- pagamento: ${kPag||'(não encontrado)'}`,
         `- cancelado: ${kCanc||'(não encontrado)'}`,
         `- pedidos: ${kPed||'(não encontrado)'}  (NUNCA "itens")`,
-        `- FAT: ${kFat||'(não encontrado)'}  (evitando 'entregador/repasse/comissão/custo/taxa/frete/entrega')`,
+        `- FAT: ${kFat||'(não encontrado)'}  (evitando entregador/repasse/comissão/custo/taxa/frete/entrega)`,
         `- DES: ${kDes||'(não encontrado)'}`,
-        `- FRE: ${kFre||'(não encontrado)'}  (evitando 'vendedor/entregador/comissão/repasse')`,
-        ``,
+        `- FRE: ${kFre||'(não encontrado)'}`,
+        ``
       ].join('\n');
 
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
       const dedup = dedupeByRowKey(ok);
 
-      info(`${audit}Pré-envio (dedupe): linhas válidas:${ok.length}, únicas:${dedup.length}\nSubstituições → loja:${missingLoja}, canal:${missingCanal}, unidade:${missingUnid}.\nEnviando a ${DEST_INSERT_TABLE}…`);
+      info(`${audit}Pré-envio (dedupe): válidas:${ok.length}, únicas:${dedup.length}\nSubstituições → loja:${missingLoja}, canal:${missingCanal}, unidade:${missingUnid}.\nEnviando a ${DEST_INSERT_TABLE}…`);
       if(dedup.length===0){ setStatus('Nada para gravar (0 linhas válidas).','err'); return; }
 
       setStatus('Enviando Excel…');
