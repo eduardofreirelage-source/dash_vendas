@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.13.6 — gráficos v1/v2 + fallback full-filtros + upload robusto)</title>
+  <title>DASHBOARD — CFO (v2.13.4 — gráficos *_v2 + params fix + cancel UX)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -53,10 +53,18 @@
     .seg button.active{background:var(--pri);color:#fff}
     .chart-box{height:280px}
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
-    .diag{font-size:12px;color:#475569;margin-left:8px;white-space:pre-line}
-    .upload-info{margin-top:8px;font-size:12px;color:#475569;white-space:pre-line}
-    @media (max-width:1024px){ .cols-3{grid-template-columns:repeat(2,1fr)} .cols-2{grid-template-columns:1fr} .krow{grid-template-columns:repeat(2,1fr)} }
-    @media (max-width:640px){ .cols-3{grid-template-columns:1fr} .krow{grid-template-columns:1fr} }
+    .diag{font-size:12px;color:#475569;margin-left:8px}
+    .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .upload-info{margin-top:8px;font-size:12px;color:#475569}
+    @media (max-width:1024px){
+      .cols-3{grid-template-columns:repeat(2,1fr)}
+      .cols-2{grid-template-columns:1fr}
+      .krow{grid-template-columns:repeat(2,1fr)}
+    }
+    @media (max-width:640px){
+      .cols-3{grid-template-columns:1fr}
+      .krow{grid-template-columns:1fr}
+    }
   </style>
 </head>
 <body>
@@ -79,8 +87,14 @@
         <button id="btnClear" class="btn clear">✖ Limpar filtros</button>
       </div>
       <div class="row cols-3">
-        <div><div class="muted" style="margin-bottom:6px;">Intervalo (início)</div><input type="date" id="fDe"></div>
-        <div><div class="muted" style="margin-bottom:6px;">Intervalo (fim)</div><input type="date" id="fAte"></div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Intervalo (início)</div>
+          <input type="date" id="fDe">
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Intervalo (fim)</div>
+          <input type="date" id="fAte">
+        </div>
         <div>
           <div class="muted" style="margin-bottom:6px;">Período rápido</div>
           <div class="chips">
@@ -110,13 +124,28 @@
         </div>
       </div>
       <div class="row cols-3">
-        <div><div class="muted" style="margin-bottom:6px;">Unidade</div><div id="ms-unids" class="msel"><button class="msel-btn">Todas as unidades</button><div class="msel-panel"></div></div></div>
-        <div><div class="muted" style="margin-bottom:6px;">Nome da Loja</div><div id="ms-lojas" class="msel"><button class="msel-btn">Todas as lojas</button><div class="msel-panel"></div></div></div>
-        <div><div class="muted" style="margin-bottom:6px;">Turno da Venda</div><div id="ms-turnos" class="msel"><button class="msel-btn">Todos os turnos</button><div class="msel-panel"></div></div></div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Unidade</div>
+          <div id="ms-unids" class="msel"><button class="msel-btn">Todas as unidades</button><div class="msel-panel"></div></div>
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Nome da Loja</div>
+          <div id="ms-lojas" class="msel"><button class="msel-btn">Todas as lojas</button><div class="msel-panel"></div></div>
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Turno da Venda</div>
+          <div id="ms-turnos" class="msel"><button class="msel-btn">Todos os turnos</button><div class="msel-panel"></div></div>
+        </div>
       </div>
       <div class="row cols-3" style="margin-top:10px;">
-        <div><div class="muted" style="margin-bottom:6px;">Canal de Venda</div><div id="ms-canais" class="msel"><button class="msel-btn">Todos os canais</button><div class="msel-panel"></div></div></div>
-        <div><div class="muted" style="margin-bottom:6px;">Tipo de Pagamento</div><div id="ms-pags" class="msel"><button class="msel-btn">Todos os tipos</button><div class="msel-panel"></div></div></div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Canal de Venda</div>
+          <div id="ms-canais" class="msel"><button class="msel-btn">Todos os canais</button><div class="msel-panel"></div></div>
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Tipo de Pagamento</div>
+          <div id="ms-pags" class="msel"><button class="msel-btn">Todos os tipos</button><div class="msel-panel"></div></div>
+        </div>
         <div>
           <div class="muted" style="margin-bottom:6px;">Cancelado</div>
           <div id="ms-cancel" class="msel">
@@ -255,11 +284,11 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  const READ_VIEW         = 'vendas_canon';
-  const DEST_INSERT_TABLE = 'vendas_xlsx';
-  const REFRESH_RPC       = 'refresh_sales_materialized';
+  const READ_VIEW = 'vendas_canon';            // leitura (views/gráficos/filtros)
+  const DEST_INSERT_TABLE = 'vendas_xlsx';     // tabela real de ingestão (NUNCA a view)
+  const REFRESH_RPC = 'refresh_sales_materialized';
 
-  const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
+  const SUPABASE_URL = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
@@ -325,10 +354,11 @@
         const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v; cb.checked=selected.has(v);
         const lb=document.createElement('label'); lb.textContent=v;
         cb.addEventListener('change',()=>{
+          // Exclusividade para Cancelado
           if(rootId==='ms-cancel'){
-            if(v==='' && cb.checked){ selected = new Set(['']); }
+            if(v==='' && cb.checked){ selected=new Set(['']); }
             else if(v!=='' && cb.checked){ selected.delete(''); selected.add(v); }
-            else { cb.checked ? selected.add(v) : selected.delete(v); if(selected.size===0) selected.add('Não'); }
+            else if(!cb.checked){ selected.delete(v); if(selected.size===0) selected.add('Não'); }
           }else{
             cb.checked?selected.add(v):selected.delete(v);
           }
@@ -358,11 +388,11 @@
   const chips=[...document.querySelectorAll('.chip')];
   const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
   const ms={
-    unids:  MultiSelect('ms-unids','Todas as unidades'),
-    lojas:  MultiSelect('ms-lojas','Todas as lojas'),
+    unids: MultiSelect('ms-unids','Todas as unidades'),
+    lojas: MultiSelect('ms-lojas','Todas as lojas'),
     canais: MultiSelect('ms-canais','Todos os canais'),
     turnos: MultiSelect('ms-turnos','Todos os turnos'),
-    pags:   MultiSelect('ms-pags','Todos os tipos'),
+    pags: MultiSelect('ms-pags','Todos os tipos'),
     cancel: MultiSelect('ms-cancel','Todos')
   };
   function setActiveChip(val){ chips.forEach(c=>c.classList.toggle('active', c.dataset.q===String(val))); }
@@ -393,11 +423,11 @@
     if (canc.length === 1 && (canc[0] === 'Não' || canc[0] === 'Sim')) p_cancelado = canc[0];
     return {
       p_dini: de, p_dfim: ate,
-      p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
-      p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
+      p_unids: ms.unids.get().length ? ms.unids.get() : null,
+      p_lojas: ms.lojas.get().length ? ms.lojas.get() : null,
       p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
       p_canais: ms.canais.get().length ? ms.canais.get() : null,
-      p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
+      p_pags: ms.pags.get().length ? ms.pags.get() : null,
       p_cancelado
     };
   }
@@ -415,7 +445,7 @@
 
   async function updateKPIs(de, ate, dePrev, atePrev){
     const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
-    const nameNow=rpcName(pNow),     namePrev=rpcName(pPrev);
+    const nameNow=rpcName(pNow), namePrev=rpcName(pPrev);
     const [now,prev,cNow,cPrev] = await Promise.all([
       supa.rpc(nameNow, prepareArgs(nameNow,pNow)),
       supa.rpc(namePrev, prepareArgs(namePrev,pPrev)),
@@ -437,7 +467,7 @@
 
     const len=daysLen(de,ate);
     const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
-    const fatMedN = len? (N.fat/len) : 0,    fatMedP = len? (P.fat/len) : 0;
+    const fatMedN = len? (N.fat/len) : 0, fatMedP = len? (P.fat/len) : 0;
     const desPercN = N.fat? (Math.abs(N.des)/N.fat) : 0, desPercP = P.fat? (Math.abs(P.des)/P.fat) : 0;
     const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/P.ped) : 0;
     const partCancN = N.ped? (CN.ped/N.ped) : 0, partCancP = P.ped? (CP.ped/P.ped) : 0;
@@ -489,7 +519,7 @@
     return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
   }
 
-  /* ===================== GRÁFICOS (v1/v2 dinâmico) ===================== */
+  /* ===================== GRÁFICOS VIA RPC ===================== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -525,11 +555,15 @@
     });
   });
 
-  function getChartFn(kind){
-    const hasUnits = ms.unids.get().length>0;
-    return `chart_vendas_${kind}_${hasUnits ? 'v2' : 'v1'}`;
-  }
+  // IMPORTANTE: sempre use as funções *_v2 (suportam p_unids e p_pags)
+  const RPC_FN = {
+    dow:   'chart_vendas_dow_v2',
+    month: 'chart_vendas_mes_v2',
+    hour:  'chart_vendas_hora_v2',
+    turno: 'chart_vendas_turno_v2',
+  };
 
+  // Envie SEMPRE todas as chaves; use null quando não houver filtro
   async function fetchChartRPC(kind, de, ate){
     const params = {
       p_dini: de, p_dfim: ate,
@@ -538,14 +572,17 @@
       p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
       p_canais: ms.canais.get().length ? ms.canais.get() : null,
       p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
-      p_cancelado: (ms.cancel.get().length===1 && (ms.cancel.get()[0]==='Sim' || ms.cancel.get()[0]==='Não')) ? ms.cancel.get()[0] : null
+      p_cancelado: (()=>{
+        const s = ms.cancel.get();
+        return (s.length===1 && (s[0]==='Sim' || s[0]==='Não')) ? s[0] : null;
+      })()
     };
-    const fn = getChartFn(kind);
-    if(fn.endsWith('_v1')) delete params.p_unids; // RPC v1 não aceita p_unids
+    const fn = RPC_FN[kind];
     const { data, error } = await supa.rpc(fn, params);
-    if(error){ console.warn('[chart rpc]', kind, fn, error.message); throw error; }
-    return { fn, data: data||[] };
+    if(error){ console.warn('[chart rpc]', fn, error.message, params); throw error; }
+    return data||[];
   }
+
   function ymToLabel(ym){ const [y,m]=ym.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
 
   async function updateChartsServer(only){
@@ -553,6 +590,7 @@
     const {dePrev, atePrev} = computePrevRangeISO(de,ate);
 
     try{
+      setDiag('');
       const kinds = ['dow','month','hour','turno'];
       const toDo = only ? [only] : kinds;
 
@@ -561,49 +599,44 @@
         return {k, now, prev};
       }));
 
-      // DOW
       const pD = packs.find(p=>p.k==='dow');
       if(!only || only==='dow'){
         const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
         const nArr = Array(7).fill(0), pArr = Array(7).fill(0), nMed=Array(7).fill(0), pMed=Array(7).fill(0);
-        (pD?.now.data||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; });
-        (pD?.prev.data||[]).forEach(r=>{ pArr[r.dow]=+r.total||0; pMed[r.dow]=+r.media||0; });
+        (pD?.now||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; });
+        (pD?.prev||[]).forEach(r=>{ pArr[r.dow]=+r.total||0; pMed[r.dow]=+r.media||0; });
         ensureChart('ch_dow', labels, (chartMode.dow==='media'?nMed:nArr), (chartMode.dow==='media'?pMed:pArr));
       }
 
-      // MONTH
       const pM = packs.find(p=>p.k==='month');
       if(!only || only==='month'){
-        const n = pM?.now.data||[], p = pM?.prev.data||[];
+        const n = pM?.now||[], p = pM?.prev||[];
         const all = [...new Set([...n.map(r=>r.ym), ...p.map(r=>r.ym)])].sort();
         const mapN=new Map(n.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
         const mapP=new Map(p.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
         ensureChart('ch_month', all.map(ymToLabel), all.map(x=>mapN.get(x)||0), all.map(x=>mapP.get(x)||0));
       }
 
-      // HOUR
       const pH = packs.find(p=>p.k==='hour');
       if(!only || only==='hour'){
         const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
         const nArr = Array(24).fill(0), pArr = Array(24).fill(0), nMed=Array(24).fill(0), pMed=Array(24).fill(0);
-        (pH?.now.data||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; });
-        (pH?.prev.data||[]).forEach(r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; });
+        (pH?.now||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; });
+        (pH?.prev||[]).forEach(r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; });
         ensureChart('ch_hour', labels, (chartMode.hour==='media'?nMed:nArr), (chartMode.hour==='media'?pMed:pArr));
       }
 
-      // TURNO
       const pT = packs.find(p=>p.k==='turno');
       if(!only || only==='turno'){
         const order=['Manhã','Tarde','Noite','Madrugada','Dia'];
-        const n = new Map((pT?.now.data||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
-        const p = new Map((pT?.prev.data||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
+        const n = new Map((pT?.now||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
+        const p = new Map((pT?.prev||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
         const labels = order.filter(x=> n.has(x) || p.has(x));
         ensureChart('ch_turno', labels, labels.map(l=>n.get(l)||0), labels.map(l=>p.get(l)||0));
       }
 
       const sum = a => (a||[]).reduce((acc,r)=> acc + (+r.total||0), 0);
-      const infoLines = packs.map(p=>`${p.k}: ${p.now.fn} / ${p.prev.fn}`).join(' | ');
-      setDiag(`(RPC charts ✓ | ${infoLines})`);
+      setDiag(`(RPC charts ✓ | soma DOW atual/ant: ${money(sum(packs.find(p=>p.k==='dow')?.now))} / ${money(sum(packs.find(p=>p.k==='dow')?.prev))})`);
       setStatus('OK — gráficos via RPC','ok');
     }catch(e){
       console.error(e);
@@ -612,7 +645,7 @@
     }
   }
 
-  /* ===================== FALLBACK LOCAL (full filtros) ===================== */
+  /* ===================== FALLBACK LOCAL (cancelados) ===================== */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -625,27 +658,24 @@
     const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
     const turnoKeys= ['turno','periodo','shift'].filter(has);
     const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
-    const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','qtd_vendas'].filter(has); // evita "itens"
+    const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
     const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
     const unidKeys = ['unidade','unid','filial','cod_unidade','empresa'].filter(has);
     const lojaKeys = ['loja','loja_nome','nome_loja','loja_fantasia','nome da loja'].filter(has);
-    const canalKeys= ['canal','canal_venda','origem','meio','canal_vendas','canal de venda'].filter(has);
-    const pagKeys  = ['pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto'].filter(has);
+    const canalKeys = ['canal','canal_venda','origem','meio','canal_vendas','canal de venda'].filter(has);
+    const pagKeys = ['pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto'].filter(has);
     return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, cancKeys, unidKeys, lojaKeys, canalKeys, pagKeys};
   }
-
   async function trySourceLocal(source, de, ate, onlyCancel){
     const map = await discoverColumns(source);
     if(!map) return null;
-    const sel = uniq([
-      ...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys,
-      ...map.unidKeys, ...map.lojaKeys, ...map.canalKeys, ...map.pagKeys
-    ]).join(',');
+    const sel = uniq([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys,
+                     ...map.unidKeys, ...map.lojaKeys, ...map.canalKeys, ...map.pagKeys]).join(',');
     const q = await supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
     if(q.error) return null;
     const rows = (q.data||[]).filter(x=>{
       const cancVal = normCancel(x[map.cancKeys[0]]);
-      if (onlyCancel && cancVal!=='Sim') return false;
+      if (onlyCancel && cancVal !== 'Sim') return false;
       if (map.unidKeys[0] && ms.unids.get().length && !ms.unids.get().includes(x[map.unidKeys[0]])) return false;
       if (map.lojaKeys[0] && ms.lojas.get().length && !ms.lojas.get().includes(x[map.lojaKeys[0]])) return false;
       if (map.canalKeys[0] && ms.canais.get().length && !ms.canais.get().includes(x[map.canalKeys[0]])) return false;
@@ -659,9 +689,8 @@
     });
     return rows;
   }
-
   async function fetchRowsLocal(de, ate, onlyCancelValue){
-    const sources = ['mv_vendas_canon', READ_VIEW];
+    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas', READ_VIEW];
     const onlyCancel = (onlyCancelValue==='Sim');
     for(const src of sources){
       try{
@@ -672,7 +701,7 @@
     return [];
   }
 
-  /* ===================== UPLOAD (robusto) ===================== */
+  /* ===================== EXCEL → DB (upsert c/ dedupe + dual-write) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -697,46 +726,32 @@
     const h=+m[1]; return (h>=0 && h<=23) ? h : null;
   }
 
-  function pickSmart(headers, prefer=[], avoid=[]){
-    const map = headers.map(h=>({orig:h, key:normHeader(h)}));
-    let best=null, bestScore=-999;
-    for(const h of map){
-      let score = 0;
-      for(const p of prefer){
-        const pk = normHeader(p);
-        if(h.key===pk) score += 6;
-        else if(h.key.includes(pk)) score += 2;
-      }
-      for(const a of avoid){
-        const ak = normHeader(a);
-        if(h.key.includes(ak)) score -= 8;
-      }
-      if(score>bestScore){ bestScore=score; best=h; }
-    }
-    return bestScore>0 ? best.orig : null;
-  }
-
   const headerAlts = {
-    dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
+    dia: ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
     hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
     turno:['turno','periodo','shift'],
-    des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
-    fre:  ['fre','frete','taxa entrega','taxa_entrega','entrega'],
+    fat: ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
+    des: ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
+    fre: ['fre','frete','taxa entrega','taxa_entrega','entrega'],
+    ped: ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
     unid: ['unidade','unid','filial','cod_unidade','empresa'],
-    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja','código da loja','codigo da loja','codigo loja'],
+    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja'],
     canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
-    pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
+    pag: ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
     canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
-    pid:  ['pedido id','pedido_id','id pedido','id_pedido','order id','order_id']
+    pid: ['pedido id','pedido_id','id pedido','id_pedido','order id','order_id']
   };
   function pickColumn(headers, alts){
     const map = headers.map(h=>({orig:h, key:normHeader(h)}));
-    for(const a of alts){ const ex = map.find(m=>m.key===normHeader(a)); if(ex) return ex.orig; }
-    for(const a of alts){ const cont = map.find(m=>m.key.includes(normHeader(a))); if(cont) return cont.orig; }
+    for(const a of alts){
+      const ex = map.find(m=>m.key===a); if(ex) return ex.orig;
+      const cont = map.find(m=>m.key.includes(a)); if(cont) return cont.orig;
+    }
     return null;
   }
 
   function nonEmptyOr(v, fallback){ const s = displayNormalize(v); return s ? s : fallback; }
+
   function makeRowKey(x){
     const parts = [
       x.dia||'', x.hora??'', x.unidade||'',
@@ -746,11 +761,16 @@
     ].map(v=>String(v).trim().toLowerCase());
     return parts.join('|');
   }
+
   function dedupeByRowKey(rows){
     const map = new Map();
-    for(const r of rows){ r.row_key = makeRowKey(r); map.set(r.row_key, r); }
+    for(const r of rows){
+      r.row_key = makeRowKey(r);
+      map.set(r.row_key, r); // mantém a última ocorrência
+    }
     return [...map.values()];
   }
+
   async function uploadBatch(rows){
     const chunk = 500;
     for(let i=0;i<rows.length;i+=chunk){
@@ -759,8 +779,6 @@
       if(error){ throw error; }
     }
   }
-
-  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
@@ -771,51 +789,48 @@
       const wb = XLSX.read(buf, { type:'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
+
       const headers = json.length ? Object.keys(json[0]) : [];
 
-      const kDia  = pickColumn(headers, headerAlts.dia);
+      const kDia = pickColumn(headers, headerAlts.dia);
       const kHora = pickColumn(headers, headerAlts.hora);
       const kTurn = pickColumn(headers, headerAlts.turno);
-      const kFat  = pickSmart(headers,
-        ['faturamento líquido','valor líquido','fat_liq','valor venda','faturamento','fat','total nota','vl faturamento','vl liquido','vl venda','valor_total','valor total','faturamento total'],
-        ['entregador','repasse','comissao','comissão','custo','taxa','frete','entrega','repasse entregador','taxa do entregador']
-      );
-      const kFre  = pickSmart(headers,
-        ['frete','taxa de entrega','taxa entrega','entrega'],
-        ['vendedor','entregador','comissao','comissão','repasse']
-      );
-      const kDes  = pickColumn(headers, headerAlts.des);
-      const kUni  = pickColumn(headers, headerAlts.unid);
+      const kFat = pickColumn(headers, headerAlts.fat);
+      const kDes = pickColumn(headers, headerAlts.des);
+      const kFre = pickColumn(headers, headerAlts.fre);
+      const kPed = pickColumn(headers, headerAlts.ped);
+      const kUni = pickColumn(headers, headerAlts.unid);
       const kLoja = pickColumn(headers, headerAlts.loja);
-      const kCan  = pickColumn(headers, headerAlts.canal);
-      const kPag  = pickColumn(headers, headerAlts.pag);
+      const kCan = pickColumn(headers, headerAlts.canal);
+      const kPag = pickColumn(headers, headerAlts.pag);
       const kCanc = pickColumn(headers, headerAlts.canc);
-      const kPid  = pickColumn(headers, headerAlts.pid);
-      const kPed  = pickSmart(headers,
-        ['pedidos','qtd pedidos','qtd_pedidos','qtd pedido','qtd_pedido','quantidade de pedidos','qtd vendas','qtd_vendas'],
-        ['item','itens','qtd itens','qtd_itens']
-      );
+      const kPid = pickColumn(headers, headerAlts.pid);
 
       let missingLoja=0, missingCanal=0, missingUnid=0;
 
       let mapped = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
-        const dia  = normalizeDateCell(get(kDia));
+
+        const dia = normalizeDateCell(get(kDia));
         const hora = parseHourUpload(get(kHora));
-        const unidade = nonEmptyOr(get(kUni),  'UNID_ND');
+
+        const unidade = nonEmptyOr(get(kUni), 'UNID_ND');
         const lojaVal = nonEmptyOr(get(kLoja), 'LOJA_DESCONHECIDA');
-        const canalVal= nonEmptyOr(get(kCan),  'CANAL_ND');
+        const canalVal= nonEmptyOr(get(kCan), 'CANAL_ND');
+
         if(!displayNormalize(get(kLoja))) missingLoja++;
         if(!displayNormalize(get(kCan)) ) missingCanal++;
         if(!displayNormalize(get(kUni)) ) missingUnid++;
+
         const turno = displayNormalize(get(kTurn)) || null;
-        const pago  = displayNormalize(get(kPag));
-        const pid   = displayNormalize(get(kPid));
-        const cancel= normCancel(get(kCanc));
+        const pago = displayNormalize(get(kPag));
+        const pid = displayNormalize(get(kPid));
+        const cancel = normCancel(get(kCanc));
         const ped = toInt(get(kPed) ?? 1);
         const fat = parseBR(get(kFat));
         const des = parseBR(get(kDes));
         const fre = parseBR(get(kFre));
+
         const row = {
           dia, hora, unidade,
           loja: lojaVal,
@@ -827,34 +842,17 @@
           pedidos: ped,
           fat, des, fre,
           pedido_id: pid || null,
-          turno,
+          turno: turno,
           created_at: new Date().toISOString()
         };
         row.row_key = makeRowKey(row);
         return row;
       });
 
-      const audit=[
-        `Mapeamento escolhido:`,
-        `- dia:  ${kDia||'(não encontrado)'}`,
-        `- hora: ${kHora||'(não encontrado)'}`,
-        `- turno:${kTurn||'(não encontrado)'}`,
-        `- unidade: ${kUni||'(não encontrado)'}`,
-        `- loja: ${kLoja||'(não encontrado)'}`,
-        `- canal: ${kCan||'(não encontrado)'}`,
-        `- pagamento: ${kPag||'(não encontrado)'}`,
-        `- cancelado: ${kCanc||'(não encontrado)'}`,
-        `- pedidos: ${kPed||'(não encontrado)'}  (NUNCA "itens")`,
-        `- FAT: ${kFat||'(não encontrado)'}  (evitando entregador/repasse/comissão/custo/taxa/frete/entrega)`,
-        `- DES: ${kDes||'(não encontrado)'}`,
-        `- FRE: ${kFre||'(não encontrado)'}`,
-        ``
-      ].join('\n');
-
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
       const dedup = dedupeByRowKey(ok);
 
-      info(`${audit}Pré-envio (dedupe): válidas:${ok.length}, únicas:${dedup.length}\nSubstituições → loja:${missingLoja}, canal:${missingCanal}, unidade:${missingUnid}.\nEnviando a ${DEST_INSERT_TABLE}…`);
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, deduplicadas: ${dedup.length}). Substituições → loja:${missingLoja}, canal:${missingCanal}, unidade:${missingUnid}. Enviando a ${DEST_INSERT_TABLE}…`);
       if(dedup.length===0){ setStatus('Nada para gravar (0 linhas válidas).','err'); return; }
 
       setStatus('Enviando Excel…');
@@ -889,11 +887,11 @@
       supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
     ]);
     const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
-    if(ok(unids))  ms.unids.setOptions((unids.value.data||[]).map(r=>r.unidade));
-    if(ok(lojas))  ms.lojas.setOptions((lojas.value.data||[]).map(r=>r.loja));
+    if(ok(unids)) ms.unids.setOptions((unids.value.data||[]).map(r=>r.unidade));
+    if(ok(lojas)) ms.lojas.setOptions((lojas.value.data||[]).map(r=>r.loja));
     if(ok(canais)) ms.canais.setOptions((canais.value.data||[]).map(r=>r.canal));
     if(ok(turnos)) ms.turnos.setOptions((turnos.value.data||[]).map(r=>r.turno));
-    if(ok(pags))   ms.pags.setOptions((pags.value.data||[]).map(r=>r.pagamento_base));
+    if(ok(pags)) ms.pags.setOptions((pags.value.data||[]).map(r=>r.pagamento_base));
 
     const needFallback = !(ok(unids)&&ok(lojas)&&ok(canais)&&ok(turnos)&&ok(pags));
     if(needFallback){
@@ -940,7 +938,6 @@
       if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
 
       await reloadStaticOptions();
-
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
 
       $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
