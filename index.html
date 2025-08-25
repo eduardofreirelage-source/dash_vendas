@@ -3,13 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Dashboard – Upload de Vendas1</title>
-
+<title>Dashboard – Upload de Vendas (sem CDN)</title>
 <style>
   :root{--bg:#0b1020;--card:#121830;--mut:#7a88a8;--ok:#29c58a;--warn:#ffcc00;--err:#ff6b6b}
   *{box-sizing:border-box}
   body{margin:0;background:#0a0f1f;color:#e6edf5;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial}
-  .wrap{max-width:1000px;margin:28px auto;padding:0 16px}
+  .wrap{max-width:1100px;margin:28px auto;padding:0 16px}
   h1{margin:0 0 16px}
   .card{background:#121830;border:1px solid #24304d;border-radius:14px;padding:14px;margin:12px 0;box-shadow:0 10px 30px rgba(0,0,0,.25)}
   .row{display:flex;gap:12px;flex-wrap:wrap}
@@ -18,7 +17,7 @@
   .btn.ghost{background:#1a223a}
   .btn[disabled]{opacity:.55;cursor:not-allowed}
   .mini{font-size:12px;color:var(--mut)}
-  pre{white-space:pre-wrap;word-break:break-word;background:#0d1428;border-radius:10px;padding:10px;max-height:240px;overflow:auto}
+  pre{white-space:pre-wrap;word-break:break-word;background:#0d1428;border-radius:10px;padding:10px;max-height:260px;overflow:auto}
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;margin-left:8px}
   .ok{background:#14372b;color:#86f1c3}
   .warn{background:#3a320e;color:#ffe28c}
@@ -33,16 +32,16 @@
     <div class="row" style="align-items:center;justify-content:space-between;">
       <div class="col">
         <div class="mini">
-          Upload <span class="pill warn">.xlsx / .xls / .csv</span> com <b>“Data da venda”</b> (aceita Excel serial, dd/mm/aaaa ou data+hora).
+          Upload <span class="pill warn">.csv</span> (recomendado, sem dependências) ou <span class="pill warn">.xlsx/.xls</span> <i>(se <code>xlsx.full.min.js</code> estiver na mesma pasta)</i>.
         </div>
       </div>
       <div>
-        <input id="file" type="file" accept=".xlsx,.xls,.csv" disabled />
+        <input id="file" type="file" accept=".csv,.xlsx,.xls" />
         <button id="btnSave" class="btn" disabled>Salvar no banco</button>
         <button id="btnClear" class="btn ghost">Limpar UI</button>
       </div>
     </div>
-    <div id="status" class="mini" style="margin-top:10px;">Carregando bibliotecas…</div>
+    <div id="status" class="mini" style="margin-top:10px;">Pronto. Selecione um arquivo.</div>
   </div>
 
   <div class="row">
@@ -59,19 +58,31 @@
   <div class="card">
     <div class="mini"><b>Ajuda rápida</b></div>
     <ul class="mini">
-      <li>Se aparecer <code>“null value in column &quot;dia&quot;”</code>, alguma linha veio sem data. Eu pulo essas linhas no upload.</li>
-      <li>Datas aceitas: Excel serial, <b>dd/mm/aaaa</b> ou <b>yyyy-mm-dd</b>. Se vier data+hora, a <b>hora</b> é extraída automaticamente.</li>
+      <li>Se aparecer <code>“null value in column &quot;dia&quot;”</code>, alguma linha veio sem data. Eu pulo essas linhas.</li>
+      <li>Datas aceitas: Excel serial, <b>dd/mm/aaaa</b> ou <b>yyyy-mm-dd</b>. Se vier data+hora, extraio a <b>hora</b> automaticamente.</li>
+      <li>Para ler XLSX offline, coloque <code>xlsx.full.min.js</code> nesta pasta (mesmo nível do HTML).</li>
     </ul>
   </div>
 </div>
 
+<!-- Tenta carregar XLSX localmente; se não existir, ignora e funciona só com CSV -->
 <script>
-/* ========= CONFIG ========= */
-const ENABLE_SUPABASE = true;
+(function tryLoadLocalXLSX(){
+  var s=document.createElement('script');
+  s.src='./xlsx.full.min.js'; s.async=true;
+  s.onload=()=>console.log('XLSX pronto (local).');
+  s.onerror=()=>console.log('XLSX local não encontrado. CSV continuará funcionando.');
+  document.head.appendChild(s);
+})();
+</script>
+
+<script>
+/* ====== CONFIGURAÇÃO SUPABASE (REST) ====== */
 const SUPABASE_URL = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
+const TABLE_NAME = 'vendas_xlsx';   // destino do upload
 
-/* ========= DOM ========= */
+/* ====== DOM ====== */
 const elFile = document.getElementById('file');
 const elSave = document.getElementById('btnSave');
 const elClear = document.getElementById('btnClear');
@@ -79,38 +90,18 @@ const elPreview = document.getElementById('preview');
 const elMapping = document.getElementById('mapping');
 const elStatus = document.getElementById('status');
 
-/* ========= STATE ========= */
-let supa = null;
+/* ====== STATE ====== */
 let parsedRows = [];
 let skipped = 0;
 
-/* ========= UTILS ========= */
+/* ====== UTILS ====== */
 function setStatus(msg, tone=null){
   elStatus.textContent = msg;
   elStatus.classList.remove('ok','warn','err');
   if (tone) elStatus.classList.add(tone);
 }
+const pretty = (o)=>JSON.stringify(o,null,2);
 
-function loadScriptOnce(url, testFn){
-  return new Promise((resolve,reject)=>{
-    if (testFn && testFn()) return resolve();
-    const s = document.createElement('script');
-    s.src = url;
-    s.async = true;
-    s.onload = ()=> testFn && testFn() ? resolve() : resolve(); // se não tem testFn, resolve assim mesmo
-    s.onerror = ()=> reject(new Error('Falha carregando: '+url));
-    document.head.appendChild(s);
-  });
-}
-
-async function loadWithFallback(urls, testFn){
-  for (const url of urls){
-    try { await loadScriptOnce(url, testFn); if (!testFn || testFn()) return true; } catch {}
-  }
-  return !!(testFn && testFn());
-}
-
-/* ======= NUMBERS & DATES ======= */
 const brToNum = (v) => {
   if (v == null || v === '') return null;
   if (typeof v === 'number') return v;
@@ -159,9 +150,44 @@ const normCancel = (v) => {
   if (['sim','s','y','yes','true','1'].includes(s)) return 'Sim';
   return 'Não';
 };
-const pretty = (o)=>JSON.stringify(o,null,2);
 
-/* ======= MAPPING ======= */
+/* ====== CSV PARSER (sem libs) ====== */
+function detectDelimiter(sample) {
+  const first = sample.split(/\r?\n/).find(l=>l.trim().length);
+  if (!first) return ',';
+  const counts = { ';': (first.match(/;/g)||[]).length, ',': (first.match(/,/g)||[]).length, '\t': (first.match(/\t/g)||[]).length };
+  return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0] || ',';
+}
+function parseCSV(text){
+  const delim = detectDelimiter(text);
+  const lines = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
+  if (!lines.length) return [];
+  const out = [];
+  const parseLine = (line) => {
+    const res = []; let cur=''; let inQ=false;
+    for (let i=0;i<line.length;i++){
+      const ch=line[i];
+      if (ch === '"'){
+        if (inQ && line[i+1]==='"'){ cur+='"'; i++; }
+        else inQ = !inQ;
+      }else if (ch === delim && !inQ){ res.push(cur); cur=''; }
+      else cur += ch;
+    }
+    res.push(cur);
+    return res;
+  };
+  const header = parseLine(lines.shift()).map(h=>h.trim());
+  for (const ln of lines){
+    if (!ln.trim()) continue;
+    const cols = parseLine(ln);
+    const obj = {};
+    header.forEach((h,idx)=> obj[h] = cols[idx] ?? '');
+    out.push(obj);
+  }
+  return out;
+}
+
+/* ====== MAPEAMENTO ====== */
 const pickKey = (obj, cands) => {
   const low=Object.fromEntries(Object.keys(obj).map(k=>[k.toLowerCase(),k]));
   for (const c of cands){
@@ -184,69 +210,37 @@ const buildMapping = (row) => ({
   fre: pickKey(row, [/^(fre|entrega|frete)/, /^vl.*entrega/]),
 });
 
-/* ======= FILE HANDLING ======= */
-async function ensureXLSXReady(){
-  if (window.XLSX) return true;
-  const XLSX_URLS = [
-    'https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js',
-    'https://unpkg.com/xlsx@0.19.3/dist/xlsx.full.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.19.3/xlsx.full.min.js'
-  ];
-  const ok = await loadWithFallback(XLSX_URLS, ()=>!!window.XLSX);
-  return ok;
-}
-
-async function ensureSupabaseReady(){
-  if (window.supabase && !supa) {
-    supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  }
-  if (supa) return true;
-  const SB_URLS = [
-    'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
-    'https://unpkg.com/@supabase/supabase-js@2.45.3/dist/umd/supabase.js'
-  ];
-  const ok = await loadWithFallback(SB_URLS, ()=>!!window.supabase);
-  if (ok && !supa) supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  return !!supa;
-}
-
-async function init(){
-  const xOk = await ensureXLSXReady();
-  const sOk = ENABLE_SUPABASE ? await ensureSupabaseReady() : true;
-
-  if (!xOk){
-    setStatus('Falha ao carregar a biblioteca XLSX. Verifique bloqueio de CDN e recarregue a página.', 'err');
-  } else {
-    setStatus('Pronto para importar. Selecione um arquivo.');
-    elFile.disabled = false;
-  }
-  if (!sOk && ENABLE_SUPABASE){
-    setStatus('XLSX OK, mas não consegui carregar Supabase JS. Salvar no banco ficará desabilitado.', 'warn');
-  }
-}
-init();
-
+/* ====== FILE HANDLING ====== */
 elFile.addEventListener('change', async (e) => {
-  if (!window.XLSX){
-    setStatus('Carregando XLSX…', 'warn');
-    const ok = await ensureXLSXReady();
-    if (!ok){ setStatus('XLSX ainda indisponível. Não foi possível ler o arquivo.', 'err'); return; }
-  }
-
   const f = e.target.files?.[0];
   if (!f) return;
-  setStatus('Lendo arquivo…');
+  parsedRows = []; skipped = 0;
+  elPreview.textContent='—'; elMapping.textContent='—'; elSave.disabled=true;
 
-  try {
-    const data = await f.arrayBuffer();
-    const wb = XLSX.read(data, { type:'array' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws, { raw:true });
+  try{
+    setStatus('Lendo arquivo…');
 
-    if (!rows.length){ setStatus('Nenhuma linha encontrada no arquivo.', 'warn'); return; }
+    // XLSX local?
+    const isXLSX = /\.(xlsx|xls)$/i.test(f.name);
+    if (isXLSX && !window.XLSX){
+      setStatus('Arquivo Excel selecionado, mas a biblioteca XLSX não está disponível localmente. Exporte para CSV ou coloque xlsx.full.min.js na mesma pasta.', 'warn');
+      return;
+    }
+
+    let rows = [];
+    if (isXLSX){
+      const data = await f.arrayBuffer();
+      const wb = XLSX.read(data, { type:'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(ws, { raw:true });
+    } else {
+      const text = await f.text();
+      rows = parseCSV(text);
+    }
+
+    if (!rows.length){ setStatus('Nenhuma linha encontrada.', 'warn'); return; }
 
     const map = buildMapping(rows[0]);
-    parsedRows = []; skipped = 0;
 
     for (const r of rows){
       let day=null,hour=null;
@@ -278,13 +272,13 @@ elFile.addEventListener('change', async (e) => {
 
     elPreview.textContent = parsedRows.slice(0,5).map(pretty).join('\n—\n') || '—';
     elMapping.textContent = pretty(map);
-    setStatus(`Linhas lidas: ${rows.length} | Válidas: ${parsedRows.length} | Puladas (sem data): ${skipped}`, parsedRows.length ? 'ok' : 'warn');
+    setStatus(`Linhas válidas: ${parsedRows.length} | Puladas (sem data): ${skipped}`, parsedRows.length ? 'ok' : 'warn');
 
-    elSave.disabled = !(ENABLE_SUPABASE && supa && parsedRows.length>0);
+    elSave.disabled = parsedRows.length === 0;
 
-  } catch (err){
+  }catch(err){
     console.error(err);
-    setStatus(`Erro lendo arquivo: ${err?.message||err}`, 'err');
+    setStatus('Erro ao ler arquivo: '+(err?.message||err), 'err');
   }
 });
 
@@ -294,22 +288,43 @@ elClear.addEventListener('click', ()=>{
   elSave.disabled=true; setStatus('Limpo. Pronto para novo upload.');
 });
 
-elSave.addEventListener('click', async ()=>{
-  if (!ENABLE_SUPABASE){ setStatus('Supabase desativado no HTML.', 'warn'); return; }
-  if (!supa){ const ok = await ensureSupabaseReady(); if(!ok){ setStatus('Não consegui carregar Supabase JS.', 'err'); return; } }
-  if (!parsedRows.length){ setStatus('Nada para salvar.', 'warn'); return; }
-
-  elSave.disabled=true;
-  let ok=0, fail=0; const BATCH=500;
-  setStatus(`Gravando… 0/${parsedRows.length}`);
-
-  for (let i=0;i<parsedRows.length;i+=BATCH){
-    const chunk = parsedRows.slice(i,i+BATCH);
-    const { error } = await supa.from('vendas_xlsx').insert(chunk, { returning:'minimal' });
-    if (error){ console.error(error); fail+=chunk.length; setStatus(`Falha no lote ${i/BATCH+1}: ${error.message}`, 'err'); elSave.disabled=false; return; }
-    ok+=chunk.length; setStatus(`Gravando… ${ok}/${parsedRows.length}`);
+/* ====== SAVE VIA REST (sem supabase-js) ====== */
+async function saveBatch(batch){
+  const url = `${SUPABASE_URL}/rest/v1/${encodeURIComponent(TABLE_NAME)}`;
+  const res = await fetch(url,{
+    method:'POST',
+    headers:{
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': 'Bearer '+SUPABASE_ANON_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=minimal'
+    },
+    body: JSON.stringify(batch)
+  });
+  if (!res.ok){
+    const txt = await res.text().catch(()=> '');
+    throw new Error(`HTTP ${res.status} – ${txt}`);
   }
-  setStatus(`Concluído: ${ok} inseridas, ${fail} falhas.`, 'ok');
+}
+
+elSave.addEventListener('click', async ()=>{
+  if (!parsedRows.length){ setStatus('Nada para salvar.', 'warn'); return; }
+  elSave.disabled=true;
+
+  try{
+    let done=0; const BATCH=500;
+    for (let i=0;i<parsedRows.length;i+=BATCH){
+      const chunk = parsedRows.slice(i,i+BATCH);
+      await saveBatch(chunk);
+      done+=chunk.length;
+      setStatus(`Gravando… ${done}/${parsedRows.length}`);
+    }
+    setStatus(`Concluído: ${parsedRows.length} inseridas.`, 'ok');
+  }catch(err){
+    console.error(err);
+    setStatus('Falha ao salvar: '+(err?.message||err), 'err');
+    elSave.disabled=false;
+  }
 });
 </script>
 </body>
