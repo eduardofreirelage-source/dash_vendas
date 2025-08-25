@@ -1,16 +1,17 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Dashboard111</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard222</title>
   <style>
-    :root{--bg:#f6f8fb;--card:#fff;--line:#e6e7eb;--ink:#0b1220;--muted:#667085;--ok:#0284c7;--bad:#ef4444}
-    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
+    :root{--bg:#f6f8fb;--card:#fff;--line:#e5e7eb;--ink:#0b1220;--muted:#667085;--ok:#0284c7;--bad:#ef4444}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
     .wrap{max-width:1100px;margin:28px auto;padding:0 16px}
     h1{margin:0 0 12px}
-    .btn{display:inline-flex;gap:8px;align-items:center;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer}
     .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-top:12px}
+    .btn{display:inline-flex;gap:8px;align-items:center;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer}
     .muted{color:var(--muted)} .ok{color:var(--ok)} .bad{color:var(--bad)}
     #log{white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px;border:1px dashed var(--line);border-radius:10px;padding:10px;background:#f8fafc;max-height:260px;overflow:auto}
     .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -47,18 +48,46 @@
     </div>
   </div>
 
-  <!-- Tudo como ES Modules para evitar "XLSX is not defined" -->
   <script type="module">
-    /********* IMPORTS (ESM) *********/
-    import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.19.3/+esm';
-    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+    /********* Fallback de import dinâmico *********/
+    async function importWithFallback(urls){
+      let lastErr;
+      for(const u of urls){
+        try { return await import(u); }
+        catch(e){ lastErr=e; console.warn('Falha import', u, e); }
+      }
+      throw lastErr || new Error('Falha ao importar módulo remoto');
+    }
+
+    // Tenta várias URLs conhecidas pro SheetJS (XLSX)
+    const XLSX = await importWithFallback([
+      // CDN oficial da SheetJS (versão livre):
+      'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs',
+      // Unpkg em modo módulo:
+      'https://unpkg.com/xlsx@0.20.2?module',
+      // jsDelivr variantes:
+      'https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.mjs',
+      'https://cdn.jsdelivr.net/npm/xlsx@0.20.2/+esm',
+    ]);
+
+    // Supabase (opcional – se for gravar no banco)
+    let createClient = null;
+    try {
+      ({ createClient } = await importWithFallback([
+        'https://esm.sh/@supabase/supabase-js@2',
+        'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm',
+      ]));
+    } catch(e){
+      console.warn('Supabase não importado (seguirá apenas prévia local).', e);
+    }
 
     /********* CONFIG *********/
-    const SUPABASE_URL = 'https://SEU-PROJETO.supabase.co';       // << troque
-    const SUPABASE_ANON_KEY = 'SEU-ANON-KEY';                      // << troque
+    const SUPABASE_URL = 'https://SEU-PROJETO.supabase.co';   // << troque
+    const SUPABASE_ANON_KEY = 'SEU-ANON-KEY';                  // << troque
     const TABLE = 'vendas_xlsx';
-
-    const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const supa = (createClient && SUPABASE_URL.startsWith('http'))
+      ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+      : null;
 
     /********* HELPERS *********/
     const $ = s => document.querySelector(s);
@@ -102,7 +131,6 @@
         const i = low.indexOf(sanitize(cand));
         if(i>=0) return cols[i];
       }
-      // fallback: contém palavras
       for(const c of cols){
         const s = sanitize(c);
         let ok = true;
@@ -126,7 +154,8 @@
         `fre ⇢ ${mp.colFre || 'Entrega'}`
       ].join('\n');
     }
-    async function upsertChunks(rows, n=800){
+    async function insertChunks(rows, n=800){
+      if(!supa){ log('⚠️ Supabase não configurado — apenas prévia.'); return; }
       for(let i=0;i<rows.length;i+=n){
         const part = rows.slice(i,i+n);
         const {error} = await supa.from(TABLE).insert(part);
@@ -142,8 +171,7 @@
       // Leitura com SheetJS
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, {type:'array'});
-      const sheet = wb.SheetNames[0];
-      const ws = wb.Sheets[sheet];
+      const ws = wb.Sheets[wb.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(ws, {defval:null});
       if(!data.length){ setStatus('Arquivo sem linhas.', 'bad'); return; }
 
@@ -166,13 +194,16 @@
       $('#map').textContent = summarizeMap(mapping);
 
       if(!colDate){
-        setStatus('Não achei coluna de data (ex.: “Data da venda”). Upload bloqueado.', 'bad');
+        setStatus('Não achei coluna de data (ex.: “Data da venda”).', 'bad');
         log('Colunas do arquivo:', JSON.stringify(cols, null, 2));
         return;
       }
 
+      // Normalização
       let ok=0,bad=0;
       const out=[], dropped=[];
+      const num = v => Number((v??0).toString().replace(',','.')) || 0;
+
       for(const r of data){
         let d = r[colDate], jsd=null;
         if(typeof d==='number') jsd = excelSerialToJSDate(d);
@@ -182,7 +213,6 @@
 
         const dia = toISO(jsd);
 
-        // hora
         let hora=null;
         if(colHour && r[colHour]!=null && r[colHour]!==''){
           const hv = r[colHour];
@@ -196,19 +226,17 @@
                       : colLojaNome ? String(r[colLojaNome]??'').trim() : null;
         const canal   = colCanal ? String(r[colCanal]??'').trim() : null;
         const pagamento_base = colPag ? String(r[colPag]??'').trim() : null;
-
         const cancelRaw = colCancel ? String(r[colCancel]??'').trim().toLowerCase() : 'não';
         const cancelado = (cancelRaw==='sim'||cancelRaw==='true'||cancelRaw==='1') ? 'Sim' : 'Não';
-
         const pedidos = colPed ? Number(r[colPed]??0) : 1;
-        const num = v => Number((v??0).toString().replace(',','.')) || 0;
+
         const fat = num(r[colFat]); const des = num(r[colDes]); const fre = num(r[colFre]);
 
         out.push({ dia, hora, unidade, loja, canal, pagamento_base, cancelado, pedidos, fat, des, fre });
         ok++;
       }
 
-      // Prévia
+      // Prévia e logs
       $('#preview').textContent = out.slice(0,5).map(o=>JSON.stringify(o)).join('\n') || '(sem linhas válidas)';
       log(`Linhas lidas: ${data.length}`);
       log(`Válidas para importação: ${ok}`);
@@ -216,11 +244,15 @@
 
       if(!ok){ setStatus('Nenhuma linha válida. Verifique a coluna de data.', 'bad'); return; }
 
-      // INSERT por blocos (sem dia=null)
+      // Gravação (opcional)
       try{
-        setStatus('Gravando no banco…');
-        await upsertChunks(out, 800);
-        setStatus(`✅ Gravado/atualizado: ${ok} linha(s).`, 'ok');
+        if(supa){
+          setStatus('Gravando no banco…');
+          await insertChunks(out, 800);
+          setStatus(`✅ Gravado/atualizado: ${ok} linha(s).`, 'ok');
+        }else{
+          setStatus(`Prévia pronta (Supabase não configurado).`, 'ok');
+        }
       }catch(e){
         setStatus(`Erro ao gravar: ${e.message}`, 'bad');
         log('Detalhes:', JSON.stringify(e,null,2));
