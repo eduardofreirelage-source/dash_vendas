@@ -1,287 +1,334 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Dashboard – Upload1</title>
-  <style>
-    :root{--bg:#f6f8fb;--card:#fff;--line:#e5e7eb;--ink:#0b1220;--muted:#667085;--ok:#067a46;--bad:#b91c1c}
-    *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
-    .wrap{max-width:1100px;margin:28px auto;padding:0 16px}
-    h1{margin:0 0 12px}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-top:12px}
-    .muted{color:var(--muted)} .ok{color:var(--ok)} .bad{color:var(--bad)}
-    #log,#preview,#map{white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#f8fafc;border:1px dashed var(--line);border-radius:10px;padding:10px;max-height:280px;overflow:auto}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    @media (max-width:800px){.row{grid-template-columns:1fr}}
-    input[type=file]{padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff}
-    .btn{display:inline-flex;gap:8px;align-items:center;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer}
-    .btn[disabled]{opacity:.5;cursor:not-allowed}
-    .hl{background:#eef6ff;border:1px solid #dbeafe;padding:2px 6px;border-radius:6px}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Dashboard – Upload de Vendas</title>
 
-  <!-- XLSX UMD com fallback de CDN -->
-  <script>
-    (function(){
-      const urls=[
-        'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js',
-        'https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js',
-        'https://unpkg.com/xlsx@0.20.2/dist/xlsx.full.min.js'
-      ];
-      (function load(i){
-        const s=document.createElement('script');
-        s.src=urls[i]; s.async=true; s.crossOrigin='anonymous';
-        s.onload=()=>console.log('[XLSX] OK:',s.src);
-        s.onerror=()=>{ if(i+1<urls.length) load(i+1); else console.error('[XLSX] Falhou em todos os CDNs'); };
-        document.head.appendChild(s);
-      })(0);
-    })();
-  </script>
+<!-- SheetJS (XLSX) com fallback -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"
+        onerror="var s=document.createElement('script');s.src='https://unpkg.com/xlsx@0.19.3/dist/xlsx.full.min.js';document.head.appendChild(s);"></script>
+<!-- Supabase JS v2 com fallback -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
+        onerror="var s=document.createElement('script');s.src='https://unpkg.com/@supabase/supabase-js@2.45.3/dist/umd/supabase.js';document.head.appendChild(s);"></script>
 
-  <!-- Supabase (opcional) -->
-  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js" defer></script>
+<style>
+  :root{--bg:#0b1020;--card:#121830;--muted:#7a88a8;--ok:#29c58a;--warn:#ffcc00;--err:#ff6b6b}
+  body{margin:0;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;background:#0a0f1f;color:#e6edf5}
+  .wrap{max-width:1000px;margin:28px auto;padding:0 16px}
+  h1{font-size:22px;margin:0 0 16px}
+  .card{background:var(--card);border:1px solid #24304d;border-radius:14px;padding:14px;margin:12px 0;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .col{flex:1 1 0}
+  .btn{appearance:none;border:0;border-radius:10px;padding:10px 14px;background:#2b6ef3;color:#fff;cursor:pointer;font-weight:600}
+  .btn[disabled]{opacity:.5;cursor:not-allowed}
+  .ghost{background:#1a223a}
+  .mini{font-size:12px;color:var(--muted)}
+  pre{white-space:pre-wrap;word-break:break-word;background:#0d1428;border-radius:10px;padding:10px;max-height:220px;overflow:auto}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;margin-left:8px}
+  .ok{background:#14372b;color:#86f1c3}
+  .warn{background:#3a320e;color:#ffe28c}
+  .err{background:#3a1515;color:#ffb3b3}
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Dashboard</h1>
+<div class="wrap">
+  <h1>Dashboard</h1>
 
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-        <div><strong>Upload</strong> <span class="muted">(.xlsx/.xls/.csv com “Data da venda”)</span></div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input id="fileExcel" type="file" accept=".xlsx,.xls,.csv" />
-          <button id="btnSave" class="btn" disabled>⬆️ Salvar no banco</button>
-          <button id="btnClear" class="btn" title="Limpar prévia">🧹 Limpar</button>
-        </div>
+  <div class="card">
+    <div class="row" style="align-items:center;justify-content:space-between;">
+      <div class="col">
+        <div class="mini">Upload <span class="pill warn">.xlsx / .xls / .csv</span> com <b>“Data da venda”</b> (aceita Excel serial, dd/mm/aaaa ou data+hora).</div>
       </div>
-      <div id="status" class="muted" style="margin-top:8px">Prévia pronta (supabase desativado).</div>
-      <div id="log" style="margin-top:10px"></div>
-    </div>
-
-    <div class="card">
-      <div class="row">
-        <div>
-          <div class="muted">Prévia (5 primeiras linhas válidas):</div>
-          <div id="preview"></div>
-        </div>
-        <div>
-          <div class="muted">Mapeamento escolhido:</div>
-          <div id="map"></div>
-        </div>
+      <div>
+        <input id="file" type="file" accept=".xlsx,.xls,.csv" />
+        <button id="btnSave" class="btn" disabled>Salvar no banco</button>
+        <button id="btnClear" class="btn ghost">Limpar UI</button>
       </div>
     </div>
+    <div id="status" class="mini" style="margin-top:10px;">Aguardando arquivo…</div>
+  </div>
 
-    <div class="card">
-      <div class="muted"><strong>Ajuda rápida</strong></div>
-      <ul class="muted" style="margin-top:6px">
-        <li>Se aparecer “<span class="hl">null value in column "dia"</span>”, nenhuma coluna de data foi reconhecida. Renomeie para <em>Data da venda</em> / <em>Data do pedido</em>.</li>
-        <li>Aceita datas Excel (serial) ou <code>dd/mm/aaaa</code> (com hora opcional).</li>
-      </ul>
+  <div class="row">
+    <div class="card col">
+      <div class="mini">Prévia (5 primeiras linhas válidas):</div>
+      <pre id="preview">—</pre>
+    </div>
+    <div class="card col">
+      <div class="mini">Mapeamento escolhido:</div>
+      <pre id="mapping">—</pre>
     </div>
   </div>
 
-  <script>
-    // ======= CONFIG SUPABASE =======
-    const ENABLE_SUPABASE = false;   // <<< mude para true para gravar
-    const SUPABASE_URL = 'https://SEU-PROJETO.supabase.co';
-    const SUPABASE_ANON_KEY = 'SEU-ANON-KEY';
-    const TABLE = 'vendas_xlsx';
+  <div class="card">
+    <div class="mini"><b>Ajuda rápida</b></div>
+    <ul class="mini">
+      <li>Se aparecer <code>“null value in column &quot;dia&quot;”</code>, significa que a coluna de data não foi reconhecida. Renomeie no Excel para algo como <b>Data da venda</b> ou <b>Data do pedido</b>.</li>
+      <li>Este uploader aceita datas em formato Excel (serial), <b>dd/mm/aaaa</b> ou <b>yyyy-mm-dd</b>. Se vier data+hora, a <b>hora</b> é extraída automaticamente.</li>
+    </ul>
+  </div>
+</div>
 
-    const supa = (ENABLE_SUPABASE && window.supabase)
-      ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-      : null;
+<script>
+/* ========= CONFIG ========= */
+const ENABLE_SUPABASE = true; // << já ativado
+const SUPABASE_URL = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
 
-    // ======= HELPERS =======
-    const $ = s => document.querySelector(s);
-    const setStatus = (t, cls='') => { const el=$('#status'); el.className=cls; el.textContent=t }
-    const log = (...a)=>{$('#log').textContent += a.join(' ') + '\n'}
+/* ====== SUPABASE ====== */
+let supa = null;
+if (ENABLE_SUPABASE && window.supabase) {
+  supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
 
-    const sanitize = s => (s??'').toString()
-      .normalize('NFD').replace(/\p{Diacritic}/gu,'')
-      .replace(/\s+/g,' ').trim().toLowerCase();
+/* ========= UI ========= */
+const elFile = document.getElementById('file');
+const elSave = document.getElementById('btnSave');
+const elClear = document.getElementById('btnClear');
+const elPreview = document.getElementById('preview');
+const elMapping = document.getElementById('mapping');
+const elStatus = document.getElementById('status');
 
-    function excelSerialToJSDate(n){
-      try{
-        const utcDays = Math.floor(n - 25569);
-        const utc = utcDays * 86400;
-        const base = new Date(utc * 1000);
-        const frac = n - Math.floor(n) + 1e-7;
-        let secs = Math.floor(86400 * frac);
-        const s = secs % 60; secs -= s;
-        const h = Math.floor(secs / 3600);
-        const m = Math.floor(secs / 60) % 60;
-        base.setFullYear(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate());
-        base.setHours(h, m, s, 0);
-        return base;
-      }catch{ return null }
+/* ========= STATE ========= */
+let parsedRows = [];   // linhas já normalizadas e prontas para inserir
+let skipped = 0;       // quantas linhas foram puladas por falta de data, etc.
+
+/* ========= HELPERS ========= */
+const brToNum = (v) => {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return v;
+  let s = String(v).trim();
+  if (!s) return null;
+  s = s.replace(/R\$\s?/gi,'').replace(/\./g,'').replace(',', '.'); // "R$ 1.234,56" -> "1234.56"
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+};
+
+const toInt = (v) => {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return Math.floor(v);
+  const n = parseInt(String(v).replace(/\D+/g,''), 10);
+  return Number.isFinite(n) ? n : null;
+};
+
+const excelSerialToDate = (serial) => {
+  // Excel date serial (jan/1900 base) -> JS Date
+  // 25569 = days from 1900-01-01 to 1970-01-01
+  const utc_days  = Math.floor(serial - 25569);
+  const utc_value = utc_days * 86400; // seconds
+  const date_info = new Date(utc_value * 1000);
+  const fractional_day = serial - Math.floor(serial) + 1e-8;
+  const totalSeconds = Math.floor(86400 * fractional_day);
+  const hh = Math.floor(totalSeconds / 3600);
+  const mm = Math.floor((totalSeconds % 3600) / 60);
+  const ss = totalSeconds % 60;
+  return { date: date_info, hour: hh, minute: mm, second: ss };
+};
+
+const parseDateLike = (raw) => {
+  if (raw == null || raw === '') return { day: null, hour: null };
+  if (typeof raw === 'number') {
+    const {date, hour} = excelSerialToDate(raw);
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth()+1).padStart(2,'0');
+    const d = String(date.getUTCDate()).padStart(2,'0');
+    return { day: `${y}-${m}-${d}`, hour };
+  }
+  let s = String(raw).trim();
+  // tenta ISO
+  const iso = Date.parse(s);
+  if (!Number.isNaN(iso)) {
+    const dt = new Date(iso);
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth()+1).padStart(2,'0');
+    const d = String(dt.getDate()).padStart(2,'0');
+    const h = dt.getHours();
+    return { day: `${y}-${m}-${d}`, hour: h };
+  }
+  // tenta dd/mm/aaaa HH:mm
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2})(?::(\d{1,2}))?)?$/);
+  if (m) {
+    const d = String(m[1]).padStart(2,'0');
+    const mo = String(m[2]).padStart(2,'0');
+    let y = m[3].length === 2 ? ('20'+m[3]) : m[3];
+    const h = m[4] ? parseInt(m[4],10) : null;
+    return { day: `${y}-${mo}-${d}`, hour: h };
+  }
+  return { day: null, hour: null };
+};
+
+const normCancel = (v) => {
+  const s = (v??'').toString().trim().toLowerCase();
+  if (['sim','s','y','yes','true','1'].includes(s)) return 'Sim';
+  if (['nao','não','n','no','false','0',''].includes(s)) return 'Não';
+  return 'Não';
+};
+
+const pretty = (obj) => JSON.stringify(obj, null, 2);
+
+/* ========= MAPEAMENTO ========= */
+const pickKey = (obj, candidates) => {
+  const keys = Object.keys(obj).map(k=>k.toLowerCase());
+  let chosen = null;
+  for (const cand of candidates) {
+    // cand pode ser string ou regex
+    if (cand instanceof RegExp) {
+      const hit = keys.find(k => cand.test(k));
+      if (hit) { chosen = Object.keys(obj).find(x => x.toLowerCase() === hit); break; }
+    } else {
+      const hit = keys.find(k => k === cand.toLowerCase());
+      if (hit) { chosen = Object.keys(obj).find(x => x.toLowerCase() === hit); break; }
     }
-    function parseBRDateTime(s){
-      if(typeof s!=='string') return null;
-      const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2}))?$/);
-      if(!m) return null;
-      let [_, d, M, y, h, mm] = m;
-      if(y.length===2) y = '20'+y;
-      const dt = new Date(Number(y), Number(M)-1, Number(d), Number(h||0), Number(mm||0), 0, 0);
-      return isNaN(dt) ? null : dt;
-    }
-    const toISO = d => d.toISOString().slice(0,10);
-    const toHour = d => d.getHours();
-    const nnum = v => Number((v??0).toString().replace(',','.')) || 0;
+  }
+  return chosen;
+};
 
-    function findColumn(cols, cands){
-      const low = cols.map(c=>sanitize(c));
-      for(const c of cands){
-        const i = low.indexOf(sanitize(c));
-        if(i>=0) return cols[i];
+const buildMapping = (row) => {
+  // tenta achar colunas usuais
+  const map = {};
+  map.dia    = pickKey(row, [/^data.*venda/, /^data/, /^dt/, /^dia$/]);
+  map.hora   = pickKey(row, [/^hora/, /^hr/, /hour/, /hor[aá]rio/]);
+  map.unid   = pickKey(row, [/^unidade/, /^filial/, /^empresa/]);
+  map.loja   = pickKey(row, [/^loja/, /^nome.*loja/, /^c[oó]digo.*loja/]);
+  map.canal  = pickKey(row, [/^canal/, /^origem/, /^meio/]);
+  map.pag    = pickKey(row, [/^pagamento.*base/, /^pagamento/, /^forma.*pag/]);
+  map.canc   = pickKey(row, [/^cancelado/, /^est[aá].*cancel/]);
+  map.ped    = pickKey(row, [/^pedidos?$/, /^qtd.*(ped|itens)/, /^itens$/]);
+  map.fat    = pickKey(row, [/^fat(uramento)?/, /^valor.*(total|venda|nota|liquido)/]);
+  map.des    = pickKey(row, [/^des(conto)?$/, /^vl.*desconto/]);
+  map.fre    = pickKey(row, [/^(fre|entrega|frete)/, /^vl.*entrega/]);
+  return map;
+};
+
+/* ========= PARSE DO ARQUIVO ========= */
+elFile.addEventListener('change', async (e) => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  setStatus('Lendo arquivo…');
+
+  try {
+    const data = await f.arrayBuffer();
+    const wb = XLSX.read(data, { type:'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { raw:true }); // array de objetos
+    if (!rows.length) {
+      setStatus('Nenhuma linha encontrada no arquivo.', 'err');
+      return;
+    }
+
+    // mapeamento a partir da 1ª linha
+    const map = buildMapping(rows[0]);
+
+    // Normalização em memória
+    parsedRows = [];
+    skipped = 0;
+
+    for (const r of rows) {
+      // 1) data / hora
+      let day = null, hour = null;
+      if (map.dia && r[map.dia] != null && r[map.dia] !== '') {
+        const d1 = parseDateLike(r[map.dia]);
+        day = d1.day; hour = d1.hour;
       }
-      for(const c of cols){
-        const s = sanitize(c);
-        let ok = true;
-        for(const w of sanitize(cands[0]).split(/\s+/)) if(!s.includes(w)){ok=false;break;}
-        if(ok) return c;
-      }
-      return null;
-    }
-
-    function summarizeMap(mp){
-      return [
-        `dia: ${mp.colDate || '(não encontrado)'}`,
-        `hora: ${mp.colHour || '(derivado/ausente)'}`,
-        `unidade: ${mp.colUnid || '—'}`,
-        `loja: ${mp.colLojaCod || mp.colLojaNome || '—'}`,
-        `canal: ${mp.colCanal || '—'}`,
-        `pagamento_base: ${mp.colPag || '—'}`,
-        `cancelado: ${mp.colCancel || '—'}`,
-        `pedidos: ${mp.colPed || '(default 1)'}`,
-        `fat: ${mp.colFat || '(não mapeado)'}`,
-        `des: ${mp.colDes || '(não mapeado)'}`,
-        `fre: ${mp.colFre || '(não mapeado)'}`
-      ].join('\n');
-    }
-
-    async function insertChunks(rows, n=800, onProgress=null){
-      for(let i=0;i<rows.length;i+=n){
-        const part=rows.slice(i,i+n);
-        const {error} = await supa.from(TABLE).insert(part);
-        if(error) throw error;
-        if(onProgress) onProgress(Math.min(i+n, rows.length), rows.length);
-      }
-    }
-
-    let lastRows = [];
-
-    async function handleFile(file){
-      $('#log').textContent=''; $('#preview').textContent=''; $('#map').textContent='';
-      setStatus(`Lendo ${file.name}…`);
-      const buf = await file.arrayBuffer();
-
-      if(!window.XLSX){ setStatus('XLSX ainda carregando. Tente novamente em 1–2s.', 'bad'); return; }
-
-      const wb = XLSX.read(buf, {type:'array'});
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json(ws, {defval:null});
-      if(!data.length){ setStatus('Arquivo sem linhas.', 'bad'); return; }
-
-      const cols = Object.keys(data[0]||{});
-      const colDate = findColumn(cols, ['data da venda','data venda','data do pedido','data pedido','data','data hora','data/hora','datahora']);
-      const colHour = findColumn(cols, ['hora','horario']);
-      const colUnid = findColumn(cols, ['unidade']);
-      const colLojaCod = findColumn(cols, ['codigo da loja','código da loja','cod loja']);
-      const colLojaNome= findColumn(cols, ['nome da loja','loja']);
-      const colCanal   = findColumn(cols, ['canal de venda','canal','origem']);
-      const colPag     = findColumn(cols, ['pagamento','meio de pagamento','tipo pagamento','pagamento base']);
-      const colCancel  = findColumn(cols, ['esta cancelado','está cancelado','cancelado']);
-      const colPed     = findColumn(cols, ['itens','qtd','quantidade']);
-      const colFat     = findColumn(cols, ['valor entregador','total','faturamento','faturamento liquido','fat']);
-      const colDes     = findColumn(cols, ['desconto']);
-      const colFre     = findColumn(cols, ['entrega','frete']);
-
-      const mapping = {colDate,colHour,colUnid,colLojaCod,colLojaNome,colCanal,colPag,colCancel,colPed,colFat,colDes,colFre};
-      $('#map').textContent = summarizeMap(mapping);
-
-      if(!colDate){
-        setStatus('Não encontrei a coluna de DATA. Renomeie para “Data da venda” (ou similar) e reenvie.', 'bad');
-        log('Colunas detectadas:', JSON.stringify(cols, null, 2));
-        return;
-      }
-
-      let ok=0,bad=0;
-      const out=[], dropped=[];
-      for(const r of data){
-        let d = r[colDate], jsd=null;
-        if(typeof d==='number') jsd = excelSerialToJSDate(d);
-        if(!jsd && typeof d==='string') jsd = parseBRDateTime(d);
-        if(!jsd && d instanceof Date && !isNaN(d)) jsd = d;
-        if(!jsd){ bad++; dropped.push({motivo:'data inválida', amostra:d}); continue; }
-
-        const dia = toISO(jsd);
-
-        let hora=null;
-        if(colHour && r[colHour]!=null && r[colHour]!==''){
-          const hv = r[colHour];
-          if(typeof hv==='number'){ hora = (hv>=0 && hv<=23) ? Math.trunc(hv) : toHour(excelSerialToJSDate(hv)); }
-          else if(typeof hv==='string'){ const m = hv.match(/(\d{1,2})/); hora = m ? Number(m[1]) : null; }
-        } else {
-          hora = toHour(jsd);
+      // se não achou dia, mas existe uma coluna de data/hora em outra chave
+      if (!day) {
+        // tenta deduzir data se a coluna de hora estiver no padrão Date
+        if (map.hora && r[map.hora] instanceof Date) {
+          const d = r[map.hora];
+          const y = d.getFullYear();
+          const m = String(d.getMonth()+1).padStart(2,'0');
+          const dd = String(d.getDate()).padStart(2,'0');
+          day = `${y}-${m}-${dd}`;
+          hour = d.getHours();
         }
-        if(!(hora>=0 && hora<=23)) hora = null;
-
-        const unidade = colUnid ? String(r[colUnid]??'').trim() : null;
-        const loja    = colLojaCod ? String(r[colLojaCod]??'').trim()
-                      : colLojaNome ? String(r[colLojaNome]??'').trim() : null;
-        const canal   = colCanal ? String(r[colCanal]??'').trim() : null;
-        const pagamento_base = colPag ? String(r[colPag]??'').trim() : null;
-        const cancelRaw = colCancel ? String(r[colCancel]??'').trim().toLowerCase() : 'não';
-        const cancelado = (cancelRaw==='sim'||cancelRaw==='true'||cancelRaw==='1') ? 'Sim' : 'Não';
-        const pedidos = colPed ? Number(r[colPed]??0) : 1;
-
-        const fat = nnum(r[colFat]); const des = nnum(r[colDes]); const fre = nnum(r[colFre]);
-
-        out.push({ dia, hora, unidade, loja, canal, pagamento_base, cancelado, pedidos, fat, des, fre });
-        ok++;
       }
+      if (!day) { skipped++; continue; } // sem data => pula
 
-      lastRows = out;
-      $('#btnSave').disabled = !(ENABLE_SUPABASE && supa && lastRows.length>0);
+      // 2) campos simples
+      const row = {
+        dia: day,
+        hora: hour ?? (map.hora ? toInt(r[map.hora]) : null),
+        unidade: map.unid ? String(r[map.unid]??'').trim() : null,
+        loja: map.loja ? String(r[map.loja]??'').trim() : null,
+        canal: map.canal ? String(r[map.canal]??'').trim() : null,
+        pagamento_base: map.pag ? String(r[map.pag]??'').trim() : null,
+        cancelado: normCancel(map.canc ? r[map.canc] : 'Não'),
+        pedidos: (map.ped ? toInt(r[map.ped]) : null) ?? 1,
+        fat: brToNum(map.fat ? r[map.fat] : null) ?? 0,
+        des: brToNum(map.des ? r[map.des] : null) ?? 0,
+        fre: brToNum(map.fre ? r[map.fre] : null) ?? 0,
+      };
 
-      $('#preview').textContent = out.slice(0,5).map(o=>JSON.stringify(o)).join('\n') || '(sem linhas válidas)';
-      log(`Linhas lidas: ${data.length}`);
-      log(`Válidas: ${ok}`);
-      if(bad>0) log(`Descartadas: ${bad} (exemplo: ${JSON.stringify(dropped[0]||{},null,2)})`);
-
-      setStatus(ENABLE_SUPABASE ? 'Prévia pronta. Clique “Salvar no banco”.' : 'Prévia pronta (supabase desativado).', ENABLE_SUPABASE ? '' : 'muted');
+      parsedRows.push(row);
     }
 
-    async function saveToDb(){
-      if(!(ENABLE_SUPABASE && supa)){ setStatus('Ative o Supabase nas configs do arquivo.', 'bad'); return; }
-      if(!lastRows.length){ setStatus('Nada para salvar.', 'bad'); return; }
-      try{
-        setStatus(`Gravando ${lastRows.length} linha(s)…`);
-        await insertChunks(lastRows, 800, (done,total)=>setStatus(`Gravando… ${done}/${total}`));
-        setStatus(`✅ Gravado: ${lastRows.length} linha(s).`, 'ok');
-      }catch(e){
-        setStatus(`Erro ao gravar: ${e.message}`, 'bad');
-        log('Detalhes:', JSON.stringify(e,null,2));
-      }
-    }
+    // UI
+    elPreview.textContent = parsedRows.slice(0,5).map(pretty).join('\n—\n') || '—';
+    elMapping.textContent = pretty(map);
+    setStatus(`Linhas lidas: ${rows.length} | Válidas: ${parsedRows.length} | Puladas (sem data): ${skipped}` , parsedRows.length ? 'ok' : 'warn');
 
-    // ======= Eventos =======
-    $('#fileExcel').addEventListener('change', e=>{
-      const f=e.target.files?.[0]; if(!f) return;
-      setStatus(`Arquivo: ${f.name}`);
-      handleFile(f);
-    });
-    $('#btnSave').addEventListener('click', saveToDb);
-    $('#btnClear').addEventListener('click', ()=>{
-      $('#fileExcel').value = '';
-      $('#log').textContent = '';
-      $('#preview').textContent = '';
-      $('#map').textContent = '';
-      $('#btnSave').disabled = true;
-      lastRows = [];
-      setStatus('—');
-    });
-  </script>
+    // habilita salvar se supabase ativo
+    elSave.disabled = !(ENABLE_SUPABASE && supa && parsedRows.length > 0);
+
+  } catch (err) {
+    console.error(err);
+    setStatus(`Erro lendo arquivo: ${err?.message||err}`, 'err');
+  }
+});
+
+elClear.addEventListener('click', () => {
+  elFile.value = '';
+  parsedRows = [];
+  skipped = 0;
+  elPreview.textContent = '—';
+  elMapping.textContent = '—';
+  setStatus('Limpo. Aguardando arquivo…');
+  elSave.disabled = true;
+});
+
+/* ========= SALVAR NO BANCO ========= */
+elSave.addEventListener('click', async () => {
+  if (!(ENABLE_SUPABASE && supa)) {
+    setStatus('Supabase desativado. Edite ENABLE_SUPABASE/keys no topo do arquivo.', 'warn');
+    return;
+  }
+  if (!parsedRows.length) {
+    setStatus('Nada para salvar. Faça o upload primeiro.', 'warn');
+    return;
+  }
+
+  elSave.disabled = true;
+  let ok = 0, fail = 0;
+  const BATCH = 500;
+
+  setStatus(`Gravando… 0/${parsedRows.length}`);
+
+  for (let i=0; i<parsedRows.length; i+=BATCH) {
+    const chunk = parsedRows.slice(i, i+BATCH);
+    const { error } = await supa.from('vendas_xlsx').insert(chunk, { returning:'minimal' });
+    if (error) {
+      console.error(error);
+      fail += chunk.length;
+      setStatus(`Falha ao gravar lote (offset ${i}). ${error.message}`, 'err');
+      elSave.disabled = false;
+      return;
+    } else {
+      ok += chunk.length;
+      setStatus(`Gravando… ${ok}/${parsedRows.length}`);
+    }
+  }
+
+  setStatus(`Concluído: ${ok} inseridas, ${fail} falhas.`, 'ok');
+  // opcional: limpar UI após sucesso total
+  // elClear.click();
+});
+
+/* ========= STATUS ========= */
+function setStatus(msg, tone=null){
+  elStatus.innerHTML = msg;
+  elStatus.classList.remove('ok','warn','err');
+  if (tone) elStatus.classList.add(tone);
+}
+</script>
 </body>
 </html>
