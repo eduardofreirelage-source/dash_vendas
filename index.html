@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Dashboard – Upload</title>
+  <title>Dashboard – Upload1</title>
   <style>
     :root{--bg:#f6f8fb;--card:#fff;--line:#e5e7eb;--ink:#0b1220;--muted:#667085;--ok:#067a46;--bad:#b91c1c}
     *{box-sizing:border-box}
@@ -17,6 +17,7 @@
     @media (max-width:800px){.row{grid-template-columns:1fr}}
     input[type=file]{padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff}
     .btn{display:inline-flex;gap:8px;align-items:center;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer}
+    .btn[disabled]{opacity:.5;cursor:not-allowed}
     .hl{background:#eef6ff;border:1px solid #dbeafe;padding:2px 6px;border-radius:6px}
   </style>
 
@@ -38,7 +39,7 @@
     })();
   </script>
 
-  <!-- Supabase (opcional). Se não quiser gravar, ignore as consts no script principal. -->
+  <!-- Supabase (opcional) -->
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js" defer></script>
 </head>
 <body>
@@ -48,12 +49,13 @@
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
         <div><strong>Upload</strong> <span class="muted">(.xlsx/.xls/.csv com “Data da venda”)</span></div>
-        <div>
+        <div style="display:flex;gap:8px;align-items:center">
           <input id="fileExcel" type="file" accept=".xlsx,.xls,.csv" />
+          <button id="btnSave" class="btn" disabled>⬆️ Salvar no banco</button>
           <button id="btnClear" class="btn" title="Limpar prévia">🧹 Limpar</button>
         </div>
       </div>
-      <div id="status" class="muted" style="margin-top:8px">—</div>
+      <div id="status" class="muted" style="margin-top:8px">Prévia pronta (supabase desativado).</div>
       <div id="log" style="margin-top:10px"></div>
     </div>
 
@@ -73,15 +75,15 @@
     <div class="card">
       <div class="muted"><strong>Ajuda rápida</strong></div>
       <ul class="muted" style="margin-top:6px">
-        <li>Se aparecer “<span class="hl">null value in column "dia"</span>”, significa que nenhuma coluna de data foi reconhecida. Renomeie a coluna para algo como <em>Data da venda</em> ou <em>Data do pedido</em>.</li>
-        <li>Este uploader aceita datas em formato Excel (serial) ou <code>dd/mm/aaaa</code> (com hora opcional).</li>
+        <li>Se aparecer “<span class="hl">null value in column "dia"</span>”, nenhuma coluna de data foi reconhecida. Renomeie para <em>Data da venda</em> / <em>Data do pedido</em>.</li>
+        <li>Aceita datas Excel (serial) ou <code>dd/mm/aaaa</code> (com hora opcional).</li>
       </ul>
     </div>
   </div>
 
   <script>
-    // ======= CONFIG SUPABASE (opcional) =======
-    const ENABLE_SUPABASE = false; // mude para true se quiser inserir na tabela
+    // ======= CONFIG SUPABASE =======
+    const ENABLE_SUPABASE = false;   // <<< mude para true para gravar
     const SUPABASE_URL = 'https://SEU-PROJETO.supabase.co';
     const SUPABASE_ANON_KEY = 'SEU-ANON-KEY';
     const TABLE = 'vendas_xlsx';
@@ -158,20 +160,24 @@
       ].join('\n');
     }
 
-    async function insertChunks(rows, n=800){
+    async function insertChunks(rows, n=800, onProgress=null){
       for(let i=0;i<rows.length;i+=n){
         const part=rows.slice(i,i+n);
         const {error} = await supa.from(TABLE).insert(part);
         if(error) throw error;
+        if(onProgress) onProgress(Math.min(i+n, rows.length), rows.length);
       }
     }
 
+    let lastRows = [];
+
     async function handleFile(file){
       $('#log').textContent=''; $('#preview').textContent=''; $('#map').textContent='';
-      if(!window.XLSX){ setStatus('XLSX ainda não carregou (CDN). Tente novamente em 1–2s.', 'bad'); return; }
       setStatus(`Lendo ${file.name}…`);
-
       const buf = await file.arrayBuffer();
+
+      if(!window.XLSX){ setStatus('XLSX ainda carregando. Tente novamente em 1–2s.', 'bad'); return; }
+
       const wb = XLSX.read(buf, {type:'array'});
       const ws = wb.Sheets[wb.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(ws, {defval:null});
@@ -203,7 +209,6 @@
       let ok=0,bad=0;
       const out=[], dropped=[];
       for(const r of data){
-        // Data/hora
         let d = r[colDate], jsd=null;
         if(typeof d==='number') jsd = excelSerialToJSDate(d);
         if(!jsd && typeof d==='string') jsd = parseBRDateTime(d);
@@ -237,24 +242,27 @@
         ok++;
       }
 
+      lastRows = out;
+      $('#btnSave').disabled = !(ENABLE_SUPABASE && supa && lastRows.length>0);
+
       $('#preview').textContent = out.slice(0,5).map(o=>JSON.stringify(o)).join('\n') || '(sem linhas válidas)';
       log(`Linhas lidas: ${data.length}`);
       log(`Válidas: ${ok}`);
       if(bad>0) log(`Descartadas: ${bad} (exemplo: ${JSON.stringify(dropped[0]||{},null,2)})`);
 
-      if(!ok){ setStatus('Nenhuma linha válida após leitura.', 'bad'); return; }
+      setStatus(ENABLE_SUPABASE ? 'Prévia pronta. Clique “Salvar no banco”.' : 'Prévia pronta (supabase desativado).', ENABLE_SUPABASE ? '' : 'muted');
+    }
 
-      // Inserção (opcional)
-      if(supa){
-        try{
-          setStatus('Gravando no banco…');
-          await insertChunks(out, 800);
-          setStatus(`✅ Gravado: ${ok} linha(s).`, 'ok');
-        }catch(e){
-          setStatus(`Erro ao gravar: ${e.message}`, 'bad'); log('Detalhes:', JSON.stringify(e,null,2));
-        }
-      }else{
-        setStatus(`Prévia pronta (supabase desativado).`, 'ok');
+    async function saveToDb(){
+      if(!(ENABLE_SUPABASE && supa)){ setStatus('Ative o Supabase nas configs do arquivo.', 'bad'); return; }
+      if(!lastRows.length){ setStatus('Nada para salvar.', 'bad'); return; }
+      try{
+        setStatus(`Gravando ${lastRows.length} linha(s)…`);
+        await insertChunks(lastRows, 800, (done,total)=>setStatus(`Gravando… ${done}/${total}`));
+        setStatus(`✅ Gravado: ${lastRows.length} linha(s).`, 'ok');
+      }catch(e){
+        setStatus(`Erro ao gravar: ${e.message}`, 'bad');
+        log('Detalhes:', JSON.stringify(e,null,2));
       }
     }
 
@@ -264,11 +272,14 @@
       setStatus(`Arquivo: ${f.name}`);
       handleFile(f);
     });
+    $('#btnSave').addEventListener('click', saveToDb);
     $('#btnClear').addEventListener('click', ()=>{
       $('#fileExcel').value = '';
       $('#log').textContent = '';
       $('#preview').textContent = '';
       $('#map').textContent = '';
+      $('#btnSave').disabled = true;
+      lastRows = [];
       setStatus('—');
     });
   </script>
