@@ -1,409 +1,320 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Mapeamento de Colunas → Filtros</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Mapear colunas ↔ filtros (1com sugestões)</title>
 <style>
   :root{
-    --bg:#0f1320; --card:#14192b; --muted:#8aa1b1; --text:#e7eef5; --accent:#5b9dff; --warn:#ffd166; --bad:#ff6b6b; --good:#53d769;
-    --border: #22304a;
+    --bg:#0f1320; --card:#14192b; --muted:#8aa1b1; --text:#e7eef5; --accent:#5b9dff; --border:#22304a;
+    --good:#53d769; --warn:#ffd166; --bad:#ff6b6b;
   }
   *{box-sizing:border-box}
-  body{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--text);}
-  .wrap{max-width:1100px; margin:32px auto; padding:0 16px;}
-  h1{font-size:24px; margin:0 0 12px}
-  .sub{color:var(--muted); margin-bottom:20px}
+  body{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--text)}
+  .wrap{max-width:1100px; margin:28px auto; padding:0 16px}
+  h1{margin:0 0 8px; font-size:24px}
+  .sub{color:var(--muted); margin-bottom:18px}
   .row{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+  @media (max-width:960px){ .row{grid-template-columns:1fr} }
   .card{background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px}
   .mapping-grid{display:grid; grid-template-columns:1.2fr 1fr; gap:10px; align-items:center}
   label{font-size:13px; color:var(--muted)}
   select, textarea, input[type=text]{width:100%; background:#0c1122; border:1px solid var(--border); color:var(--text); border-radius:10px; padding:10px; outline:none}
-  textarea{min-height:120px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,Monaco,monospace; resize:vertical}
+  textarea{min-height:120px; font-family:ui-monospace,Consolas,Menlo,monospace; resize:vertical}
   .btn{background:#1a2742; color:var(--text); border:1px solid var(--border); padding:10px 14px; border-radius:10px; cursor:pointer}
   .btn:hover{filter:brightness(1.08)}
   .btn.primary{background:var(--accent); border-color:#4b8dea; color:#041733}
-  .btn.ghost{background:transparent}
-  .btn.warn{background:var(--warn); color:#242424; border-color:#d4b14b}
-  .btn.bad{background:var(--bad); color:#fff; border-color:#e35656}
-  .btn.good{background:var(--good); color:#06240c; border-color:#44b85a}
+  .btn.good{background:var(--good); color:#05250d; border-color:#45b65d}
+  .btn.warn{background:var(--warn); color:#222; border-color:#d7b356}
+  .btn.bad{background:var(--bad); color:#fff; border-color:#e45c5c}
   .flex{display:flex; gap:10px; flex-wrap:wrap}
-  .k{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,Monaco,monospace; padding:2px 6px; border-radius:6px; background:#0c1122; border:1px solid var(--border)}
+  .k{font-family:ui-monospace,Consolas,Menlo,monospace; padding:2px 6px; border-radius:6px; background:#0c1122; border:1px solid var(--border)}
   .pill{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; background:#0c1122; border:1px solid var(--border); border-radius:999px; color:var(--muted); font-size:12px}
   .list{display:flex; flex-wrap:wrap; gap:6px}
-  .err{color:var(--bad)}
-  .ok{color:var(--good)}
-  details{border:1px dashed var(--border); border-radius:12px; padding:10px}
-  summary{cursor:pointer; color:var(--muted)}
-  pre{margin:0; white-space:pre-wrap}
-  .footer{margin-top:18px; color:var(--muted); font-size:12px}
-  @media (max-width:900px){ .row{grid-template-columns:1fr} }
+  .info{border:1px dashed var(--border); padding:10px; border-radius:12px; color:var(--muted)}
+  .ok{color:var(--good)} .err{color:var(--bad)} .hint{color:var(--warn)}
 </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Mapear colunas do banco ↔ filtros do dashboard</h1>
-    <div class="sub">Selecione qual coluna da sua tabela corresponde a cada filtro/métrica. O mapeamento fica salvo no <span class="k">localStorage</span> (chave <span class="k">colmap_v1</span>) e pode ser reutilizado pelo seu dashboard.</div>
+<div class="wrap">
+  <h1>Mapear colunas do banco ↔ filtros</h1>
+  <div class="sub">
+    Agora, mesmo sem amostra, os selects já vêm com <b>opções sugeridas</b>.  
+    Salva em <span class="k">localStorage</span> (chaves <span class="k">colmap_v1</span> e <span class="k">colnames_v1</span>).
+  </div>
 
-    <div class="card" style="margin-bottom:16px">
-      <div class="flex">
-        <button class="btn primary" id="btnSave">Salvar mapeamento</button>
-        <button class="btn warn" id="btnValidate">Validar</button>
-        <button class="btn ghost" id="btnReset">Limpar (padrão)</button>
-        <button class="btn" id="btnExport">Exportar JSON</button>
-        <button class="btn" id="btnImport">Importar JSON</button>
-      </div>
-      <div class="footer">Dica: integre pelo JS usando <span class="k">getCol(key)</span> ou <span class="k">getMap()</span>. Ex.: <span class="k">getCol('unid')</span> → retorna o nome da coluna mapeada para “Unidade”.</div>
+  <div class="card" style="margin-bottom:16px">
+    <div class="flex">
+      <button class="btn primary" id="btnSave">Salvar mapeamento</button>
+      <button class="btn" id="btnExport">Exportar JSON</button>
+      <button class="btn" id="btnImport">Importar JSON</button>
+      <button class="btn warn" id="btnValidate">Validar</button>
+      <button class="btn bad" id="btnReset">Resetar p/ padrão</button>
+    </div>
+    <div id="infoBox" class="info" style="margin-top:10px; display:none"></div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h3 style="margin:0 0 10px">1) Mapeie os campos</h3>
+      <div id="mapGrid" class="mapping-grid"></div>
     </div>
 
-    <div class="row">
-      <!-- Coluna esquerda: Mapeamento -->
-      <div class="card">
-        <h3 style="margin-top:0">1) Mapeie os campos</h3>
-        <div class="mapping-grid" id="mapGrid">
-          <!-- Preenchido via JS -->
-        </div>
+    <div class="card">
+      <h3 style="margin:0 0 10px">2) Diga ao sistema quais colunas existem</h3>
+
+      <div class="flex" style="margin-bottom:8px">
+        <button class="btn good" id="btnFillSuggestions">Preencher com sugestões</button>
+        <button class="btn" id="btnFromComma">Informar lista (vírgulas)</button>
+        <button class="btn" id="btnFromSample">Colar amostra JSON (1 linha)</button>
+        <button class="btn" id="btnClearCols">Limpar colunas</button>
       </div>
 
-      <!-- Coluna direita: Colunas disponíveis & diagnóstico -->
-      <div class="card">
-        <h3 style="margin-top:0">2) Diga ao sistema quais colunas existem</h3>
-        <p class="sub">Opções para popular as listas dos selects:</p>
-        <div class="flex">
-          <button class="btn" id="btnFromComma">Informar por lista (vírgulas)</button>
-          <button class="btn" id="btnFromSample">Colar amostra (JSON de uma linha)</button>
-          <button class="btn" id="btnClearCols">Limpar colunas</button>
-        </div>
-
-        <details style="margin-top:12px" id="detComma">
-          <summary>Colar nomes de colunas (separados por vírgula)</summary>
-          <div style="margin-top:10px">
-            <textarea id="taCols" placeholder="Ex.: dia, hora, unidade, loja, canal, pagamento_base, turno, cancelado, pedidos, fat, des, fre, pedido_id, row_key"></textarea>
-            <div class="flex" style="margin-top:10px"><button class="btn good" id="btnApplyCols">Aplicar</button></div>
-          </div>
-        </details>
-
-        <details style="margin-top:12px" id="detSample">
-          <summary>Colar amostra de 1 linha em JSON (Object) para detectar as chaves</summary>
-          <div style="margin-top:10px">
-            <textarea id="taSample" placeholder='Ex.: {"dia":"2025-08-15","unidade":"Uni.Raja","loja":"Loja A","canal":"iFood","pagamento_base":"Pix","turno":"Dia","cancelado":"Não","pedidos":10,"fat":100,"des":10,"fre":5,"pedido_id":"A1"}'></textarea>
-            <div class="flex" style="margin-top:10px"><button class="btn good" id="btnApplySample">Extrair chaves</button></div>
-          </div>
-        </details>
-
-        <div style="margin-top:16px">
-          <div class="sub">Colunas detectadas:</div>
-          <div id="colsList" class="list"></div>
-        </div>
-
-        <hr style="border-color:var(--border); margin:18px 0" />
-
-        <h3>Diagnóstico</h3>
-        <div id="diagBox" class="sub">—</div>
-        <details style="margin-top:10px">
-          <summary>JSON atual do mapeamento</summary>
-          <pre id="preMap" style="margin-top:8px"></pre>
-        </details>
+      <div class="flex" style="margin-bottom:12px">
+        <input type="text" id="inpAddCol" placeholder="Adicionar coluna manualmente (ex.: canal)"/>
+        <button class="btn" id="btnAddCol">Adicionar</button>
       </div>
+
+      <details id="detComma" style="margin-bottom:10px">
+        <summary>Colar nomes separados por vírgula</summary>
+        <textarea id="taCols" placeholder="dia, hora, unidade, loja, canal, pagamento_base, turno, cancelado, pedidos, fat, des, fre, pedido_id, row_key"></textarea>
+        <div class="flex" style="margin-top:8px"><button class="btn good" id="btnApplyCols">Aplicar</button></div>
+      </details>
+
+      <details id="detSample" style="margin-bottom:10px">
+        <summary>Colar amostra JSON (objeto de 1 linha)</summary>
+        <textarea id="taSample" placeholder='{"dia":"2025-08-15","unidade":"Uni.Raja","loja":"Loja A","canal":"iFood","pagamento_base":"Pix","turno":"Dia","cancelado":"Não","pedidos":10,"fat":100,"des":10,"fre":5,"pedido_id":"A1"}'></textarea>
+        <div class="flex" style="margin-top:8px"><button class="btn good" id="btnApplySample">Extrair chaves</button></div>
+      </details>
+
+      <div class="sub">Colunas detectadas:</div>
+      <div id="colsList" class="list"></div>
+
+      <hr style="border-color:var(--border); margin:14px 0"/>
+      <h3 style="margin:0 0 8px">Diagnóstico</h3>
+      <div id="diagBox" class="sub">—</div>
+      <details>
+        <summary>JSON do mapeamento</summary>
+        <pre id="preMap" style="margin-top:8px"></pre>
+      </details>
     </div>
+  </div>
 
-    <div class="card" style="margin-top:16px">
-      <h3 style="margin-top:0">Como usar no seu dashboard</h3>
-      <pre><code>// Lê o mapeamento salvo
-const map = getMap(); // { dia: 'dia', unid: 'unidade', ... }
+  <div class="card" style="margin-top:16px">
+    <h3 style="margin-top:0">Como usar no seu dashboard</h3>
+<pre><code>// Lê o mapeamento salvo
+const map = getMap();           // { dia: 'dia', unid: 'unidade', ... }
+const colUnidade = getCol('unid');
 
-// Pega a coluna mapeada para Unidade
-const colUnid = getCol('unid'); // ex.: "unidade"
-
-// Exemplo: montar payload para a RPC com seleção de filtros já mapeada
+// Payload típico para sua RPC
 const payload = {
   p_dini: '2025-08-15',
   p_dfim: '2025-08-20',
-  p_unids: ['Uni.Raja'], // valores escolhidos pelo usuário
+  p_unids: ['Uni.Raja'],
   p_lojas: null,
   p_turnos: null,
   p_canais: null,
   p_pags: null,
   p_cancelado: 'Não'
 };
-const withMapping = applyMapToPayload(payload);
-// → você envia 'withMapping' para sua RPC normalmente
-
-// Caso você obtenha as colunas do seu fetch de dados:
-//   setAvailableColumns(Object.keys(rows[0]))</code></pre>
-    </div>
-
-    <div class="footer">Feito para acelerar seus testes. Qualquer campo obrigatório faltando ou colunas duplicadas aparecem na validação.</div>
+const ready = applyMapToPayload(payload); // se quiser ajustar valores
+</code></pre>
   </div>
+</div>
 
 <script>
-/* ===========================================
-   0) Definições
-   =========================================== */
+/* ===== Config & defaults ===== */
 const STORAGE_KEY = 'colmap_v1';
 const COLS_KEY    = 'colnames_v1';
 
-// Campos suportados e rótulos
 const FIELDS = [
-  { key:'dia',        label:'Data da venda (dia)',            required:true },
-  { key:'hora',       label:'Hora (opcional)',                required:false },
-  { key:'unid',       label:'Unidade',                       required:true },
-  { key:'loja',       label:'Nome/Código da Loja',           required:false },
-  { key:'canal',      label:'Canal de Venda',                required:false },
-  { key:'pag',        label:'Pagamento Base',                required:false },
-  { key:'turno',      label:'Turno',                         required:false },
-  { key:'cancelado',  label:'Está Cancelado',                required:true },
-  { key:'ped',        label:'Pedidos (qtd)',                  required:false },
-  { key:'fat',        label:'Faturamento',                    required:false },
-  { key:'des',        label:'Desconto',                       required:false },
-  { key:'fre',        label:'Entrega (frete)',                required:false },
-  { key:'pedido_id',  label:'Pedido ID (opcional)',           required:false },
-  { key:'row_key',    label:'Row Key/Hash (opcional)',        required:false },
+  { key:'dia',        label:'Data da venda (dia)',  required:true },
+  { key:'hora',       label:'Hora (opcional)',      required:false },
+  { key:'unid',       label:'Unidade',              required:true },
+  { key:'loja',       label:'Nome/Código da Loja',  required:false },
+  { key:'canal',      label:'Canal de Venda',       required:false },
+  { key:'pag',        label:'Pagamento Base',       required:false },
+  { key:'turno',      label:'Turno',                required:false },
+  { key:'cancelado',  label:'Está Cancelado',       required:true },
+  { key:'ped',        label:'Pedidos (qtd)',        required:false },
+  { key:'fat',        label:'Faturamento',          required:false },
+  { key:'des',        label:'Desconto',             required:false },
+  { key:'fre',        label:'Entrega (frete)',      required:false },
+  { key:'pedido_id',  label:'Pedido ID (opcional)', required:false },
+  { key:'row_key',    label:'Row Key/Hash (opt.)',  required:false },
 ];
 
-// Sugestões de nomes de colunas (aparecem como default)
 const DEFAULT_MAP = {
   dia:'dia', hora:'hora', unid:'unidade', loja:'loja',
   canal:'canal', pag:'pagamento_base', turno:'turno',
   cancelado:'cancelado', ped:'pedidos', fat:'fat', des:'des', fre:'fre',
   pedido_id:'pedido_id', row_key:'row_key'
 };
+const SUGGESTED_COLS = Array.from(new Set(Object.values(DEFAULT_MAP)));
 
-/* ===========================================
-   1) Estado e utilitários básicos
-   =========================================== */
-let colnames = loadCols();
+/* ===== State & helpers ===== */
 let mapping  = loadMap();
+let colnames = loadCols();
 
-// APIs públicas para o resto do app
+/* Se não houver colunas salvas, pré-preenche com sugestões */
+if (!colnames.length) {
+  colnames = [...SUGGESTED_COLS];
+  saveCols();
+  showInfo('Não havia colunas detectadas. Preenchi as opções com <b>colunas sugeridas</b> (dia, hora, unidade, loja, canal, pagamento_base, turno, cancelado, pedidos, fat, des, fre, pedido_id, row_key). Você pode adicionar/remover à vontade.');
+}
+
+/* APIs públicas p/ o dashboard */
 window.getMap  = () => ({...mapping});
 window.setMap  = (m) => { mapping = {...mapping, ...m}; saveMap(); renderAll(); };
 window.getCol  = (k) => mapping?.[k] ?? null;
-window.setAvailableColumns = (cols) => { colnames = Array.from(new Set((cols||[]).map(s=>String(s)))); saveCols(); renderAll(); };
+window.setAvailableColumns = (cols) => { colnames = uniq((cols||[]).map(s=>String(s))); saveCols(); renderAll(); };
+window.applyMapToPayload = (p) => ({...p}); // hook para ajustes se precisar
 
-// Monta um payload “bonitinho”. Aqui a função não muda nomes de colunas no banco,
-// ela apenas garante que seu payload padrão de RPC está coerente (útil como exemplo)
-window.applyMapToPayload = (payload) => {
-  // Você pode adaptar aqui caso precise transformar valores
-  return { ...payload };
-};
+/* Storage */
+function loadMap(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {...DEFAULT_MAP}; }catch{ return {...DEFAULT_MAP}; } }
+function saveMap(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(mapping)); }
+function loadCols(){ try{ return JSON.parse(localStorage.getItem(COLS_KEY)) || []; }catch{ return []; } }
+function saveCols(){ localStorage.setItem(COLS_KEY, JSON.stringify(colnames)); }
 
-// Storage
-function loadMap(){
-  try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {...DEFAULT_MAP}; }
-  catch(e){ return {...DEFAULT_MAP}; }
-}
-function saveMap(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(mapping));
-}
-function loadCols(){
-  try{ return JSON.parse(localStorage.getItem(COLS_KEY)) || []; }
-  catch(e){ return []; }
-}
-function saveCols(){
-  localStorage.setItem(COLS_KEY, JSON.stringify(colnames));
-}
+/* ===== UI rendering ===== */
+const $mapGrid = document.getElementById('mapGrid');
+const $colsList = document.getElementById('colsList');
+const $diagBox = document.getElementById('diagBox');
+const $preMap = document.getElementById('preMap');
+const $infoBox = document.getElementById('infoBox');
 
-/* ===========================================
-   2) Renderização da UI
-   =========================================== */
-const mapGrid = document.getElementById('mapGrid');
-const colsList = document.getElementById('colsList');
-const diagBox = document.getElementById('diagBox');
-const preMap = document.getElementById('preMap');
-
-function optionHtml(name, sel){
-  const s = name===sel ? ' selected' : '';
-  return `<option value="${escapeHtml(name)}"${s}>${escapeHtml(name)}</option>`;
-}
 function renderMapping(){
-  mapGrid.innerHTML = '';
+  $mapGrid.innerHTML = '';
   FIELDS.forEach(f=>{
-    const wrapLabel = document.createElement('div');
-    const lbl = document.createElement('label');
-    lbl.textContent = (f.required ? '★ ' : '') + f.label;
-    wrapLabel.appendChild(lbl);
+    const d1 = document.createElement('div');
+    const lab = document.createElement('label');
+    lab.textContent = (f.required?'★ ':'') + f.label;
+    d1.appendChild(lab);
 
-    const wrapSelect = document.createElement('div');
+    const d2 = document.createElement('div');
     const sel = document.createElement('select');
     sel.dataset.key = f.key;
-    const cols = ['-- (vazio) --', ...colnames];
-    cols.forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = (c==='-- (vazio) --' ? '' : c);
-      opt.textContent = c;
-      if((mapping[f.key]||'') === (opt.value||'')) opt.selected = true;
-      sel.appendChild(opt);
+
+    const opts = ['','-- (vazio) --', ...colnames];
+    opts.forEach(name=>{
+      const val = name===''?'':(name==='-- (vazio) --'?'':name);
+      const o = document.createElement('option');
+      o.value = val;
+      o.textContent = name===''?'—':name;
+      if ((mapping[f.key]||'') === val) o.selected = true;
+      sel.appendChild(o);
     });
+
     sel.addEventListener('change', ()=>{
       mapping[f.key] = sel.value || '';
       saveMap();
       renderDiag();
       renderMapJson();
     });
-    wrapSelect.appendChild(sel);
+    d2.appendChild(sel);
 
-    mapGrid.appendChild(wrapLabel);
-    mapGrid.appendChild(wrapSelect);
+    $mapGrid.appendChild(d1);
+    $mapGrid.appendChild(d2);
   });
 }
-function renderColsList(){
-  colsList.innerHTML = '';
-  if(!colnames.length){
-    const i = document.createElement('span');
-    i.className='sub';
-    i.textContent = '— nenhuma coluna informada ainda —';
-    colsList.appendChild(i);
+function renderCols(){
+  $colsList.innerHTML = '';
+  if (!colnames.length){
+    const span = document.createElement('span');
+    span.className='sub';
+    span.textContent = '— nenhuma coluna informada ainda —';
+    $colsList.appendChild(span);
     return;
   }
   colnames.forEach(c=>{
     const p = document.createElement('div');
     p.className='pill';
     p.textContent = c;
-    colsList.appendChild(p);
+    $colsList.appendChild(p);
   });
 }
 function renderDiag(){
-  const {errors, warns} = validateMap();
-  if(!colnames.length){
-    diagBox.innerHTML = `<span class="err">⚠ Você ainda não informou as colunas disponíveis.</span>`;
-    return;
-  }
+  const {errors,warns} = validateMap();
   if(errors.length===0 && warns.length===0){
-    diagBox.innerHTML = `<span class="ok">✔ Mapeamento consistente.</span>`;
-    return;
+    $diagBox.innerHTML = '<span class="ok">✔ Mapeamento consistente.</span>'; return;
   }
-  const h = [];
-  if(errors.length){
-    h.push(`<div class="err"><b>Erros:</b><ul>${errors.map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul></div>`);
-  }
-  if(warns.length){
-    h.push(`<div style="color:var(--warn)"><b>Avisos:</b><ul>${warns.map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul></div>`);
-  }
-  diagBox.innerHTML = h.join('');
+  let html='';
+  if(errors.length){ html += `<div class="err"><b>Erros:</b><ul>${errors.map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div>`; }
+  if(warns.length){ html += `<div class="hint"><b>Avisos:</b><ul>${warns.map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div>`; }
+  $diagBox.innerHTML = html;
 }
-function renderMapJson(){
-  preMap.textContent = JSON.stringify(mapping, null, 2);
-}
-function renderAll(){
-  renderMapping();
-  renderColsList();
-  renderDiag();
-  renderMapJson();
-}
+function renderMapJson(){ $preMap.textContent = JSON.stringify(mapping, null, 2); }
+function renderAll(){ renderMapping(); renderCols(); renderDiag(); renderMapJson(); }
 
-/* ===========================================
-   3) Validação
-   =========================================== */
+/* ===== Validation ===== */
 function validateMap(){
-  const errors = [];
-  const warns  = [];
-  // obrigatórios
-  FIELDS.filter(f=>f.required).forEach(f=>{
-    if(!mapping[f.key]) errors.push(`Campo obrigatório "${f.label}" não mapeado.`);
-  });
-  // duplicados
+  const errors=[], warns=[];
+  FIELDS.filter(f=>f.required).forEach(f=>{ if(!mapping[f.key]) errors.push(`Campo obrigatório "${f.label}" não mapeado.`); });
   const used = {};
-  Object.entries(mapping).forEach(([k,v])=>{
-    if(!v) return;
-    if(!used[v]) used[v]=[];
-    used[v].push(k);
-  });
-  Object.entries(used).forEach(([col,keys])=>{
-    if(keys.length>1) warns.push(`Coluna "${col}" está sendo usada por ${keys.length} campos (${keys.join(', ')}). Verifique se faz sentido.`);
-  });
-  // colunas inexistentes
-  Object.entries(mapping).forEach(([k,v])=>{
-    if(v && colnames.length && !colnames.includes(v)){
-      warns.push(`Coluna mapeada "${v}" (para ${k}) não consta na lista de colunas disponíveis.`);
-    }
-  });
-  return {errors, warns};
+  Object.entries(mapping).forEach(([k,v])=>{ if(!v) return; (used[v]??=[]).push(k); });
+  Object.entries(used).forEach(([c,keys])=>{ if(keys.length>1) warns.push(`Coluna "${c}" usada por ${keys.length} campos (${keys.join(', ')}).`); });
+  Object.entries(mapping).forEach(([k,v])=>{ if(v && !colnames.includes(v)) warns.push(`Coluna "${v}" (para ${k}) não está na lista de colunas disponíveis.`); });
+  return {errors,warns};
 }
 
-/* ===========================================
-   4) Eventos / Controles
-   =========================================== */
-document.getElementById('btnSave').addEventListener('click', ()=>{
-  saveMap();
-  renderDiag();
-  alert('Mapeamento salvo ✅');
-});
-document.getElementById('btnValidate').addEventListener('click', ()=>{
-  const {errors, warns} = validateMap();
-  if(!errors.length && !warns.length) alert('Tudo certo! ✅');
-  else alert(`Confira o diagnóstico na tela.\nErros: ${errors.length} • Avisos: ${warns.length}`);
-});
-document.getElementById('btnReset').addEventListener('click', ()=>{
-  if(confirm('Resetar para o padrão?')){
-    mapping = {...DEFAULT_MAP};
-    saveMap();
-    renderAll();
-  }
-});
-document.getElementById('btnExport').addEventListener('click', ()=>{
-  const blob = new Blob([JSON.stringify(mapping,null,2)], {type:'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = Object.assign(document.createElement('a'), {href:url, download:'colmap.json'});
-  a.click();
-  URL.revokeObjectURL(url);
-});
-document.getElementById('btnImport').addEventListener('click', async ()=>{
-  const inp = document.createElement('input'); inp.type='file'; inp.accept='application/json';
-  inp.onchange = async () => {
-    const f = inp.files?.[0]; if(!f) return;
-    const txt = await f.text();
-    try{
-      const j = JSON.parse(txt);
-      mapping = {...mapping, ...j};
-      saveMap();
-      renderAll();
-    }catch(e){ alert('JSON inválido.'); }
-  };
-  inp.click();
-});
-
-// Colunas por vírgulas
-document.getElementById('btnFromComma').addEventListener('click', ()=>{
-  document.getElementById('detComma').open = true;
-});
-document.getElementById('btnApplyCols').addEventListener('click', ()=>{
-  const raw = document.getElementById('taCols').value || '';
-  const cols = raw.split(',').map(s=>s.trim()).filter(Boolean);
-  if(!cols.length){ alert('Informe pelo menos 1 nome de coluna.'); return; }
-  setAvailableColumns(cols);
-  alert('Colunas aplicadas.');
-});
-
-// Colar amostra JSON
-document.getElementById('btnFromSample').addEventListener('click', ()=>{
-  document.getElementById('detSample').open = true;
-});
-document.getElementById('btnApplySample').addEventListener('click', ()=>{
-  const raw = document.getElementById('taSample').value || '';
+/* ===== Controls ===== */
+document.getElementById('btnSave').onclick = ()=>{ saveMap(); renderDiag(); alert('Mapeamento salvo ✅'); };
+document.getElementById('btnValidate').onclick = ()=>{
+  const {errors,warns}=validateMap();
+  if(!errors.length && !warns.length) alert('Tudo certo ✅'); else alert(`Veja o diagnóstico na tela.\nErros: ${errors.length} • Avisos: ${warns.length}`);
+};
+document.getElementById('btnReset').onclick = ()=>{
+  if(!confirm('Resetar para o padrão?')) return;
+  mapping = {...DEFAULT_MAP};
+  saveMap(); renderAll();
+};
+document.getElementById('btnExport').onclick = ()=>{
+  const blob = new Blob([JSON.stringify(mapping,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob); const a=document.createElement('a');
+  a.href=url; a.download='colmap.json'; a.click(); URL.revokeObjectURL(url);
+};
+document.getElementById('btnImport').onclick = ()=>{
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='application/json';
+  inp.onchange = async()=>{ const f=inp.files?.[0]; if(!f)return; const txt=await f.text();
+    try{ const j=JSON.parse(txt); mapping={...mapping,...j}; saveMap(); renderAll(); }catch{ alert('JSON inválido.'); }
+  }; inp.click();
+};
+document.getElementById('btnFillSuggestions').onclick = ()=>{
+  setAvailableColumns(SUGGESTED_COLS);
+  alert('Sugestões aplicadas.');
+};
+document.getElementById('btnFromComma').onclick = ()=>{ document.getElementById('detComma').open = true; };
+document.getElementById('btnApplyCols').onclick = ()=>{
+  const raw=document.getElementById('taCols').value||'';
+  const cols=uniq(raw.split(',').map(s=>s.trim()).filter(Boolean));
+  if(!cols.length){ alert('Informe pelo menos 1 nome.'); return; }
+  setAvailableColumns(cols); alert('Colunas aplicadas.');
+};
+document.getElementById('btnFromSample').onclick = ()=>{ document.getElementById('detSample').open = true; };
+document.getElementById('btnApplySample').onclick = ()=>{
+  const raw=document.getElementById('taSample').value||'';
   try{
-    const obj = JSON.parse(raw);
-    if(!obj || typeof obj!=='object' || Array.isArray(obj)) throw new Error();
-    const cols = Object.keys(obj);
-    setAvailableColumns(cols);
-    alert('Chaves extraídas da amostra.');
-  }catch(e){
-    alert('JSON inválido. Cole um objeto de uma linha (ex.: {"dia":"2025-08-15",...}).');
-  }
-});
+    const obj=JSON.parse(raw); if(!obj || typeof obj!=='object' || Array.isArray(obj)) throw 0;
+    setAvailableColumns(Object.keys(obj)); alert('Chaves extraídas.');
+  }catch{ alert('JSON inválido. Cole um objeto com uma linha.'); }
+};
+document.getElementById('btnClearCols').onclick = ()=>{
+  if(!confirm('Limpar colunas?')) return;
+  setAvailableColumns([]); alert('Colunas limpas.');
+};
+document.getElementById('btnAddCol').onclick = ()=>{
+  const name=(document.getElementById('inpAddCol').value||'').trim();
+  if(!name) return alert('Digite um nome de coluna.');
+  if(!colnames.includes(name)) colnames.push(name);
+  saveCols(); renderAll(); document.getElementById('inpAddCol').value='';
+};
 
-document.getElementById('btnClearCols').addEventListener('click', ()=>{
-  if(confirm('Limpar lista de colunas detectadas?')){
-    setAvailableColumns([]);
-  }
-});
+/* ===== Utils ===== */
+function uniq(arr){ return Array.from(new Set(arr)); }
+function esc(s){ return String(s).replace(/[&<>"]/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m])); }
+function showInfo(html){ $infoBox.innerHTML = html; $infoBox.style.display='block'; }
 
-/* ===========================================
-   5) Helpers
-   =========================================== */
-function escapeHtml(s){ return String(s).replace(/[&<>"]/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m])); }
-
-/* Inicializa */
+/* Init */
 renderAll();
 </script>
 </body>
