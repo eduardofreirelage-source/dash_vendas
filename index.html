@@ -1,468 +1,522 @@
-<!doctype html>
-<html lang="pt-BR">
+<!DOCTYPE html>
+<html lang="pt-br">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Dashboard Vendas + Testes</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'><rect width='128' height='128' rx='22' fill='%232f6ef7'/><text x='64' y='78' text-anchor='middle' font-family='Arial' font-size='56' fill='white'>DV</text></svg>"/>
-<style>
-:root{--bg:#f6f8fb;--card:#fff;--line:#e6e7eb;--ink:#0b1220;--mut:#667085;--pri:#2f6ef7;--ok:#10b981;--warn:#f59e0b;--err:#ef4444}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
-.wrap{max-width:1240px;margin:28px auto;padding:0 16px}
-h1{margin:0 0 14px;font-size:28px}
-.section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
-.row{display:grid;gap:10px}.cols-3{grid-template-columns:repeat(3,1fr)}.cols-2{grid-template-columns:repeat(2,1fr)}
-label{display:block;color:var(--mut);font-size:12px;margin:4px 0}
-input[type=date],select,.btn,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff}
-select[multiple]{height:120px}
-.btn{cursor:pointer;background:#fff}
-.btn.pri{background:var(--pri);color:#fff;border-color:transparent}
-.chips{display:flex;gap:8px;flex-wrap:wrap}
-.chip{padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;cursor:pointer}
-.chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
-.krow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.kpi{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px}
-.kpi h4{margin:0 0 6px;color:#475569}.kpi .val{font-size:22px;font-weight:800}
-.chart{height:280px}
-.status{color:#64748b}
-.badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 8px;border-radius:999px;border:1px solid var(--line)}
-.ok{color:var(--ok);border-color:var(--ok)}.warn{color:var(--warn);border-color:var(--warn)}.err{color:var(--err);border-color:var(--err)}
-pre{white-space:pre-wrap;word-break:break-word;background:#0b1220;color:#e8e8e8;border-radius:10px;padding:10px}
-@media(max-width:1024px){.cols-3{grid-template-columns:repeat(2,1fr)}.krow{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:640px){.cols-3,.cols-2,.krow{grid-template-columns:1fr}}
-</style>
+  <meta charset="utf-8" />
+  <title>Dashboard • Vendas</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Tailwind (CDN) para layout rápido -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js para gráficos -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Supabase JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .card { @apply bg-white/80 backdrop-blur rounded-xl shadow p-4 border border-gray-100; }
+    .chip { @apply inline-flex items-center px-2 py-1 rounded-md text-xs font-medium; }
+    .chip-ok { @apply bg-green-100 text-green-700; }
+    .chip-warn { @apply bg-yellow-100 text-yellow-700; }
+    .chip-err { @apply bg-red-100 text-red-700; }
+    .btn { @apply inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-40; }
+    .btn-light { @apply inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200; }
+    .label { @apply text-xs text-gray-500; }
+    .value { @apply text-2xl font-semibold tracking-tight; }
+    .section-title { @apply text-sm font-semibold text-gray-700; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .kbd { @apply bg-gray-100 px-1 rounded border border-gray-300 text-xs; }
+    .grid-auto { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+    textarea.mono { white-space: pre; }
+  </style>
 </head>
-<body>
-<div class="wrap">
-  <h1>DASHBOARD</h1>
+<body class="bg-slate-50 text-slate-900">
+  <div class="max-w-7xl mx-auto p-4 md:p-6 lg:p-8">
+    <header class="flex items-center justify-between mb-4">
+      <h1 class="text-2xl md:text-3xl font-bold tracking-tight">DASHBOARD</h1>
+      <div class="flex items-center gap-2">
+        <button id="btnRunTests" class="btn-light" title="Executa os testes e diagnóstico embutidos">
+          🔬 Rodar testes
+        </button>
+        <button id="btnClear" class="btn-light" title="Limpa seleção de filtros">Limpar filtros</button>
+        <span id="badgeRpc" class="chip chip-warn">RPC: —</span>
+        <span id="badgeLastDay" class="chip chip-light">Último dia carregado: <span id="lastDay">—</span></span>
+      </div>
+    </header>
 
-  <div class="section">
-    <div class="row cols-3">
-      <div><label>Intervalo (início)</label><input type="date" id="dini"/></div>
-      <div><label>Intervalo (fim)</label><input type="date" id="dfim"/></div>
-      <div>
-        <label>Período rápido</label>
-        <div class="chips">
-          <button class="chip" data-q="7">07</button>
-          <button class="chip" data-q="15">15</button>
-          <button class="chip active" data-q="30">30</button>
-          <button class="chip" data-q="60">60</button>
-          <button class="chip" data-q="90">90</button>
-          <button class="chip" data-q="120">120</button>
+    <!-- Filtros: Data + Rápido -->
+    <section class="card mb-4">
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <div class="section-title mb-1">Intervalo (início)</div>
+          <input type="date" id="dtIni" class="w-full rounded-md border-gray-200 focus:ring-gray-900 focus:border-gray-900" />
         </div>
-        <div id="ultimo" class="status" style="margin-top:6px">Último dia carregado: —</div>
+        <div>
+          <div class="section-title mb-1">Intervalo (fim)</div>
+          <input type="date" id="dtFim" class="w-full rounded-md border-gray-200 focus:ring-gray-900 focus:border-gray-900" />
+        </div>
       </div>
-    </div>
-  </div>
+      <div class="mt-3">
+        <div class="section-title mb-1">Período rápido</div>
+        <div class="flex gap-2">
+          <button data-quick="7"  class="btn-light qbtn">07</button>
+          <button data-quick="15" class="btn-light qbtn">15</button>
+          <button data-quick="30" class="btn-light qbtn">30</button>
+          <button data-quick="60" class="btn-light qbtn">60</button>
+          <button data-quick="90" class="btn-light qbtn">90</button>
+          <button data-quick="120" class="btn-light qbtn">120</button>
+        </div>
+      </div>
+    </section>
 
-  <div class="section">
-    <div class="row cols-3">
-      <div>
-        <label>Unidade (multi)</label>
-        <select id="unids" multiple></select>
+    <!-- Filtros: Dimensões -->
+    <section class="card mb-4">
+      <div id="diagInline" class="text-sm mb-3 text-amber-700 hidden"></div>
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div>
+          <div class="section-title mb-1">Unidade</div>
+          <select id="selUnid" class="w-full rounded-md border-gray-200 focus:ring-gray-900 focus:border-gray-900">
+            <option value="*">(todas)</option>
+          </select>
+        </div>
+        <div>
+          <div class="section-title mb-1">Nome da Loja</div>
+          <select id="selLoja" class="w-full rounded-md border-gray-200">
+            <option value="*">(todas)</option>
+          </select>
+        </div>
+        <div>
+          <div class="section-title mb-1">Turno da Venda</div>
+          <select id="selTurno" class="w-full rounded-md border-gray-200">
+            <option value="*">(todos)</option>
+          </select>
+        </div>
+        <div>
+          <div class="section-title mb-1">Canal de Venda</div>
+          <select id="selCanal" class="w-full rounded-md border-gray-200">
+            <option value="*">(todos)</option>
+          </select>
+        </div>
+        <div>
+          <div class="section-title mb-1">Tipo de Pagamento</div>
+          <select id="selPag" class="w-full rounded-md border-gray-200">
+            <option value="*">(todos)</option>
+          </select>
+        </div>
+        <div>
+          <div class="section-title mb-1">Cancelado</div>
+          <select id="selCancel" class="w-full rounded-md border-gray-200">
+            <option value="*">(todos)</option>
+            <option value="Não" selected>Não</option>
+            <option value="Sim">Sim</option>
+          </select>
+        </div>
       </div>
-      <div>
-        <label>Loja (multi)</label>
-        <select id="lojas" multiple></select>
+      <div class="mt-4 flex items-center gap-2">
+        <button id="btnReload" class="btn">Atualizar</button>
+        <span id="rpcStatus" class="chip chip-warn">Aguardando…</span>
       </div>
-      <div>
-        <label>Turno (multi)</label>
-        <select id="turnos" multiple></select>
-      </div>
-    </div>
-    <div class="row cols-3" style="margin-top:8px">
-      <div>
-        <label>Canal (multi)</label>
-        <select id="canais" multiple></select>
-      </div>
-      <div>
-        <label>Pagamento (multi)</label>
-        <select id="pags" multiple></select>
-      </div>
-      <div>
-        <label>Cancelado</label>
-        <select id="cancel">
-          <option value="">Todos</option>
-          <option value="Não" selected>Não</option>
-          <option value="Sim">Sim</option>
-        </select>
-      </div>
-    </div>
-    <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
-      <button id="btnUpload" class="btn">📤 Carregar Excel</button>
-      <input id="fileExcel" type="file" accept=".xlsx,.xls" style="display:none"/>
-      <button id="btnRefreshFilters" class="btn">🔁 Atualizar filtros</button>
-      <button id="btnRunTests" class="btn pri">✅ Rodar testes</button>
-      <div id="status" class="status">—</div>
-    </div>
-  </div>
+    </section>
 
-  <div class="krow">
-    <div class="kpi"><h4>Pedidos</h4><div class="val" id="k_ped">—</div><div>Anterior: <span id="p_ped">—</span></div></div>
-    <div class="kpi"><h4>Ticket Médio</h4><div class="val" id="k_tkt">—</div><div>Anterior: <span id="p_tkt">—</span></div></div>
-    <div class="kpi"><h4>Faturamento</h4><div class="val" id="k_fat">—</div><div>Anterior: <span id="p_fat">—</span></div></div>
-  </div>
+    <!-- KPIs -->
+    <section class="grid-auto mb-4">
+      <div class="card">
+        <div class="label">Pedidos</div>
+        <div id="kpiPed" class="value">—</div>
+        <div class="text-xs text-gray-500">Anterior: <span id="kpiPedPrev">—</span></div>
+      </div>
+      <div class="card">
+        <div class="label">Ticket Médio</div>
+        <div id="kpiTkt" class="value">—</div>
+        <div class="text-xs text-gray-500">Anterior: <span id="kpiTktPrev">—</span></div>
+      </div>
+      <div class="card">
+        <div class="label">Faturamento</div>
+        <div id="kpiFat" class="value">—</div>
+        <div class="text-xs text-gray-500">Anterior: <span id="kpiFatPrev">—</span></div>
+      </div>
+      <div class="card">
+        <div class="label">% de Incentivos</div>
+        <div id="kpiPerc" class="value">—</div>
+        <div class="text-xs text-gray-500">Anterior: <span id="kpiPercPrev">—</span></div>
+      </div>
+      <div class="card">
+        <div class="label">Frete</div>
+        <div id="kpiFre" class="value">—</div>
+        <div class="text-xs text-gray-500">Anterior: <span id="kpiFrePrev">—</span></div>
+      </div>
+      <div class="card">
+        <div class="label">Pedidos Cancelados</div>
+        <div id="kpiCanc" class="value">—</div>
+        <div class="text-xs text-gray-500">Participação: <span id="kpiCancPart">—</span></div>
+      </div>
+    </section>
 
-  <div class="section">
-    <div class="row cols-2">
-      <div><canvas id="ch_dow" class="chart"></canvas></div>
-      <div><canvas id="ch_month" class="chart"></canvas></div>
-      <div><canvas id="ch_hour" class="chart"></canvas></div>
-      <div><canvas id="ch_turno" class="chart"></canvas></div>
-    </div>
-  </div>
+    <!-- Gráficos -->
+    <section class="grid md:grid-cols-2 gap-4 mb-6">
+      <div class="card">
+        <div class="flex items-center justify-between mb-2">
+          <div class="section-title">Vendas por dia da semana</div>
+          <div><span id="chipDow" class="chip chip-warn">Total/Média</span></div>
+        </div>
+        <canvas id="chartDow" height="130"></canvas>
+      </div>
+      <div class="card">
+        <div class="flex items-center justify-between mb-2">
+          <div class="section-title">Vendas por mês</div>
+          <div><span id="chipMon" class="chip chip-warn">Total/Média</span></div>
+        </div>
+        <canvas id="chartMon" height="130"></canvas>
+      </div>
+      <div class="card">
+        <div class="flex items-center justify-between mb-2">
+          <div class="section-title">Vendas por hora</div>
+          <div><span id="chipHor" class="chip chip-warn">Total/Média</span></div>
+        </div>
+        <canvas id="chartHor" height="130"></canvas>
+      </div>
+      <div class="card">
+        <div class="flex items-center justify-between mb-2">
+          <div class="section-title">Vendas por turno</div>
+          <div><span id="chipTur" class="chip chip-warn">Total/Média</span></div>
+        </div>
+        <canvas id="chartTur" height="130"></canvas>
+      </div>
+    </section>
 
-  <div class="section">
-    <h3 style="margin:4px 0 10px">Diagnóstico & Testes</h3>
-    <div class="row cols-2">
-      <div>
-        <label>Parâmetros enviados às RPCs (payload)</label>
-        <pre id="payload">—</pre>
-      </div>
-      <div>
-        <label>Última RPC utilizada</label>
-        <div class="badge" id="rpcBadge">—</div>
-        <div style="margin-top:8px" id="diag">—</div>
-        <div style="margin-top:8px" id="testSummary">—</div>
-      </div>
-    </div>
-    <div class="row cols-2" style="margin-top:10px">
-      <div>
-        <label>Teste rápido (contagem REST)</label>
-        <div id="tQuick" class="badge">—</div>
-      </div>
-      <div>
-        <label>Teste completo (soma local)</label>
-        <div id="tDeep" class="badge">—</div>
-      </div>
-    </div>
-    <div class="row cols-2" style="margin-top:10px">
-      <div>
-        <label>Testes por filtro (impacto esperado)</label>
-        <div id="tByFilter">—</div>
-      </div>
-      <div>
-        <label>Console</label>
-        <pre id="logBox" style="max-height:200px;overflow:auto">—</pre>
-      </div>
-    </div>
-  </div>
-</div>
+    <!-- Diagnóstico & Testes -->
+    <section class="card">
+      <h2 class="font-semibold mb-2">Diagnóstico & Testes</h2>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <div class="section-title mb-1">Parâmetros enviados às RPCs (payload)</div>
+          <textarea id="txPayload" class="mono w-full h-64 rounded-md border-gray-200 p-2 text-sm" readonly></textarea>
+        </div>
+        <div>
+          <div class="flex items-center gap-2 mb-2">
+            <div class="section-title">Última RPC utilizada</div>
+            <span id="lastRpc" class="chip chip-warn">—</span>
+          </div>
+          <div id="diagMsg" class="text-sm mb-3">Aguardando…</div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+          <div class="mb-2">
+            <div class="section-title mb-1">Teste rápido (contagem REST)</div>
+            <button id="btnQuick" class="btn-light">Quick TEST</button>
+            <span id="quickBadge" class="chip chip-warn ml-2">—</span>
+          </div>
+
+          <div class="mb-2">
+            <div class="section-title mb-1">Teste completo (soma local)</div>
+            <button id="btnDeep" class="btn-light">Deep TEST</button>
+            <span id="deepBadge" class="chip chip-warn ml-2">—</span>
+          </div>
+
+          <div class="section-title mb-1">Console</div>
+          <textarea id="txConsole" class="mono w-full h-28 rounded-md border-gray-200 p-2 text-xs" readonly>-</textarea>
+        </div>
+      </div>
+
+      <div class="mt-4">
+        <div class="section-title mb-2">Testes por filtro (impacto esperado)</div>
+        <div class="flex flex-wrap gap-2">
+          <span id="tUnid" class="chip chip-warn">Unidade: sem seleção</span>
+          <span id="tLoja"  class="chip chip-warn">Loja: sem seleção</span>
+          <span id="tTurno" class="chip chip-warn">Turno: sem seleção</span>
+          <span id="tCanal" class="chip chip-warn">Canal: sem seleção</span>
+          <span id="tPag"   class="chip chip-warn">Pagamento: sem seleção</span>
+        </div>
+      </div>
+    </section>
+  </div>
 
 <script>
-const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
-const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+/* ========= CONFIG ========= */
+const SUPABASE_URL = "https://SEU-PROJETO.supabase.co";       // <<< troque
+const SUPABASE_ANON_KEY = "SEU-ANON-KEY";                     // <<< troque
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const money=(v)=>'R$ '+(+v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-const num  =(v)=>(+v||0).toLocaleString('pt-BR');
-const $ = (id)=>document.getElementById(id);
-const setStatus=(t,k)=>{$('status').textContent=t; $('status').style.color=k==='err'?'var(--err)':k==='ok'?'var(--ok)':'#64748b';};
-const log=(...a)=>{$('logBox').textContent=(($('logBox').textContent==='—'?'':$('logBox').textContent+'\n')+a.map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' ')).slice(-10000);};
-function getSelArray(id){const opts=[...$(id).selectedOptions].map(o=>o.value).filter(Boolean);return opts.length?opts:null;}
-function addDaysISO(iso,n){const d=new Date(iso+'T00:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);}
-function daysLen(a,b){const d1=new Date(a+'T00:00:00'),d2=new Date(b+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24))+1;}
-function prevRange(a,b){const d1=new Date(a+'T00:00:00');const len=daysLen(a,b);const atePrev=new Date(d1.getTime()-24*60*60*1000);const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);return {de:dePrev.toISOString().slice(0,10), ate:atePrev.toISOString().slice(0,10)};}
-let lastDay='';
-const dini=$('dini'), dfim=$('dfim');
-
-function baseParams(){
-  const p = {
-    p_dini: dini.value, p_dfim: dfim.value,
-    p_unids: getSelArray('unids'),
-    p_lojas: getSelArray('lojas'),
-    p_turnos: getSelArray('turnos'),
-    p_canais: getSelArray('canais'),
-    p_pags:  getSelArray('pags'),
-    p_cancelado: $('cancel').value || null
-  };
-  $('payload').textContent = JSON.stringify(p,null,2);
-  return p;
-}
-function setRPCBadge(name, ok=true){
-  const b=$('rpcBadge'); b.textContent=name||'—';
-  b.className='badge '+(ok?'ok':'warn');
-}
-
-/* filtros */
-function clearSelect(sel){ sel.innerHTML=''; }
-function fillSelect(sel, values){ clearSelect(sel); values.forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=v;sel.appendChild(op);}); }
-async function uniqueValues(col, de, ate){
-  const { data, error } = await supa.from('vendas_xlsx').select(col).gte('dia',de).lte('dia',ate);
-  if(error){ log('uniqueValues error',col,error); return []; }
-  const set=new Set(); (data||[]).forEach(r=>{const v=r[col]; if(v!=null && String(v).trim()!=='') set.add(String(v));});
-  return [...set].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-}
-async function loadFilters(){
-  const de=dini.value, ate=dfim.value;
-  setStatus('Atualizando filtros…');
-  const [un, lj, tu, ca, pg] = await Promise.all([
-    uniqueValues('unidade',de,ate),
-    uniqueValues('loja',de,ate),
-    uniqueValues('turno',de,ate),
-    uniqueValues('canal',de,ate),
-    uniqueValues('pagamento_base',de,ate),
-  ]);
-  fillSelect($('unids'), un);
-  fillSelect($('lojas'), lj);
-  fillSelect($('turnos'), tu);
-  fillSelect($('canais'), ca);
-  fillSelect($('pags'), pg);
-  setStatus('OK','ok');
-}
-
-/* fallback RPC */
-async function rpcFallback(baseName, params){
-  const seq=[baseName, baseName.replace(/_v\d+$/,'_v1'), baseName.replace(/_v\d+$/,'' )];
-  if(baseName==='kpi_vendas_v2'){ seq.splice(1,0,'kpi_vendas'); }
-  let lastErr=null;
-  for(const fn of seq){
-    try{
-      const { data, error } = await supa.rpc(fn, params);
-      if(error) throw error;
-      setRPCBadge(fn,true);
-      return Array.isArray(data)?data:[];
-    }catch(e){
-      lastErr=e; setRPCBadge(fn,false);
-      if(/404|PGRST/i.test(e?.message||'')) continue;
-    }
-  }
-  setRPCBadge(baseName,false);
-  throw lastErr||new Error('RPC indisponível');
-}
-
-/* KPIs / Charts */
-function agg(rows){let p=0,f=0,d=0,fr=0;for(const r of rows||[]){p+=+r.pedidos||0;f+=+r.fat||0;d+=+r.des||0;fr+=+r.fre||0;}return {p,f,d,fr};}
-let C={};
-function ensureChart(id,labels,data){ if(C[id]) C[id].destroy(); C[id]=new Chart(document.getElementById(id),{type:'bar',data:{labels,datasets:[{label:'Atual',data,backgroundColor:'rgba(47,110,247,.85)'}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}}}}); }
-async function loadKPIs(){
-  const p=baseParams();
-  const pr=(()=>{const x=prevRange(p.p_dini,p.p_dfim);return {...p,p_dini:x.de,p_dfim:x.ate};})();
-  const now = await rpcFallback('kpi_vendas_v2', p).catch(e=>{log('kpi now err',e);return[]});
-  const prv = await rpcFallback('kpi_vendas_v2', pr).catch(e=>{log('kpi prv err',e);return[]});
-  const N=agg(now), P=agg(prv);
-  $('k_ped').textContent=num(N.p); $('p_ped').textContent=num(P.p);
-  $('k_fat').textContent=money(N.f); $('p_fat').textContent=money(P.f);
-  $('k_tkt').textContent=money(N.p?N.f/N.p:0); $('p_tkt').textContent=money(P.p?P.f/P.p:0);
-}
-async function loadCharts(){
-  const p=baseParams();
-  const [dow, mon, hor, tur] = await Promise.all([
-    rpcFallback('chart_vendas_dow_v2', p).catch(()=>[]),
-    rpcFallback('chart_vendas_mes_v2', p).catch(()=>[]),
-    rpcFallback('chart_vendas_hora_v2', p).catch(()=>[]),
-    rpcFallback('chart_vendas_turno_v2', p).catch(()=>[])
-  ]);
-  const lblDow=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']; const arrDow=Array(7).fill(0); (dow||[]).forEach(r=>{arrDow[r.dow]=+r.total||0}); ensureChart('ch_dow',lblDow,arrDow);
-  const lblM=(mon||[]).map(r=>{const[a,b]=String(r.ym).split('-');return b+'/'+a.slice(2)}); ensureChart('ch_month',lblM,(mon||[]).map(r=>+r.total||0));
-  const lblH=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h'); const arrH=Array(24).fill(0); (hor||[]).forEach(r=>{arrH[r.h]=+r.total||0}); ensureChart('ch_hour',lblH,arrH);
-  const ord=['Manhã','Tarde','Noite','Madrugada','Dia']; const m=new Map((tur||[]).map(r=>[r.turno,+r.total||0])); const lblT=ord.filter(x=>m.has(x)); ensureChart('ch_turno',lblT,lblT.map(x=>m.get(x)||0));
-}
-
-/* ======= TESTES ======= */
-function setBadge(el, kind, txt){ const b=$(el); b.className='badge '+kind; b.textContent=txt; }
-function almostEq(a,b,eps=1e-6){ return Math.abs((+a||0) - (+b||0)) <= eps; }
-
-function applyTableFilters(q,p){
-  q = q.gte('dia',p.p_dini).lte('dia',p.p_dfim);
-  if(p.p_cancelado) q=q.eq('cancelado',p.p_cancelado);
-  if(p.p_unids) q=q.in('unidade', p.p_unids);
-  if(p.p_lojas) q=q.in('loja',     p.p_lojas);
-  if(p.p_turnos)q=q.in('turno',    p.p_turnos);
-  if(p.p_canais)q=q.in('canal',    p.p_canais);
-  if(p.p_pags)  q=q.in('pagamento_base', p.p_pags);
-  return q;
-}
-
-// QUICK: usa coluna existente (row_key) + count
-async function testQuick(p){
-  try{
-    let q = supa.from('vendas_xlsx').select('row_key',{head:true,count:'exact'});
-    q = applyTableFilters(q,p);
-    const { count, error } = await q;
-    if(error) throw error;
-    setBadge('tQuick','ok',`Quick OK • linhas: ${count??'?'}`);
-    return count??0;
-  }catch(e){
-    log('testQuick err',e);
-    setBadge('tQuick','err','Quick ERRO');
-    return null;
-  }
-}
-
-// DEEP: pagina corretamente com .range()
-async function testDeep(p){
-  try{
-    // 1) RPC
-    const rpc = await rpcFallback('kpi_vendas_v2', p).catch(()=>[]);
-    const R = rpc.reduce((a,r)=>({ped:a.ped+(+r.pedidos||0), fat:a.fat+(+r.fat||0), des:a.des+(+r.des||0), fre:a.fre+(+r.fre||0)}),{ped:0,fat:0,des:0,fre:0});
-
-    // 2) tabela paginada
-    let fat=0,des=0,fre=0,ped=0, offset=0, batch=1000;
-    for(let guard=0; guard<250; guard++){ // hard cap 250k linhas
-      let q = supa.from('vendas_xlsx').select('pedidos,fat,des,fre');
-      q = applyTableFilters(q,p).range(offset, offset+batch-1);
-      const { data, error } = await q;
-      if(error) throw error;
-      const rows=data||[];
-      rows.forEach(r=>{ ped+=(+r.pedidos||0); fat+=(+r.fat||0); des+=(+r.des||0); fre+=(+r.fre||0); });
-      if(rows.length<batch) break;
-      offset += batch;
-    }
-
-    const ok = almostEq(ped,R.ped) && almostEq(fat,R.fat) && almostEq(des,R.des) && almostEq(fre,R.fre);
-    setBadge('tDeep', ok?'ok':'warn', `${ok?'Deep OK':'Deep ALERTA'} • RPC(ped:${R.ped},fat:${R.fat}) vs TBL(ped:${ped},fat:${fat})`);
-    $('testSummary').textContent = ok ? 'Totais batendo entre RPC e tabela.' :
-      `Diferenças → Ped: ${R.ped} vs ${ped} | Fat: ${R.fat} vs ${fat} | Des: ${R.des} vs ${des} | Fre: ${R.fre} vs ${fre}`;
-    return ok;
-  }catch(e){
-    log('testDeep err', e);
-    setBadge('tDeep','err','Deep ERRO');
-    return false;
-  }
-}
-
-async function testByFilter(){
-  const p=baseParams();
-  const base = await rpcFallback('kpi_vendas_v2', p).catch(()=>[]);
-  const baseTotal = base.reduce((s,r)=>s+(+r.fat||0),0);
-  const checks = [
-    {id:'unids', label:'Unidade'},
-    {id:'lojas', label:'Loja'},
-    {id:'turnos',label:'Turno'},
-    {id:'canais',label:'Canal'},
-    {id:'pags',  label:'Pagamento'},
-  ];
-  let html='';
-  for(const c of checks){
-    const sel = getSelArray(c.id);
-    if(!sel || sel.length<1){ html += `<div class="badge warn">${c.label}: sem seleção</div> `; continue; }
-    const only = {...p, [c.id==='pags'?'p_pags':('p_'+c.id)]: [sel[0]]};
-    const rp = await rpcFallback('kpi_vendas_v2', only).catch(()=>[]);
-    const tot = rp.reduce((s,r)=>s+(+r.fat||0),0);
-    const changed = !almostEq(tot, baseTotal);
-    html += `<div class="badge ${changed?'ok':'warn'}">${c.label}: ${changed?'OK (varia)':'ALERTA (sem efeito)'}</div> `;
-  }
-  $('tByFilter').innerHTML = html || '—';
-}
-
-/* fluxo */
-let CHTimer=null;
-async function applyAll(){
-  try{
-    setStatus('Consultando…');
-    await loadKPIs();
-    await loadCharts();
-    setStatus('OK','ok');
-    $('diag').textContent='Consultas concluídas.';
-  }catch(e){
-    log('applyAll err',e);
-    setStatus('OK (parcial)','ok');
-  }
-}
-async function discoverRange(){
-  const minQ=await supa.from('vendas_xlsx').select('dia').order('dia',{ascending:false}).limit(1);
-  const lastDay = minQ?.data?.[0]?.dia || new Date().toISOString().slice(0,10);
-  $('ultimo').textContent='Último dia carregado: '+lastDay;
-  if(!dini.value) dini.value=addDaysISO(lastDay,-29);
-  if(!dfim.value) dfim.value=lastDay;
-}
-
-document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
-  b.classList.add('active');
-  const last = $('ultimo').textContent.split(': ').pop();
-  const len = Number(b.dataset.q);
-  $('dini').value=addDaysISO(last,-(len-1));
-  $('dfim').value=last;
-  loadFilters().then(applyAll);
-});
-['unids','lojas','turnos','canais','pags','cancel','dini','dfim'].forEach(id=>{
-  $(id).addEventListener('change', ()=>{
-    clearTimeout(CHTimer);
-    CHTimer=setTimeout(applyAll,250);
-  });
-});
-$('btnRefreshFilters').onclick=()=>loadFilters().then(applyAll);
-$('btnRunTests').onclick=async()=>{
-  const p=baseParams();
-  await testQuick(p);
-  await testDeep(p);
-  await testByFilter();
+// nomes das RPCs com fallback (tenta sequência)
+const RPCS = {
+  kpi: ["kpi_vendas_v4", "kpi_vendas_v3", "kpi_vendas_v2", "kpi_vendas_v1", "kpi_vendas"],
+  dow: ["chart_vendas_dow_v3","chart_vendas_dow_v2","chart_vendas_dow_v1"],
+  mon: ["chart_vendas_month_v3","chart_vendas_month_v2","chart_vendas_month_v1","chart_vendas_mes_v3","chart_vendas_mes_v2","chart_vendas_mes_v1"],
+  hor: ["chart_vendas_hour_v3","chart_vendas_hour_v2","chart_vendas_hora_v3","chart_vendas_hora_v2","chart_vendas_hora_v1"],
+  tur: ["chart_vendas_turno_v3","chart_vendas_turno_v2","chart_vendas_turno_v1"]
 };
 
-/* Upload Excel (dedupe + row_key) */
-$('btnUpload').onclick=()=>$('fileExcel').click();
-$('fileExcel').addEventListener('change', async (ev)=>{
-  const file=ev.target.files?.[0]; if(!file) return;
-  setStatus('Lendo arquivo…');
-  try{
-    const buf=await file.arrayBuffer();
-    const wb=XLSX.read(buf,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows=XLSX.utils.sheet_to_json(ws,{raw:false,defval:null});
-    const cols=rows.length?Object.keys(rows[0]):[];
-    const norm=(s)=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-    const col=(alts)=>{ for(const a of alts){ const c=cols.find(h=>norm(h).includes(a)); if(c) return c; } return null; };
+// estado global mínimo
+const S = {
+  lastRpc: "—",
+  payload: null,
+  charts: {},
+};
 
-    const kDia=col(['data da venda','data','dia','date']);
-    const kHora=col(['hora','hour']); const kUni=col(['unidade','filial']); const kLoja=col(['loja']); const kCan=col(['canal']); const kPag=col(['pagamento']); const kCanc=col(['cancelado']); const kFat=col(['faturamento','fat']); const kDes=col(['desconto','desc']); const kFre=col(['frete','fre']); const kPed=col(['itens','qtd','ped']); const kPid=col(['pedido','order']);
-    const parseDate=(v)=>{ if(v instanceof Date) return v.toISOString().slice(0,10); const s=String(v||'').trim(); const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/); if(m){const[_,d,mn,y]=m;const dt=new Date(+y,+mn-1,+d); return dt.toISOString().slice(0,10);} if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10); if(!isNaN(+s)){const base=new Date(Date.UTC(1899,11,30)); const dt=new Date(base.getTime()+(+s)*86400000); return dt.toISOString().slice(0,10);} return null; };
-    const toNum=(v)=>{ if(v==null) return 0; if(typeof v==='number') return v; let s=String(v).replace(/[^\d,.\-]/g,''); const li=Math.max(s.lastIndexOf(','),s.lastIndexOf('.')); if(li>-1){ const dec=s[li]; s=s.replace(/[^0-9]/g,''); if(dec===',') s=s.replace(/(\d{2})$/g,'.$1'); else s=s.replace(/(\d{2})$/g,'.$1'); } return +(+s||0); };
-    const normCanc=(v)=>{const s=String(v||'').toLowerCase(); if(['sim','s','true','1'].includes(s)) return 'Sim'; return 'Não';};
+/* ========= HELPERS ========= */
+const $ = (sel) => document.querySelector(sel);
+const fmtMoney = (v) => Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const fmtPct   = (v) => v==null? "—" : (Number(v).toFixed(1).replace('.',',') + '%');
+const todayISO = () => new Date().toISOString().slice(0,10);
 
-    const mapped = rows.map(r=>{
-      const dia=parseDate(r[kDia]);
-      const obj={
-        dia,
-        hora: (r[kHora]!=null?parseInt(r[kHora],10):null),
-        unidade: (r[kUni]||'UNID_ND'),
-        loja: (r[kLoja]||'LOJA_DESCONHECIDA'),
-        canal: (r[kCan]||'CANAL_ND'),
-        pagamento_base: (r[kPag]||null),
-        cancelado: normCanc(r[kCanc]),
-        pedidos: r[kPed]!=null? parseInt(r[kPed],10): 1,
-        fat: toNum(r[kFat]), des: toNum(r[kDes]), fre: toNum(r[kFre]),
-        pedido_id: r[kPid]||null,
-        turno: r['turno']||null,
-        created_at: new Date().toISOString()
-      };
-      obj.row_key = [
-        obj.dia||'', obj.hora??'', obj.unidade||'', obj.loja||'', obj.canal||'',
-        obj.pagamento_base||'', obj.pedido_id||'', obj.pedidos??'', obj.cancelado||'', obj.turno||''
-      ].map(x=>String(x).toLowerCase().trim()).join('|');
-      return obj;
-    }).filter(x=>x.dia);
+function setBadge(el, kind, text) {
+  el.className = "chip " + (kind==="ok"?"chip-ok": kind==="err"?"chip-err":"chip-warn");
+  el.textContent = text;
+}
 
-    const map=new Map(); for(const r of mapped){ map.set(r.row_key, r); }
-    const dedup=[...map.values()];
+function arrOrNull(v) {
+  if (!v || v==="*") return null;
+  return [v];
+}
 
-    setStatus(`Enviando ${dedup.length} linha(s)…`);
-    for(let i=0;i<dedup.length;i+=500){
-      const slice=dedup.slice(i,i+500);
-      const { error } = await supa.from('vendas_xlsx').upsert(slice,{onConflict:'row_key'});
-      if(error) throw error;
+function buildPayloadFromUI() {
+  const dini = $("#dtIni").value || todayISO();
+  const dfim = $("#dtFim").value || todayISO();
+  const p = {
+    p_dini: dini,
+    p_dfim: dfim,
+    p_unids: arrOrNull($("#selUnid").value),
+    p_lojas: arrOrNull($("#selLoja").value),
+    p_turnos: arrOrNull($("#selTurno").value),
+    p_canais: arrOrNull($("#selCanal").value),
+    p_pags: arrOrNull($("#selPag").value),
+    p_cancelado: ($("#selCancel").value==="*") ? null : $("#selCancel").value
+  };
+  S.payload = p;
+  $("#txPayload").value = JSON.stringify(p,null,2);
+  // chips “teste por filtro”
+  setBadge($("#tUnid"), p.p_unids? "ok":"warn", p.p_unids? `Unidade: ${p.p_unids.join(',')}` : "Unidade: sem seleção");
+  setBadge($("#tLoja"),  p.p_lojas?  "ok":"warn", p.p_lojas?  `Loja: ${p.p_lojas.join(',')}`  : "Loja: sem seleção");
+  setBadge($("#tTurno"), p.p_turnos? "ok":"warn", p.p_turnos? `Turno: ${p.p_turnos.join(',')}` : "Turno: sem seleção");
+  setBadge($("#tCanal"), p.p_canais? "ok":"warn", p.p_canais? `Canal: ${p.p_canais.join(',')}` : "Canal: sem seleção");
+  setBadge($("#tPag"),   p.p_pags?   "ok":"warn", p.p_pags?   `Pag: ${p.p_pags.join(',')}`   : "Pagamento: sem seleção");
+  return p;
+}
+
+async function callRPCWithFallback(names, payload) {
+  let lastErr = null;
+  for (const name of names) {
+    try {
+      const { data, error } = await sb.rpc(name, payload);
+      if (error) { lastErr = error; continue; }
+      S.lastRpc = name;
+      $("#lastRpc").textContent = name;
+      setBadge($("#badgeRpc"), "ok", "RPC: " + name);
+      return data || [];
+    } catch(err) {
+      lastErr = err;
     }
-    setStatus('Upload concluído','ok');
-    await discoverRange();
-    await loadFilters();
-    await applyAll();
-  }catch(e){
-    console.error(e);
-    setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
-  }finally{
-    $('fileExcel').value='';
   }
-});
+  setBadge($("#badgeRpc"), "err", "RPC: falhou");
+  throw lastErr || new Error("Falha RPC");
+}
 
-/* init */
-(async function init(){
-  await discoverRange();
-  await loadFilters();
-  await applyAll();
+function makeChart(id, label, labels, values) {
+  if (S.charts[id]) S.charts[id].destroy();
+  const ctx = document.getElementById(id).getContext('2d');
+  S.charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label, data: values }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+}
+
+/* ========= DIM LISTS ========= */
+async function loadDistinctInto(selectEl, column) {
+  // busca direto da tabela base
+  const { data, error } = await sb
+    .from("vendas_xlsx")
+    .select(column)
+    .not(column, "is", null)
+    .order(column, { ascending: true })
+    .limit(2000); // defensivo
+  if (error) { console.warn("dims", column, error); return; }
+  const set = new Set();
+  data.forEach(r => set.add(r[column]));
+  const sel = $(selectEl);
+  [...set].forEach(v=>{
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = v;
+    sel.appendChild(opt);
+  });
+}
+
+/* ========= KPI + CHARTS ========= */
+async function updateAll() {
+  try {
+    setBadge($("#rpcStatus"), "warn", "Atualizando…");
+    const p = buildPayloadFromUI();
+
+    // KPIs
+    const kpi = await callRPCWithFallback(RPCS.kpi, p);
+    // espera: [{ pedidos, fat, des, fre }]
+    const ped = Number(kpi?.[0]?.pedidos||0);
+    const fat = Number(kpi?.[0]?.fat||0);
+    const des = Number(kpi?.[0]?.des||0);
+    const fre = Number(kpi?.[0]?.fre||0);
+    $("#kpiPed").textContent = ped.toLocaleString('pt-BR');
+    $("#kpiFat").textContent = fmtMoney(fat);
+    const ticket = ped ? fat / ped : 0;
+    $("#kpiTkt").textContent = fmtMoney(ticket);
+    const percInc = fat ? (des / fat * 100) : 0;
+    $("#kpiPerc").textContent = fmtPct(percInc);
+    $("#kpiFre").textContent = fmtMoney(fre);
+    $("#kpiCanc").textContent = (p.p_cancelado==="Sim"? ped.toLocaleString('pt-BR') : "—");
+    $("#kpiCancPart").textContent = (p.p_cancelado==="Sim" && fat? fmtPct( ped / Math.max(ped,1)*100 ) : "—");
+
+    // DOW
+    const dow = await callRPCWithFallback(RPCS.dow, p);
+    makeChart("chartDow", "Total", dow.map(d=>["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][Number(d.dow)||0]), dow.map(d=>Number(d.total||0)));
+    setBadge($("#chipDow"), "ok", "Total/Média");
+
+    // MÊS
+    const mon = await callRPCWithFallback(RPCS.mon, p);
+    makeChart("chartMon", "Total", mon.map(d=>d.ym||""), mon.map(d=>Number(d.total||0)));
+    setBadge($("#chipMon"), "ok", "Total/Média");
+
+    // HORA
+    const hor = await callRPCWithFallback(RPCS.hor, p);
+    makeChart("chartHor", "Total", hor.map(d=>String(d.h).padStart(2,"0")), hor.map(d=>Number(d.total||0)));
+    setBadge($("#chipHor"), "ok", "Total/Média");
+
+    // TURNO
+    const tur = await callRPCWithFallback(RPCS.tur, p);
+    makeChart("chartTur", "Total", tur.map(d=>d.turno||""), tur.map(d=>Number(d.total||0)));
+    setBadge($("#chipTur"), "ok", "Total/Média");
+
+    setBadge($("#rpcStatus"), "ok", "OK");
+    $("#diagMsg").textContent = "Consultas concluídas.";
+  } catch (err) {
+    console.error(err);
+    $("#diagMsg").textContent = "ERRO: " + (err?.message||err);
+    setBadge($("#rpcStatus"), "err", "Erro");
+    setBadge($("#badgeRpc"), "err", "RPC: erro");
+    logc("updateAll err", err);
+  }
+}
+
+/* ========= TESTES ========= */
+function logc(...args){ 
+  const line = args.map(a => (typeof a==='string'? a : JSON.stringify(a))).join(' ');
+  const ta = $("#txConsole");
+  ta.value = (ta.value==="-"? "" : ta.value+"\n") + line;
+}
+
+async function quickTest() {
+  try {
+    const p = buildPayloadFromUI();
+    // converte filtros para query REST
+    let q = sb.from("vendas_xlsx").select("pedido_id", { count: "exact", head: true });
+    if (p.p_dini) q = q.gte("dia", p.p_dini);
+    if (p.p_dfim) q = q.lte("dia", p.p_dfim);
+    if (p.p_unids) q = q.in("unidade", p.p_unids);
+    if (p.p_lojas) q  = q.in("loja", p.p_lojas);
+    if (p.p_turnos) q = q.in("turno", p.p_turnos);
+    if (p.p_canais) q = q.in("canal", p.p_canais);
+    if (p.p_pags) q   = q.in("pagamento_base", p.p_pags);
+    if (p.p_cancelado!==null) q = q.eq("cancelado", p.p_cancelado);
+
+    const { count, error } = await q;
+    if (error) throw error;
+    setBadge($("#quickBadge"), "ok", `Quick OK • linhas: ${count??"?"}`);
+    logc("quick OK:", count);
+  } catch (err) {
+    setBadge($("#quickBadge"), "err", "Quick ERRO");
+    logc("testQuick err", {message: err?.message||String(err)});
+  }
+}
+
+async function deepTest() {
+  try {
+    const p = buildPayloadFromUI();
+
+    // RPC: pega ped/fat
+    const kpi = await callRPCWithFallback(RPCS.kpi, p);
+    const pedR = Number(kpi?.[0]?.pedidos||0);
+    const fatR = Number(kpi?.[0]?.fat||0);
+
+    // Tabela: soma fat e conta ped
+    let q = sb.from("vendas_xlsx").select("fat", { count:"exact" });
+    if (p.p_dini) q = q.gte("dia", p.p_dini);
+    if (p.p_dfim) q = q.lte("dia", p.p_dfim);
+    if (p.p_unids) q = q.in("unidade", p.p_unids);
+    if (p.p_lojas) q  = q.in("loja", p.p_lojas);
+    if (p.p_turnos) q = q.in("turno", p.p_turnos);
+    if (p.p_canais) q = q.in("canal", p.p_canais);
+    if (p.p_pags) q   = q.in("pagamento_base", p.p_pags);
+    if (p.p_cancelado!==null) q = q.eq("cancelado", p.p_cancelado);
+
+    const { data, count, error } = await q.limit(100000); // limite defensivo
+    if (error) throw error;
+    const fatT = (data||[]).reduce((a,r)=> a + Number(r.fat||0), 0);
+
+    const ok = (Math.abs(fatR - fatT) < 0.0001);
+    const msg = `${ok?"Deep OK":"Deep ALERTA"} • RPC(ped:${pedR},fat:${fatR}) vs TBL(ped:${count},fat:${fatT})`;
+    setBadge($("#deepBadge"), ok? "ok":"warn", msg);
+    logc(msg);
+  } catch (err) {
+    setBadge($("#deepBadge"), "err", "Deep ERRO");
+    logc("testDeep err", {message: err?.message||String(err)});
+  }
+}
+
+/* ========= INIT ========= */
+function setDateRange(days) {
+  const df = new Date(); // hoje
+  const di = new Date();
+  di.setDate(df.getDate() - (Number(days)-1));
+  $("#dtIni").value = di.toISOString().slice(0,10);
+  $("#dtFim").value = df.toISOString().slice(0,10);
+}
+
+async function initDims() {
+  // carrega listas dos filtros
+  await Promise.all([
+    loadDistinctInto("#selUnid", "unidade"),
+    loadDistinctInto("#selLoja", "loja"),
+    loadDistinctInto("#selCanal", "canal"),
+    loadDistinctInto("#selTurno","turno"),
+    loadDistinctInto("#selPag", "pagamento_base"),
+  ]);
+}
+
+function wire() {
+  document.querySelectorAll(".qbtn").forEach(b=>{
+    b.addEventListener("click", ()=>{
+      setDateRange(b.dataset.quick);
+      updateAll();
+    });
+  });
+  $("#btnReload").addEventListener("click", updateAll);
+  $("#btnClear").addEventListener("click", ()=>{
+    document.querySelectorAll("select").forEach(s=> s.value="*");
+    setDateRange(7);
+    updateAll();
+  });
+  $("#btnQuick").addEventListener("click", quickTest);
+  $("#btnDeep").addEventListener("click", deepTest);
+  $("#btnRunTests").addEventListener("click", async()=>{
+    await quickTest();
+    await deepTest();
+  });
+  // muda filtros reativa
+  ["selUnid","selLoja","selTurno","selCanal","selPag","selCancel","dtIni","dtFim"]
+    .forEach(id=> $("#"+id).addEventListener("change", ()=> updateAll()));
+}
+
+(async function start(){
+  // período padrão
+  setDateRange(7);
+  wire();
+  await initDims();
+  // último dia carregado (consulta simples)
+  const { data } = await sb.from("vendas_xlsx").select("dia").order("dia", {ascending:false}).limit(1);
+  $("#lastDay").textContent = data?.[0]?.dia || "—";
+  // primeira atualização
+  updateAll();
 })();
 </script>
 </body>
