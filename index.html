@@ -4,9 +4,14 @@
   <meta charset="utf-8" />
   <title>Dashboard • Vendas</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Favicon embutido (remove 404) -->
+  <link rel="icon"
+        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3E%F0%9F%93%8A%3C/text%3E%3C/svg%3E">
+
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <style>
     .card { @apply bg-white/80 backdrop-blur rounded-xl shadow p-4 border border-gray-100; }
     .chip { @apply inline-flex items-center px-2 py-1 rounded-md text-xs font-medium; }
@@ -28,6 +33,7 @@
     <header class="flex items-center justify-between mb-4">
       <h1 class="text-2xl md:text-3xl font-bold tracking-tight">DASHBOARD</h1>
       <div class="flex items-center gap-2">
+        <button id="btnToggleDiag" class="btn-light">🪄 Mostrar/ocultar diagnóstico</button>
         <button id="btnRunTests" class="btn-light">🔬 Rodar testes</button>
         <button id="btnClear" class="btn-light">Limpar filtros</button>
         <span id="badgeRpc" class="chip chip-warn">RPC: —</span>
@@ -134,7 +140,7 @@
     </section>
 
     <!-- Diagnóstico & Testes -->
-    <section class="card">
+    <section id="diagSec" class="card">
       <h2 class="font-semibold mb-2">Diagnóstico & Testes</h2>
       <div class="grid md:grid-cols-2 gap-4">
         <div>
@@ -169,9 +175,9 @@ const SUPABASE_URL = "https://uahmcfzerofhzjvlzrqc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-/* Fallbacks: prioriza v2 (evita 404) e tenta v3/sinônimos só se precisar */
+/* Fallbacks: prioriza v3/v2 existentes na sua instância */
 const RPCS = {
-  kpi: ["kpi_vendas_v3","kpi_vendas_v4"],
+  kpi: ["kpi_vendas_v3","kpi_vendas_v4","kpi_vendas_v2"],
   dow: ["chart_vendas_dow_v2","chart_vendas_dow_v3"],
   mon: ["chart_vendas_month_v2","chart_vendas_mes_v2","chart_vendas_month_v3","chart_vendas_mes_v3"],
   hor: ["chart_vendas_hora_v2","chart_vendas_hour_v2","chart_vendas_hora_v3","chart_vendas_hour_v3"],
@@ -223,11 +229,10 @@ function makeChart(id,label,labels,values){
     data:{labels,datasets:[{label,data:values}]},
     options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
   });
-  const emptyEl = document.getElementById("empty"+id.slice(-3).replace(/^./,c=>c.toUpperCase()));
-  if(emptyEl){ emptyEl.classList.toggle("hidden", (values||[]).some(v=>v>0)); }
+  const emptyById = { chartDow:"emptyDow", chartMon:"emptyMon", chartHor:"emptyHor", chartTur:"emptyTur" }[id];
+  if(emptyById){ document.getElementById(emptyById).classList.toggle("hidden",(values||[]).some(v=>v>0)); }
 }
 
-/* Zera KPIs e mostra os avisos de “sem dados” sem chamar RPC */
 function showNoDataReason(msg){
   $("#diagInline").textContent = msg;
   $("#diagInline").classList.remove("hidden");
@@ -242,21 +247,18 @@ function showNoDataReason(msg){
   setBadge($("#rpcStatus"),"warn","Sem dados");
 }
 
-/* Carrega selects */
 async function loadDistinctInto(selectEl,column){
   const {data,error}=await sb.from("vendas_xlsx").select(column).not(column,"is",null).order(column,{ascending:true}).limit(5000);
   if(error){ console.warn("dims",column,error); return; }
-  const sel=$(selectEl), set=new Set(); data.forEach(r=>set.add(r[column]));
+  const sel=$(selectEl), set=new Set(); (data||[]).forEach(r=>set.add(r[column]));
   [...set].forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o); });
 }
 
-/* Atualiza tudo */
 async function updateAll(){
   try{
     setBadge($("#rpcStatus"),"warn","Atualizando…");
     const p=buildPayloadFromUI();
 
-    // Se o início do período > último dia carregado, já sabemos que não terá linhas
     if(S.lastDay && p.p_dini > S.lastDay){
       showNoDataReason(`Nenhum registro para os filtros atuais (período começa após o último dia carregado: ${S.lastDay}).`);
       $("#diagMsg").textContent="Consultas não executadas: período fora do intervalo carregado.";
@@ -265,7 +267,6 @@ async function updateAll(){
       $("#diagInline").classList.add("hidden");
     }
 
-    // KPIs
     const kpi=await callRPCWithFallback(RPCS.kpi,p);
     const ped=Number(kpi?.[0]?.pedidos||0), fat=Number(kpi?.[0]?.fat||0), des=Number(kpi?.[0]?.des||0), fre=Number(kpi?.[0]?.fre||0);
 
@@ -277,7 +278,6 @@ async function updateAll(){
     $("#kpiCanc").textContent=($("#selCancel").value==="Sim"? ped.toLocaleString('pt-BR') : "—");
     $("#kpiCancPart").textContent=($("#selCancel").value==="Sim" && fat? fmtPct(ped/Math.max(ped,1)*100) : "—");
 
-    // Gráficos
     const dow=await callRPCWithFallback(RPCS.dow,p);
     makeChart("chartDow","Total",dow.map(d=>["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][Number(d.dow)||0]),dow.map(d=>Number(d.total||0)));
     setBadge($("#chipDow"),"ok","Total/Média");
@@ -294,7 +294,6 @@ async function updateAll(){
     makeChart("chartTur","Total",tur.map(d=>d.turno||""),tur.map(d=>Number(d.total||0)));
     setBadge($("#chipTur"),"ok","Total/Média");
 
-    // feedback
     const zero = ped===0 && fat===0 && des===0 && fre===0;
     if(zero){
       $("#diagInline").textContent = "Nenhum registro para os filtros atuais (confira Unidade/Loja/Canal/Período).";
@@ -379,6 +378,7 @@ function wire(){
   $("#btnRunTests").addEventListener("click", async()=>{ await quickTest(); await deepTest(); });
   ["selUnid","selLoja","selTurno","selCanal","selPag","selCancel","dtIni","dtFim"]
     .forEach(id=> $("#"+id).addEventListener("change", ()=> updateAll()));
+  $("#btnToggleDiag").addEventListener("click", ()=> $("#diagSec").classList.toggle("hidden"));
 }
 
 /* boot */
