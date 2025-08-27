@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Dashboard Vendas</title>
+<title>Dashboard Venda1s</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'><rect width='128' height='128' rx='22' fill='%232f6ef7'/><text x='64' y='78' text-anchor='middle' font-family='Arial' font-size='56' fill='white'>DV</text></svg>"/>
 <style>
 :root{--bg:#f6f8fb;--card:#fff;--line:#e6e7eb;--ink:#0b1220;--mut:#667085;--pri:#2f6ef7}
@@ -13,8 +13,10 @@ h1{margin:0 0 14px;font-size:28px}
 .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
 .row{display:grid;gap:10px}.cols-3{grid-template-columns:repeat(3,1fr)}.cols-2{grid-template-columns:repeat(2,1fr)}
 label{display:block;color:var(--mut);font-size:12px;margin:4px 0}
-input[type=date],.ms,.btn{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff}
-.btn{cursor:pointer}.chips{display:flex;gap:8px;flex-wrap:wrap}
+input[type=date],select,.btn{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+select[multiple]{height:120px}
+.btn{cursor:pointer}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
 .chip{padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;cursor:pointer}
 .chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
 .krow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
@@ -51,15 +53,31 @@ input[type=date],.ms,.btn{width:100%;padding:10px 12px;border:1px solid var(--li
 
   <div class="section">
     <div class="row cols-3">
-      <div><label>Unidade</label><input class="ms" id="unids" placeholder="(todas)" /></div>
-      <div><label>Loja</label><input class="ms" id="lojas" placeholder="(todas)" /></div>
-      <div><label>Turno</label><input class="ms" id="turnos" placeholder="(todos)" /></div>
+      <div>
+        <label>Unidade (multi)</label>
+        <select id="unids" multiple></select>
+      </div>
+      <div>
+        <label>Loja (multi)</label>
+        <select id="lojas" multiple></select>
+      </div>
+      <div>
+        <label>Turno (multi)</label>
+        <select id="turnos" multiple></select>
+      </div>
     </div>
     <div class="row cols-3" style="margin-top:8px">
-      <div><label>Canal</label><input class="ms" id="canais" placeholder="(todos)" /></div>
-      <div><label>Pagamento</label><input class="ms" id="pags" placeholder="(todos)" /></div>
-      <div><label>Cancelado</label>
-        <select id="cancel" class="ms">
+      <div>
+        <label>Canal (multi)</label>
+        <select id="canais" multiple></select>
+      </div>
+      <div>
+        <label>Pagamento (multi)</label>
+        <select id="pags" multiple></select>
+      </div>
+      <div>
+        <label>Cancelado</label>
+        <select id="cancel">
           <option value="">Todos</option>
           <option value="Não" selected>Não</option>
           <option value="Sim">Sim</option>
@@ -100,63 +118,108 @@ const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
 const money=(v)=>'R$ '+(+v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const num=(v)=>(+v||0).toLocaleString('pt-BR');
-
 const $=id=>document.getElementById(id);
 const setStatus=(t,k)=>{$('status').textContent=t; $('status').style.color=k==='err'?'#ef4444':k==='ok'?'#10b981':'#64748b';};
 const setDiag=(t)=>{$('diag').textContent=t||'';};
 
-let firstDay='', lastDay='';
+let lastDay='';
 const dini=$('dini'), dfim=$('dfim');
 
+function addDaysISO(iso,n){const d=new Date(iso+'T00:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);}
+function daysLen(a,b){const d1=new Date(a+'T00:00:00'),d2=new Date(b+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24))+1;}
+function prevRange(a,b){const d1=new Date(a+'T00:00:00');const len=daysLen(a,b);const atePrev=new Date(d1.getTime()-24*60*60*1000);const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);return {de:dePrev.toISOString().slice(0,10), ate:atePrev.toISOString().slice(0,10)};}
+
 async function discoverRange(){
-  const minQ=await supa.from('vendas_xlsx').select('dia').order('dia',{ascending:true}).limit(1);
-  const maxQ=await supa.from('vendas_xlsx').select('dia').order('dia',{ascending:false}).limit(1);
-  firstDay=minQ?.data?.[0]?.dia || new Date().toISOString().slice(0,10);
-  lastDay =maxQ?.data?.[0]?.dia || new Date().toISOString().slice(0,10);
+  const minQ=await supa.from('vendas_xlsx').select('dia').order('dia',{ascending:false}).limit(1);
+  lastDay = minQ?.data?.[0]?.dia || new Date().toISOString().slice(0,10);
   $('ultimo').textContent='Último dia carregado: '+lastDay;
   if(!dini.value) dini.value=addDaysISO(lastDay,-29);
   if(!dfim.value) dfim.value=lastDay;
 }
 
-function addDaysISO(iso,n){const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10);}
-document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));b.classList.add('active');dini.value=addDaysISO(lastDay,-(Number(b.dataset.q)-1));dfim.value=lastDay;applyAll();});
-[dini,dfim,$('cancel')].forEach(el=>el.addEventListener('change',applyAll));
+/* ====== filtros (carregar e ler) ====== */
+function getSelArray(id){
+  const opts=[...$(id).selectedOptions].map(o=>o.value).filter(Boolean);
+  return opts.length?opts:null;
+}
+function clearSelect(sel){ sel.innerHTML=''; }
+function fillSelect(sel, values){
+  clearSelect(sel);
+  values.forEach(v=>{
+    const op=document.createElement('option');
+    op.value=v; op.textContent=v; sel.appendChild(op);
+  });
+}
+async function uniqueValues(col, de, ate){
+  // lê distintos de vendas_xlsx (somente período)
+  const { data, error } = await supa
+    .from('vendas_xlsx')
+    .select(col)
+    .gte('dia', de).lte('dia', ate);
+  if(error){ console.error(error); return []; }
+  const set=new Set();
+  (data||[]).forEach(r=>{
+    const val = r[col];
+    if(val!=null && String(val).trim()!=='') set.add(String(val));
+  });
+  return [...set].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+}
+async function loadFilters(){
+  const de=dini.value, ate=dfim.value;
+  setStatus('Atualizando filtros…');
+  const [un, lj, tu, ca, pg] = await Promise.all([
+    uniqueValues('unidade',de,ate),
+    uniqueValues('loja',de,ate),
+    uniqueValues('turno',de,ate),
+    uniqueValues('canal',de,ate),
+    uniqueValues('pagamento_base',de,ate)
+  ]);
+  fillSelect($('unids'), un);
+  fillSelect($('lojas'), lj);
+  fillSelect($('turnos'), tu);
+  fillSelect($('canais'), ca);
+  fillSelect($('pags'), pg);
+  setStatus('OK','ok');
+}
 
-/* ---------- RPC fallback robusto ---------- */
+/* ====== RPC fallback ====== */
 async function rpcFallback(baseName, params){
-  // Ordem de tentativas: v2 -> v1 -> sem sufixo, e inclui o 'kpi_vendas' explicitamente
-  const names = [baseName, baseName.replace(/_v2$/,'_v1'), baseName.replace(/_v2$/,'')];
-  if(baseName==='kpi_vendas_v2'){ names.splice(1,0,'kpi_vendas'); } // garante wrapper
-  for(const fn of names){
+  const seq=[baseName, baseName.replace(/_v\d+$/,'_v1'), baseName.replace(/_v\d+$/,'' )];
+  if(baseName==='kpi_vendas_v2'){ seq.splice(1,0,'kpi_vendas'); }
+  for(const fn of seq){
     try{
       const { data, error } = await supa.rpc(fn, params);
       if(error) throw error;
       if(Array.isArray(data)) return data;
     }catch(e){
-      // se 404, tenta o próximo nome
-      if((e?.message||'').includes('404') || (e?.code||'').toString().includes('PGRST')) continue;
-      // outro erro: propaga
+      const msg=(e?.message||'')+(e?.hint||'');
+      if(/404|PGRST/i.test(msg)) continue;
       throw e;
     }
   }
   throw new Error('Nenhuma RPC encontrada para '+baseName);
 }
 
-/* ---------- KPIs ---------- */
-function daysLen(a,b){const d1=new Date(a+'T00:00:00'),d2=new Date(b+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24))+1;}
-function prevRange(a,b){const d1=new Date(a+'T00:00:00');const len=daysLen(a,b);const atePrev=new Date(d1.getTime()-24*60*60*1000);const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);return {de:dePrev.toISOString().slice(0,10), ate:atePrev.toISOString().slice(0,10)};}
+/* ====== KPIs e CHARTS (usam filtros) ====== */
+function agg(rows){let p=0,f=0,d=0,fr=0;for(const r of rows||[]){p+=+r.pedidos||0;f+=+r.fat||0;d+=+r.des||0;fr+=+r.fre||0;}return {p,f,d,fr};}
 
-function agg(rows){let p=0,f=0;for(const r of rows||[]){p+=+r.pedidos||0;f+=+r.fat||0;}return {p,f};}
+function baseParams(){
+  return {
+    p_dini: dini.value, p_dfim: dfim.value,
+    p_unids: getSelArray('unids'),
+    p_lojas: getSelArray('lojas'),
+    p_turnos: getSelArray('turnos'),
+    p_canais: getSelArray('canais'),
+    p_pags: getSelArray('pags'),
+    p_cancelado: $('cancel').value || null
+  };
+}
 
 async function loadKPIs(){
-  const de=dini.value, ate=dfim.value;
-  const pr=prevRange(de,ate);
-  const base={ p_dini:de, p_dfim:ate,
-    p_unids:null, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:$('cancel').value||null
-  };
-  const basePrev={...base, p_dini:pr.de, p_dfim:pr.ate};
-  const now = await rpcFallback('kpi_vendas_v2', base).catch(()=>[]);
-  const prv = await rpcFallback('kpi_vendas_v2', basePrev).catch(()=>[]);
+  const p=baseParams();
+  const pr=(()=>{const x=prevRange(p.p_dini,p.p_dfim);return {...p,p_dini:x.de,p_dfim:x.ate};})();
+  const now = await rpcFallback('kpi_vendas_v2', p).catch(()=>[]);
+  const prv = await rpcFallback('kpi_vendas_v2', pr).catch(()=>[]);
   const N=agg(now), P=agg(prv);
   $('k_ped').textContent=num(N.p);
   $('p_ped').textContent=num(P.p);
@@ -166,31 +229,29 @@ async function loadKPIs(){
   $('p_tkt').textContent=money(P.p?P.f/P.p:0);
 }
 
-/* ---------- Gráficos ---------- */
 let C={};
 function ensureChart(id,labels,data){ if(C[id]){C[id].destroy();} C[id]=new Chart(document.getElementById(id),{type:'bar',data:{labels,datasets:[{label:'Atual',data,backgroundColor:'rgba(47,110,247,.85)'}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}}}}); }
 
 async function loadCharts(){
-  const de=dini.value, ate=dfim.value;
-  const p={ p_dini:de, p_dfim:ate, p_unids:null, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:$('cancel').value||null };
+  const p=baseParams();
   const [dow, mon, hor, tur] = await Promise.all([
     rpcFallback('chart_vendas_dow_v2', p).catch(()=>[]),
     rpcFallback('chart_vendas_mes_v2', p).catch(()=>[]),
     rpcFallback('chart_vendas_hora_v2', p).catch(()=>[]),
-    rpcFallback('chart_vendas_turno_v2', p).catch(()=>[]),
+    rpcFallback('chart_vendas_turno_v2', p).catch(()=>[])
   ]);
   // DOW
   const lblDow=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   const arrDow=Array(7).fill(0); (dow||[]).forEach(r=>{arrDow[r.dow]=+r.total||0}); ensureChart('ch_dow',lblDow,arrDow);
   // MÊS
-  const ymAll=(mon||[]).map(r=>r.ym); const lblM=ymAll.map(ym=>{const[a,b]=ym.split('-');return b+'/'+a.slice(2)}); ensureChart('ch_month',lblM,(mon||[]).map(r=>+r.total||0));
+  const lblM=(mon||[]).map(r=>{const[a,b]=String(r.ym).split('-');return b+'/'+a.slice(2)}); ensureChart('ch_month',lblM,(mon||[]).map(r=>+r.total||0));
   // HORA
   const lblH=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h'); const arrH=Array(24).fill(0); (hor||[]).forEach(r=>{arrH[r.h]=+r.total||0}); ensureChart('ch_hour',lblH,arrH);
   // TURNO
   const ord=['Manhã','Tarde','Noite','Madrugada','Dia']; const m=new Map((tur||[]).map(r=>[r.turno,+r.total||0])); const lblT=ord.filter(x=>m.has(x)); ensureChart('ch_turno',lblT,lblT.map(x=>m.get(x)||0));
 }
 
-/* ---------- Upload Excel (com DEDUPE) ---------- */
+/* ====== Upload Excel (com dedupe) ====== */
 $('btnUpload').onclick=()=>$('fileExcel').click();
 $('fileExcel').addEventListener('change', async (ev)=>{
   const file=ev.target.files?.[0]; if(!file) return;
@@ -199,10 +260,10 @@ $('fileExcel').addEventListener('change', async (ev)=>{
     const buf=await file.arrayBuffer();
     const wb=XLSX.read(buf,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]];
     const rows=XLSX.utils.sheet_to_json(ws,{raw:false,defval:null});
-    // mapeamento mínimo (ajuste se precisar)
-    const norm=(s)=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
     const cols=rows.length?Object.keys(rows[0]):[];
+    const norm=(s)=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
     const col=(alts)=>{ for(const a of alts){ const c=cols.find(h=>norm(h).includes(a)); if(c) return c; } return null; };
+
     const kDia=col(['data','data da venda','dia','date']);
     const kHora=col(['hora','hour']); const kUni=col(['unidade','filial']); const kLoja=col(['loja']); const kCan=col(['canal']); const kPag=col(['pagamento']); const kCanc=col(['cancelado']); const kFat=col(['fat','faturamento']); const kDes=col(['desc','desconto']); const kFre=col(['fre','frete']); const kPed=col(['ped','qtd','itens']); const kPid=col(['pedido','order']);
     const parseDate=(v)=>{ if(v instanceof Date) return v.toISOString().slice(0,10); const s=String(v||'').trim(); const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/); if(m){const[_,d,mn,y]=m;const dt=new Date(+y,+mn-1,+d); return dt.toISOString().slice(0,10);} if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10); if(!isNaN(+s)){const base=new Date(Date.UTC(1899,11,30)); const dt=new Date(base.getTime()+(+s)*86400000); return dt.toISOString().slice(0,10);} return null; };
@@ -232,12 +293,11 @@ $('fileExcel').addEventListener('change', async (ev)=>{
       return obj;
     }).filter(x=>x.dia);
 
-    // DEDUPLICA por row_key para evitar "cannot affect row a second time"
+    // dedupe por row_key
     const map=new Map(); for(const r of mapped){ map.set(r.row_key, r); }
     const dedup=[...map.values()];
 
     setStatus(`Enviando ${dedup.length} linha(s)…`);
-    // upsert em lotes
     for(let i=0;i<dedup.length;i+=500){
       const slice=dedup.slice(i,i+500);
       const { error } = await supa.from('vendas_xlsx').upsert(slice,{onConflict:'row_key'});
@@ -245,6 +305,7 @@ $('fileExcel').addEventListener('change', async (ev)=>{
     }
     setStatus('Upload concluído','ok');
     await discoverRange();
+    await loadFilters();
     await applyAll();
   }catch(e){
     console.error(e);
@@ -254,7 +315,7 @@ $('fileExcel').addEventListener('change', async (ev)=>{
   }
 });
 
-/* ---------- fluxo principal ---------- */
+/* ====== fluxo principal ====== */
 async function applyAll(){
   try{
     setStatus('Consultando…');
@@ -264,15 +325,22 @@ async function applyAll(){
   }catch(e){
     console.error(e);
     setStatus('OK (parcial)','ok');
-    setDiag('');
   }
 }
 
+document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  b.classList.add('active');
+  dini.value=addDaysISO(lastDay,-(Number(b.dataset.q)-1));
+  dfim.value=lastDay;
+  loadFilters().then(applyAll);
+});
+[dini,dfim,$('cancel'),$('unids'),$('lojas'),$('turnos'),$('canais'),$('pags')].forEach(el=>el.addEventListener('change',applyAll));
+
 (async function init(){
   await discoverRange();
-  if(!dini.value) dini.value=addDaysISO(lastDay,-29);
-  if(!dfim.value) dfim.value=lastDay;
-  applyAll();
+  await loadFilters();
+  await applyAll();
 })();
 </script>
 </body>
