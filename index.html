@@ -169,16 +169,16 @@ const SUPABASE_URL = "https://uahmcfzerofhzjvlzrqc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-/* Usando somente RPCs que existem na sua instância para evitar 404 no console */
+/* Fallbacks: prioriza v2 (evita 404) e tenta v3/sinônimos só se precisar */
 const RPCS = {
-  kpi: ["kpi_vendas_v4","kpi_vendas_v3"],
-  dow: ["chart_vendas_dow_v3","chart_vendas_dow_v2"],
-  mon: ["chart_vendas_month_v3","chart_vendas_mes_v3"],
-  hor: ["chart_vendas_hour_v3","chart_vendas_hora_v3"],
-  tur: ["chart_vendas_turno_v3","chart_vendas_turno_v2"]
+  kpi: ["kpi_vendas_v3","kpi_vendas_v4"],
+  dow: ["chart_vendas_dow_v2","chart_vendas_dow_v3"],
+  mon: ["chart_vendas_month_v2","chart_vendas_mes_v2","chart_vendas_month_v3","chart_vendas_mes_v3"],
+  hor: ["chart_vendas_hora_v2","chart_vendas_hour_v2","chart_vendas_hora_v3","chart_vendas_hour_v3"],
+  tur: ["chart_vendas_turno_v2","chart_vendas_turno_v3"]
 };
 
-const S = { lastRpc:"—", payload:null, charts:{} };
+const S = { lastRpc:"—", payload:null, charts:{}, lastDay:null };
 const $ = (s)=>document.querySelector(s);
 const fmtMoney = v => Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const fmtPct   = v => v==null? "—" : (Number(v).toFixed(1).replace('.',',') + '%');
@@ -223,11 +223,26 @@ function makeChart(id,label,labels,values){
     data:{labels,datasets:[{label,data:values}]},
     options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
   });
-  // marcador "sem dados"
   const emptyEl = document.getElementById("empty"+id.slice(-3).replace(/^./,c=>c.toUpperCase()));
   if(emptyEl){ emptyEl.classList.toggle("hidden", (values||[]).some(v=>v>0)); }
 }
 
+/* Zera KPIs e mostra os avisos de “sem dados” sem chamar RPC */
+function showNoDataReason(msg){
+  $("#diagInline").textContent = msg;
+  $("#diagInline").classList.remove("hidden");
+  $("#kpiPed").textContent="0";
+  $("#kpiFat").textContent=fmtMoney(0);
+  $("#kpiTkt").textContent=fmtMoney(0);
+  $("#kpiPerc").textContent=fmtPct(0);
+  $("#kpiFre").textContent=fmtMoney(0);
+  $("#kpiCanc").textContent="—";
+  $("#kpiCancPart").textContent="—";
+  ["emptyDow","emptyMon","emptyHor","emptyTur"].forEach(id=>{ const el=document.getElementById(id); if(el) el.classList.remove("hidden"); });
+  setBadge($("#rpcStatus"),"warn","Sem dados");
+}
+
+/* Carrega selects */
 async function loadDistinctInto(selectEl,column){
   const {data,error}=await sb.from("vendas_xlsx").select(column).not(column,"is",null).order(column,{ascending:true}).limit(5000);
   if(error){ console.warn("dims",column,error); return; }
@@ -235,10 +250,20 @@ async function loadDistinctInto(selectEl,column){
   [...set].forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o); });
 }
 
+/* Atualiza tudo */
 async function updateAll(){
   try{
     setBadge($("#rpcStatus"),"warn","Atualizando…");
     const p=buildPayloadFromUI();
+
+    // Se o início do período > último dia carregado, já sabemos que não terá linhas
+    if(S.lastDay && p.p_dini > S.lastDay){
+      showNoDataReason(`Nenhum registro para os filtros atuais (período começa após o último dia carregado: ${S.lastDay}).`);
+      $("#diagMsg").textContent="Consultas não executadas: período fora do intervalo carregado.";
+      return;
+    } else {
+      $("#diagInline").classList.add("hidden");
+    }
 
     // KPIs
     const kpi=await callRPCWithFallback(RPCS.kpi,p);
@@ -269,10 +294,14 @@ async function updateAll(){
     makeChart("chartTur","Total",tur.map(d=>d.turno||""),tur.map(d=>Number(d.total||0)));
     setBadge($("#chipTur"),"ok","Total/Média");
 
-    // feedback zero linhas
+    // feedback
     const zero = ped===0 && fat===0 && des===0 && fre===0;
-    $("#diagInline").textContent = zero ? "Nenhum registro para os filtros atuais (confira Unidade/Loja/Canal/Período)." : "";
-    $("#diagInline").classList.toggle("hidden", !zero);
+    if(zero){
+      $("#diagInline").textContent = "Nenhum registro para os filtros atuais (confira Unidade/Loja/Canal/Período).";
+      $("#diagInline").classList.remove("hidden");
+    } else {
+      $("#diagInline").classList.add("hidden");
+    }
 
     setBadge($("#rpcStatus"),"ok","OK");
     $("#diagMsg").textContent="Consultas concluídas.";
@@ -285,12 +314,11 @@ async function updateAll(){
   }
 }
 
+/* Testes */
 function logc(...args){
   const line=args.map(a=>typeof a==='string'?a:JSON.stringify(a)).join(' ');
   const ta=$("#txConsole"); ta.value=(ta.value==="-"?"":ta.value+"\n")+line;
 }
-
-/* Testes */
 async function quickTest(){
   try{
     const p=buildPayloadFromUI();
@@ -304,7 +332,6 @@ async function quickTest(){
     logc("quick OK:",count);
   }catch(err){ setBadge($("#quickBadge"),"err","Quick ERRO"); logc("testQuick err",{message:err?.message||String(err)}); }
 }
-
 async function deepTest(){
   try{
     const p=buildPayloadFromUI();
@@ -360,7 +387,8 @@ function wire(){
   wire();
   await initDims();
   const {data}=await sb.from("vendas_xlsx").select("dia").order("dia",{ascending:false}).limit(1);
-  $("#lastDay").textContent=data?.[0]?.dia||"—";
+  S.lastDay = data?.[0]?.dia || null;
+  $("#lastDay").textContent=S.lastDay||"—";
   updateAll();
 })();
 </script>
