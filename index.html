@@ -1,300 +1,321 @@
 <!doctype html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Dashboard de Vendas • Filtros</title>
-<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Dash Vendas – filtros corretos (loja)</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
 <style>
-  :root{--bg:#0f172a;--card:#0b1220;--ink:#e5e7eb;--muted:#94a3b8;--accent:#22d3ee}
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,Segoe UI,Roboto,Helvetica,Arial}
-  header{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #1f2937}
-  .brand{font-weight:700}
-  .row{display:flex;gap:16px;flex-wrap:wrap;margin:16px 20px}
-  .card{background:var(--card);border:1px solid #1f2937;border-radius:12px;padding:14px}
-  .kpis{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:12px}
-  .kpi .v{font-size:22px;font-weight:700;margin-top:2px}
+  :root{--bg:#0b0f14;--card:#121923;--muted:#94a3b8;--fg:#e2e8f0;--pri:#22c55e;--warn:#f59e0b;--err:#ef4444}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.35 system-ui,Segoe UI,Roboto,Helvetica,Arial}
+  header{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #1f2937;background:#0d141d;position:sticky;top:0;z-index:2}
+  header h1{font-size:16px;margin:0;font-weight:600} header .ok{color:var(--pri)} header .bad{color:var(--err)}
+  .wrap{display:grid;grid-template-columns:280px 1fr;gap:16px;padding:16px}
+  .card{background:var(--card);border:1px solid #1f2937;border-radius:12px}
+  .pad{padding:14px}
+  .filters h3{margin:0 0 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  label{font-size:12px;color:var(--muted)}
+  input,select,button{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #233042;background:#0f1722;color:var(--fg)}
+  button{cursor:pointer} button.primary{background:var(--pri);border-color:#16a34a;color:#06220f;font-weight:600}
+  .row{display:flex;gap:8px}
+  .kpis{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:12px}
+  .kpi{padding:14px;border-radius:12px;background:#0e1620;border:1px solid #223047}
+  .kpi .lab{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .kpi .val{font-size:22px;font-weight:700;margin-top:6px}
+  .kpi small{color:var(--muted)}
+  .charts{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  canvas{width:100%;height:280px;background:#0b1018;border-radius:12px;border:1px solid #223047}
+  details.debug{white-space:pre-wrap}
   .muted{color:var(--muted)}
-  .filters{display:grid;grid-template-columns:repeat(6,minmax(180px,1fr));gap:10px}
-  select, input[type="date"], input[type="text"]{width:100%;padding:8px 10px;border-radius:8px;border:1px solid #374151;background:#0b1220;color:var(--ink)}
-  button{background:var(--accent);color:#002;border:0;border-radius:10px;padding:9px 14px;font-weight:700;cursor:pointer}
-  button.secondary{background:#1f2937;color:var(--ink);border:1px solid #334155}
-  .grid{display:grid;grid-template-columns:repeat(2,minmax(320px,1fr));gap:14px}
-  canvas{width:100%;height:360px;background:#0b1220;border-radius:10px}
-  #debug{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#0b1220;border-radius:12px;padding:12px;max-height:340px;overflow:auto;border:1px solid #1f2937}
-  details summary{cursor:pointer}
-  .flex{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .col-map{display:grid;grid-template-columns:repeat(6,minmax(180px,1fr));gap:10px;margin-top:8px}
+  .note{font-size:12px;color:var(--muted)}
 </style>
 </head>
 <body>
 <header>
-  <div class="brand">Vendas • Filtros consistentes</div>
-  <div class="flex">
-    <input id="url" placeholder="Supabase URL" style="width:320px" />
-    <input id="key" placeholder="Anon key" style="width:420px" />
-    <button id="saveConn" class="secondary">Salvar</button>
-  </div>
+  <h1>Dashboard de Vendas</h1>
+  <span id="ping" class="muted">Conectando…</span>
 </header>
 
-<section class="row">
-  <div class="card" style="flex:1">
-    <details open>
-      <summary class="muted">Período & Ações</summary>
-      <div class="filters" style="grid-template-columns:repeat(5,minmax(180px,1fr))">
-        <div><label class="muted">De</label><input type="date" id="dini"/></div>
-        <div><label class="muted">Até</label><input type="date" id="dfim"/></div>
-        <div><label class="muted">Cancelado</label>
-          <select id="cancel" multiple size="3">
-            <option value="">(Todos)</option>
-            <option>Não</option>
-            <option>Sim</option>
-          </select>
-        </div>
-        <div class="flex" style="align-self:end;gap:10px">
-          <button id="apply">Aplicar</button>
-          <button id="smoke" class="secondary">Smoke tests</button>
-        </div>
-      </div>
-    </details>
-
-    <details style="margin-top:10px">
-      <summary class="muted">Mapeamento de Colunas (para preencher as listas)</summary>
-      <div class="col-map">
-        <div><label class="muted">Unidade ←</label><select id="map-unid"></select></div>
-        <div><label class="muted">Lojas ←</label><select id="map-loja"></select></div>
-        <div><label class="muted">Turno ←</label><select id="map-turno"></select></div>
-        <div><label class="muted">Canal ←</label><select id="map-canal"></select></div>
-        <div><label class="muted">Pagamento ←</label><select id="map-pag"></select></div>
-        <div><label class="muted">Cancelado ←</label><select id="map-cancel"></select></div>
-      </div>
-      <div class="flex" style="margin-top:8px">
-        <button id="saveMap" class="secondary">Salvar mapeamento</button>
-        <span class="muted">O filtro <b>Lojas</b> vem de <code>vw_vendas.loja</code> (definido no SQL).</span>
-      </div>
-    </details>
-  </div>
-</section>
-
-<section class="row">
-  <div class="card" style="flex:1">
-    <div class="muted" style="margin-bottom:8px">Filtros</div>
-    <div class="filters">
-      <div><label class="muted">Unidades</label><select id="unids" multiple size="8"></select></div>
-      <div><label class="muted">Lojas</label><select id="lojas" multiple size="8"></select></div>
-      <div><label class="muted">Turnos</label><select id="turnos" multiple size="8"></select></div>
-      <div><label class="muted">Canais</label><select id="canais" multiple size="8"></select></div>
-      <div><label class="muted">Pagamentos</label><select id="pags" multiple size="8"></select></div>
-      <div style="align-self:end"><button id="limpar" class="secondary">Limpar</button></div>
+<div class="wrap">
+  <!-- LADO ESQUERDO: FILTROS -->
+  <div class="card filters pad">
+    <h3>Período</h3>
+    <div class="grid2">
+      <div><label>De</label><input type="date" id="dini"></div>
+      <div><label>Até</label><input type="date" id="dfim"></div>
     </div>
-  </div>
-</section>
 
-<section class="row">
-  <div class="card kpis" style="flex:1">
-    <div class="kpi"><div class="muted">Pedidos</div><div id="kpi-ped" class="v">—</div></div>
-    <div class="kpi"><div class="muted">Faturamento</div><div id="kpi-fat" class="v">—</div></div>
-    <div class="kpi"><div class="muted">Descontos</div><div id="kpi-des" class="v">—</div></div>
-    <div class="kpi"><div class="muted">Frete</div><div id="kpi-fre" class="v">—</div></div>
-  </div>
-</section>
-
-<section class="row">
-  <div class="grid" style="flex:1">
-    <div class="card"><div class="muted">Dia da semana</div><canvas id="c-dow"></canvas></div>
-    <div class="card"><div class="muted">Mês</div><canvas id="c-month"></canvas></div>
-    <div class="card"><div class="muted">Hora</div><canvas id="c-hour"></canvas></div>
-    <div class="card"><div class="muted">Turno</div><canvas id="c-shift"></canvas></div>
-  </div>
-</section>
-
-<section class="row">
-  <div class="card" style="flex:1">
-    <div class="muted">Carregar Excel</div>
-    <div class="flex">
-      <input type="file" id="file" accept=".xlsx,.xls,.csv"/>
-      <button id="btnUpload" class="secondary">Validar arquivo</button>
-      <span class="muted">Valida no navegador; gravação no banco depende de RPC de ingestão.</span>
+    <h3 style="margin-top:16px">Filtros</h3>
+    <div style="display:grid;gap:8px">
+      <div><label>Unidades</label><select id="ms-unids" multiple size="6"></select></div>
+      <div><label>Lojas</label><select id="ms-lojas" multiple size="8"></select></div>
+      <div><label>Turnos</label><select id="ms-turnos" multiple size="5"></select></div>
+      <div><label>Canais</label><select id="ms-canais" multiple size="6"></select></div>
+      <div><label>Pagamentos</label><select id="ms-pags" multiple size="8"></select></div>
+      <div><label>Cancelado</label>
+        <select id="ms-cancel" multiple size="3">
+          <option value="">Todos</option>
+          <option>Não</option>
+          <option>Sim</option>
+        </select>
+      </div>
     </div>
+
+    <div class="row" style="margin-top:12px">
+      <button id="btn-aplicar" class="primary">Aplicar filtros</button>
+      <button id="btn-limpar"  title="Limpa apenas seleções (mantém datas)">Limpar</button>
+    </div>
+
+    <p class="note" style="margin-top:12px">
+      • <b>Lojas</b> usa a coluna <code>loja</code> da view <code>vw_vendas</code> (confirmado no banco).<br/>
+      • Listas (combos) são carregadas pelo período selecionado (somente datas).<br/>
+      • Selecione com CTRL/⌘ para múltiplos itens.
+    </p>
   </div>
-</section>
 
-<section class="row">
-  <div class="card" style="flex:1">
-    <div class="muted">Debug</div>
-    <div id="debug">Pronto.</div>
+  <!-- LADO DIREITO: KPI + GRÁFICOS + DEBUG -->
+  <div class="col">
+    <div class="card pad">
+      <div class="kpis">
+        <div class="kpi"><div class="lab">Pedidos</div><div id="k_ped" class="val">–</div></div>
+        <div class="kpi"><div class="lab">Faturamento</div><div id="k_fat" class="val">–</div><small id="k_fat_sm"></small></div>
+        <div class="kpi"><div class="lab">Descontos</div><div id="k_des" class="val">–</div></div>
+        <div class="kpi"><div class="lab">Frete</div><div id="k_fre" class="val">–</div></div>
+      </div>
+    </div>
+
+    <div class="charts">
+      <div class="card pad"><h3>Faturamento por Dia da Semana</h3><canvas id="c_dow"></canvas></div>
+      <div class="card pad"><h3>Faturamento por Mês</h3><canvas id="c_mes"></canvas></div>
+      <div class="card pad"><h3>Faturamento por Hora</h3><canvas id="c_hora"></canvas></div>
+      <div class="card pad"><h3>Faturamento por Turno</h3><canvas id="c_turno"></canvas></div>
+    </div>
+
+    <details class="card debug pad" style="margin-top:12px" open>
+      <summary>Debug</summary>
+      <pre id="dbg">Preparando…</pre>
+    </details>
   </div>
-</section>
+</div>
 
-<script>
-const DEFAULT_URL='https://uahmcfzerofhzjvlzrqc.supabase.co';
-const DEFAULT_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
-const $=s=>document.querySelector(s);
-const log=(...a)=>{ const d=$('#debug'); d.textContent += '\\n' + a.map(x=>typeof x==='string'?x:JSON.stringify(x,null,2)).join(' '); d.scrollTop=d.scrollHeight; };
-const setTxt=(s,v)=>{$(s).textContent=v;};
-const unwrapOne=x=>Array.isArray(x)?(x[0]||{}):(x||{});
-const mvals=sel=>Array.from($(sel).selectedOptions).map(o=>o.value).filter(v=>v!=='');
-const fmt=n=> (n==null||Number.isNaN(+n))?'0':(+n).toLocaleString('pt-BR',{maximumFractionDigits:2});
+<!-- libs -->
+<script type="module">
+/** ====== CONFIG ====== **/
+const SUPABASE_URL      = "https://uahmcfzerofhzjvlzrqc.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+// Tabela/View de leitura
+const READ_VIEW = "vw_vendas";
+// RPCs existentes (v2 confirmados; v3 para hora se disponível)
+const RPC = {
+  kpi_v2:   "kpi_vendas_v2",
+  dow_v2:   "chart_vendas_dow_v2",
+  mes_v2:   "chart_vendas_mes_v2",
+  hora_v3:  "chart_vendas_hora_v3", // tentaremos v3 e cai para v2
+  hora_v2:  "chart_vendas_hora_v2",
+  turno_v2: "chart_vendas_turno_v2"
+};
 
-function loadConn(){ $('#url').value=localStorage.getItem('sb_url')||DEFAULT_URL; $('#key').value=localStorage.getItem('sb_key')||DEFAULT_KEY; }
-function saveConn(){ localStorage.setItem('sb_url',$('#url').value.trim()); localStorage.setItem('sb_key',$('#key').value.trim()); }
-async function rpc(fn, body){
-  const url=$('#url').value.trim(), key=$('#key').value.trim();
-  const res = await fetch(`${url}/rest/v1/rpc/${fn}`,{
-    method:'POST',
-    headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json',Prefer:'count=none'},
-    body: JSON.stringify(body||{})
-  });
-  if(!res.ok) throw new Error(`${fn} -> ${res.status} ${await res.text()}`);
-  return res.json();
+// ====== helpers UI ======
+const $ = sel => document.querySelector(sel);
+const dbg = (...a)=> { const el=$("#dbg"); el.textContent += a.map(x=> typeof x==="string"? x: JSON.stringify(x,null,2)).join(" ")+"\n"; el.scrollTop=el.scrollHeight; };
+const fmtMoney = v => (v??0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+
+// ====== Supabase ======
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false }});
+(async ()=> {
+  try {
+    const ping = await supa.from(READ_VIEW).select('dia').limit(1);
+    if (ping.error) throw ping.error;
+    $("#ping").textContent = "✅ Supabase client ok";
+    $("#ping").className = "ok";
+  } catch(e) {
+    $("#ping").textContent = "❌ Supabase erro: "+e.message;
+    $("#ping").className = "bad";
+  }
+})();
+
+// ====== datas padrão ======
+const today = new Date();
+const dfim  = today.toISOString().slice(0,10);
+const diniD = new Date(today.getTime()-28*24*3600*1000);
+const dini  = diniD.toISOString().slice(0,10);
+$("#dini").value = dini;
+$("#dfim").value = dfim;
+
+// ====== carregar combos (DISTINCT por período) ======
+function buildAnd(parts){
+  if(!parts || parts.length===0) return "";
+  return "&and=(" + parts.join(",") + ")";
 }
-
-/*** Mapeamento auxiliar (apenas UI das listas). Back-end usa vw_vendas.loja ***/
-const DEFAULT_MAP={unid:'unidade',loja:'loja',turno:'turno',canal:'canal',pag:'pagamento_base',cancel:'cancelado'};
-function getMap(){ try{return JSON.parse(localStorage.getItem('colmap')||'{}')}catch{return{}} }
-function setMap(m){ localStorage.setItem('colmap',JSON.stringify(m)) }
-async function getColumns(){
-  const url=$('#url').value.trim(), key=$('#key').value.trim();
-  const r = await fetch(`${url}/rest/v1/vw_vendas?select=*&limit=1`,{headers:{apikey:key,Authorization:`Bearer ${key}`}});
-  if(!r.ok){ log('⚠️ getColumns:', await r.text()); return Object.values(DEFAULT_MAP); }
-  const arr=await r.json(); return Object.keys(arr[0]||{});
+function urlDistinct(col, de, ate){
+  const base = `${SUPABASE_URL}/rest/v1/${READ_VIEW}?select=${encodeURIComponent(col)}&distinct`;
+  const cond = [];
+  if (de)  cond.push(`dia.gte.${de}`);
+  if (ate) cond.push(`dia.lte.${ate}`);
+  const extra = buildAnd(cond);
+  return base + extra + `&order=${encodeURIComponent(col)}.asc&nullsFirst=false`;
 }
-async function mountMappingUI(){
-  const cols=await getColumns(); const m=Object.assign({},DEFAULT_MAP,getMap());
-  const fill=(id,val)=>{ const el=$(id); el.innerHTML=''; cols.forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;el.appendChild(o)}); el.value=val; };
-  fill('#map-unid',m.unid); fill('#map-loja',m.loja); fill('#map-turno',m.turno);
-  fill('#map-canal',m.canal); fill('#map-pag',m.pag); fill('#map-cancel',m.cancel);
-  $('#saveMap').onclick=()=>{ const nm={unid:$('#map-unid').value,loja:$('#map-loja').value,turno:$('#map-turno').value,canal:$('#map-canal').value,pag:$('#map-pag').value,cancel:$('#map-cancel').value}; setMap(nm); log('💾 Mapeamento salvo:',nm); loadFilters(); };
-}
-
-const encodeSel = col => encodeURIComponent(`"${col}"`);
-async function distinctFiltered(col, dini, dfim){
-  if(!col) return [];
-  const url=$('#url').value.trim(), key=$('#key').value.trim();
-  const qs = new URLSearchParams();
-  qs.set('select', encodeSel(col));
-  if(dini&&dfim) qs.set('and',`(dia.gte.${dini},dia.lte.${dfim})`);
-  else if(dini) qs.set('dia',`gte.${dini}`);
-  else if(dfim) qs.set('dia',`lte.${dfim}`);
-  qs.set('limit','10000');
-  const r = await fetch(`${url}/rest/v1/vw_vendas?${qs.toString()}`,{headers:{apikey:key,Authorization:`Bearer ${key}`}});
-  if(!r.ok){ log('⚠️ distinctFiltered',col,await r.text()); return []; }
-  const rows = await r.json();
-  const vals = rows.map(x=>x[col]).filter(v=>v!=null && v!=='');
-  const uniq = [...new Set(vals.map(v=>v.toString()))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  log(`• ${col}: ${uniq.length} distintos`, uniq.slice(0,10));
-  return uniq;
+async function fetchDistinct(col, de, ate){
+  const url = urlDistinct(col, de, ate);
+  const r = await fetch(url, { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }});
+  if(!r.ok) throw new Error(`distinct ${col} HTTP ${r.status}`);
+  return await r.json();
 }
 async function loadFilters(){
-  const dini=$('#dini').value||null, dfim=$('#dfim').value||null;
-  const m=Object.assign({},DEFAULT_MAP,getMap());
-  const [unids,lojas,turnos,canais,pags]=await Promise.all([
-    distinctFiltered(m.unid,dini,dfim),
-    distinctFiltered(m.loja,dini,dfim),
-    distinctFiltered(m.turno,dini,dfim),
-    distinctFiltered(m.canal,dini,dfim),
-    distinctFiltered(m.pag,dini,dfim),
-  ]);
-  const fill=(sel,arr)=>{ const el=$(sel); el.innerHTML=''; arr.forEach(v=>{const o=document.createElement('option'); o.value=(v||'').toString().toLowerCase(); o.textContent=v||''; el.appendChild(o);}); };
-  fill('#unids',unids); fill('#lojas',lojas); fill('#turnos',turnos); fill('#canais',canais); fill('#pags',pags);
-  log('🔎 Listas concluídas',{unids:unids.length,lojas:lojas.length,turnos:turnos.length,canais:canais.length,pags:pags.length});
-}
-
-/*** Gráficos simples ***/
-function drawBar(id,labels,values){
-  const c=document.getElementById(id), ctx=c.getContext('2d');
-  ctx.clearRect(0,0,c.width,c.height);
-  const w=c.width,h=c.height,p=36,bw=(w-p*2)/Math.max(1,labels.length), vmax=Math.max(1,...values.map(v=>+v||0));
-  ctx.strokeStyle='#334155'; ctx.beginPath(); ctx.moveTo(p,h-p); ctx.lineTo(w-p,h-p); ctx.stroke();
-  for(let i=0;i<labels.length;i++){ const v=+values[i]||0, x=p+i*bw+6, bh=(v/vmax)*(h-p*2), y=(h-p)-bh;
-    ctx.fillStyle='#22d3ee'; ctx.fillRect(x,y,bw-12,bh);
-    ctx.fillStyle='#94a3b8'; ctx.font='12px system-ui'; ctx.textAlign='center'; ctx.fillText(labels[i], x+(bw-12)/2, h-p+14);
+  const de  = $("#dini").value; const ate = $("#dfim").value;
+  const fill = async (selId, col) => {
+    const data = await fetchDistinct(col, de, ate);
+    const sel = $(selId); sel.innerHTML = "";
+    for(const row of data){
+      const v = row[col];
+      if(v===null || v===undefined || v==="") continue;
+      const opt = document.createElement('option');
+      opt.value = String(v);
+      opt.textContent = String(v);
+      sel.appendChild(opt);
+    }
+  };
+  try{
+    await Promise.all([
+      fill("#ms-unids","unidade"),
+      fill("#ms-lojas","loja"),          // <<<<<<<<<< usa a coluna CORRETA
+      fill("#ms-turnos","turno"),
+      fill("#ms-canais","canal"),
+      fill("#ms-pags","pagamento_base")
+    ]);
+    const counts = {
+      unids: $("#ms-unids").options.length,
+      lojas: $("#ms-lojas").options.length,
+      turnos: $("#ms-turnos").options.length,
+      canais: $("#ms-canais").options.length,
+      pags: $("#ms-pags").options.length
+    };
+    dbg("🔎 Listas carregadas (por período):", counts);
+  }catch(e){
+    dbg("⚠️ erro loadFilters:", e.message);
   }
 }
-const sum=(arr,key='total')=>arr.reduce((a,x)=>a+(+x[key]||0),0);
-function checkSum(label,rows,kfat){ const s=sum(rows,'total'); const ok=Math.abs(s-(+kfat||0))<1e-6; log(`${ok?'✅':'❌'} ${label} soma=${fmt(s)} vs KPI.fat=${fmt(kfat)} ${ok?'(ok)':'(mismatch)'}`); }
 
-/*** Parâmetros e chamadas ***/
-const mvals=sel=>Array.from($(sel).selectedOptions).map(o=>o.value).filter(v=>v!=='');
-function buildParams(){
-  const canc=mvals('#cancel');
-  let p_cancel=null;
-  if(canc.length===1){ const v=canc[0]; if(['sim','não','nao','não','nao'].includes(v)) p_cancel = v[0].toUpperCase()+v.slice(1); if(['Sim','Não'].includes(v)) p_cancel=v; }
+// ====== coletar filtros selecionados ======
+function getMulti(sel){
+  const a=[]; for(const o of sel.selectedOptions){ a.push(o.value); } return a.length? a : null;
+}
+function paramsRPC(){
+  const de  = $("#dini").value; const ate = $("#dfim").value;
   return {
-    p_dini: $('#dini').value||null,
-    p_dfim: $('#dfim').value||null,
-    p_unids: mvals('#unids').length? mvals('#unids'): null,
-    p_lojas: mvals('#lojas').length? mvals('#lojas'): null,
-    p_turnos: mvals('#turnos').length? mvals('#turnos'): null,
-    p_canais: mvals('#canais').length? mvals('#canais'): null,
-    p_pags:   mvals('#pags').length?   mvals('#pags')  : null,
-    p_cancelado: p_cancel
+    p_dini: de, p_dfim: ate,
+    p_unids: getMulti($("#ms-unids")),
+    p_lojas: getMulti($("#ms-lojas")),
+    p_turnos: getMulti($("#ms-turnos")),
+    p_canais: getMulti($("#ms-canais")),
+    p_pags: getMulti($("#ms-pags")),
+    p_cancelado: (()=>{
+      const c = getMulti($("#ms-cancel"));
+      if(!c) return null;
+      if(c.includes("Sim") && !c.includes("Não")) return "Sim";
+      if(c.includes("Não") && !c.includes("Sim")) return "Não";
+      return null; // “Todos” ou mistura => null
+    })()
   };
 }
-async function applyAll(){
-  const p=buildParams(); log('→ KPI params',p);
-  const k=(await rpc('kpi_vendas_v2',p))[0]||{};
-  setTxt('#kpi-ped',fmt(k.pedidos)); setTxt('#kpi-fat',fmt(k.fat)); setTxt('#kpi-des',fmt(k.des)); setTxt('#kpi-fre',fmt(k.fre)); log('✅ KPI',k);
 
-  const dow=await rpc('chart_vendas_dow_v2',p);
-  drawBar('c-dow', dow.map(d=>['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][d.dow??0]), dow.map(d=>d.total)); checkSum('DOW',dow,k.fat);
-
-  const mon=await rpc('chart_vendas_mes_v2',p);
-  drawBar('c-month', mon.map(d=>d.ym), mon.map(d=>d.total)); checkSum('MÊS',mon,k.fat);
-
-  let hor; try{ hor=await rpc('chart_vendas_hora_v3',p);}catch{ hor=await rpc('chart_vendas_hora_v2',p); }
-  drawBar('c-hour', hor.map(d=>String(d.h)), hor.map(d=>d.total)); checkSum('HORA',hor,k.fat);
-
-  const tur=await rpc('chart_vendas_turno_v2',p);
-  drawBar('c-shift', tur.map(d=>d.turno), tur.map(d=>d.total)); checkSum('TURNO',tur,k.fat);
+// ====== RPC helper (com fallback de hora v3->v2) ======
+async function rpc(name, args){
+  const { data, error } = await supa.rpc(name, args);
+  if(error) throw error;
+  return data||[];
 }
-async function smoke(){
-  const p=buildParams(), k=((await rpc('kpi_vendas_v2',p))[0]||{});
-  const [d,m,h,t]=await Promise.all([
-    rpc('chart_vendas_dow_v2',p),
-    rpc('chart_vendas_mes_v2',p),
-    (async()=>{ try{return await rpc('chart_vendas_hora_v3',p);}catch{return await rpc('chart_vendas_hora_v2',p);} })(),
-    rpc('chart_vendas_turno_v2',p),
-  ]);
-  log('SMOKE → KPI.fat',fmt(k.fat));
-  log('  DOW  sum=',fmt(sum(d)), Math.abs(sum(d)-k.fat)<1e-6?'✅':'❌');
-  log('  MÊS  sum=',fmt(sum(m)), Math.abs(sum(m)-k.fat)<1e-6?'✅':'❌');
-  log('  HORA sum=',fmt(sum(h)), Math.abs(sum(h)-k.fat)<1e-6?'✅':'❌');
-  log('  TURNO sum=',fmt(sum(t)), Math.abs(sum(t)-k.fat)<1e-6?'✅':'❌');
+async function rpcHora(args){
+  try { return await rpc(RPC.hora_v3, args); }
+  catch{ return await rpc(RPC.hora_v2, args); }
 }
 
-/*** Upload local ***/
-let pickedFile=null; $('#file').addEventListener('change',e=>{pickedFile=e.target.files?.[0]||null; log('📄 Selecionado:', pickedFile?pickedFile.name:'(nenhum)');});
-$('#btnUpload').addEventListener('click', async()=>{
-  if(!pickedFile){ log('⚠️ Selecione um arquivo'); return; }
-  if(typeof XLSX==='undefined'){ log('❌ SheetJS bloqueado. Hospede xlsx.full.min.js no Storage.'); return; }
-  const ab=await pickedFile.arrayBuffer(); const wb=XLSX.read(ab,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]];
-  const rows=XLSX.utils.sheet_to_json(ws,{defval:null}); log(`✅ Lido: ${rows.length} linhas (apenas validação local)`);
+// ====== desenhar (charts simples com canvas 2D) ======
+function drawBar(canvasId, labels, values){
+  const c = $(canvasId); const ctx = c.getContext('2d');
+  const W = c.width  = c.clientWidth;
+  const H = c.height = c.clientHeight;
+  ctx.clearRect(0,0,W,H);
+  const max = Math.max(1, ...values);
+  const pad = 28, bw = (W - pad*2)/values.length;
+  labels.forEach((lab,i)=>{
+    const v = values[i]??0;
+    const h = (H-80) * (v/max);
+    const x = pad + i*bw + 6;
+    const y = H-40 - h;
+    ctx.fillStyle = "#22c55e";
+    ctx.fillRect(x, y, bw-12, h);
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "12px system-ui";
+    ctx.fillText(String(lab), x, H-22);
+  });
+}
+
+// ====== KPIs + Charts + Smoke test ======
+async function updateAll(){
+  const args = paramsRPC();
+  dbg("→ KPI params", JSON.stringify(args,null,2));
+
+  // KPI
+  const k = (await rpc(RPC.kpi_v2, args))[0] || {pedidos:0,fat:0,des:0,fre:0};
+  $("#k_ped").textContent = (k.pedidos??0).toLocaleString('pt-BR');
+  $("#k_fat").textContent = fmtMoney(k.fat);
+  $("#k_des").textContent = fmtMoney(k.des);
+  $("#k_fre").textContent = fmtMoney(k.fre);
+
+  // Gráficos
+  const dow  = await rpc(RPC.dow_v2,  args);
+  const mes  = await rpc(RPC.mes_v2,  args);
+  const hora = await rpcHora(args);
+  const tur  = await rpc(RPC.turno_v2,args);
+
+  drawBar("#c_dow",  dow.map(r=>r.dow),  dow.map(r=>Number(r.total)||0));
+  drawBar("#c_mes",  mes.map(r=>r.ym),   mes.map(r=>Number(r.total)||0));
+  drawBar("#c_hora", hora.map(r=>r.h),   hora.map(r=>Number(r.total)||0));
+  drawBar("#c_turno",tur.map(r=>r.turno),tur.map(r=>Number(r.total)||0));
+
+  // Smoke: somas dos gráficos têm que bater com o KPI.fat
+  const sDow  = dow.reduce((a,b)=> a + (Number(b.total)||0), 0);
+  const sMes  = mes.reduce((a,b)=> a + (Number(b.total)||0), 0);
+  const sHora = hora.reduce((a,b)=> a + (Number(b.total)||0), 0);
+  const sTur  = tur.reduce((a,b)=> a + (Number(b.total)||0), 0);
+  const ok = (x)=> Math.abs(x - Number(k.fat||0)) < 0.01;
+
+  const line = [
+    ok(sDow)  ? "✅" : "❌", " DOW soma=", sDow.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),
+    " vs KPI.fat=", fmtMoney(k.fat), ok(sDow)?" (ok)":" (mismatch)"
+  ].join("");
+  const line2 = [
+    ok(sMes)  ? "✅" : "❌", " MÊS soma=", sMes.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),
+    " vs KPI.fat=", fmtMoney(k.fat), ok(sMes)?" (ok)":" (mismatch)"
+  ].join("");
+  const line3 = [
+    ok(sHora) ? "✅" : "❌", " HORA soma=", sHora.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),
+    " vs KPI.fat=", fmtMoney(k.fat), ok(sHora)?" (ok)":" (mismatch)"
+  ].join("");
+  const line4 = [
+    ok(sTur) ? "✅" : "❌", " TURNO soma=", sTur.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),
+    " vs KPI.fat=", fmtMoney(k.fat), ok(sTur)?" (ok)":" (mismatch)"
+  ].join("");
+
+  $("#k_fat_sm").textContent = `DOW:${ok(sDow)?"ok":"x"} • MÊS:${ok(sMes)?"ok":"x"} • HORA:${ok(sHora)?"ok":"x"} • TURNO:${ok(sTur)?"ok":"x"}`;
+  dbg(line); dbg(line2); dbg(line3); dbg(line4);
+}
+
+// ====== ações ======
+$("#btn-aplicar").addEventListener("click", updateAll);
+$("#btn-limpar").addEventListener("click", ()=>{
+  for (const id of ["#ms-unids","#ms-lojas","#ms-turnos","#ms-canais","#ms-pags","#ms-cancel"]){
+    const sel=$(id); for(const o of sel.options){ o.selected=false; }
+  }
+  updateAll();
 });
 
-/*** INIT ***/
-async function init(){
-  $('#url').value=localStorage.getItem('sb_url')||DEFAULT_URL;
-  $('#key').value=localStorage.getItem('sb_key')||DEFAULT_KEY;
-  $('#saveConn').onclick=()=>{localStorage.setItem('sb_url',$('#url').value.trim()); localStorage.setItem('sb_key',$('#key').value.trim());};
-
-  const today=new Date(), dfim=today.toISOString().slice(0,10), dini=new Date(today-29*86400000).toISOString().slice(0,10);
-  $('#dini').value=dini; $('#dfim').value=dfim;
-
-  $('#apply').onclick=async()=>{ await loadFilters(); await applyAll(); };
-  $('#smoke').onclick=smoke;
-  $('#limpar').onclick=()=>{ ['#unids','#lojas','#turnos','#canais','#pags','#cancel'].forEach(id=>Array.from($(id).options).forEach(o=>o.selected=false)); applyAll(); };
-
-  try{
-    const ping=await rpc('kpi_vendas_v2',{p_dini:'2025-05-14',p_dfim:'2025-05-14',p_unids:null,p_lojas:null,p_turnos:null,p_canais:null,p_pags:null,p_cancelado:null});
-    log('✅ Supabase client ok'); log('Ping KPI (bruto):', ping); log('Ping KPI (unwrap):', ((ping||[])[0]||{}));
-  }catch(e){ log('❌ conexão', e.message); }
-
-  await mountMappingUI();
-  await loadFilters();
-  await applyAll();
-}
-init();
+// Inicialização
+await loadFilters();
+await updateAll();
 </script>
 </body>
 </html>
