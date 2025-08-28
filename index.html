@@ -106,12 +106,10 @@ const DEFAULT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 
 const $ = sel => document.querySelector(sel);
 const log = (...a)=>{ const d=$('#debug'); d.textContent += '\\n' + a.map(x=>typeof x==='string'?x:JSON.stringify(x,null,2)).join(' '); d.scrollTop = d.scrollHeight; };
-const set = (id,val)=>{ $(id).textContent = val; };
+const setTxt = (sel,val)=>{ $(sel).textContent = val; };
 
 function getConn(){
-  const url = $('#url').value.trim();
-  const key = $('#key').value.trim();
-  return {url, key};
+  return { url: $('#url').value.trim(), key: $('#key').value.trim() };
 }
 function saveConn(){
   localStorage.setItem('sb_url',$('#url').value.trim());
@@ -121,6 +119,12 @@ function saveConn(){
 function loadConn(){
   $('#url').value = localStorage.getItem('sb_url') || DEFAULT_URL;
   $('#key').value = localStorage.getItem('sb_key') || DEFAULT_KEY;
+}
+
+function unwrapOne(x){
+  // Se vier [ { … } ], retorna a primeira; se vier { … }, retorna direto
+  if (Array.isArray(x)) return x[0] || {};
+  return x || {};
 }
 
 async function rpc(fn, body){
@@ -141,29 +145,29 @@ async function rpc(fn, body){
   }
   return res.json();
 }
+
 async function distinct(col){
-  // Pega opções únicas a partir da MV agregada (rápida)
   const {url,key} = getConn();
-  const table = 'mv_vendas_hour';
+  const table = 'mv_vendas_hour'; // fonte rápida para lists
   const res = await fetch(`${url}/rest/v1/${table}?select=${encodeURIComponent(col)}&${encodeURIComponent('distinct')}`,{
     headers:{apikey:key,Authorization:`Bearer ${key}`}
   });
   if(!res.ok) return [];
   const arr = await res.json();
-  const vals = [...new Set(arr.map(r => (r[col]||'').toString()).filter(Boolean))];
+  const vals = [...new Set(arr.map(r => (r[col]??'').toString()).filter(Boolean))];
   return vals.sort((a,b)=>a.localeCompare(b,'pt-BR'));
 }
+
 function mvals(sel){
   return Array.from($(sel).selectedOptions).map(o=>o.value).filter(v=>v!=='');
 }
 function val(sel){ return $(sel).value; }
-function toISO(d){ return d; } // <input type="date"> já entrega yyyy-mm-dd
+function toISO(d){ return d; } // input date já é yyyy-mm-dd
 
 function buildParams(){
-  // regras: array vazio -> null; cancelado: '',Sim,Não
-  const p_cancel_raw = mvals('#cancel');
-  const p_cancel = (p_cancel_raw.length===1 && (p_cancel_raw[0]==='Sim'||p_cancel_raw[0]==='Não')) ? p_cancel_raw[0] : null;
-  const p = {
+  const canc = mvals('#cancel');
+  const p_cancel = (canc.length===1 && (canc[0]==='Sim'||canc[0]==='Não')) ? canc[0] : null;
+  return {
     p_dini: toISO(val('#dini')) || null,
     p_dfim: toISO(val('#dfim')) || null,
     p_unids: mvals('#unids').length ? mvals('#unids') : null,
@@ -173,108 +177,47 @@ function buildParams(){
     p_pags:   mvals('#pags').length   ? mvals('#pags')   : null,
     p_cancelado: p_cancel
   };
-  return p;
 }
 
-/*** ====== CHARTS (vanilla, simples) ====== ***/
 function drawBar(canvasId, labels, values){
   const c = document.getElementById(canvasId);
   const ctx = c.getContext('2d');
-  // clear
   ctx.clearRect(0,0,c.width,c.height);
-  const w = c.width, h = c.height;
-  const pad = 36, bw = (w - pad*2) / (labels.length||1);
+  const w=c.width, h=c.height, pad=36;
+  const bw = (w - pad*2) / Math.max(1, labels.length);
   const vmax = Math.max(1, ...values.map(v=>+v||0));
-  // axes
   ctx.strokeStyle = '#334155'; ctx.lineWidth=1;
-  ctx.beginPath(); ctx.moveTo(pad, h-pad); ctx.lineTo(w-pad, h-pad); ctx.stroke();
-  // bars
+  ctx.beginPath(); ctx.moveTo(pad,h-pad); ctx.lineTo(w-pad,h-pad); ctx.stroke();
   for(let i=0;i<labels.length;i++){
     const v = +values[i]||0;
     const x = pad + i*bw + 6;
     const bh = (v/vmax)*(h - pad*2);
     const y = (h - pad) - bh;
-    ctx.fillStyle = '#22d3ee';
-    ctx.fillRect(x, y, bw-12, bh);
-    // label
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '12px system-ui';
-    ctx.textAlign='center';
+    ctx.fillStyle='#22d3ee'; ctx.fillRect(x,y,bw-12,bh);
+    ctx.fillStyle='#94a3b8'; ctx.font='12px system-ui'; ctx.textAlign='center';
     ctx.fillText(labels[i], x+(bw-12)/2, h-pad+14);
   }
 }
 
-/*** ====== UI FLOW ====== ***/
-async function init(){
-  loadConn();
-  $('#saveConn').onclick = saveConn;
-  $('#apply').onclick = applyAll;
-  $('#smoke').onclick = smoke;
-  $('#limpar').onclick = ()=>{
-    ['#unids','#lojas','#turnos','#canais','#pags','#cancel'].forEach(id=>{
-      Array.from($(id).options).forEach(o=>o.selected=false);
-    });
-    applyAll();
-  };
-
-  // datas padrão: últimos 30 dias com base no clock local
-  const today = new Date();
-  const dfim = today.toISOString().slice(0,10);
-  const dini = new Date(today.getTime()-29*86400000).toISOString().slice(0,10);
-  $('#dini').value = dini; $('#dfim').value = dfim;
-
-  // checa conexão
-  try{
-    await rpc('kpi_vendas_v2',{p_dini:'2025-05-14',p_dfim:'2025-05-14',p_unids:null,p_lojas:null,p_turnos:null,p_canais:null,p_pags:null,p_cancelado:null});
-    $('#connStatus').textContent = '✅ ok';
-    log('✅ Supabase client ok');
-  }catch(e){
-    $('#connStatus').textContent = '❌ erro';
-    log('❌ conexão', e.message);
-  }
-
-  // carrega listas
-  await loadFilters();
-
-  // aplica
-  await applyAll();
-}
-
-async function loadFilters(){
-  const fill = async (sel, vals)=>{
-    const el = $(sel);
-    el.innerHTML = '';
-    for(const v of vals){ const o=document.createElement('option'); o.value=v.toLowerCase(); o.textContent=v; el.appendChild(o); }
-  };
-  const [unids, lojas, turnos, canais, pags] = await Promise.all([
-    distinct('unidade'), distinct('loja'), distinct('turno'), distinct('canal'), distinct('pagamento_base')
-  ]);
-  await fill('#unids', unids);
-  await fill('#lojas', lojas);
-  await fill('#turnos', turnos);
-  await fill('#canais', canais);
-  await fill('#pags',   pags);
-}
-
-function fmt(num){ if(num===null||num===undefined) return '0'; const n=+num; return n.toLocaleString('pt-BR',{maximumFractionDigits:2}); }
+function fmt(num){ if(num===null||num===undefined||Number.isNaN(+num)) return '0'; return (+num).toLocaleString('pt-BR',{maximumFractionDigits:2}); }
 function sum(arr, key='total'){ return arr.reduce((a,x)=>a + (+x[key]||0), 0); }
 
 async function applyAll(){
   const p = buildParams();
   log('→ KPI params', p);
 
-  // KPIs
-  const kpi = await rpc('kpi_vendas_v2', p);
-  set('#kpi-ped', fmt(kpi.pedidos));
-  set('#kpi-fat', fmt(kpi.fat));
-  set('#kpi-des', fmt(kpi.des));
-  set('#kpi-fre', fmt(kpi.fre));
+  // KPI (desembrulha se vier array)
+  const kraw = await rpc('kpi_vendas_v2', p);
+  const kpi  = unwrapOne(kraw);
+  setTxt('#kpi-ped', fmt(kpi.pedidos));
+  setTxt('#kpi-fat', fmt(kpi.fat));
+  setTxt('#kpi-des', fmt(kpi.des));
+  setTxt('#kpi-fre', fmt(kpi.fre));
   log('✅ KPI', kpi);
 
-  // Charts
   // DOW
   const dow = await rpc('chart_vendas_dow_v2', p);
-  drawBar('c-dow', dow.map(d=>['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][d.dow||0]), dow.map(d=>d.total));
+  drawBar('c-dow', dow.map(d=>['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][d.dow??0]), dow.map(d=>d.total));
   checkSum('DOW', dow, kpi.fat);
 
   // MÊS
@@ -282,14 +225,10 @@ async function applyAll(){
   drawBar('c-month', mon.map(d=>d.ym), mon.map(d=>d.total));
   checkSum('MÊS', mon, kpi.fat);
 
-  // HORA (v3 primeiro, fallback v2)
-  let hor=null;
-  try{
-    hor = await rpc('chart_vendas_hora_v3', p);
-  }catch(e){
-    log('⚠️ hour v3 falhou, tentando v2', e.message);
-    hor = await rpc('chart_vendas_hora_v2', p);
-  }
+  // HORA (v3 fallback v2)
+  let hor;
+  try{ hor = await rpc('chart_vendas_hora_v3', p); }
+  catch(e){ log('⚠️ hour v3 falhou, tentando v2', e.message); hor = await rpc('chart_vendas_hora_v2', p); }
   drawBar('c-hour', hor.map(d=>String(d.h)), hor.map(d=>d.total));
   checkSum('HORA', hor, kpi.fat);
 
@@ -305,10 +244,29 @@ function checkSum(label, rows, kpiFat){
   log(`${ok?'✅':'❌'} ${label} soma=${fmt(s)} vs KPI.fat=${fmt(kpiFat)} ${ok?'(ok)':'(mismatch)'}`);
 }
 
-/*** ====== SMOKE TEST BUTTON ====== ***/
+async function loadFilters(){
+  const fill = async (sel, vals)=>{
+    const el = $(sel); el.innerHTML = '';
+    for(const v of vals){
+      const o=document.createElement('option');
+      o.value = (v??'').toString().toLowerCase();
+      o.textContent = v??'';
+      el.appendChild(o);
+    }
+  };
+  const [unids, lojas, turnos, canais, pags] = await Promise.all([
+    distinct('unidade'), distinct('loja'), distinct('turno'), distinct('canal'), distinct('pagamento_base')
+  ]);
+  await fill('#unids', unids);
+  await fill('#lojas', lojas);
+  await fill('#turnos', turnos);
+  await fill('#canais', canais);
+  await fill('#pags',   pags);
+}
+
 async function smoke(){
   const p = buildParams();
-  const kpi = await rpc('kpi_vendas_v2', p);
+  const kpi = unwrapOne(await rpc('kpi_vendas_v2', p));
   const [d,m,h,t] = await Promise.all([
     rpc('chart_vendas_dow_v2', p),
     rpc('chart_vendas_mes_v2', p),
@@ -316,14 +274,46 @@ async function smoke(){
     rpc('chart_vendas_turno_v2', p),
   ]);
   const sd = sum(d), sm = sum(m), sh = sum(h), st = sum(t);
-  log('SMOKE → KPI.fat', kpi.fat);
-  log('  DOW  sum=', fmt(sd), sd==kpi.fat?'✅':'❌');
-  log('  MÊS  sum=', fmt(sm), sm==kpi.fat?'✅':'❌');
-  log('  HORA sum=', fmt(sh), sh==kpi.fat?'✅':'❌');
-  log('  TURNO sum=', fmt(st), st==kpi.fat?'✅':'❌');
+  log('SMOKE → KPI.fat', fmt(kpi.fat));
+  log('  DOW  sum=', fmt(sd), Math.abs(sd - kpi.fat) < 0.0001 ? '✅' : '❌');
+  log('  MÊS  sum=', fmt(sm), Math.abs(sm - kpi.fat) < 0.0001 ? '✅' : '❌');
+  log('  HORA sum=', fmt(sh), Math.abs(sh - kpi.fat) < 0.0001 ? '✅' : '❌');
+  log('  TURNO sum=', fmt(st), Math.abs(st - kpi.fat) < 0.0001 ? '✅' : '❌');
 }
 
-/*** start ***/
+async function init(){
+  loadConn();
+  $('#saveConn').onclick = saveConn;
+  $('#apply').onclick = applyAll;
+  $('#smoke').onclick = smoke;
+  $('#limpar').onclick = ()=>{
+    ['#unids','#lojas','#turnos','#canais','#pags','#cancel'].forEach(id=>{
+      Array.from($(id).options).forEach(o=>o.selected=false);
+    });
+    applyAll();
+  };
+
+  // datas padrão: últimos 30 dias
+  const today = new Date();
+  const dfim = today.toISOString().slice(0,10);
+  const dini = new Date(today.getTime()-29*86400000).toISOString().slice(0,10);
+  $('#dini').value = dini; $('#dfim').value = dfim;
+
+  // sanity ping
+  try{
+    const ping = await rpc('kpi_vendas_v2',{p_dini:'2025-05-14',p_dfim:'2025-05-14',p_unids:null,p_lojas:null,p_turnos:null,p_canais:null,p_pags:null,p_cancelado:null});
+    $('#connStatus').textContent = '✅ ok';
+    log('✅ Supabase client ok');
+    log('Ping KPI (bruto):', ping);
+    log('Ping KPI (unwrap):', unwrapOne(ping));
+  }catch(e){
+    $('#connStatus').textContent = '❌ erro';
+    log('❌ conexão', e.message);
+  }
+
+  await loadFilters();
+  await applyAll();
+}
 init();
 </script>
 </body>
