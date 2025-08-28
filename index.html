@@ -3,9 +3,14 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Dashboard de Vendas (SQL ok + Debug)</title>
+<title>Dashboard de Vendas • Filtros e Mapeamento OK</title>
+
+<!-- SheetJS para ler XLSX (se bloqueado pela rede, o botão avisa no debug) -->
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+
 <style>
   :root{--bg:#0f172a;--card:#111827;--ink:#e5e7eb;--muted:#94a3b8;--accent:#22d3ee;--bad:#ef4444;--good:#10b981}
+  *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,Segoe UI,Roboto,Helvetica,Arial}
   header{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #1f2937}
   .brand{font-weight:700;letter-spacing:.2px}
@@ -15,16 +20,17 @@
   .kpi .v{font-size:22px;font-weight:700;margin-top:2px}
   .muted{color:var(--muted)}
   .filters{display:grid;grid-template-columns:repeat(6,minmax(180px,1fr));gap:10px}
-  select, input[type="date"]{width:100%;padding:8px 10px;border-radius:8px;border:1px solid #374151;background:#0b1220;color:var(--ink)}
+  select, input[type="date"], input[type="text"]{width:100%;padding:8px 10px;border-radius:8px;border:1px solid #374151;background:#0b1220;color:var(--ink)}
   button{background:var(--accent);color:#002;border:0;border-radius:10px;padding:9px 14px;font-weight:700;cursor:pointer}
   button.secondary{background:#1f2937;color:var(--ink);border:1px solid #334155}
   .grid{display:grid;grid-template-columns:repeat(2,minmax(320px,1fr));gap:14px}
   canvas{width:100%;height:360px;background:#0b1220;border-radius:10px}
   #debug{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
          background:#0b1220;border-radius:12px;padding:12px;max-height:300px;overflow:auto;border:1px solid #1f2937}
-  .ok{color:var(--good)} .err{color:var(--bad)}
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#0b1220;border:1px solid #334155;margin-left:8px}
-  .flex{display:flex;gap:8px;align-items:center}
+  details summary{cursor:pointer}
+  .flex{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .col-map{display:grid;grid-template-columns:repeat(6,minmax(180px,1fr));gap:10px;margin-top:8px}
 </style>
 </head>
 <body>
@@ -41,22 +47,39 @@
 
 <section class="row">
   <div class="card" style="flex:1">
-    <div class="muted" style="margin-bottom:8px">Período</div>
-    <div class="filters" style="grid-template-columns:repeat(4,minmax(180px,1fr))">
-      <div><label class="muted">De</label><input type="date" id="dini"/></div>
-      <div><label class="muted">Até</label><input type="date" id="dfim"/></div>
-      <div><label class="muted">Cancelado</label>
-        <select id="cancel" multiple size="3">
-          <option value="">(Todos)</option>
-          <option>Não</option>
-          <option>Sim</option>
-        </select>
+    <details open>
+      <summary class="muted">Período & Ações</summary>
+      <div class="filters" style="grid-template-columns:repeat(5,minmax(180px,1fr))">
+        <div><label class="muted">De</label><input type="date" id="dini"/></div>
+        <div><label class="muted">Até</label><input type="date" id="dfim"/></div>
+        <div><label class="muted">Cancelado</label>
+          <select id="cancel" multiple size="3">
+            <option value="">(Todos)</option>
+            <option>Não</option>
+            <option>Sim</option>
+          </select>
+        </div>
+        <div class="flex" style="align-self:end;gap:10px">
+          <button id="apply">Aplicar</button>
+          <button id="smoke" class="secondary">Smoke tests</button>
+        </div>
       </div>
-      <div class="flex" style="align-self:end;gap:10px">
-        <button id="apply">Aplicar</button>
-        <button id="smoke" class="secondary">Smoke tests</button>
+    </details>
+    <details style="margin-top:10px">
+      <summary class="muted">Mapeamento de Colunas (apenas para preencher listas)</summary>
+      <div class="col-map">
+        <div><label class="muted">Unidade ←</label><select id="map-unid"></select></div>
+        <div><label class="muted">Lojas ←</label><select id="map-loja"></select></div>
+        <div><label class="muted">Turno ←</label><select id="map-turno"></select></div>
+        <div><label class="muted">Canal ←</label><select id="map-canal"></select></div>
+        <div><label class="muted">Pagamento ←</label><select id="map-pag"></select></div>
+        <div><label class="muted">Cancelado ←</label><select id="map-cancel"></select></div>
       </div>
-    </div>
+      <div class="flex" style="margin-top:8px">
+        <button id="saveMap" class="secondary">Salvar mapeamento</button>
+        <span class="muted">Esse mapeamento só afeta as **listas** de opções. Os filtros enviados aos RPCs continuam sendo p_unids, p_lojas, etc., que batem com as colunas da <code>vw_vendas</code>.</span>
+      </div>
+    </details>
   </div>
 </section>
 
@@ -64,11 +87,11 @@
   <div class="card" style="flex:1">
     <div class="muted" style="margin-bottom:8px">Filtros</div>
     <div class="filters">
-      <div><label class="muted">Unidades</label><select id="unids" multiple size="6"></select></div>
-      <div><label class="muted">Lojas</label><select id="lojas" multiple size="6"></select></div>
-      <div><label class="muted">Turnos</label><select id="turnos" multiple size="6"></select></div>
-      <div><label class="muted">Canais</label><select id="canais" multiple size="6"></select></div>
-      <div><label class="muted">Pagamentos</label><select id="pags" multiple size="6"></select></div>
+      <div><label class="muted">Unidades</label><select id="unids" multiple size="8"></select></div>
+      <div><label class="muted">Lojas</label><select id="lojas" multiple size="8"></select></div>
+      <div><label class="muted">Turnos</label><select id="turnos" multiple size="8"></select></div>
+      <div><label class="muted">Canais</label><select id="canais" multiple size="8"></select></div>
+      <div><label class="muted">Pagamentos</label><select id="pags" multiple size="8"></select></div>
       <div style="align-self:end"><button id="limpar" class="secondary">Limpar filtros</button></div>
     </div>
   </div>
@@ -94,6 +117,17 @@
 
 <section class="row">
   <div class="card" style="flex:1">
+    <div class="muted">Carregar Excel</div>
+    <div class="flex">
+      <input type="file" id="file" accept=".xlsx,.xls,.csv"/>
+      <button id="btnUpload" class="secondary">Validar arquivo</button>
+      <span class="muted">Valida e mostra contagem de linhas; para gravar no banco, habilite o RPC de ingestão (ver debug).</span>
+    </div>
+  </div>
+</section>
+
+<section class="row">
+  <div class="card" style="flex:1">
     <div class="muted">Debug</div>
     <div id="debug">Pronto.</div>
   </div>
@@ -103,148 +137,121 @@
 /*** ====== CONFIG ====== ***/
 const DEFAULT_URL = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
 const DEFAULT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
+// Se você tiver um RPC que ingere linhas do Excel, coloque o nome aqui (ex.: 'ingest_vendas_xlsx')
+const UPLOAD_RPC = null;
 
 const $ = sel => document.querySelector(sel);
 const log = (...a)=>{ const d=$('#debug'); d.textContent += '\\n' + a.map(x=>typeof x==='string'?x:JSON.stringify(x,null,2)).join(' '); d.scrollTop = d.scrollHeight; };
 const setTxt = (sel,val)=>{ $(sel).textContent = val; };
 
-function getConn(){
-  return { url: $('#url').value.trim(), key: $('#key').value.trim() };
-}
-function saveConn(){
-  localStorage.setItem('sb_url',$('#url').value.trim());
-  localStorage.setItem('sb_key',$('#key').value.trim());
-  $('#connStatus').textContent = 'salvo';
-}
-function loadConn(){
-  $('#url').value = localStorage.getItem('sb_url') || DEFAULT_URL;
-  $('#key').value = localStorage.getItem('sb_key') || DEFAULT_KEY;
-}
+function getConn(){ return { url: $('#url').value.trim(), key: $('#key').value.trim() }; }
+function saveConn(){ localStorage.setItem('sb_url',$('#url').value.trim()); localStorage.setItem('sb_key',$('#key').value.trim()); $('#connStatus').textContent = 'salvo'; }
+function loadConn(){ $('#url').value = localStorage.getItem('sb_url') || DEFAULT_URL; $('#key').value = localStorage.getItem('sb_key') || DEFAULT_KEY; }
 
-function unwrapOne(x){
-  // Se vier [ { … } ], retorna a primeira; se vier { … }, retorna direto
-  if (Array.isArray(x)) return x[0] || {};
-  return x || {};
-}
+function unwrapOne(x){ return Array.isArray(x) ? (x[0] || {}) : (x || {}); }
 
 async function rpc(fn, body){
   const {url,key} = getConn();
   const res = await fetch(`${url}/rest/v1/rpc/${fn}`,{
     method:'POST',
-    headers:{
-      apikey:key,
-      Authorization:`Bearer ${key}`,
-      'Content-Type':'application/json',
-      Prefer:'count=none'
-    },
+    headers:{ apikey:key, Authorization:`Bearer ${key}`, 'Content-Type':'application/json', Prefer:'count=none' },
     body: JSON.stringify(body||{})
   });
-  if(!res.ok){
-    const txt = await res.text();
-    throw new Error(`${fn} -> ${res.status} ${txt}`);
-  }
+  if(!res.ok){ throw new Error(`${fn} -> ${res.status} ${await res.text()}`); }
   return res.json();
 }
 
-async function distinct(col){
-  const {url,key} = getConn();
-  const table = 'mv_vendas_hour'; // fonte rápida para lists
-  const res = await fetch(`${url}/rest/v1/${table}?select=${encodeURIComponent(col)}&${encodeURIComponent('distinct')}`,{
-    headers:{apikey:key,Authorization:`Bearer ${key}`}
-  });
-  if(!res.ok) return [];
-  const arr = await res.json();
-  const vals = [...new Set(arr.map(r => (r[col]??'').toString()).filter(Boolean))];
-  return vals.sort((a,b)=>a.localeCompare(b,'pt-BR'));
-}
-
-function mvals(sel){
-  return Array.from($(sel).selectedOptions).map(o=>o.value).filter(v=>v!=='');
-}
+function mvals(sel){ return Array.from($(sel).selectedOptions).map(o=>o.value).filter(v=>v!==''); }
 function val(sel){ return $(sel).value; }
-function toISO(d){ return d; } // input date já é yyyy-mm-dd
-
-function buildParams(){
-  const canc = mvals('#cancel');
-  const p_cancel = (canc.length===1 && (canc[0]==='Sim'||canc[0]==='Não')) ? canc[0] : null;
-  return {
-    p_dini: toISO(val('#dini')) || null,
-    p_dfim: toISO(val('#dfim')) || null,
-    p_unids: mvals('#unids').length ? mvals('#unids') : null,
-    p_lojas: mvals('#lojas').length ? mvals('#lojas') : null,
-    p_turnos: mvals('#turnos').length ? mvals('#turnos') : null,
-    p_canais: mvals('#canais').length ? mvals('#canais') : null,
-    p_pags:   mvals('#pags').length   ? mvals('#pags')   : null,
-    p_cancelado: p_cancel
-  };
-}
+function toISO(d){ return d; }
+function fmt(num){ if(num===null||num===undefined||Number.isNaN(+num)) return '0'; return (+num).toLocaleString('pt-BR',{maximumFractionDigits:2}); }
+function sum(arr, key='total'){ return arr.reduce((a,x)=>a + (+x[key]||0), 0); }
 
 function drawBar(canvasId, labels, values){
-  const c = document.getElementById(canvasId);
-  const ctx = c.getContext('2d');
+  const c = document.getElementById(canvasId), ctx = c.getContext('2d');
   ctx.clearRect(0,0,c.width,c.height);
-  const w=c.width, h=c.height, pad=36;
-  const bw = (w - pad*2) / Math.max(1, labels.length);
+  const w=c.width, h=c.height, pad=36, bw=(w-pad*2)/Math.max(1,labels.length);
   const vmax = Math.max(1, ...values.map(v=>+v||0));
-  ctx.strokeStyle = '#334155'; ctx.lineWidth=1;
-  ctx.beginPath(); ctx.moveTo(pad,h-pad); ctx.lineTo(w-pad,h-pad); ctx.stroke();
+  ctx.strokeStyle = '#334155'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(pad,h-pad); ctx.lineTo(w-pad,h-pad); ctx.stroke();
   for(let i=0;i<labels.length;i++){
-    const v = +values[i]||0;
-    const x = pad + i*bw + 6;
-    const bh = (v/vmax)*(h - pad*2);
-    const y = (h - pad) - bh;
+    const v=+values[i]||0, x=pad+i*bw+6, bh=(v/vmax)*(h-pad*2), y=(h-pad)-bh;
     ctx.fillStyle='#22d3ee'; ctx.fillRect(x,y,bw-12,bh);
     ctx.fillStyle='#94a3b8'; ctx.font='12px system-ui'; ctx.textAlign='center';
     ctx.fillText(labels[i], x+(bw-12)/2, h-pad+14);
   }
 }
 
-function fmt(num){ if(num===null||num===undefined||Number.isNaN(+num)) return '0'; return (+num).toLocaleString('pt-BR',{maximumFractionDigits:2}); }
-function sum(arr, key='total'){ return arr.reduce((a,x)=>a + (+x[key]||0), 0); }
+/*** ====== MAPEAMENTO DE COLUNAS (só para preencher listas) ====== ***/
+const DEFAULT_MAP = { unid:'unidade', loja:'loja', turno:'turno', canal:'canal', pag:'pagamento_base', cancel:'cancelado' };
+function getMap(){ try{ return JSON.parse(localStorage.getItem('colmap')||'{}'); }catch{ return {}; } }
+function setMap(m){ localStorage.setItem('colmap', JSON.stringify(m)); }
 
-async function applyAll(){
-  const p = buildParams();
-  log('→ KPI params', p);
-
-  // KPI (desembrulha se vier array)
-  const kraw = await rpc('kpi_vendas_v2', p);
-  const kpi  = unwrapOne(kraw);
-  setTxt('#kpi-ped', fmt(kpi.pedidos));
-  setTxt('#kpi-fat', fmt(kpi.fat));
-  setTxt('#kpi-des', fmt(kpi.des));
-  setTxt('#kpi-fre', fmt(kpi.fre));
-  log('✅ KPI', kpi);
-
-  // DOW
-  const dow = await rpc('chart_vendas_dow_v2', p);
-  drawBar('c-dow', dow.map(d=>['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][d.dow??0]), dow.map(d=>d.total));
-  checkSum('DOW', dow, kpi.fat);
-
-  // MÊS
-  const mon = await rpc('chart_vendas_mes_v2', p);
-  drawBar('c-month', mon.map(d=>d.ym), mon.map(d=>d.total));
-  checkSum('MÊS', mon, kpi.fat);
-
-  // HORA (v3 fallback v2)
-  let hor;
-  try{ hor = await rpc('chart_vendas_hora_v3', p); }
-  catch(e){ log('⚠️ hour v3 falhou, tentando v2', e.message); hor = await rpc('chart_vendas_hora_v2', p); }
-  drawBar('c-hour', hor.map(d=>String(d.h)), hor.map(d=>d.total));
-  checkSum('HORA', hor, kpi.fat);
-
-  // TURNO
-  const tur = await rpc('chart_vendas_turno_v2', p);
-  drawBar('c-shift', tur.map(d=>d.turno), tur.map(d=>d.total));
-  checkSum('TURNO', tur, kpi.fat);
+async function getColumns(){
+  const {url,key} = getConn();
+  // espiamos 1 linha de vw_vendas para listar campos
+  const res = await fetch(`${url}/rest/v1/vw_vendas?select=*&limit=1`,{headers:{apikey:key,Authorization:`Bearer ${key}`}});
+  if(!res.ok){ log('⚠️ Não foi possível ler colunas de vw_vendas:', await res.text()); return Object.values(DEFAULT_MAP); }
+  const rows = await res.json();
+  const obj = rows[0] || {};
+  return Object.keys(obj);
 }
 
-function checkSum(label, rows, kpiFat){
-  const s = sum(rows,'total');
-  const ok = Math.abs(s - (+kpiFat||0)) < 0.0001;
-  log(`${ok?'✅':'❌'} ${label} soma=${fmt(s)} vs KPI.fat=${fmt(kpiFat)} ${ok?'(ok)':'(mismatch)'}`);
+async function mountMappingUI(){
+  const cols = await getColumns();
+  const fill = (id, defVal)=>{
+    const el = $(id); el.innerHTML='';
+    for(const c of cols){ const o=document.createElement('option'); o.value=c; o.textContent=c; el.appendChild(o); }
+    el.value = defVal;
+  };
+  const m = Object.assign({}, DEFAULT_MAP, getMap());
+  fill('#map-unid', m.unid);
+  fill('#map-loja', m.loja);
+  fill('#map-turno', m.turno);
+  fill('#map-canal', m.canal);
+  fill('#map-pag',  m.pag);
+  fill('#map-cancel', m.cancel);
+  $('#saveMap').onclick = ()=>{
+    const nm = {
+      unid: $('#map-unid').value,
+      loja: $('#map-loja').value,
+      turno: $('#map-turno').value,
+      canal: $('#map-canal').value,
+      pag:  $('#map-pag').value,
+      cancel: $('#map-cancel').value,
+    };
+    setMap(nm);
+    log('💾 Mapeamento salvo:', nm);
+    loadFilters(); // recarrega listas conforme novo mapeamento
+  };
+}
+
+/*** ====== LISTAS DE FILTRO (de vw_vendas por período) ====== ***/
+async function distinctFiltered(col, dini, dfim){
+  const {url,key} = getConn();
+  const qs = new URLSearchParams();
+  qs.set('select', col);
+  qs.append('distinct', '');
+  if(dini) qs.set('dia', `gte.${dini}`);
+  if(dfim) qs.append('dia', `lte.${dfim}`);
+  qs.set('limit','10000');
+  const u = `${url}/rest/v1/vw_vendas?${qs.toString()}`;
+  const res = await fetch(u,{headers:{apikey:key,Authorization:`Bearer ${key}`}});
+  if(!res.ok){ log('⚠️ distinctFiltered', col, await res.text()); return []; }
+  const arr = await res.json();
+  const vals = [...new Set(arr.map(r => (r[col]??'').toString()).filter(Boolean))];
+  return vals.sort((a,b)=>a.localeCompare(b,'pt-BR'));
 }
 
 async function loadFilters(){
+  const dini = $('#dini').value, dfim = $('#dfim').value;
+  const m = Object.assign({}, DEFAULT_MAP, getMap());
+  const [unids, lojas, turnos, canais, pags] = await Promise.all([
+    distinctFiltered(m.unid,  dini, dfim),
+    distinctFiltered(m.loja,  dini, dfim),
+    distinctFiltered(m.turno, dini, dfim),
+    distinctFiltered(m.canal, dini, dfim),
+    distinctFiltered(m.pag,   dini, dfim),
+  ]);
   const fill = async (sel, vals)=>{
     const el = $(sel); el.innerHTML = '';
     for(const v of vals){
@@ -254,14 +261,65 @@ async function loadFilters(){
       el.appendChild(o);
     }
   };
-  const [unids, lojas, turnos, canais, pags] = await Promise.all([
-    distinct('unidade'), distinct('loja'), distinct('turno'), distinct('canal'), distinct('pagamento_base')
-  ]);
   await fill('#unids', unids);
   await fill('#lojas', lojas);
   await fill('#turnos', turnos);
   await fill('#canais', canais);
   await fill('#pags',   pags);
+  log('🔎 Listas carregadas (por período):',{unids:unids.length, lojas:lojas.length, turnos:turnos.length, canais:canais.length, pags:pags.length});
+}
+
+/*** ====== KPI + CHARTS ====== ***/
+function buildParams(){
+  const canc = mvals('#cancel');
+  const p_cancel = (canc.length===1 && (canc[0]==='Sim'||canc[0]==='Não')) ? canc[0] : null;
+  return {
+    p_dini: toISO($('#dini').value) || null,
+    p_dfim: toISO($('#dfim').value) || null,
+    p_unids: mvals('#unids').length ? mvals('#unids') : null,
+    p_lojas: mvals('#lojas').length ? mvals('#lojas') : null,
+    p_turnos: mvals('#turnos').length ? mvals('#turnos') : null,
+    p_canais: mvals('#canais').length ? mvals('#canais') : null,
+    p_pags:   mvals('#pags').length   ? mvals('#pags')   : null,
+    p_cancelado: p_cancel
+  };
+}
+
+function checkSum(label, rows, kpiFat){
+  const s = sum(rows,'total');
+  const ok = Math.abs(s - (+kpiFat||0)) < 0.0001;
+  log(`${ok?'✅':'❌'} ${label} soma=${fmt(s)} vs KPI.fat=${fmt(kpiFat)} ${ok?'(ok)':'(mismatch)'}`);
+}
+
+async function applyAll(){
+  const p = buildParams();
+  log('→ KPI params', p);
+
+  const kraw = await rpc('kpi_vendas_v2', p);
+  const kpi  = unwrapOne(kraw);
+  setTxt('#kpi-ped', fmt(kpi.pedidos));
+  setTxt('#kpi-fat', fmt(kpi.fat));
+  setTxt('#kpi-des', fmt(kpi.des));
+  setTxt('#kpi-fre', fmt(kpi.fre));
+  log('✅ KPI', kpi);
+
+  const dow = await rpc('chart_vendas_dow_v2', p);
+  drawBar('c-dow', dow.map(d=>['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][d.dow??0]), dow.map(d=>d.total));
+  checkSum('DOW', dow, kpi.fat);
+
+  const mon = await rpc('chart_vendas_mes_v2', p);
+  drawBar('c-month', mon.map(d=>d.ym), mon.map(d=>d.total));
+  checkSum('MÊS', mon, kpi.fat);
+
+  let hor;
+  try{ hor = await rpc('chart_vendas_hora_v3', p); }
+  catch(e){ log('⚠️ hour v3 falhou, tentando v2', e.message); hor = await rpc('chart_vendas_hora_v2', p); }
+  drawBar('c-hour', hor.map(d=>String(d.h)), hor.map(d=>d.total));
+  checkSum('HORA', hor, kpi.fat);
+
+  const tur = await rpc('chart_vendas_turno_v2', p);
+  drawBar('c-shift', tur.map(d=>d.turno), tur.map(d=>d.total));
+  checkSum('TURNO', tur, kpi.fat);
 }
 
 async function smoke(){
@@ -273,7 +331,7 @@ async function smoke(){
     (async()=>{ try{ return await rpc('chart_vendas_hora_v3', p); }catch{ return await rpc('chart_vendas_hora_v2', p);} })(),
     rpc('chart_vendas_turno_v2', p),
   ]);
-  const sd = sum(d), sm = sum(m), sh = sum(h), st = sum(t);
+  const sd=sum(d), sm=sum(m), sh=sum(h), st=sum(t);
   log('SMOKE → KPI.fat', fmt(kpi.fat));
   log('  DOW  sum=', fmt(sd), Math.abs(sd - kpi.fat) < 0.0001 ? '✅' : '❌');
   log('  MÊS  sum=', fmt(sm), Math.abs(sm - kpi.fat) < 0.0001 ? '✅' : '❌');
@@ -281,15 +339,39 @@ async function smoke(){
   log('  TURNO sum=', fmt(st), Math.abs(st - kpi.fat) < 0.0001 ? '✅' : '❌');
 }
 
+/*** ====== UPLOAD XLSX (validação local + gancho RPC) ====== ***/
+let pickedFile = null;
+$('#file').addEventListener('change', (e)=>{ pickedFile = e.target.files?.[0]||null; log('📄 Arquivo selecionado:', pickedFile ? pickedFile.name : '(nenhum)'); });
+
+$('#btnUpload').addEventListener('click', async()=>{
+  if(!pickedFile){ log('⚠️ Selecione um arquivo primeiro.'); return; }
+  if(typeof XLSX === 'undefined'){ log('❌ SheetJS bloqueado pela rede. Se a sua rede bloquear CDN, precisamos hospedar o xlsx.full.min.js no Storage e trocar o <script> para essa URL.'); return; }
+  const ab = await pickedFile.arrayBuffer();
+  const wb = XLSX.read(ab, {type:'array'});
+  const wsname = wb.SheetNames[0];
+  const ws = wb.Sheets[wsname];
+  const rows = XLSX.utils.sheet_to_json(ws, {defval:null});
+  log(`✅ Lido: ${rows.length} linhas da aba "${wsname}"`);
+  if(UPLOAD_RPC){
+    try{
+      const r = await rpc(UPLOAD_RPC, { rows }); // ajuste o payload conforme seu RPC
+      log('✅ RPC de ingestão executado:', r);
+    }catch(e){
+      log('❌ Falha no RPC de ingestão:', e.message);
+    }
+  }else{
+    log('ℹ️ Nenhum RPC de ingestão configurado (UPLOAD_RPC=null). Os dados foram lidos/validados no front, sem gravar no banco.');
+  }
+});
+
+/*** ====== INIT ====== ***/
 async function init(){
   loadConn();
   $('#saveConn').onclick = saveConn;
-  $('#apply').onclick = applyAll;
+  $('#apply').onclick = async()=>{ await loadFilters(); await applyAll(); };
   $('#smoke').onclick = smoke;
   $('#limpar').onclick = ()=>{
-    ['#unids','#lojas','#turnos','#canais','#pags','#cancel'].forEach(id=>{
-      Array.from($(id).options).forEach(o=>o.selected=false);
-    });
+    ['#unids','#lojas','#turnos','#canais','#pags','#cancel'].forEach(id=>Array.from($(id).options).forEach(o=>o.selected=false));
     applyAll();
   };
 
@@ -299,7 +381,6 @@ async function init(){
   const dini = new Date(today.getTime()-29*86400000).toISOString().slice(0,10);
   $('#dini').value = dini; $('#dfim').value = dfim;
 
-  // sanity ping
   try{
     const ping = await rpc('kpi_vendas_v2',{p_dini:'2025-05-14',p_dfim:'2025-05-14',p_unids:null,p_lojas:null,p_turnos:null,p_canais:null,p_pags:null,p_cancelado:null});
     $('#connStatus').textContent = '✅ ok';
@@ -311,6 +392,7 @@ async function init(){
     log('❌ conexão', e.message);
   }
 
+  await mountMappingUI();
   await loadFilters();
   await applyAll();
 }
