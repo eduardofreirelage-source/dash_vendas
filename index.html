@@ -2,197 +2,329 @@
 <html lang="pt-br">
 <head>
 <meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Dash Vendas — com Diagnóstico</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Dashboard de Vendas (SQL ok + Debug)</title>
 <style>
-  body{font-family:Inter,system-ui,Arial,sans-serif;margin:20px;color:#111}
-  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
-  .card{border:1px solid #e5e7eb;border-radius:12px;padding:16px}
-  .kpi{min-width:220px}
-  .btn{padding:10px 14px;border:1px solid #222;background:#111;color:#fff;border-radius:10px;cursor:pointer}
-  .btn.secondary{background:#f9fafb;color:#111;border:1px solid #d1d5db}
-  pre{background:#0b1021;color:#e5e7eb;padding:12px;border-radius:10px;overflow:auto;max-height:280px}
-  label{font-size:12px;color:#374151}
-  input,select{padding:8px;border:1px solid #d1d5db;border-radius:8px}
-  .grid{display:grid;grid-template-columns:repeat(2,minmax(320px,1fr));gap:16px}
-  .full{grid-column:1/-1}
+  :root{--bg:#0f172a;--card:#111827;--ink:#e5e7eb;--muted:#94a3b8;--accent:#22d3ee;--bad:#ef4444;--good:#10b981}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,Segoe UI,Roboto,Helvetica,Arial}
+  header{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #1f2937}
+  .brand{font-weight:700;letter-spacing:.2px}
+  .row{display:flex;gap:16px;flex-wrap:wrap;margin:16px 20px}
+  .card{background:var(--card);border:1px solid #1f2937;border-radius:12px;padding:14px}
+  .kpis{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:12px}
+  .kpi .v{font-size:22px;font-weight:700;margin-top:2px}
+  .muted{color:var(--muted)}
+  .filters{display:grid;grid-template-columns:repeat(6,minmax(180px,1fr));gap:10px}
+  select, input[type="date"]{width:100%;padding:8px 10px;border-radius:8px;border:1px solid #374151;background:#0b1220;color:var(--ink)}
+  button{background:var(--accent);color:#002;border:0;border-radius:10px;padding:9px 14px;font-weight:700;cursor:pointer}
+  button.secondary{background:#1f2937;color:var(--ink);border:1px solid #334155}
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(320px,1fr));gap:14px}
+  canvas{width:100%;height:360px;background:#0b1220;border-radius:10px}
+  #debug{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+         background:#0b1220;border-radius:12px;padding:12px;max-height:300px;overflow:auto;border:1px solid #1f2937}
+  .ok{color:var(--good)} .err{color:var(--bad)}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#0b1220;border:1px solid #334155;margin-left:8px}
+  .flex{display:flex;gap:8px;align-items:center}
 </style>
 </head>
 <body>
+<header>
+  <div class="brand">Vendas • SQL ✔</div>
+  <div class="flex">
+    <span class="muted">Supabase:</span>
+    <input id="url" placeholder="URL" style="width:320px" />
+    <input id="key" placeholder="Anon key" style="width:420px" />
+    <button id="saveConn" class="secondary">Salvar</button>
+    <span id="connStatus" class="pill">...</span>
+  </div>
+</header>
 
-<h2>Dash Vendas (RPC v2/v3) • Diagnóstico embutido</h2>
+<section class="row">
+  <div class="card" style="flex:1">
+    <div class="muted" style="margin-bottom:8px">Período</div>
+    <div class="filters" style="grid-template-columns:repeat(4,minmax(180px,1fr))">
+      <div><label class="muted">De</label><input type="date" id="dini"/></div>
+      <div><label class="muted">Até</label><input type="date" id="dfim"/></div>
+      <div><label class="muted">Cancelado</label>
+        <select id="cancel" multiple size="3">
+          <option value="">(Todos)</option>
+          <option>Não</option>
+          <option>Sim</option>
+        </select>
+      </div>
+      <div class="flex" style="align-self:end;gap:10px">
+        <button id="apply">Aplicar</button>
+        <button id="smoke" class="secondary">Smoke tests</button>
+      </div>
+    </div>
+  </div>
+</section>
 
-<div class="row card">
-  <div>
-    <label>Data início</label><br/>
-    <input type="date" id="dini"/>
+<section class="row">
+  <div class="card" style="flex:1">
+    <div class="muted" style="margin-bottom:8px">Filtros</div>
+    <div class="filters">
+      <div><label class="muted">Unidades</label><select id="unids" multiple size="6"></select></div>
+      <div><label class="muted">Lojas</label><select id="lojas" multiple size="6"></select></div>
+      <div><label class="muted">Turnos</label><select id="turnos" multiple size="6"></select></div>
+      <div><label class="muted">Canais</label><select id="canais" multiple size="6"></select></div>
+      <div><label class="muted">Pagamentos</label><select id="pags" multiple size="6"></select></div>
+      <div style="align-self:end"><button id="limpar" class="secondary">Limpar filtros</button></div>
+    </div>
   </div>
-  <div>
-    <label>Data fim</label><br/>
-    <input type="date" id="dfim"/>
-  </div>
-  <div>
-    <label>Unidades (lower-case, separadas por vírgula)</label><br/>
-    <input id="unids" placeholder="ex.: uni.raja"/>
-  </div>
-  <div>
-    <label>Lojas (lower-case, separadas por vírgula)</label><br/>
-    <input id="lojas" placeholder="ex.: loja xyz"/>
-  </div>
-  <div>
-    <label>Turnos</label><br/>
-    <input id="turnos" placeholder="manhã,dia,noite"/>
-  </div>
-  <div>
-    <label>Canais</label><br/>
-    <input id="canais" placeholder="ifood,telefone,..."/>
-  </div>
-  <div>
-    <label>Pagamentos</label><br/>
-    <input id="pags" placeholder="pago online,pix,..."/>
-  </div>
-  <div>
-    <label>Cancelado</label><br/>
-    <select id="cancel">
-      <option value="">Todos</option>
-      <option>Sim</option>
-      <option>Não</option>
-    </select>
-  </div>
-  <div>
-    <button class="btn" id="btn-run">Atualizar KPIs + Gráficos</button>
-    <button class="btn secondary" id="btn-diag">Rodar Diagnóstico</button>
-  </div>
-</div>
+</section>
 
-<div class="grid">
-  <div class="card kpi"><h3>KPI</h3><pre id="out-kpi">—</pre></div>
-  <div class="card kpi"><h3>DOW</h3><pre id="out-dow">—</pre></div>
-  <div class="card kpi"><h3>MÊS</h3><pre id="out-mes">—</pre></div>
-  <div class="card kpi"><h3>HORA</h3><pre id="out-hora">—</pre></div>
-  <div class="card full"><h3>Diagnóstico</h3><pre id="out-diag">—</pre></div>
-</div>
+<section class="row">
+  <div class="card kpis" style="flex:1">
+    <div class="kpi"><div class="muted">Pedidos</div><div id="kpi-ped" class="v">—</div></div>
+    <div class="kpi"><div class="muted">Faturamento</div><div id="kpi-fat" class="v">—</div></div>
+    <div class="kpi"><div class="muted">Descontos</div><div id="kpi-des" class="v">—</div></div>
+    <div class="kpi"><div class="muted">Frete</div><div id="kpi-fre" class="v">—</div></div>
+  </div>
+</section>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<section class="row">
+  <div class="grid" style="flex:1">
+    <div class="card"><div class="muted">Dia da semana</div><canvas id="c-dow"></canvas></div>
+    <div class="card"><div class="muted">Mês</div><canvas id="c-month"></canvas></div>
+    <div class="card"><div class="muted">Hora</div><canvas id="c-hour"></canvas></div>
+    <div class="card"><div class="muted">Turno</div><canvas id="c-shift"></canvas></div>
+  </div>
+</section>
+
+<section class="row">
+  <div class="card" style="flex:1">
+    <div class="muted">Debug</div>
+    <div id="debug">Pronto.</div>
+  </div>
+</section>
+
 <script>
-const SUPA_URL = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-const supa = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+/*** ====== CONFIG ====== ***/
+const DEFAULT_URL = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
+const DEFAULT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
 
-const RPC = {
-  kpi:   'kpi_vendas_v2',
-  dow:   'chart_vendas_dow_v2',
-  mes:   'chart_vendas_mes_v2',
-  turno: 'chart_vendas_turno_v2',
-  hora:  'chart_vendas_hora_v3' // <- versão rápida (usa MV)
-};
+const $ = sel => document.querySelector(sel);
+const log = (...a)=>{ const d=$('#debug'); d.textContent += '\\n' + a.map(x=>typeof x==='string'?x:JSON.stringify(x,null,2)).join(' '); d.scrollTop = d.scrollHeight; };
+const set = (id,val)=>{ $(id).textContent = val; };
 
-function val(id){ return (document.getElementById(id).value||'').trim(); }
-function arrLower(id){
-  const raw = val(id);
-  if(!raw) return null;
-  const a = raw.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
-  return a.length? a : null;
+function getConn(){
+  const url = $('#url').value.trim();
+  const key = $('#key').value.trim();
+  return {url, key};
 }
-function normCancel(v){
-  if(!v) return null;
-  v = v.toLowerCase();
-  if(['sim','s','true','1'].includes(v)) return 'Sim';
-  if(['nao','não','n','false','0','nao'].includes(v)) return 'Não';
-  return null;
+function saveConn(){
+  localStorage.setItem('sb_url',$('#url').value.trim());
+  localStorage.setItem('sb_key',$('#key').value.trim());
+  $('#connStatus').textContent = 'salvo';
 }
-function params(){
-  const p = {
-    p_dini: val('dini') || null,
-    p_dfim: val('dfim') || null,
-    p_unids: arrLower('unids'),
-    p_lojas: arrLower('lojas'),
-    p_turnos: arrLower('turnos'),
-    p_canais: arrLower('canais'),
-    p_pags:  arrLower('pags'),
-    p_cancelado: normCancel(val('cancel'))
-  };
-  // datas padrão (últimos 30 dias)
-  if(!p.p_dini || !p.p_dfim){
-    const dfim = new Date();
-    const dini = new Date(); dini.setDate(dfim.getDate()-30);
-    p.p_dini = p.p_dini || dini.toISOString().slice(0,10);
-    p.p_dfim = p.p_dfim || dfim.toISOString().slice(0,10);
+function loadConn(){
+  $('#url').value = localStorage.getItem('sb_url') || DEFAULT_URL;
+  $('#key').value = localStorage.getItem('sb_key') || DEFAULT_KEY;
+}
+
+async function rpc(fn, body){
+  const {url,key} = getConn();
+  const res = await fetch(`${url}/rest/v1/rpc/${fn}`,{
+    method:'POST',
+    headers:{
+      apikey:key,
+      Authorization:`Bearer ${key}`,
+      'Content-Type':'application/json',
+      Prefer:'count=none'
+    },
+    body: JSON.stringify(body||{})
+  });
+  if(!res.ok){
+    const txt = await res.text();
+    throw new Error(`${fn} -> ${res.status} ${txt}`);
   }
+  return res.json();
+}
+async function distinct(col){
+  // Pega opções únicas a partir da MV agregada (rápida)
+  const {url,key} = getConn();
+  const table = 'mv_vendas_hour';
+  const res = await fetch(`${url}/rest/v1/${table}?select=${encodeURIComponent(col)}&${encodeURIComponent('distinct')}`,{
+    headers:{apikey:key,Authorization:`Bearer ${key}`}
+  });
+  if(!res.ok) return [];
+  const arr = await res.json();
+  const vals = [...new Set(arr.map(r => (r[col]||'').toString()).filter(Boolean))];
+  return vals.sort((a,b)=>a.localeCompare(b,'pt-BR'));
+}
+function mvals(sel){
+  return Array.from($(sel).selectedOptions).map(o=>o.value).filter(v=>v!=='');
+}
+function val(sel){ return $(sel).value; }
+function toISO(d){ return d; } // <input type="date"> já entrega yyyy-mm-dd
+
+function buildParams(){
+  // regras: array vazio -> null; cancelado: '',Sim,Não
+  const p_cancel_raw = mvals('#cancel');
+  const p_cancel = (p_cancel_raw.length===1 && (p_cancel_raw[0]==='Sim'||p_cancel_raw[0]==='Não')) ? p_cancel_raw[0] : null;
+  const p = {
+    p_dini: toISO(val('#dini')) || null,
+    p_dfim: toISO(val('#dfim')) || null,
+    p_unids: mvals('#unids').length ? mvals('#unids') : null,
+    p_lojas: mvals('#lojas').length ? mvals('#lojas') : null,
+    p_turnos: mvals('#turnos').length ? mvals('#turnos') : null,
+    p_canais: mvals('#canais').length ? mvals('#canais') : null,
+    p_pags:   mvals('#pags').length   ? mvals('#pags')   : null,
+    p_cancelado: p_cancel
+  };
   return p;
 }
-function setPre(id,obj){ document.getElementById(id).textContent = typeof obj === 'string' ? obj : JSON.stringify(obj,null,2); }
 
-async function rpc(name, p){
-  const { data, error } = await supa.rpc(name, p);
-  if(error) throw error;
-  return data;
+/*** ====== CHARTS (vanilla, simples) ====== ***/
+function drawBar(canvasId, labels, values){
+  const c = document.getElementById(canvasId);
+  const ctx = c.getContext('2d');
+  // clear
+  ctx.clearRect(0,0,c.width,c.height);
+  const w = c.width, h = c.height;
+  const pad = 36, bw = (w - pad*2) / (labels.length||1);
+  const vmax = Math.max(1, ...values.map(v=>+v||0));
+  // axes
+  ctx.strokeStyle = '#334155'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(pad, h-pad); ctx.lineTo(w-pad, h-pad); ctx.stroke();
+  // bars
+  for(let i=0;i<labels.length;i++){
+    const v = +values[i]||0;
+    const x = pad + i*bw + 6;
+    const bh = (v/vmax)*(h - pad*2);
+    const y = (h - pad) - bh;
+    ctx.fillStyle = '#22d3ee';
+    ctx.fillRect(x, y, bw-12, bh);
+    // label
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '12px system-ui';
+    ctx.textAlign='center';
+    ctx.fillText(labels[i], x+(bw-12)/2, h-pad+14);
+  }
 }
 
-async function runAll(){
-  const p = params();
-  setPre('out-kpi','…'); setPre('out-dow','…'); setPre('out-mes','…'); setPre('out-hora','…');
-  console.log('→ params', p);
+/*** ====== UI FLOW ====== ***/
+async function init(){
+  loadConn();
+  $('#saveConn').onclick = saveConn;
+  $('#apply').onclick = applyAll;
+  $('#smoke').onclick = smoke;
+  $('#limpar').onclick = ()=>{
+    ['#unids','#lojas','#turnos','#canais','#pags','#cancel'].forEach(id=>{
+      Array.from($(id).options).forEach(o=>o.selected=false);
+    });
+    applyAll();
+  };
 
-  const kpi = await rpc(RPC.kpi, p);
-  setPre('out-kpi', kpi);
+  // datas padrão: últimos 30 dias com base no clock local
+  const today = new Date();
+  const dfim = today.toISOString().slice(0,10);
+  const dini = new Date(today.getTime()-29*86400000).toISOString().slice(0,10);
+  $('#dini').value = dini; $('#dfim').value = dfim;
 
-  const dow = await rpc(RPC.dow, p);
-  setPre('out-dow', dow);
+  // checa conexão
+  try{
+    await rpc('kpi_vendas_v2',{p_dini:'2025-05-14',p_dfim:'2025-05-14',p_unids:null,p_lojas:null,p_turnos:null,p_canais:null,p_pags:null,p_cancelado:null});
+    $('#connStatus').textContent = '✅ ok';
+    log('✅ Supabase client ok');
+  }catch(e){
+    $('#connStatus').textContent = '❌ erro';
+    log('❌ conexão', e.message);
+  }
 
-  const mes = await rpc(RPC.mes, p);
-  setPre('out-mes', mes);
+  // carrega listas
+  await loadFilters();
 
-  const hora = await rpc(RPC.hora, p);
-  setPre('out-hora', hora);
+  // aplica
+  await applyAll();
 }
 
-async function runDiag(){
-  const p = params();
-  const out = [];
-  out.push('PARAMS:\n'+JSON.stringify(p,null,2));
-
-  // KPI
-  const k = await rpc(RPC.kpi, p);
-  out.push('KPI:\n'+JSON.stringify(k,null,2));
-  const kfat = Number((k?.fat ?? 0));
-
-  // DOW soma
-  const d = await rpc(RPC.dow, p);
-  const dsum = d.reduce((acc,x)=>acc+Number(x.total||0),0);
-  out.push(`DOW soma=${dsum.toFixed(2)}  vs KPI.fat=${kfat.toFixed(2)}  diff=${(dsum-kfat).toFixed(2)}`);
-
-  // MÊS soma
-  const m = await rpc(RPC.mes, p);
-  const msum = m.reduce((acc,x)=>acc+Number(x.total||0),0);
-  out.push(`MES soma=${msum.toFixed(2)}  vs KPI.fat=${kfat.toFixed(2)}  diff=${(msum-kfat).toFixed(2)}`);
-
-  // HORA soma (v3)
-  const h = await rpc(RPC.hora, p);
-  const hsum = h.reduce((acc,x)=>acc+Number(x.total||0),0);
-  out.push(`HORA soma=${hsum.toFixed(2)} vs KPI.fat=${kfat.toFixed(2)}  diff=${(hsum-kfat).toFixed(2)}`);
-
-  // Alertas
-  const warn=[];
-  if(Math.abs(dsum-kfat)>0.01) warn.push('→ DOW ≠ KPI (verifique filtros / MV)');
-  if(Math.abs(msum-kfat)>0.01) warn.push('→ MÊS ≠ KPI (verifique filtros)');
-  if(Math.abs(hsum-kfat)>0.01) warn.push('→ HORA ≠ KPI (provável MV desatualizada: rode refresh_vendas_hour())');
-  out.push('\nALERTAS:\n'+(warn.length? warn.join('\n') : 'OK: todas as somas batem com o KPI'));
-
-  setPre('out-diag', out.join('\n\n'));
+async function loadFilters(){
+  const fill = async (sel, vals)=>{
+    const el = $(sel);
+    el.innerHTML = '';
+    for(const v of vals){ const o=document.createElement('option'); o.value=v.toLowerCase(); o.textContent=v; el.appendChild(o); }
+  };
+  const [unids, lojas, turnos, canais, pags] = await Promise.all([
+    distinct('unidade'), distinct('loja'), distinct('turno'), distinct('canal'), distinct('pagamento_base')
+  ]);
+  await fill('#unids', unids);
+  await fill('#lojas', lojas);
+  await fill('#turnos', turnos);
+  await fill('#canais', canais);
+  await fill('#pags',   pags);
 }
 
-document.getElementById('btn-run').addEventListener('click', async ()=>{
-  try{ await runAll(); }catch(e){ setPre('out-diag', 'ERRO: '+(e.message||e)); console.error(e); }
-});
-document.getElementById('btn-diag').addEventListener('click', async ()=>{
-  try{ await runDiag(); }catch(e){ setPre('out-diag', 'ERRO: '+(e.message||e)); console.error(e); }
-});
+function fmt(num){ if(num===null||num===undefined) return '0'; const n=+num; return n.toLocaleString('pt-BR',{maximumFractionDigits:2}); }
+function sum(arr, key='total'){ return arr.reduce((a,x)=>a + (+x[key]||0), 0); }
 
-// valores padrão de datas (últimos 30 dias)
-const dfim = new Date(); const dini = new Date(); dini.setDate(dfim.getDate()-30);
-document.getElementById('dini').value = dini.toISOString().slice(0,10);
-document.getElementById('dfim').value = dfim.toISOString().slice(0,10);
+async function applyAll(){
+  const p = buildParams();
+  log('→ KPI params', p);
+
+  // KPIs
+  const kpi = await rpc('kpi_vendas_v2', p);
+  set('#kpi-ped', fmt(kpi.pedidos));
+  set('#kpi-fat', fmt(kpi.fat));
+  set('#kpi-des', fmt(kpi.des));
+  set('#kpi-fre', fmt(kpi.fre));
+  log('✅ KPI', kpi);
+
+  // Charts
+  // DOW
+  const dow = await rpc('chart_vendas_dow_v2', p);
+  drawBar('c-dow', dow.map(d=>['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][d.dow||0]), dow.map(d=>d.total));
+  checkSum('DOW', dow, kpi.fat);
+
+  // MÊS
+  const mon = await rpc('chart_vendas_mes_v2', p);
+  drawBar('c-month', mon.map(d=>d.ym), mon.map(d=>d.total));
+  checkSum('MÊS', mon, kpi.fat);
+
+  // HORA (v3 primeiro, fallback v2)
+  let hor=null;
+  try{
+    hor = await rpc('chart_vendas_hora_v3', p);
+  }catch(e){
+    log('⚠️ hour v3 falhou, tentando v2', e.message);
+    hor = await rpc('chart_vendas_hora_v2', p);
+  }
+  drawBar('c-hour', hor.map(d=>String(d.h)), hor.map(d=>d.total));
+  checkSum('HORA', hor, kpi.fat);
+
+  // TURNO
+  const tur = await rpc('chart_vendas_turno_v2', p);
+  drawBar('c-shift', tur.map(d=>d.turno), tur.map(d=>d.total));
+  checkSum('TURNO', tur, kpi.fat);
+}
+
+function checkSum(label, rows, kpiFat){
+  const s = sum(rows,'total');
+  const ok = Math.abs(s - (+kpiFat||0)) < 0.0001;
+  log(`${ok?'✅':'❌'} ${label} soma=${fmt(s)} vs KPI.fat=${fmt(kpiFat)} ${ok?'(ok)':'(mismatch)'}`);
+}
+
+/*** ====== SMOKE TEST BUTTON ====== ***/
+async function smoke(){
+  const p = buildParams();
+  const kpi = await rpc('kpi_vendas_v2', p);
+  const [d,m,h,t] = await Promise.all([
+    rpc('chart_vendas_dow_v2', p),
+    rpc('chart_vendas_mes_v2', p),
+    (async()=>{ try{ return await rpc('chart_vendas_hora_v3', p); }catch{ return await rpc('chart_vendas_hora_v2', p);} })(),
+    rpc('chart_vendas_turno_v2', p),
+  ]);
+  const sd = sum(d), sm = sum(m), sh = sum(h), st = sum(t);
+  log('SMOKE → KPI.fat', kpi.fat);
+  log('  DOW  sum=', fmt(sd), sd==kpi.fat?'✅':'❌');
+  log('  MÊS  sum=', fmt(sm), sm==kpi.fat?'✅':'❌');
+  log('  HORA sum=', fmt(sh), sh==kpi.fat?'✅':'❌');
+  log('  TURNO sum=', fmt(st), st==kpi.fat?'✅':'❌');
+}
+
+/*** start ***/
+init();
 </script>
 </body>
 </html>
