@@ -1,304 +1,504 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-br">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Dash Vendas – filtros (fix distinct + fallback)</title>
+<title>Dashboard Vendas + Upload Excel (Supabase)</title>
 <style>
-  :root{--bg:#0b0f14;--card:#121923;--muted:#94a3b8;--fg:#e2e8f0;--pri:#22c55e;--warn:#f59e0b;--err:#ef4444}
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.35 system-ui,Segoe UI,Roboto,Helvetica,Arial}
-  header{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #1f2937;background:#0d141d;position:sticky;top:0;z-index:2}
-  header h1{font-size:16px;margin:0;font-weight:600} header .ok{color:var(--pri)} header .bad{color:var(--err)}
-  .wrap{display:grid;grid-template-columns:280px 1fr;gap:16px;padding:16px}
-  .card{background:var(--card);border:1px solid #1f2937;border-radius:12px}
-  .pad{padding:14px}
-  .filters h3{margin:0 0 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  label{font-size:12px;color:var(--muted)}
-  input,select,button{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #233042;background:#0f1722;color:var(--fg)}
-  button{cursor:pointer} button.primary{background:var(--pri);border-color:#16a34a;color:#06220f;font-weight:600}
-  .row{display:flex;gap:8px}
-  .kpis{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:12px}
-  .kpi{padding:14px;border-radius:12px;background:#0e1620;border:1px solid #223047}
-  .kpi .lab{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
-  .kpi .val{font-size:22px;font-weight:700;margin-top:6px}
-  .kpi small{color:var(--muted)}
-  .charts{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-  canvas{width:100%;height:280px;background:#0b1018;border-radius:12px;border:1px solid #223047}
-  details.debug{white-space:pre-wrap}
+  :root { --bg:#0b1320; --card:#121a2b; --muted:#94a3b8; --text:#e2e8f0; --pri:#22d3ee; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; }
+  html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
+  .wrap{max-width:1200px;margin:20px auto;padding:0 12px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .card{background:var(--card);border:1px solid #1e293b;border-radius:12px;padding:12px}
+  .kpi{flex:1 1 200px}
+  .kpi h3{margin:0 0 6px 0;font-size:13px;color:var(--muted)}
+  .kpi .v{font-size:22px;font-weight:700}
+  .filters .f{display:flex;flex-direction:column;gap:6px;min-width:180px}
+  select, input[type="date"], input[type="text"], button{background:#0f172a;border:1px solid #334155;color:var(--text);border-radius:8px;padding:8px}
+  button{cursor:pointer}
   .muted{color:var(--muted)}
-  .note{font-size:12px;color:var(--muted)}
+  .log{white-space:pre-wrap;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;max-height:200px;overflow:auto;background:#0a1020;padding:8px;border-radius:8px;border:1px solid #1f2937}
+  canvas{background:#0a1020;border:1px solid #1f2937;border-radius:8px}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .hidden{display:none}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #334155;color:#cbd5e1;background:#0b1222;font-size:12px}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
+  .progress{height:10px;background:#0a1020;border:1px solid #1f2937;border-radius:8px;overflow:hidden}
+  .bar{height:100%;width:0;background:linear-gradient(90deg,var(--pri),#60a5fa)}
+  details summary{cursor:pointer}
+  .map{display:grid;grid-template-columns:200px 1fr;gap:8px;align-items:center}
 </style>
 </head>
 <body>
-<header>
-  <h1>Dashboard de Vendas</h1>
-  <span id="ping" class="muted">Conectando…</span>
-</header>
-
 <div class="wrap">
-  <!-- FILTROS -->
-  <div class="card filters pad">
-    <h3>Período</h3>
-    <div class="grid2">
-      <div><label>De</label><input type="date" id="dini"></div>
-      <div><label>Até</label><input type="date" id="dfim"></div>
-    </div>
 
-    <h3 style="margin-top:16px">Filtros</h3>
-    <div style="display:grid;gap:8px">
-      <div><label>Unidades</label><select id="ms-unids" multiple size="6"></select></div>
-      <div><label>Lojas</label><select id="ms-lojas" multiple size="8"></select></div>
-      <div><label>Turnos</label><select id="ms-turnos" multiple size="5"></select></div>
-      <div><label>Canais</label><select id="ms-canais" multiple size="6"></select></div>
-      <div><label>Pagamentos</label><select id="ms-pags" multiple size="8"></select></div>
-      <div><label>Cancelado</label>
-        <select id="ms-cancel" multiple size="3">
+  <!-- Config -->
+  <div class="card">
+    <div class="row" style="align-items:center;gap:8px;">
+      <div><strong>Supabase:</strong></div>
+      <input id="url" type="text" style="min-width:360px" placeholder="SUPABASE_URL" />
+      <input id="key" type="text" style="min-width:520px" placeholder="SUPABASE_ANON_KEY" />
+      <button id="btnConnect">Conectar</button>
+      <span id="connStatus" class="pill muted">desconectado</span>
+    </div>
+    <div class="muted" style="margin-top:6px">Use as credenciais anônimas do seu projeto. Já preenchi com as suas.</div>
+  </div>
+
+  <!-- Filtros -->
+  <div class="card filters">
+    <div class="row">
+      <div class="f">
+        <label>De</label><input id="dini" type="date" />
+      </div>
+      <div class="f">
+        <label>Até</label><input id="dfim" type="date" />
+      </div>
+      <div class="f">
+        <label>Unidades</label>
+        <select id="ms-unids" multiple size="6" title="unidade"></select>
+      </div>
+      <div class="f">
+        <label>Lojas (Nome da loja → view.l <i>loja</i>)</label>
+        <select id="ms-lojas" multiple size="6" title="loja"></select>
+      </div>
+      <div class="f">
+        <label>Turnos</label>
+        <select id="ms-turnos" multiple size="6" title="turno"></select>
+      </div>
+      <div class="f">
+        <label>Canais</label>
+        <select id="ms-canais" multiple size="6" title="canal"></select>
+      </div>
+      <div class="f">
+        <label>Forma de pagamento</label>
+        <select id="ms-pags" multiple size="6" title="pagamento_base"></select>
+      </div>
+      <div class="f">
+        <label>Cancelado</label>
+        <select id="sel-cancel">
           <option value="">Todos</option>
           <option>Não</option>
           <option>Sim</option>
         </select>
       </div>
-    </div>
-
-    <div class="row" style="margin-top:12px">
-      <button id="btn-aplicar" class="primary">Aplicar filtros</button>
-      <button id="btn-limpar"  title="Limpa apenas seleções (mantém datas)">Limpar</button>
-    </div>
-
-    <p class="note" style="margin-top:12px">
-      • <b>Lojas</b> usa a coluna <code>loja</code> da view <code>vw_vendas</code> (confirmado).<br/>
-      • As listas abaixo são recarregadas pelo período (somente datas).
-    </p>
-  </div>
-
-  <!-- KPI + GRÁFICOS + DEBUG -->
-  <div class="col">
-    <div class="card pad">
-      <div class="kpis">
-        <div class="kpi"><div class="lab">Pedidos</div><div id="k_ped" class="val">–</div></div>
-        <div class="kpi"><div class="lab">Faturamento</div><div id="k_fat" class="val">–</div><small id="k_fat_sm"></small></div>
-        <div class="kpi"><div class="lab">Descontos</div><div id="k_des" class="val">–</div></div>
-        <div class="kpi"><div class="lab">Frete</div><div id="k_fre" class="val">–</div></div>
+      <div class="f" style="align-self:flex-end;gap:8px">
+        <button id="btnApply">Aplicar</button>
+        <button id="btnClear">Limpar</button>
       </div>
     </div>
+    <div class="muted" style="margin-top:4px">As listas acima vêm de <code>public.vw_vendas</code> (coluna <code>loja</code> = “Nome da loja”).</div>
+  </div>
 
-    <div class="charts">
-      <div class="card pad"><h3>Faturamento por Dia da Semana</h3><canvas id="c_dow"></canvas></div>
-      <div class="card pad"><h3>Faturamento por Mês</h3><canvas id="c_mes"></canvas></div>
-      <div class="card pad"><h3>Faturamento por Hora</h3><canvas id="c_hora"></canvas></div>
-      <div class="card pad"><h3>Faturamento por Turno</h3><canvas id="c_turno"></canvas></div>
+  <!-- KPIs -->
+  <div class="row">
+    <div class="card kpi"><h3>Pedidos</h3><div id="k-ped" class="v">–</div></div>
+    <div class="card kpi"><h3>Faturamento (fat)</h3><div id="k-fat" class="v">–</div></div>
+    <div class="card kpi"><h3>Descontos (des)</h3><div id="k-des" class="v">–</div></div>
+    <div class="card kpi"><h3>Frete/Entrega (fre)</h3><div id="k-fre" class="v">–</div></div>
+  </div>
+
+  <!-- Gráficos -->
+  <div class="grid-2" style="margin-top:12px">
+    <div class="card"><h3>Faturamento por dia da semana</h3><canvas id="c-dow" height="220"></canvas></div>
+    <div class="card"><h3>Faturamento por mês</h3><canvas id="c-month" height="220"></canvas></div>
+  </div>
+  <div class="card" style="margin-top:12px"><h3>Faturamento por hora</h3><canvas id="c-hour" height="220"></canvas></div>
+
+  <!-- Upload -->
+  <div class="card" style="margin-top:12px">
+    <h3>Upload Excel → salvar no banco</h3>
+    <div class="row" style="align-items:center">
+      <input id="file" type="file" accept=".xlsx,.xls" />
+      <button id="btnValidate">Validar arquivo</button>
+      <button id="btnSave" disabled>Salvar no banco</button>
+      <span id="sheetStatus" class="pill muted">SheetJS…</span>
     </div>
 
-    <details class="card debug pad" style="margin-top:12px" open>
-      <summary>Debug</summary>
-      <pre id="dbg">Preparando…</pre>
+    <details id="mapBox" class="hidden" style="margin-top:12px">
+      <summary><strong>Mapeamento de colunas</strong> (auto-detectado; ajuste se necessário)</summary>
+      <div class="map" style="margin-top:8px">
+        <div>Data da venda → <code>data_venda</code></div><select id="m-data"></select>
+        <div>Hora (0–23) → <code>hora</code></div><select id="m-hora"></select>
+        <div>Unidade → <code>unidade</code></div><select id="m-unid"></select>
+        <div>Nome da loja → <code>"Nome da loja"</code></div><select id="m-loja"></select>
+        <div>Canal → <code>canal</code> / <code>"Canal de venda"</code></div><select id="m-canal"></select>
+        <div>Pagamento → <code>pagamento</code> / <code>"Pagamento"</code></div><select id="m-pag"></select>
+        <div>Cancelado (Sim/Não) → <code>cancelado</code> / <code>"Está cancelado"</code></div><select id="m-canc"></select>
+        <div>Turno → <code>turno</code> / <code>"Turno"</code></div><select id="m-turno"></select>
+        <div>Itens/Pedidos → <code>itens</code> / <code>"Itens"</code></div><select id="m-itens"></select>
+        <div>Total (fat) → <code>total</code> / <code>"Total"</code></div><select id="m-fat"></select>
+        <div>Desconto → <code>desconto</code> / <code>"Desconto"</code></div><select id="m-des"></select>
+        <div>Entrega (frete) → <code>entrega</code> / <code>"Entrega"</code></div><select id="m-fre"></select>
+        <div>Consumidor (fallback loja) → <code>consumidor</code></div><select id="m-cons"></select>
+      </div>
+      <div style="margin-top:8px" class="muted">Só salvaremos colunas que **existirem** na tabela alvo. O resto é ignorado com segurança.</div>
     </details>
+
+    <div class="progress" style="margin-top:10px"><div id="bar" class="bar"></div></div>
+    <div id="upInfo" class="muted" style="margin-top:6px"></div>
   </div>
+
+  <!-- Debug -->
+  <div class="card" style="margin-top:12px">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <h3 style="margin:0">Debug</h3>
+      <div>
+        <button id="btnPing">Smoke test (KPI bruto)</button>
+        <button id="btnReloadLists">Recarregar listas</button>
+        <span id="sumCheck" class="pill">—</span>
+      </div>
+    </div>
+    <div id="log" class="log" style="margin-top:8px"></div>
+  </div>
+
 </div>
 
-<script type="module">
-/** ====== CONFIG ====== **/
-const SUPABASE_URL      = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-const READ_VIEW = "vw_vendas";
-const RPC = {
-  kpi_v2:   "kpi_vendas_v2",
-  dow_v2:   "chart_vendas_dow_v2",
-  mes_v2:   "chart_vendas_mes_v2",
-  hora_v3:  "chart_vendas_hora_v3",
-  hora_v2:  "chart_vendas_hora_v2",
-  turno_v2: "chart_vendas_turno_v2"
-};
-
-// ====== helpers ======
-const $ = s => document.querySelector(s);
-const dbg = (...a)=>{ const el=$("#dbg"); el.textContent += a.map(x=> typeof x==="string"? x: JSON.stringify(x,null,2)).join(" ")+"\n"; el.scrollTop=el.scrollHeight; };
-const fmtMoney = v => (v??0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
-
-// ====== supabase ======
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession:false }});
-(async ()=>{
-  try{
-    const ping = await supa.from(READ_VIEW).select('dia').limit(1);
-    if(ping.error) throw ping.error;
-    $("#ping").textContent="✅ Supabase client ok"; $("#ping").className="ok";
-  }catch(e){
-    $("#ping").textContent="❌ Supabase erro: "+e.message; $("#ping").className="bad";
-  }
+<!-- libs: Supabase + Chart.js + SheetJS com fallback -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+<script>
+(async()=>{ // carrega SheetJS com fallback
+  function add(s,cb){const sc=document.createElement('script');sc.src=s;sc.onload=cb;sc.onerror=cb;document.head.appendChild(sc);}
+  await new Promise(res=>add('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',res));
+  if(!window.XLSX){await new Promise(res=>add('https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js',res));}
+  const sst=document.getElementById('sheetStatus'); sst.textContent = window.XLSX ? 'SheetJS OK' : 'SheetJS indisponível';
+  sst.className = 'pill ' + (window.XLSX?'ok':'warn');
 })();
+</script>
 
-// ====== datas padrão ======
-const today = new Date();
-const dfim  = today.toISOString().slice(0,10);
-const diniD = new Date(today.getTime()-29*24*3600*1000);
-const dini  = diniD.toISOString().slice(0,10);
-$("#dini").value=dini; $("#dfim").value=dfim;
+<script>
+const el = id=>document.getElementById(id);
+const log = (...a)=>{ el('log').textContent += a.map(x=> typeof x==='string'? x : JSON.stringify(x,null,2)).join(' ') + '\n'; el('log').scrollTop = el('log').scrollHeight; };
+const fmt = n => (typeof n==='number') ? n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}) : n;
 
-// ====== DISTINCT por período (com fallback) ======
-function buildAnd(parts){ if(!parts?.length) return ""; return "&and=(" + parts.join(",") + ")"; }
-function baseHeaders(){ return { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }; }
+let supa=null, charts={}, metaCols=null;
 
-function distinctURL(col,de,ate){
-  const base = `${SUPABASE_URL}/rest/v1/${READ_VIEW}?select=${encodeURIComponent(col)}&distinct=true`;
-  const cond=[];
-  if(de)  cond.push(`dia.gte.${de}`);
-  if(ate) cond.push(`dia.lte.${ate}`);
-  const and = buildAnd(cond);
-  // order correto: .asc.nullslast (antes eu usava nullsFirst=false -> 400)
-  return `${base}${and}&order=${encodeURIComponent(col)}.asc.nullslast`;
-}
-function simpleSelectURL(col,de,ate){
-  const base = `${SUPABASE_URL}/rest/v1/${READ_VIEW}?select=${encodeURIComponent(col)}`;
-  const cond=[];
-  if(de)  cond.push(`dia.gte.${de}`);
-  if(ate) cond.push(`dia.lte.${ate}`);
-  const and = buildAnd(cond);
-  return `${base}${and}&order=${encodeURIComponent(col)}.asc.nullslast`;
-}
-async function fetchDistinct(col,de,ate){
-  const url = distinctURL(col,de,ate);
-  const r = await fetch(url,{ headers: baseHeaders() });
-  if(!r.ok) throw new Error(`distinct ${col} HTTP ${r.status}`);
-  return await r.json();
-}
-async function fetchDistinctFallback(col,de,ate){
-  const url = simpleSelectURL(col,de,ate);
-  const r = await fetch(url,{ headers: baseHeaders() });
-  if(!r.ok) throw new Error(`fallback ${col} HTTP ${r.status}`);
-  const rows = await r.json();
-  const seen=new Set(), out=[];
-  for(const row of rows){
-    const v=row[col];
-    if(v===null || v===undefined || v==="") continue;
-    const key=String(v);
-    if(!seen.has(key)){ seen.add(key); out.push({[col]:v}); }
-  }
-  return out;
-}
-async function fetchCol(col,de,ate){
+/* === CONFIG DEFAULTS (seus dados) === */
+el('url').value = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
+el('key').value = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
+
+/* === SUPABASE === */
+async function connect(){
   try{
-    const a = await fetchDistinct(col,de,ate);
-    dbg(`• ${col}: distinct OK (${a.length})`);
-    return a;
+    supa = window.supabase.createClient(el('url').value.trim(), el('key').value.trim());
+    el('connStatus').textContent = 'conectado';
+    el('connStatus').className = 'pill ok';
+    log('Pronto.\n✅ Supabase client ok');
+    await initDates();
+    await loadLists();
+    await applyAll();
   }catch(e){
-    dbg(`⚠️ distinct ${col} falhou (${e.message}); usando fallback (dedupe no client)…`);
-    const b = await fetchDistinctFallback(col,de,ate);
-    dbg(`• ${col}: fallback OK (${b.length})`);
-    return b;
+    el('connStatus').textContent = 'erro';
+    el('connStatus').className = 'pill err';
+    log('❌ erro conectar', e.message||e);
   }
 }
-async function loadFilters(){
-  const de=$("#dini").value, ate=$("#dfim").value;
-  const fill = async (selId,col)=>{
-    const data = await fetchCol(col,de,ate);
-    const sel=$(selId); sel.innerHTML="";
-    for(const row of data){
-      const v=row[col];
-      if(v===null || v===undefined || v==="") continue;
-      const opt=document.createElement('option');
-      opt.value=String(v);
-      opt.textContent=String(v);
-      sel.appendChild(opt);
-    }
-  };
+
+/* === DATES === */
+async function initDates(){
+  const df = new Date(); // hoje
+  const de = new Date(df); de.setDate(df.getDate()-29);
+  el('dini').value = de.toISOString().slice(0,10);
+  el('dfim').value = df.toISOString().slice(0,10);
+}
+
+/* === DISTINCT LISTS (vw_vendas) === */
+async function distinctList(field, de, ate){
+  const { data, error } = await supa
+    .from('vw_vendas')
+    .select(field)
+    .gte('dia', de).lte('dia', ate)
+    .not(field,'is',null)
+    .neq(field,'')
+    .order(field,{ascending:true})
+    .limit(10000);
+  if(error) throw error;
+  const set = new Set();
+  for(const r of (data||[])) set.add((r[field]||'').toString());
+  return Array.from(set);
+}
+async function loadLists(){
+  const de = el('dini').value || '2025-01-01';
+  const ate= el('dfim').value || new Date().toISOString().slice(0,10);
   try{
-    await Promise.all([
-      fill("#ms-unids","unidade"),
-      fill("#ms-lojas","loja"),         // <- usa a COLUNA CORRETA
-      fill("#ms-turnos","turno"),
-      fill("#ms-canais","canal"),
-      fill("#ms-pags","pagamento_base")
+    const [unids, lojas, turnos, canais, pags] = await Promise.all([
+      distinctList('unidade',de,ate),
+      distinctList('loja',de,ate),           // ← loja vem de “Nome da loja”
+      distinctList('turno',de,ate),
+      distinctList('canal',de,ate),
+      distinctList('pagamento_base',de,ate),
     ]);
-  }catch(e){ dbg("⚠️ erro loadFilters:", e.message); }
+    fillSelect(el('ms-unids'), unids);
+    fillSelect(el('ms-lojas'), lojas);
+    fillSelect(el('ms-turnos'), turnos);
+    fillSelect(el('ms-canais'), canais);
+    fillSelect(el('ms-pags'), pags);
+    log('🔎 Listas carregadas (por período):', {unids:unids.length, lojas:lojas.length, turnos:turnos.length, canais:canais.length, pags:pags.length});
+  }catch(e){
+    log('⚠️ loadFilters erro:', e);
+  }
+}
+function fillSelect(sel, arr){
+  sel.innerHTML='';
+  for(const v of arr){ const o=document.createElement('option'); o.textContent=v; o.value=v; sel.appendChild(o); }
 }
 
-// ====== coleta filtros ======
-function getMulti(sel){ const a=[]; for(const o of sel.selectedOptions) a.push(o.value); return a.length? a:null; }
-function paramsRPC(){
-  const de=$("#dini").value, ate=$("#dfim").value;
-  return {
-    p_dini: de, p_dfim: ate,
-    p_unids: getMulti($("#ms-unids")),
-    p_lojas: getMulti($("#ms-lojas")),
-    p_turnos: getMulti($("#ms-turnos")),
-    p_canais: getMulti($("#ms-canais")),
-    p_pags:  getMulti($("#ms-pags")),
-    p_cancelado: (()=>{
-      const c=getMulti($("#ms-cancel"));
-      if(!c) return null;
-      if(c.includes("Sim") && !c.includes("Não")) return "Sim";
-      if(c.includes("Não") && !c.includes("Sim")) return "Não";
-      return null;
-    })()
+/* === PARAMS === */
+function params(){
+  const toArr = sel=> Array.from(sel.selectedOptions).map(o=>o.value);
+  const p = {
+    p_dini: el('dini').value,
+    p_dfim: el('dfim').value,
+    p_unids: toArr(el('ms-unids')).length? toArr(el('ms-unids')) : null,
+    p_lojas: toArr(el('ms-lojas')).length? toArr(el('ms-lojas')) : null,
+    p_turnos: toArr(el('ms-turnos')).length? toArr(el('ms-turnos')) : null,
+    p_canais: toArr(el('ms-canais')).length? toArr(el('ms-canais')) : null,
+    p_pags:  toArr(el('ms-pags')).length?  toArr(el('ms-pags'))  : null,
+    p_cancelado: el('sel-cancel').value || null
   };
+  return p;
 }
 
-// ====== RPC helpers ======
-async function rpc(name,args){ const {data,error}=await supa.rpc(name,args); if(error) throw error; return data||[]; }
-async function rpcHora(args){ try{ return await rpc(RPC.hora_v3,args);}catch{ return await rpc(RPC.hora_v2,args);} }
+/* === KPIs & CHARTS (RPC v2) === */
+async function fetchKPI(p){
+  log('→ KPI params', JSON.stringify(p,null,2));
+  const { data, error } = await supa.rpc('kpi_vendas_v2', p);
+  if(error) throw error;
+  const row = Array.isArray(data)? data[0] : data;
+  return row || { pedidos:0, fat:0, des:0, fre:0 };
+}
+async function fetchChart(kind,p){
+  const fn = `chart_vendas_${kind}_v2`;
+  const { data, error } = await supa.rpc(fn, p, { head:false, count:null });
+  if(error) throw error;
+  return data||[];
+}
 
-// ====== gráficos simples ======
-function drawBar(canvasId, labels, values){
-  const c=$(canvasId), ctx=c.getContext('2d');
-  const W=c.width=c.clientWidth, H=c.height=c.clientHeight;
-  ctx.clearRect(0,0,W,H);
-  const max=Math.max(1,...values.map(v=>+v||0));
-  const pad=28, bw=(W-pad*2)/Math.max(1,values.length);
-  labels.forEach((lab,i)=>{
-    const v=+values[i]||0, h=(H-80)*(v/max), x=pad+i*bw+6, y=H-40-h;
-    ctx.fillStyle="#22c55e"; ctx.fillRect(x,y,bw-12,h);
-    ctx.fillStyle="#94a3b8"; ctx.font="12px system-ui"; ctx.fillText(String(lab), x, H-22);
+function setKPI(k){ el('k-ped').textContent = fmt(k.pedidos); el('k-fat').textContent = fmt(k.fat); el('k-des').textContent = fmt(k.des); el('k-fre').textContent = fmt(k.fre); }
+function drawChart(id, labels, values, title){
+  if(charts[id]){ charts[id].destroy(); }
+  const ctx = el(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type:'bar',
+    data:{ labels, datasets: [{ label:title, data: values }]},
+    options:{
+      responsive:true,
+      scales:{ x:{ ticks:{ color:'#cbd5e1' } }, y:{ ticks:{ color:'#cbd5e1' } } },
+      plugins:{ legend:{ labels:{ color:'#cbd5e1' }}}
+    }
   });
 }
 
-// ====== KPIs + Charts + Smoke ======
-async function updateAll(){
-  const args=paramsRPC();
-  dbg("→ KPI params", JSON.stringify(args,null,2));
-
-  const k=(await rpc(RPC.kpi_v2,args))[0]||{pedidos:0,fat:0,des:0,fre:0};
-  $("#k_ped").textContent=(k.pedidos??0).toLocaleString('pt-BR');
-  $("#k_fat").textContent=fmtMoney(k.fat);
-  $("#k_des").textContent=fmtMoney(k.des);
-  $("#k_fre").textContent=fmtMoney(k.fre);
-
-  const dow=await rpc(RPC.dow_v2,args);
-  const mes=await rpc(RPC.mes_v2,args);
-  const hora=await rpcHora(args);
-  const tur=await rpc(RPC.turno_v2,args);
-
-  drawBar("#c_dow",  dow.map(r=>r.dow),   dow.map(r=>Number(r.total)||0));
-  drawBar("#c_mes",  mes.map(r=>r.ym),    mes.map(r=>Number(r.total)||0));
-  drawBar("#c_hora", hora.map(r=>r.h),    hora.map(r=>Number(r.total)||0));
-  drawBar("#c_turno",tur.map(r=>r.turno), tur.map(r=>Number(r.total)||0));
-
-  const sDow=dow.reduce((a,b)=>a+(+b.total||0),0);
-  const sMes=mes.reduce((a,b)=>a+(+b.total||0),0);
-  const sHora=hora.reduce((a,b)=>a+(+b.total||0),0);
-  const sTur=tur.reduce((a,b)=>a+(+b.total||0),0);
-  const eq=x=>Math.abs(x-(+k.fat||0))<0.01;
-
-  $("#k_fat_sm").textContent=`DOW:${eq(sDow)?"ok":"x"} • MÊS:${eq(sMes)?"ok":"x"} • HORA:${eq(sHora)?"ok":"x"} • TURNO:${eq(sTur)?"ok":"x"}`;
-  dbg(`${eq(sDow)?"✅":"❌"} DOW soma=${sDow.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} vs KPI.fat=${fmtMoney(k.fat)} ${eq(sDow)?"(ok)":"(mismatch)"}`);
-  dbg(`${eq(sMes)?"✅":"❌"} MÊS soma=${sMes.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} vs KPI.fat=${fmtMoney(k.fat)} ${eq(sMes)?"(ok)":"(mismatch)"}`);
-  dbg(`${eq(sHora)?"✅":"❌"} HORA soma=${sHora.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} vs KPI.fat=${fmtMoney(k.fat)} ${eq(sHora)?"(ok)":"(mismatch)"}`);
-  dbg(`${eq(sTur)?"✅":"❌"} TURNO soma=${sTur.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} vs KPI.fat=${fmtMoney(k.fat)} ${eq(sTur)?"(ok)":"(mismatch)"}`);
+async function applyAll(){
+  if(!supa){ log('⚠️ conecte ao Supabase primeiro.'); return; }
+  const p = params();
+  const kpi = await fetchKPI(p);
+  setKPI(kpi);
+  // DOW
+  const dow = await fetchChart('dow', p);
+  drawChart('c-dow', dow.map(r=>['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][r.dow]), dow.map(r=>r.total), 'Faturamento');
+  // Mês
+  const mon = await fetchChart('mes', p);
+  drawChart('c-month', mon.map(r=>r.ym), mon.map(r=>r.total), 'Faturamento');
+  // Hora (com tratar timeout)
+  try{
+    const hor = await fetchChart('hora', p);
+    drawChart('c-hour', hor.map(r=>r.h), hor.map(r=>r.total), 'Faturamento');
+  }catch(e){
+    log('⚠️ hora RPC', e.message||e);
+    drawChart('c-hour', [], [], 'Faturamento');
+  }
+  // Smoke de soma
+  const s1 = (dow||[]).reduce((a,b)=>a + Number(b.total||0), 0);
+  const s2 = (mon||[]).reduce((a,b)=>a + Number(b.total||0), 0);
+  const s3 = (charts['c-hour']?.data?.datasets[0]?.data||[]).reduce((a,b)=>a + Number(b||0), 0);
+  const ok1 = Math.abs(s1 - Number(kpi.fat||0)) < 0.01;
+  const ok2 = Math.abs(s2 - Number(kpi.fat||0)) < 0.01;
+  const ok3 = Math.abs(s3 - Number(kpi.fat||0)) < 0.01;
+  el('sumCheck').textContent = `DOW ${ok1?'OK':'NOK'} | MÊS ${ok2?'OK':'NOK'} | HORA ${ok3?'OK':'NOK'}`;
+  el('sumCheck').className = 'pill ' + (ok1&&ok2&&ok3?'ok':'warn');
+  log(`✅ DOW soma=${fmt(s1)} vs KPI.fat=${fmt(kpi.fat)} (${ok1?'ok':'mismatch'})`);
+  log(`✅ MÊS soma=${fmt(s2)} vs KPI.fat=${fmt(kpi.fat)} (${ok2?'ok':'mismatch'})`);
+  log(`✅ HORA soma=${fmt(s3)} vs KPI.fat=${fmt(kpi.fat)} (${ok3?'ok':'mismatch'})`);
 }
 
-// ====== ações ======
-$("#btn-aplicar").addEventListener("click", updateAll);
-$("#btn-limpar").addEventListener("click", ()=>{
-  for (const id of ["#ms-unids","#ms-lojas","#ms-turnos","#ms-canais","#ms-pags","#ms-cancel"]){
-    const sel=$(id); for(const o of sel.options){ o.selected=false; }
-  }
-  updateAll();
-});
+/* === UPLOAD EXCEL === */
+let parsed = { headers:[], rows:[] };
 
-// Boot
-await loadFilters();
-await updateAll();
+function autoGuess(headers, names){
+  const h = headers.map(s=>s.toString().trim().toLowerCase());
+  function pick(...cands){ for(const c of cands){ const i=h.indexOf(c.toLowerCase()); if(i>=0) return headers[i]; } return ''; }
+  return {
+    data: pick('data da venda','data','dia','data_venda'),
+    hora: pick('hora','hr','hour','time','hora_venda'),
+    unid: pick('unidade','filial','empresa'),
+    loja: pick('nome da loja','loja','fantasia','cliente','consumidor','nome do cliente'),
+    canal: pick('canal','canal de venda','origem'),
+    pag: pick('pagamento','forma de pagamento','pagamento_base'),
+    canc: pick('está cancelado','cancelado','is_cancel','cancel'),
+    turno: pick('turno','período','periodo','shift'),
+    itens: pick('itens','qtd','qtd_pedidos','pedidos'),
+    fat: pick('total','vl_total','valor_total','faturamento','receita','valor'),
+    des: pick('desconto','vl_desconto'),
+    fre: pick('entrega','frete','taxa de entrega'),
+    cons: pick('consumidor','cliente','nome do cliente'),
+  };
+}
+
+function fillMapSelects(headers){
+  const ids = ['m-data','m-hora','m-unid','m-loja','m-canal','m-pag','m-canc','m-turno','m-itens','m-fat','m-des','m-fre','m-cons'];
+  for(const id of ids){
+    const sel = el(id); sel.innerHTML='';
+    const opt0 = document.createElement('option'); opt0.value=''; opt0.textContent='— (ignorar)'; sel.appendChild(opt0);
+    for(const h of headers){ const o=document.createElement('option'); o.value=h; o.textContent=h; sel.appendChild(o); }
+  }
+  const g = autoGuess(headers);
+  el('m-data').value = g.data || '';
+  el('m-hora').value = g.hora || '';
+  el('m-unid').value = g.unid || '';
+  el('m-loja').value = g.loja || '';
+  el('m-canal').value = g.canal || '';
+  el('m-pag').value  = g.pag  || '';
+  el('m-canc').value = g.canc || '';
+  el('m-turno').value= g.turno|| '';
+  el('m-itens').value= g.itens|| '';
+  el('m-fat').value  = g.fat  || '';
+  el('m-des').value  = g.des  || '';
+  el('m-fre').value  = g.fre  || '';
+  el('m-cons').value = g.cons || '';
+}
+
+async function validateFile(){
+  const f = el('file').files[0];
+  if(!f){ alert('Escolha um arquivo .xlsx'); return; }
+  if(!window.XLSX){ alert('SheetJS indisponível nesta rede. Tente em outra rede ou libere CDN.'); return; }
+  const ab = await f.arrayBuffer();
+  const wb = XLSX.read(ab,{type:'array'});
+  const sh = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sh, {defval:null});
+  const headers = Object.keys(rows[0]||{});
+  parsed = { headers, rows };
+  el('mapBox').classList.remove('hidden');
+  fillMapSelects(headers);
+  el('btnSave').disabled = false;
+  log(`📄 Selecionado: ${f.name}\n✅ Lido: ${rows.length} linhas (apenas validação local)`);
+}
+
+async function getTableCols(tbl){
+  const { data, error } = await supa.rpc('pg_table_def', { p_table: tbl }).catch(()=>({data:null,error:{}}));
+  if(data) return data.map(r=>r.column_name);
+  // fallback via information_schema
+  const r2 = await supa.from('information_schema.columns')
+    .select('column_name')
+    .eq('table_schema','public')
+    .eq('table_name',tbl);
+  if(r2.error) return null;
+  return (r2.data||[]).map(x=>x.column_name);
+}
+
+function normBool(v){
+  if(v===true) return true;
+  if(v===false) return false;
+  const s = (v??'').toString().trim().toLowerCase();
+  if(['sim','s','true','1','y','yes'].includes(s)) return true;
+  if(['não','nao','n','false','0','no'].includes(s)) return false;
+  return null;
+}
+function numBR(v){ if(v==null||v==='') return null; const s=(v+'').replace(/\./g,'').replace(',','.'); const n=Number(s); return Number.isFinite(n)? n : null; }
+function toInt(v){ const n=Number((v??'').toString().replace(/\D+/g,'')); return Number.isFinite(n)? n : null; }
+
+async function saveToDB(){
+  if(!supa){ alert('Conecte ao Supabase.'); return; }
+  if(!parsed.rows.length){ alert('Valide um arquivo primeiro.'); return; }
+
+  // Tabela alvo preferida
+  let target = 'vendas_import_csv_v2';
+  let cols = await getTableCols(target);
+  if(!cols || !cols.length){
+    // fallback
+    target = 'vendas_upload';
+    cols = await getTableCols(target);
+  }
+  if(!cols || !cols.length){ alert('Nenhuma tabela alvo disponível (vendas_import_csv_v2 / vendas_upload).'); return; }
+
+  // Monta mapa
+  const map = {
+    data: el('m-data').value, hora: el('m-hora').value, unid: el('m-unid').value, loja: el('m-loja').value,
+    canal: el('m-canal').value, pag: el('m-pag').value, canc: el('m-canc').value, turno: el('m-turno').value,
+    itens: el('m-itens').value, fat: el('m-fat').value, des: el('m-des').value, fre: el('m-fre').value, cons: el('m-cons').value
+  };
+
+  // Prepara batch
+  const BATCH = 500;
+  let ok=0, fail=0;
+  for(let i=0;i<parsed.rows.length;i+=BATCH){
+    const chunk = parsed.rows.slice(i,i+BATCH).map(r=>{
+      const obj = {};
+      // Tente preencher tanto as colunas normalizadas quanto as "raw" que existirem
+      const set = (name, val) => { if(cols.includes(name)) obj[name]=val; };
+      // data/hora
+      if(map.data){ const d = new Date(r[map.data]); if(!isNaN(d)) set('data_venda', d.toISOString().slice(0,10)); }
+      if(map.hora){ const h = toInt(r[map.hora]); if(h!=null) set('hora', h); }
+      // strings
+      if(map.unid) set('unidade', r[map.unid]);
+      if(map.turno){ set('turno', r[map.turno]); if(cols.includes('Turno') && !obj.turno) obj['Turno']=r[map.turno]; }
+      if(map.canal){ set('canal', r[map.canal]); if(cols.includes('Canal de venda') && !obj.canal) obj['Canal de venda']=r[map.canal]; }
+      if(map.pag)  { set('pagamento', r[map.pag]); if(cols.includes('Pagamento') && !obj.pagamento) obj['Pagamento']=r[map.pag]; }
+      if(map.loja && cols.includes('Nome da loja')) obj['Nome da loja']=r[map.loja];
+      if(map.cons && cols.includes('consumidor')) obj['consumidor']=r[map.cons];
+
+      // cancelado
+      if(map.canc){
+        const b = normBool(r[map.canc]);
+        if(b===true||b===false){
+          if(cols.includes('cancelado')) obj['cancelado']=b;
+          if(cols.includes('Está cancelado')) obj['Está cancelado']= b?'Sim':'Não';
+        }
+      }
+      // numéricos — gravamos tanto nas normalizadas quanto nas raw caso existam
+      if(map.itens){ const n=toInt(r[map.itens]); if(n!=null){ if(cols.includes('itens')) obj.itens=n; if(cols.includes('Itens')) obj['Itens']=n; } }
+      if(map.fat)  { const n=numBR(r[map.fat]); if(n!=null){ if(cols.includes('total')) obj.total=n; if(cols.includes('Total')) obj['Total']=r[map.fat]; } }
+      if(map.des)  { const n=numBR(r[map.des]); if(n!=null){ if(cols.includes('desconto')) obj.desconto=n; if(cols.includes('Desconto')) obj['Desconto']=r[map.des]; } }
+      if(map.fre)  { const n=numBR(r[map.fre]); if(n!=null){ if(cols.includes('entrega')) obj.entrega=n; if(cols.includes('Entrega')) obj['Entrega']=r[map.fre]; } }
+
+      return obj;
+    });
+
+    const { error } = await supa.from(target).insert(chunk, { returning:'minimal' });
+    if(error){ fail += chunk.length; log('❌ insert', error.message||error); }
+    else{ ok += chunk.length; }
+    const pct = Math.round(100*Math.min(i+BATCH, parsed.rows.length)/parsed.rows.length);
+    el('bar').style.width = pct + '%';
+    el('upInfo').textContent = `Inseridos: ${ok} | Falharam: ${fail} | Tabela: ${target}`;
+  }
+
+  // Reload listas/KPIs
+  await loadLists();
+  await applyAll();
+  log('✅ Upload concluído.', { ok, fail, target });
+}
+
+/* === EVENTOS === */
+el('btnConnect').addEventListener('click', connect);
+el('btnApply').addEventListener('click', async()=>{ await loadLists(); await applyAll(); });
+el('btnClear').addEventListener('click', ()=>{
+  ['ms-unids','ms-lojas','ms-turnos','ms-canais','ms-pags'].forEach(id=> el(id).selectedIndex=-1);
+  el('sel-cancel').value='';
+});
+el('btnPing').addEventListener('click', async()=>{
+  if(!supa) return;
+  const p = { p_dini: el('dini').value, p_dfim: el('dfim').value, p_unids:null,p_lojas:null,p_turnos:null,p_canais:null,p_pags:null,p_cancelado:null };
+  const { data, error } = await supa.rpc('kpi_vendas_v2', p);
+  if(error){ log('Ping KPI erro', error.message||error); return; }
+  log('Ping KPI (bruto):', data);
+  log('Ping KPI (unwrap):', Array.isArray(data)?data[0]:data);
+});
+el('btnReloadLists').addEventListener('click', loadLists);
+el('btnValidate').addEventListener('click', validateFile);
+el('btnSave').addEventListener('click', saveToDB);
+
+// conecta ao abrir
+connect();
 </script>
 </body>
 </html>
