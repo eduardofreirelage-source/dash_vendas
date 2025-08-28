@@ -3,8 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Dash Vendas – filtros corretos (loja)</title>
-<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<title>Dash Vendas – filtros (fix distinct + fallback)</title>
 <style>
   :root{--bg:#0b0f14;--card:#121923;--muted:#94a3b8;--fg:#e2e8f0;--pri:#22c55e;--warn:#f59e0b;--err:#ef4444}
   *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.35 system-ui,Segoe UI,Roboto,Helvetica,Arial}
@@ -38,7 +37,7 @@
 </header>
 
 <div class="wrap">
-  <!-- LADO ESQUERDO: FILTROS -->
+  <!-- FILTROS -->
   <div class="card filters pad">
     <h3>Período</h3>
     <div class="grid2">
@@ -68,13 +67,12 @@
     </div>
 
     <p class="note" style="margin-top:12px">
-      • <b>Lojas</b> usa a coluna <code>loja</code> da view <code>vw_vendas</code> (confirmado no banco).<br/>
-      • Listas (combos) são carregadas pelo período selecionado (somente datas).<br/>
-      • Selecione com CTRL/⌘ para múltiplos itens.
+      • <b>Lojas</b> usa a coluna <code>loja</code> da view <code>vw_vendas</code> (confirmado).<br/>
+      • As listas abaixo são recarregadas pelo período (somente datas).
     </p>
   </div>
 
-  <!-- LADO DIREITO: KPI + GRÁFICOS + DEBUG -->
+  <!-- KPI + GRÁFICOS + DEBUG -->
   <div class="col">
     <div class="card pad">
       <div class="kpis">
@@ -99,209 +97,194 @@
   </div>
 </div>
 
-<!-- libs -->
 <script type="module">
 /** ====== CONFIG ====== **/
 const SUPABASE_URL      = "https://uahmcfzerofhzjvlzrqc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
-// Tabela/View de leitura
 const READ_VIEW = "vw_vendas";
-// RPCs existentes (v2 confirmados; v3 para hora se disponível)
 const RPC = {
   kpi_v2:   "kpi_vendas_v2",
   dow_v2:   "chart_vendas_dow_v2",
   mes_v2:   "chart_vendas_mes_v2",
-  hora_v3:  "chart_vendas_hora_v3", // tentaremos v3 e cai para v2
+  hora_v3:  "chart_vendas_hora_v3",
   hora_v2:  "chart_vendas_hora_v2",
   turno_v2: "chart_vendas_turno_v2"
 };
 
-// ====== helpers UI ======
-const $ = sel => document.querySelector(sel);
-const dbg = (...a)=> { const el=$("#dbg"); el.textContent += a.map(x=> typeof x==="string"? x: JSON.stringify(x,null,2)).join(" ")+"\n"; el.scrollTop=el.scrollHeight; };
+// ====== helpers ======
+const $ = s => document.querySelector(s);
+const dbg = (...a)=>{ const el=$("#dbg"); el.textContent += a.map(x=> typeof x==="string"? x: JSON.stringify(x,null,2)).join(" ")+"\n"; el.scrollTop=el.scrollHeight; };
 const fmtMoney = v => (v??0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 
-// ====== Supabase ======
+// ====== supabase ======
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false }});
-(async ()=> {
-  try {
+const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession:false }});
+(async ()=>{
+  try{
     const ping = await supa.from(READ_VIEW).select('dia').limit(1);
-    if (ping.error) throw ping.error;
-    $("#ping").textContent = "✅ Supabase client ok";
-    $("#ping").className = "ok";
-  } catch(e) {
-    $("#ping").textContent = "❌ Supabase erro: "+e.message;
-    $("#ping").className = "bad";
+    if(ping.error) throw ping.error;
+    $("#ping").textContent="✅ Supabase client ok"; $("#ping").className="ok";
+  }catch(e){
+    $("#ping").textContent="❌ Supabase erro: "+e.message; $("#ping").className="bad";
   }
 })();
 
 // ====== datas padrão ======
 const today = new Date();
 const dfim  = today.toISOString().slice(0,10);
-const diniD = new Date(today.getTime()-28*24*3600*1000);
+const diniD = new Date(today.getTime()-29*24*3600*1000);
 const dini  = diniD.toISOString().slice(0,10);
-$("#dini").value = dini;
-$("#dfim").value = dfim;
+$("#dini").value=dini; $("#dfim").value=dfim;
 
-// ====== carregar combos (DISTINCT por período) ======
-function buildAnd(parts){
-  if(!parts || parts.length===0) return "";
-  return "&and=(" + parts.join(",") + ")";
+// ====== DISTINCT por período (com fallback) ======
+function buildAnd(parts){ if(!parts?.length) return ""; return "&and=(" + parts.join(",") + ")"; }
+function baseHeaders(){ return { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }; }
+
+function distinctURL(col,de,ate){
+  const base = `${SUPABASE_URL}/rest/v1/${READ_VIEW}?select=${encodeURIComponent(col)}&distinct=true`;
+  const cond=[];
+  if(de)  cond.push(`dia.gte.${de}`);
+  if(ate) cond.push(`dia.lte.${ate}`);
+  const and = buildAnd(cond);
+  // order correto: .asc.nullslast (antes eu usava nullsFirst=false -> 400)
+  return `${base}${and}&order=${encodeURIComponent(col)}.asc.nullslast`;
 }
-function urlDistinct(col, de, ate){
-  const base = `${SUPABASE_URL}/rest/v1/${READ_VIEW}?select=${encodeURIComponent(col)}&distinct`;
-  const cond = [];
-  if (de)  cond.push(`dia.gte.${de}`);
-  if (ate) cond.push(`dia.lte.${ate}`);
-  const extra = buildAnd(cond);
-  return base + extra + `&order=${encodeURIComponent(col)}.asc&nullsFirst=false`;
+function simpleSelectURL(col,de,ate){
+  const base = `${SUPABASE_URL}/rest/v1/${READ_VIEW}?select=${encodeURIComponent(col)}`;
+  const cond=[];
+  if(de)  cond.push(`dia.gte.${de}`);
+  if(ate) cond.push(`dia.lte.${ate}`);
+  const and = buildAnd(cond);
+  return `${base}${and}&order=${encodeURIComponent(col)}.asc.nullslast`;
 }
-async function fetchDistinct(col, de, ate){
-  const url = urlDistinct(col, de, ate);
-  const r = await fetch(url, { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }});
+async function fetchDistinct(col,de,ate){
+  const url = distinctURL(col,de,ate);
+  const r = await fetch(url,{ headers: baseHeaders() });
   if(!r.ok) throw new Error(`distinct ${col} HTTP ${r.status}`);
   return await r.json();
 }
+async function fetchDistinctFallback(col,de,ate){
+  const url = simpleSelectURL(col,de,ate);
+  const r = await fetch(url,{ headers: baseHeaders() });
+  if(!r.ok) throw new Error(`fallback ${col} HTTP ${r.status}`);
+  const rows = await r.json();
+  const seen=new Set(), out=[];
+  for(const row of rows){
+    const v=row[col];
+    if(v===null || v===undefined || v==="") continue;
+    const key=String(v);
+    if(!seen.has(key)){ seen.add(key); out.push({[col]:v}); }
+  }
+  return out;
+}
+async function fetchCol(col,de,ate){
+  try{
+    const a = await fetchDistinct(col,de,ate);
+    dbg(`• ${col}: distinct OK (${a.length})`);
+    return a;
+  }catch(e){
+    dbg(`⚠️ distinct ${col} falhou (${e.message}); usando fallback (dedupe no client)…`);
+    const b = await fetchDistinctFallback(col,de,ate);
+    dbg(`• ${col}: fallback OK (${b.length})`);
+    return b;
+  }
+}
 async function loadFilters(){
-  const de  = $("#dini").value; const ate = $("#dfim").value;
-  const fill = async (selId, col) => {
-    const data = await fetchDistinct(col, de, ate);
-    const sel = $(selId); sel.innerHTML = "";
+  const de=$("#dini").value, ate=$("#dfim").value;
+  const fill = async (selId,col)=>{
+    const data = await fetchCol(col,de,ate);
+    const sel=$(selId); sel.innerHTML="";
     for(const row of data){
-      const v = row[col];
+      const v=row[col];
       if(v===null || v===undefined || v==="") continue;
-      const opt = document.createElement('option');
-      opt.value = String(v);
-      opt.textContent = String(v);
+      const opt=document.createElement('option');
+      opt.value=String(v);
+      opt.textContent=String(v);
       sel.appendChild(opt);
     }
   };
   try{
     await Promise.all([
       fill("#ms-unids","unidade"),
-      fill("#ms-lojas","loja"),          // <<<<<<<<<< usa a coluna CORRETA
+      fill("#ms-lojas","loja"),         // <- usa a COLUNA CORRETA
       fill("#ms-turnos","turno"),
       fill("#ms-canais","canal"),
       fill("#ms-pags","pagamento_base")
     ]);
-    const counts = {
-      unids: $("#ms-unids").options.length,
-      lojas: $("#ms-lojas").options.length,
-      turnos: $("#ms-turnos").options.length,
-      canais: $("#ms-canais").options.length,
-      pags: $("#ms-pags").options.length
-    };
-    dbg("🔎 Listas carregadas (por período):", counts);
-  }catch(e){
-    dbg("⚠️ erro loadFilters:", e.message);
-  }
+  }catch(e){ dbg("⚠️ erro loadFilters:", e.message); }
 }
 
-// ====== coletar filtros selecionados ======
-function getMulti(sel){
-  const a=[]; for(const o of sel.selectedOptions){ a.push(o.value); } return a.length? a : null;
-}
+// ====== coleta filtros ======
+function getMulti(sel){ const a=[]; for(const o of sel.selectedOptions) a.push(o.value); return a.length? a:null; }
 function paramsRPC(){
-  const de  = $("#dini").value; const ate = $("#dfim").value;
+  const de=$("#dini").value, ate=$("#dfim").value;
   return {
     p_dini: de, p_dfim: ate,
     p_unids: getMulti($("#ms-unids")),
     p_lojas: getMulti($("#ms-lojas")),
     p_turnos: getMulti($("#ms-turnos")),
     p_canais: getMulti($("#ms-canais")),
-    p_pags: getMulti($("#ms-pags")),
+    p_pags:  getMulti($("#ms-pags")),
     p_cancelado: (()=>{
-      const c = getMulti($("#ms-cancel"));
+      const c=getMulti($("#ms-cancel"));
       if(!c) return null;
       if(c.includes("Sim") && !c.includes("Não")) return "Sim";
       if(c.includes("Não") && !c.includes("Sim")) return "Não";
-      return null; // “Todos” ou mistura => null
+      return null;
     })()
   };
 }
 
-// ====== RPC helper (com fallback de hora v3->v2) ======
-async function rpc(name, args){
-  const { data, error } = await supa.rpc(name, args);
-  if(error) throw error;
-  return data||[];
-}
-async function rpcHora(args){
-  try { return await rpc(RPC.hora_v3, args); }
-  catch{ return await rpc(RPC.hora_v2, args); }
-}
+// ====== RPC helpers ======
+async function rpc(name,args){ const {data,error}=await supa.rpc(name,args); if(error) throw error; return data||[]; }
+async function rpcHora(args){ try{ return await rpc(RPC.hora_v3,args);}catch{ return await rpc(RPC.hora_v2,args);} }
 
-// ====== desenhar (charts simples com canvas 2D) ======
+// ====== gráficos simples ======
 function drawBar(canvasId, labels, values){
-  const c = $(canvasId); const ctx = c.getContext('2d');
-  const W = c.width  = c.clientWidth;
-  const H = c.height = c.clientHeight;
+  const c=$(canvasId), ctx=c.getContext('2d');
+  const W=c.width=c.clientWidth, H=c.height=c.clientHeight;
   ctx.clearRect(0,0,W,H);
-  const max = Math.max(1, ...values);
-  const pad = 28, bw = (W - pad*2)/values.length;
+  const max=Math.max(1,...values.map(v=>+v||0));
+  const pad=28, bw=(W-pad*2)/Math.max(1,values.length);
   labels.forEach((lab,i)=>{
-    const v = values[i]??0;
-    const h = (H-80) * (v/max);
-    const x = pad + i*bw + 6;
-    const y = H-40 - h;
-    ctx.fillStyle = "#22c55e";
-    ctx.fillRect(x, y, bw-12, h);
-    ctx.fillStyle = "#94a3b8";
-    ctx.font = "12px system-ui";
-    ctx.fillText(String(lab), x, H-22);
+    const v=+values[i]||0, h=(H-80)*(v/max), x=pad+i*bw+6, y=H-40-h;
+    ctx.fillStyle="#22c55e"; ctx.fillRect(x,y,bw-12,h);
+    ctx.fillStyle="#94a3b8"; ctx.font="12px system-ui"; ctx.fillText(String(lab), x, H-22);
   });
 }
 
-// ====== KPIs + Charts + Smoke test ======
+// ====== KPIs + Charts + Smoke ======
 async function updateAll(){
-  const args = paramsRPC();
+  const args=paramsRPC();
   dbg("→ KPI params", JSON.stringify(args,null,2));
 
-  // KPI
-  const k = (await rpc(RPC.kpi_v2, args))[0] || {pedidos:0,fat:0,des:0,fre:0};
-  $("#k_ped").textContent = (k.pedidos??0).toLocaleString('pt-BR');
-  $("#k_fat").textContent = fmtMoney(k.fat);
-  $("#k_des").textContent = fmtMoney(k.des);
-  $("#k_fre").textContent = fmtMoney(k.fre);
+  const k=(await rpc(RPC.kpi_v2,args))[0]||{pedidos:0,fat:0,des:0,fre:0};
+  $("#k_ped").textContent=(k.pedidos??0).toLocaleString('pt-BR');
+  $("#k_fat").textContent=fmtMoney(k.fat);
+  $("#k_des").textContent=fmtMoney(k.des);
+  $("#k_fre").textContent=fmtMoney(k.fre);
 
-  // Gráficos
-  const dow  = await rpc(RPC.dow_v2,  args);
-  const mes  = await rpc(RPC.mes_v2,  args);
-  const hora = await rpcHora(args);
-  const tur  = await rpc(RPC.turno_v2,args);
+  const dow=await rpc(RPC.dow_v2,args);
+  const mes=await rpc(RPC.mes_v2,args);
+  const hora=await rpcHora(args);
+  const tur=await rpc(RPC.turno_v2,args);
 
-  drawBar("#c_dow",  dow.map(r=>r.dow),  dow.map(r=>Number(r.total)||0));
-  drawBar("#c_mes",  mes.map(r=>r.ym),   mes.map(r=>Number(r.total)||0));
-  drawBar("#c_hora", hora.map(r=>r.h),   hora.map(r=>Number(r.total)||0));
-  drawBar("#c_turno",tur.map(r=>r.turno),tur.map(r=>Number(r.total)||0));
+  drawBar("#c_dow",  dow.map(r=>r.dow),   dow.map(r=>Number(r.total)||0));
+  drawBar("#c_mes",  mes.map(r=>r.ym),    mes.map(r=>Number(r.total)||0));
+  drawBar("#c_hora", hora.map(r=>r.h),    hora.map(r=>Number(r.total)||0));
+  drawBar("#c_turno",tur.map(r=>r.turno), tur.map(r=>Number(r.total)||0));
 
-  // Smoke: somas dos gráficos têm que bater com o KPI.fat
-  const sDow  = dow.reduce((a,b)=> a + (Number(b.total)||0), 0);
-  const sMes  = mes.reduce((a,b)=> a + (Number(b.total)||0), 0);
-  const sHora = hora.reduce((a,b)=> a + (Number(b.total)||0), 0);
-  const sTur  = tur.reduce((a,b)=> a + (Number(b.total)||0), 0);
-  const ok = (x)=> Math.abs(x - Number(k.fat||0)) < 0.01;
+  const sDow=dow.reduce((a,b)=>a+(+b.total||0),0);
+  const sMes=mes.reduce((a,b)=>a+(+b.total||0),0);
+  const sHora=hora.reduce((a,b)=>a+(+b.total||0),0);
+  const sTur=tur.reduce((a,b)=>a+(+b.total||0),0);
+  const eq=x=>Math.abs(x-(+k.fat||0))<0.01;
 
-  const line = [
-    ok(sDow)  ? "✅" : "❌", " DOW soma=", sDow.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),
-    " vs KPI.fat=", fmtMoney(k.fat), ok(sDow)?" (ok)":" (mismatch)"
-  ].join("");
-  const line2 = [
-    ok(sMes)  ? "✅" : "❌", " MÊS soma=", sMes.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),
-    " vs KPI.fat=", fmtMoney(k.fat), ok(sMes)?" (ok)":" (mismatch)"
-  ].join("");
-  const line3 = [
-    ok(sHora) ? "✅" : "❌", " HORA soma=", sHora.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),
-    " vs KPI.fat=", fmtMoney(k.fat), ok(sHora)?" (ok)":" (mismatch)"
-  ].join("");
-  const line4 = [
-    ok(sTur) ? "✅" : "❌", " TURNO soma=", sTur.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),
-    " vs KPI.fat=", fmtMoney(k.fat), ok(sTur)?" (ok)":" (mismatch)"
-  ].join("");
-
-  $("#k_fat_sm").textContent = `DOW:${ok(sDow)?"ok":"x"} • MÊS:${ok(sMes)?"ok":"x"} • HORA:${ok(sHora)?"ok":"x"} • TURNO:${ok(sTur)?"ok":"x"}`;
-  dbg(line); dbg(line2); dbg(line3); dbg(line4);
+  $("#k_fat_sm").textContent=`DOW:${eq(sDow)?"ok":"x"} • MÊS:${eq(sMes)?"ok":"x"} • HORA:${eq(sHora)?"ok":"x"} • TURNO:${eq(sTur)?"ok":"x"}`;
+  dbg(`${eq(sDow)?"✅":"❌"} DOW soma=${sDow.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} vs KPI.fat=${fmtMoney(k.fat)} ${eq(sDow)?"(ok)":"(mismatch)"}`);
+  dbg(`${eq(sMes)?"✅":"❌"} MÊS soma=${sMes.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} vs KPI.fat=${fmtMoney(k.fat)} ${eq(sMes)?"(ok)":"(mismatch)"}`);
+  dbg(`${eq(sHora)?"✅":"❌"} HORA soma=${sHora.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} vs KPI.fat=${fmtMoney(k.fat)} ${eq(sHora)?"(ok)":"(mismatch)"}`);
+  dbg(`${eq(sTur)?"✅":"❌"} TURNO soma=${sTur.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} vs KPI.fat=${fmtMoney(k.fat)} ${eq(sTur)?"(ok)":"(mismatch)"}`);
 }
 
 // ====== ações ======
@@ -313,7 +296,7 @@ $("#btn-limpar").addEventListener("click", ()=>{
   updateAll();
 });
 
-// Inicialização
+// Boot
 await loadFilters();
 await updateAll();
 </script>
