@@ -1,294 +1,197 @@
 <!doctype html>
 <html lang="pt-br">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Debug Vendas — KPIs & Charts</title>
-<style>
-  :root{--bg:#0b1020;--panel:#151a2c;--muted:#8ea0c0;--accent:#34d399;--warn:#f59e0b;--err:#ef4444}
-  body{background:var(--bg);color:#e5ecff;font-family:Inter,system-ui,Arial,sans-serif;margin:0}
-  .wrap{max-width:1150px;margin:24px auto;padding:0 16px}
-  h1{font-size:18px;margin:16px 0}
-  .card{background:var(--panel);border:1px solid #26314e;border-radius:14px;padding:16px;margin:12px 0}
-  .row{display:flex;gap:12px;flex-wrap:wrap}
-  .col{flex:1 1 240px}
-  label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
-  input,select,textarea{width:100%;background:#0e1426;color:#e5ecff;border:1px solid #2a375c;border-radius:10px;padding:10px;font-size:14px}
-  textarea{min-height:120px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  button{background:#1b2440;border:1px solid #2f3b64;color:#e5ecff;padding:10px 12px;border-radius:10px;cursor:pointer}
-  button.primary{background:var(--accent);border-color:#24b57f;color:#082814;font-weight:600}
-  button.warn{background:var(--warn);border-color:#d5890b;color:#1f1200}
-  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-  .hl{background:#09102a;padding:10px;border-radius:10px;border:1px dashed #33406b}
-  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  .small{font-size:12px}
-  .ok{color:var(--accent)} .bad{color:var(--err)}
-  .muted{color:var(--muted)}
-</style>
+  <meta charset="utf-8"/>
+  <title>Dash Vendas – Smoke Test v2</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif;margin:24px;line-height:1.35}
+    .row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+    .card{border:1px solid #ddd;border-radius:10px;padding:14px}
+    label{font-size:12px;color:#555;display:block;margin-bottom:6px}
+    input,button,textarea{padding:8px 10px;border:1px solid #ccc;border-radius:8px}
+    input[type=date]{padding:6px 8px}
+    .kpis{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px}
+    .kpi{background:#fafafa;border:1px solid #eee;border-radius:10px;padding:12px}
+    .ok{color:#0a7d33;font-weight:600}
+    .fail{color:#b00020;font-weight:600}
+    pre{white-space:pre-wrap;background:#0b1020;color:#d6e2ff;border-radius:10px;padding:12px;max-height:360px;overflow:auto}
+    small{color:#666}
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Debug Vendas — KPIs & Charts (Supabase)</h1>
+  <h2>Dash Vendas – Smoke Test (KPI × Charts v2)</h2>
 
-  <div class="card">
-    <div class="row">
-      <div class="col">
-        <label>Supabase URL</label>
-        <input id="sb-url" placeholder="https://SEU-PROJ.supabase.co">
-      </div>
-      <div class="col">
-        <label>Anon Key</label>
-        <input id="sb-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." />
-      </div>
-      <div class="col" style="flex:0 0 160px;align-self:flex-end">
-        <button class="primary" id="btn-save">Salvar Conexão</button>
-      </div>
-    </div>
-    <div class="small muted">Os valores ficam salvos no localStorage deste navegador.</div>
-  </div>
-
-  <div class="card">
-    <div class="grid">
-      <div>
-        <label>Data Inicial (p_dini)</label>
-        <input type="date" id="dini">
-      </div>
-      <div>
-        <label>Data Final (p_dfim)</label>
-        <input type="date" id="dfim">
-      </div>
-      <div>
-        <label>Unidades (p_unids) — vírgula</label>
-        <input id="unids" placeholder="ex.: uni.raja,uni.savassi">
-      </div>
-      <div>
-        <label>Lojas (p_lojas)</label>
-        <input id="lojas" placeholder="ex.: loja a,loja b">
-      </div>
-      <div>
-        <label>Turnos (p_turnos)</label>
-        <input id="turnos" placeholder="ex.: dia,noite">
-      </div>
-      <div>
-        <label>Canais (p_canais)</label>
-        <input id="canais" placeholder="ex.: ifood,telefone">
-      </div>
-      <div>
-        <label>Pagamentos (p_pags)</label>
-        <input id="pags" placeholder="ex.: pix,pago online">
-      </div>
-      <div>
-        <label>Cancelado (p_cancelado)</label>
-        <select id="cancelado">
-          <option value="">Todos</option>
-          <option>Não</option>
-          <option>Sim</option>
-        </select>
-      </div>
-    </div>
-    <div class="row" style="margin-top:10px">
-      <button id="btn-kpi" class="primary">KPI (kpi_vendas_v2)</button>
-      <button id="btn-dow">DOW (chart_vendas_dow_v2)</button>
-      <button id="btn-hora">HORA (chart_vendas_hora_v2)</button>
-      <button id="btn-mes">MÊS (chart_vendas_mes_v2)</button>
-      <button id="btn-base">BASE (linhas & soma)</button>
-      <button id="btn-vw-count">VW CONTAGEM (REST)</button>
-      <button id="btn-vw-turno">VW DISTINCT TURNO (REST)</button>
-      <button id="btn-clear" class="warn">Limpar</button>
+  <div class="row">
+    <div class="card">
+      <label>Supabase URL</label>
+      <input id="sb-url" size="48" value="https://uahmcfzerofhzjvlzrqc.supabase.co"/>
+      <label>Anon Key</label>
+      <input id="sb-key" size="80" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU"/>
     </div>
   </div>
 
-  <div class="card">
-    <div class="row">
-      <div class="col">
-        <label>Parâmetros Enviados</label>
-        <pre id="out-params" class="hl mono"></pre>
-      </div>
-      <div class="col">
-        <label>Resumo</label>
-        <div id="out-resumo" class="hl mono"></div>
-      </div>
+  <div class="row">
+    <div class="card">
+      <label>Data inicial</label>
+      <input type="date" id="dini"/>
     </div>
-    <div style="margin-top:10px">
-      <label>Resposta Completa</label>
-      <textarea id="out-json" class="mono" spellcheck="false"></textarea>
+    <div class="card">
+      <label>Data final</label>
+      <input type="date" id="dfim"/>
+    </div>
+    <div class="card">
+      <label>Unidades (vírgula)</label>
+      <input id="unids" placeholder="ex: uni.raja,uni.savassi"/>
+      <small>Deixe vazio para todas</small>
+    </div>
+    <div class="card">
+      <label>Lojas (vírgula)</label>
+      <input id="lojas" placeholder="ex: loja a,loja b"/>
+    </div>
+    <div class="card">
+      <label>Turnos (vírgula)</label>
+      <input id="turnos" placeholder="Manhã,Dia,Noite"/>
+    </div>
+    <div class="card">
+      <label>Canais (vírgula)</label>
+      <input id="canais" placeholder="ex: ifood,telefone"/>
+    </div>
+    <div class="card">
+      <label>Pagamentos (vírgula)</label>
+      <input id="pags" placeholder="ex: pix,pago online"/>
+    </div>
+    <div class="card">
+      <label>Cancelado (Sim/Não ou vazio)</label>
+      <input id="cancel" placeholder="Sim | Não"/>
     </div>
   </div>
 
-  <div class="card">
-    <b>Notas rápidas</b>
-    <ul class="small">
-      <li>Se `KPI` retornar tudo `0` e `VW CONTAGEM` retornar > 0, o problema está no RPC/filtro. Se ambos retornarem 0, é o recorte de datas/filtros.</li>
-      <li>Valores vazios nos inputs viram <span class="muted">null</span> (sem filtro). Use listas com vírgula para filtrar.</li>
-      <li>Após criar/alterar função, rode: <span class="mono">select pg_notify('pgrst','reload schema');</span></li>
-    </ul>
+  <div class="row">
+    <button id="btn-kpi">Aplicar filtros & carregar KPI</button>
+    <button id="btn-test">Rodar TESTES (comparar KPI × DOW/MÊS/HORA/TURNO)</button>
   </div>
-</div>
 
-<script>
-const $ = (id)=>document.getElementById(id);
-function loadConn(){
-  $('sb-url').value = localStorage.getItem('sb_url') || '';
-  $('sb-key').value = localStorage.getItem('sb_key') || '';
-}
-function saveConn(){
-  localStorage.setItem('sb_url',$('sb-url').value.trim());
-  localStorage.setItem('sb_key',$('sb-key').value.trim());
-  $('out-resumo').textContent = 'Conexão salva.';
-}
-function toArrayOrNull(txt){
-  const s = (txt||'').trim();
-  if(!s) return null;
-  const arr = s.split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
-  return arr.length? arr : null;
-}
-function params(){
-  const p = {
-    p_dini: $('dini').value || null,
-    p_dfim: $('dfim').value || null,
-    p_unids: toArrayOrNull($('unids').value),
-    p_lojas: toArrayOrNull($('lojas').value),
-    p_turnos: toArrayOrNull($('turnos').value),
-    p_canais: toArrayOrNull($('canais').value),
-    p_pags: toArrayOrNull($('pags').value),
-    p_cancelado: $('cancelado').value || null
-  };
-  $('out-params').textContent = JSON.stringify(p,null,2);
-  return p;
-}
-function setDefaultDates(){
-  const today=new Date(); const dfim=today.toISOString().slice(0,10);
-  const d0=new Date(today); d0.setDate(d0.getDate()-30);
-  const dini=d0.toISOString().slice(0,10);
-  $('dini').value=dini; $('dfim').value=dfim;
-}
+  <div class="kpis" id="kpis">
+    <div class="kpi"><div><b>Pedidos</b></div><div id="kpi-ped">–</div></div>
+    <div class="kpi"><div><b>Faturamento</b></div><div id="kpi-fat">–</div></div>
+    <div class="kpi"><div><b>Descontos</b></div><div id="kpi-des">–</div></div>
+    <div class="kpi"><div><b>Frete</b></div><div id="kpi-fre">–</div></div>
+  </div>
 
-async function rpc(fn,args){
-  const url = $('sb-url').value.trim().replace(/\/$/,'');
-  const key = $('sb-key').value.trim();
-  if(!url || !key){ alert('Informe URL e ANON KEY'); throw new Error('missing conn'); }
-  const r = await fetch(`${url}/rest/v1/rpc/${fn}`,{
-    method:'POST',
-    headers:{
-      apikey:key,
-      Authorization:`Bearer ${key}`,
-      'Content-Type':'application/json',
-      Prefer:'count=exact'
-    },
-    body:JSON.stringify(args)
-  });
-  const text = await r.text();
-  let data=null; try{ data = text? JSON.parse(text): null; }catch(e){}
-  if(!r.ok){
-    $('out-json').value = text;
-    $('out-resumo').innerHTML = `<span class="bad">[${fn}] ${r.status} ${r.statusText}</span>`;
-    throw new Error(`[${fn}] ${text||r.statusText}`);
-  }
-  $('out-json').value = JSON.stringify(data,null,2);
-  return data;
-}
-function resumoKPI(rows){
-  if(!rows || !rows.length) return 'KPI vazio';
-  const r=rows[0]||{};
-  return `pedidos=${r.pedidos??0} fat=${r.fat??0} des=${r.des??0} fre=${r.fre??0}`;
-}
-function resumoChart(rows,key){
-  const n=Array.isArray(rows)? rows.length:0;
-  const soma=Array.isArray(rows)? rows.reduce((a,x)=>a+Number(x.total||0),0):0;
-  return `${key} pontos=${n} soma(total)=${soma}`;
-}
+  <p><b>Resultado dos testes:</b> <span id="res" class=""></span></p>
+  <pre id="log"></pre>
 
-async function callKPI(){ try{
-  const d = await rpc('kpi_vendas_v2', params());
-  $('out-resumo').innerHTML = `<span class="ok">KPI OK</span> — ${resumoKPI(d)}`;
-}catch(e){ console.error(e); }}
+  <!-- Supabase -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2.46.1/dist/umd/supabase.js"></script>
+  <script>
+    let supa = null;
+    const $ = sel => document.querySelector(sel);
+    const log = (...a) => { const pre = $('#log'); pre.textContent += a.map(x => typeof x==='object'? JSON.stringify(x,null,2): String(x)).join(' ') + "\n"; pre.scrollTop = pre.scrollHeight; };
 
-async function callDOW(){ try{
-  const d = await rpc('chart_vendas_dow_v2', params());
-  $('out-resumo').innerHTML = `<span class="ok">DOW OK</span> — ${resumoChart(d,'dow')}`;
-}catch(e){ console.error(e); }}
+    const money = (x)=> {
+      const n = Number(x||0);
+      return n.toLocaleString('pt-BR',{minimumFractionDigits:2, maximumFractionDigits:2});
+    };
+    const arrOrNull = (s) => {
+      if(!s) return null;
+      const arr = s.split(',').map(x=>x.trim()).filter(Boolean);
+      return arr.length ? arr : null;
+    };
 
-async function callHORA(){ try{
-  const d = await rpc('chart_vendas_hora_v2', params());
-  $('out-resumo').innerHTML = `<span class="ok">HORA OK</span> — ${resumoChart(d,'hora')}`;
-}catch(e){ console.error(e); }}
+    function buildParams(){
+      const p = {
+        p_dini: $('#dini').value ? $('#dini').value : null,
+        p_dfim: $('#dfim').value ? $('#dfim').value : null,
+        p_unids: arrOrNull($('#unids').value),
+        p_lojas: arrOrNull($('#lojas').value),
+        p_turnos: arrOrNull($('#turnos').value),
+        p_canais: arrOrNull($('#canais').value),
+        p_pags: arrOrNull($('#pags').value),
+        p_cancelado: $('#cancel').value ? $('#cancel').value : null,
+      };
+      return p;
+    }
 
-async function callMES(){ try{
-  const d = await rpc('chart_vendas_mes_v2', params());
-  $('out-resumo').innerHTML = `<span class="ok">MÊS OK</span> — ${resumoChart(d,'ym')}`;
-}catch(e){ console.error(e); }}
+    async function ensureClient(){
+      const url = $('#sb-url').value.trim();
+      const key = $('#sb-key').value.trim();
+      if(!supa || supa.restUrl !== url){
+        supa = window.supabase.createClient(url, key, { auth: { persistSession: false } });
+        log('✅ Supabase client ok');
+      }
+    }
 
-async function callBASE(){ try{
-  const d = await rpc('_vendas_base', params());
-  const n = Array.isArray(d)? d.length:0;
-  const soma = Array.isArray(d)? d.reduce((a,x)=>a+Number(x.fat||0),0):0;
-  $('out-resumo').innerHTML = `<span class="ok">BASE</span> — linhas=${n} soma(fat)=${soma}`;
-}catch(e){ console.error(e); }}
+    async function getKPI(){
+      await ensureClient();
+      const params = buildParams();
+      log('→ KPI params', params);
+      const { data, error } = await supa.rpc('kpi_vendas_v2', params);
+      if(error){ log('❌ KPI error', error); throw error; }
+      const row = (data && data[0]) || { pedidos:0, fat:0, des:0, fre:0 };
+      $('#kpi-ped').textContent = row.pedidos ?? 0;
+      $('#kpi-fat').textContent = money(row.fat);
+      $('#kpi-des').textContent = money(row.des);
+      $('#kpi-fre').textContent = money(row.fre);
+      log('✅ KPI', row);
+      return row;
+    }
 
-/* ------- Testes diretos na VIEW via REST (contagem e distinct turno) ------- */
-function qs(obj){
-  const parts=[];
-  for(const [k,v] of Object.entries(obj)){ if(v!==undefined && v!==null) parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`); }
-  return parts.join('&');
-}
-function inList(arr){
-  // PostgREST in.(v1,v2) (sem aspas; use lower no backend pra garantir match)
-  return `in.(${arr.map(x=>x.replaceAll(',','')).join(',')})`;
-}
-async function vwCount(){
-  const url = $('sb-url').value.trim().replace(/\/$/,'');
-  const key = $('sb-key').value.trim();
-  const p = params();
-  const q = {};
-  if(p.p_dini) q['dia']=`gte.${p.p_dini}`;
-  if(p.p_dfim) q['dia']= (q['dia']? q['dia']+`,lte.${p.p_dfim}` : `lte.${p.p_dfim}`);
-  if(p.p_unids) q['unidade']= inList(p.p_unids);
-  if(p.p_lojas) q['loja']= inList(p.p_lojas);
-  if(p.p_turnos) q['turno']= inList(p.p_turnos);
-  if(p.p_canais) q['canal']= inList(p.p_canais);
-  if(p.p_pags) q['pagamento_base']= inList(p.p_pags);
-  if(p.p_cancelado) q['cancelado']= `eq.${p.p_cancelado}`;
-  const qsStr = qs(q);
-  const r = await fetch(`${url}/rest/v1/vw_vendas?select=row_key&${qsStr}`,{
-    method:'GET',
-    headers:{ apikey:key, Authorization:`Bearer ${key}`, Prefer:'count=exact' }
-  });
-  const cr = r.headers.get('content-range')||'';
-  // form: 0-xx/NNN
-  let total=null;
-  const m = cr.match(/\/(\d+)\s*$/); if(m) total = Number(m[1]);
-  const txt = await r.text(); let data=null; try{ data=txt? JSON.parse(txt):null; }catch(e){}
-  $('out-json').value = data? JSON.stringify(data.slice(0,10),null,2) : txt;
-  $('out-resumo').innerHTML = r.ok
-    ? `<span class="ok">VW OK</span> — total=${total} (mostrando até 10 ids)`
-    : `<span class="bad">VW FAIL</span> — ${r.status} ${r.statusText}`;
-}
-async function vwDistinctTurno(){
-  const url = $('sb-url').value.trim().replace(/\/$/,'');
-  const key = $('sb-key').value.trim();
-  const r = await fetch(`${url}/rest/v1/vw_vendas?select=turno&distinct=true&order=turno.asc&limit=50`,{
-    headers:{ apikey:key, Authorization:`Bearer ${key}` }
-  });
-  const txt = await r.text(); let data=null; try{ data=txt? JSON.parse(txt):null; }catch(e){}
-  $('out-json').value = data? JSON.stringify(data,null,2) : txt;
-  $('out-resumo').innerHTML = r.ok
-    ? `<span class="ok">VW DISTINCT</span> — ${Array.isArray(data)? data.length:0} valores`
-    : `<span class="bad">VW DISTINCT FAIL</span> — ${r.status} ${r.statusText}`;
-}
+    async function chart(kind){
+      const fname = `chart_vendas_${kind}_v2`;
+      const params = buildParams();
+      const { data, error } = await supa.rpc(fname, params);
+      if(error){ log(`❌ ${fname} error`, error); throw error; }
+      log(`✅ ${fname}`, data);
+      return data||[];
+    }
 
-$('btn-save').addEventListener('click', saveConn);
-$('btn-kpi').addEventListener('click', callKPI);
-$('btn-dow').addEventListener('click', callDOW);
-$('btn-hora').addEventListener('click', callHORA);
-$('btn-mes').addEventListener('click', callMES);
-$('btn-base').addEventListener('click', callBASE);
-$('btn-vw-count').addEventListener('click', vwCount);
-$('btn-vw-turno').addEventListener('click', vwDistinctTurno);
-$('btn-clear').addEventListener('click', ()=>{ $('out-params').textContent=''; $('out-resumo').textContent=''; $('out-json').value=''; });
+    async function runTests(){
+      try{
+        $('#res').className=''; $('#res').textContent='rodando…';
+        const k = await getKPI();
 
-loadConn();
-setDefaultDates();
-params();
-</script>
+        const d = await chart('dow');   const somaD = d.reduce((a,x)=>a+Number(x.total||0),0);
+        const m = await chart('mes');   const somaM = m.reduce((a,x)=>a+Number(x.total||0),0);
+        const h = await chart('hora');  const somaH = h.reduce((a,x)=>a+Number(x.total||0),0);
+        const t = await chart('turno'); const somaT = t.reduce((a,x)=>a+Number(x.total||0),0);
+
+        const fat = Number(k.fat||0);
+        const dif = (a,b)=> Math.abs(Number(a)-Number(b));
+        const tol = 0.0001;
+
+        const okD = dif(somaD,fat) < tol;
+        const okM = dif(somaM,fat) < tol;
+        const okH = dif(somaH,fat) < tol;
+        const okT = dif(somaT,fat) < tol;
+
+        log('— Resumo —');
+        log({ KPI_fat: fat, soma_dow: somaD, soma_mes: somaM, soma_hora: somaH, soma_turno: somaT });
+
+        const allOk = okD && okM && okH && okT;
+        $('#res').className = allOk ? 'ok' : 'fail';
+        $('#res').textContent = allOk
+          ? '✔ Todos os gráficos batem com o KPI (fat).'
+          : `✖ Divergência: DOW=${okD?'OK':'NOK'} | MÊS=${okM?'OK':'NOK'} | HORA=${okH?'OK':'NOK'} | TURNO=${okT?'OK':'NOK'}`;
+      }catch(e){
+        $('#res').className='fail';
+        $('#res').textContent='Erro nos testes (ver log abaixo)';
+        log(e.message||e);
+      }
+    }
+
+    // defaults de data (últimos 30 dias)
+    (function initDates(){
+      const today = new Date();
+      const df = today.toISOString().slice(0,10);
+      const di = new Date(Date.now()-29*86400e3).toISOString().slice(0,10);
+      $('#dini').value = di;
+      $('#dfim').value = df;
+    })();
+
+    // eventos
+    $('#btn-kpi').addEventListener('click', getKPI);
+    $('#btn-test').addEventListener('click', runTests);
+  </script>
 </body>
 </html>
