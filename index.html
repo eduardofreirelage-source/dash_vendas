@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.13.1 — upload fix/upsert + MV refresh + filtros fallback)</title>
+  <title>DASHBOARD — CFO (v2.14.0 — KPIs corretos: pedidos=1, row_key estável)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -283,8 +283,8 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  const READ_VIEW        = 'vendas_canon';     // leituras (views/gráficos/filtros)
-  const DEST_INSERT_TABLE= 'vendas_xlsx';      // tabela real de ingestão (tem UNIQUE(row_key))
+  const READ_VIEW        = 'vendas_canon';     // leituras
+  const DEST_INSERT_TABLE= 'vendas_xlsx';      // ingestão (UNIQUE row_key)
   const REFRESH_RPC      = 'refresh_sales_materialized';
 
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
@@ -657,7 +657,7 @@
       return norm === 'Sim';
     }).map(x=>{
       const fat = (map.fatKeys.length)? parseBR(x[map.fatKeys[0]]) : 0;
-      const ped = (map.pedKeys.length)? toInt(x[map.pedKeys[0]]) : 1;
+      const ped = (map.pedKeys.length && map.pedKeys[0]==='pedidos') ? toInt(x[map.pedKeys[0]]) : 1; // evita somar itens
       return { fat, pedidos: ped };
     });
     return rows;
@@ -674,7 +674,7 @@
     return [];
   }
 
-  /* ===================== EXCEL → DB (sempre upsert, com dedupe) ===================== */
+  /* ===================== EXCEL → DB (upsert + dedupe + ped=1) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -711,13 +711,13 @@
     fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
     des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
     fre:  ['fre','frete','taxa entrega','taxa_entrega','entrega'],
-    ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
+    ped:  ['pedidos','qtd pedidos','qtd_pedidos'], // se não houver, usaremos 1
     unid: ['unidade','unid','filial','cod_unidade','empresa'],
     loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja','nome da Loja'],
     canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda','canal de Venda'],
     pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
-    canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada','está cancelado','esta cancelado'],
-    pid:  ['pedido id','pedido_id','id pedido','id_pedido','order id','order_id','número do pedido no parceiro','numero do pedido no parceiro']
+    canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
+    pid:  ['pedido id','pedido_id','id pedido','id_pedido','order id','order_id','número do pedido no parceiro','numero do pedido no parceiro','pedido','codigo','código']
   };
   function pickColumn(headers, alts){
     const map = headers.map(h=>({orig:h, key:normHeader(h)}));
@@ -729,14 +729,10 @@
   }
 
   function makeRowKey(x){
-    // row_key SEM valores monetários, focado em identificação do pedido/linha
-    const parts = [
-      x.dia||'', x.hora??'', x.unidade||'',
-      x["Nome da loja"]||'', x["Canal de venda"]||'',
-      x.pagamento_base||'', x.pedido_id||'',
-      x.pedidos??'', x.cancelado||''
-    ].map(v=>String(v).trim().toLowerCase());
-    return parts.join('|');
+    const base = [String(x.unidade||'').toLowerCase(), String(x["Nome da loja"]||'').toLowerCase(), String(x["Canal de venda"]||'').toLowerCase()];
+    const pid = String(x.pedido_id||'').trim().toLowerCase();
+    if(pid) return [...base, pid].join('|'); // estável por pedido
+    return [...base, String(x.dia||'').toLowerCase(), String(x.hora??'').toLowerCase()].join('|'); // fallback
   }
 
   function dedupeByKey(rows, key){
@@ -746,9 +742,7 @@
   }
 
   async function uploadBatch(rows){
-    // Dedupe dentro do lote para evitar: "ON CONFLICT DO UPDATE ... affect row a second time"
     const unique = dedupeByKey(rows, 'row_key');
-
     const chunk = 500;
     for(let i=0;i<unique.length;i+=chunk){
       const slice = unique.slice(i,i+chunk);
@@ -795,7 +789,12 @@
         const pago    = displayNormalize(get(kPag));
         const pid     = displayNormalize(get(kPid));
         const cancel  = normCancel(get(kCanc));
-        const ped     = toInt(get(kPed) ?? 1);
+        const qtd_itens = parseBR(r['Itens'] ?? r['itens'] ?? null);
+
+        // >>> ajustes críticos para KPIs corretos
+        const ped = (kPed ? Math.max(1, toInt(get(kPed))) : 1); // se existir "pedidos", usa; senão 1
+        // <<<
+
         const fat     = parseBR(get(kFat));
         const des     = parseBR(get(kDes));
         const fre     = parseBR(get(kFre));
@@ -808,7 +807,8 @@
           "Canal de venda": canal,
           pagamento_base: pago,
           cancelado: cancel,
-          pedidos: ped,
+          pedidos: ped,           // 1 por pedido (ou valor da coluna 'pedidos' se existir)
+          qtd_itens: qtd_itens||null, // informativo, não entra no KPI
           fat, des, fre,
           pedido_id: pid || null,
           created_at: new Date().toISOString()
@@ -847,7 +847,6 @@
 
   /* ===================== OPÇÕES (com fallback) ===================== */
   async function reloadStaticOptions(){
-    // 1) Tenta views dedicadas
     const [unids,lojas,canais,turnos,pags] = await Promise.allSettled([
       supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
       supa.from('vw_vendas_lojas').select('loja').order('loja'),
@@ -864,14 +863,13 @@
     if(ok(turnos)) ms.turnos.setOptions((turnos.value.data||[]).map(r=>r.turno));
     if(ok(pags))   ms.pags.setOptions((pags.value.data||[]).map(r=>r.pagamento_base));
 
-    // 2) Fallback se alguma view der 404/erro → busca direto em vendas_canon
     const needFallback = !(ok(unids)&&ok(lojas)&&ok(canais)&&ok(turnos)&&ok(pags));
     if(needFallback){
       try{
         const { data, error } = await supa.from(READ_VIEW)
           .select('unidade, loja, canal, pagamento_base, turno').limit(200000);
         if(!error && Array.isArray(data)){
-          const uniqBy = (arr, key)=> [...new Set(arr.map(x=>x[key]).filter(v=>v!=null && v!==''))];
+          const uniqBy = (arr, key)=> [...new Set(arr.map(x=>x[key]).filter(v=>v!=null && v!==' ' && v!==''))];
           ms.unids.setOptions( uniqBy(data,'unidade') );
           ms.lojas.setOptions( uniqBy(data,'loja') );
           ms.canais.setOptions( uniqBy(data,'canal') );
