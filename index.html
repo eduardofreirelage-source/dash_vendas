@@ -60,7 +60,7 @@
         <button class="secondary" id="btnConnect">Conectar</button>
         <span id="connStatus" class="badge">—</span>
       </div>
-      <small class="muted">O usuário/papel do token precisa de: SELECT/INSERT/UPDATE em <code>vendas_upload</code>, SELECT em <code>vw_vendas</code>, EXECUTE em <code>ingest_vendas_json(jsonb)</code>.</small>
+      <small class="muted">O usuário/papel do token precisa de: SELECT/INSERT/UPDATE em <code>vendas_upload</code>, SELECT em <code>vw_vendas</code>, EXECUTE em <code>ingest_vendas_json(jsonb)</code> e <code>vw_vendas_stats(date,date)</code>.</small>
     </div>
   </section>
 
@@ -108,7 +108,7 @@
     <div id="sample"></div>
   </section>
 
-  <!-- KPIs simples só para validar carga -->
+  <!-- KPIs simples para validar carga -->
   <section class="card" style="grid-column:1 / span 2">
     <h2>5) Resumo pós-carga</h2>
     <div class="kpi" id="kpis">
@@ -153,7 +153,7 @@ const CANON = [
 function normalizeHeader(h){
   if(!h) return '';
   return String(h).toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // tira acentos
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .replace(/\s+/g,' ').trim();
 }
 function guessMapping(headers){
@@ -182,7 +182,6 @@ function guessMapping(headers){
   };
 }
 function excelSerialToISO(serial){
-  // Excel serial (1900-based). Aceita número ou string
   const n = Number(serial);
   if(!isFinite(n) || n<=59) return null;
   const ms = Math.round((n - 25569) * 86400 * 1000);
@@ -192,31 +191,20 @@ function excelSerialToISO(serial){
 }
 function parseDateSmart(v){
   if(v==null || v==='') return null;
-  // Se já vier Date, ou string ISO yyyy-mm-dd
   if (v instanceof Date) return v.toISOString().slice(0,10);
   const s = String(v).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;            // YYYY-MM-DD
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)){                   // DD/MM/YYYY
-    const [d,m,y] = s.split('/');
-    return `${y}-${m}-${d}`;
-  }
-  if (/^\d+(\.\d+)?$/.test(s)){                           // possível serial Excel
-    const iso = excelSerialToISO(Number(s));
-    if (iso) return iso;
-  }
-  // Último recurso: Date.parse
-  const t = Date.parse(s);
-  if(!isNaN(t)) return new Date(t).toISOString().slice(0,10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)){ const [d,m,y]=s.split('/'); return `${y}-${m}-${d}`; }
+  if (/^\d+(\.\d+)?$/.test(s)){ const iso = excelSerialToISO(Number(s)); if (iso) return iso; }
+  const t = Date.parse(s); if(!isNaN(t)) return new Date(t).toISOString().slice(0,10);
   return null;
 }
 function parseHoraSmart(v){
   if(v==null || v==='') return null;
   const s = String(v).trim();
   if (/^\d{1,2}$/.test(s)) return parseInt(s,10);
-  const m = s.match(/^(\d{1,2})[:h]/i);
-  if(m) return Math.max(0, Math.min(23, parseInt(m[1],10)));
-  const n = Number(s);
-  if (isFinite(n)) return Math.max(0, Math.min(23, Math.round(n)));
+  const m = s.match(/^(\d{1,2})[:h]/i); if(m) return Math.max(0, Math.min(23, parseInt(m[1],10)));
+  const n = Number(s); if (isFinite(n)) return Math.max(0, Math.min(23, Math.round(n)));
   return null;
 }
 function parseCancel(v){
@@ -225,14 +213,11 @@ function parseCancel(v){
   return 'Não';
 }
 function parseNumKeep(v){
-  // o RPC aceita número (ex: 123.45) ou texto pt-BR (ex: "1.234,56")
   if(v==null) return null;
   const s = String(v).trim();
   if(s==='') return null;
-  // se vier "1.234,56" mantenho; se vier número, devolvo Number
-  if (/[0-9],[0-9]{1,2}$/.test(s) || /,0$/.test(s)) return s;
-  const n = Number(s.replace(/\s/g,''));
-  return isFinite(n) ? n : s;
+  if (/[0-9],[0-9]{1,2}$/.test(s) || /,0$/.test(s)) return s;        // mantém "1.234,56"
+  const n = Number(s.replace(/\s/g,'')); return isFinite(n) ? n : s;  // número puro
 }
 
 /** ========= Estado ========= **/
@@ -350,7 +335,6 @@ $('#btnSave').addEventListener('click', async ()=>{
   if(!supa){ alert('Conecte primeiro'); return; }
   if(!rowsMapped?.length){ alert('Valide o arquivo e mapeie as colunas'); return; }
 
-  // limpeza básica: remove linhas sem data
   const toSend = rowsMapped.filter(x=> !!x.dia);
   if(toSend.length===0){ alert('Nenhuma linha com data reconhecida. Ajuste o mapeamento de "Data (dia)".'); return; }
 
@@ -384,55 +368,41 @@ $('#btnSave').addEventListener('click', async ()=>{
 $('#btnSmoke').addEventListener('click', refreshKPIs);
 $('#btnLists').addEventListener('click', refreshLists);
 
+/* >>> NOVO: usa função SQL vw_vendas_stats para evitar travar em 1000 <<< */
 async function refreshKPIs(){
   if(!supa){ log('Conecte primeiro', 'warn'); return; }
   try{
-    // count total via HEAD
-    let count = null;
-    {
-      const { data, error, count:ct } = await supa
-        .from('vw_vendas')
-        .select('dia', { head:true, count:'exact' });
-      if(error){ log(`count head falhou: ${error.message}`, 'warn'); }
-      count = ct ?? null;
-    }
-    // fallback se head não der count
-    if(count==null){
-      const { data, error } = await supa.rpc('rpc_count_vw_vendas'); // caso exista
-      if(!error && data && typeof data==='number') count = data;
-    }
-    // distincts
-    const [un,lo,tu,ca,pa] = await Promise.all([
-      supa.from('vw_vendas').select('unidade', {distinct:true}).limit(10000),
-      supa.from('vw_vendas').select('loja', {distinct:true}).limit(10000),
-      supa.from('vw_vendas').select('turno', {distinct:true}).limit(10000),
-      supa.from('vw_vendas').select('canal', {distinct:true}).limit(10000),
-      supa.from('vw_vendas').select('pagamento_base', {distinct:true}).limit(10000),
-    ]);
+    const p_dini = '1900-01-01';
+    const p_dfim = '2100-01-01';
+    const { data, error } = await supa.rpc('vw_vendas_stats', { p_dini, p_dfim });
+    if(error) throw error;
+    const stat = (data && data[0]) ? data[0] : {linhas:0, unids:0, lojas:0, turnos:0, canais:0, pags:0};
 
-    $('#kpiCount').textContent = `linhas: ${count ?? (un.data?.length || 0)}`;
-    $('#kpiUnid').textContent  = `unidades: ${un.data?.length ?? 0}`;
-    $('#kpiLoja').textContent  = `lojas: ${lo.data?.length ?? 0}`;
-    $('#kpiTurno').textContent = `turnos: ${tu.data?.length ?? 0}`;
-    $('#kpiCanal').textContent = `canais: ${ca.data?.length ?? 0}`;
-    $('#kpiPags').textContent  = `pagamentos: ${pa.data?.length ?? 0}`;
+    $('#kpiCount').textContent = `linhas: ${stat.linhas ?? 0}`;
+    $('#kpiUnid').textContent  = `unidades: ${stat.unids ?? 0}`;
+    $('#kpiLoja').textContent  = `lojas: ${stat.lojas ?? 0}`;
+    $('#kpiTurno').textContent = `turnos: ${stat.turnos ?? 0}`;
+    $('#kpiCanal').textContent = `canais: ${stat.canais ?? 0}`;
+    $('#kpiPags').textContent  = `pagamentos: ${stat.pags ?? 0}`;
 
-    log('Smoke test concluído.', 'ok');
+    log('Resumo pós-carga ok (via vw_vendas_stats).', 'ok');
   }catch(e){
     log(`Smoke error: ${e.message||e}`, 'err');
   }
 }
+
+/* Listas (amostra) — continuam client-side, apenas para inspeção */
 async function refreshLists(){
   if(!supa){ log('Conecte primeiro', 'warn'); return; }
   try{
     const [un,lo,tu,ca,pa] = await Promise.all([
-      supa.from('vw_vendas').select('unidade', {distinct:true}).limit(2000),
-      supa.from('vw_vendas').select('loja', {distinct:true}).limit(2000),
-      supa.from('vw_vendas').select('turno', {distinct:true}).limit(2000),
-      supa.from('vw_vendas').select('canal', {distinct:true}).limit(2000),
-      supa.from('vw_vendas').select('pagamento_base', {distinct:true}).limit(2000),
+      supa.from('vw_vendas').select('unidade', {distinct:true}).limit(1000),
+      supa.from('vw_vendas').select('loja', {distinct:true}).limit(1000),
+      supa.from('vw_vendas').select('turno', {distinct:true}).limit(1000),
+      supa.from('vw_vendas').select('canal', {distinct:true}).limit(1000),
+      supa.from('vw_vendas').select('pagamento_base', {distinct:true}).limit(1000),
     ]);
-    log('Listas (amostras):', 'ok');
+    log('Listas (amostras, limitadas a 1000 pelo PostgREST):', 'ok');
     log({
       unidade: (un.data||[]).slice(0,10),
       loja: (lo.data||[]).slice(0,10),
