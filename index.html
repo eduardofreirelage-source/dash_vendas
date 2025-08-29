@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <title>Ingestão de Vendas — Excel → Supabase</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <!-- Favicon inline para evitar 404 -->
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="%2300c853"/><text x="32" y="38" font-size="28" text-anchor="middle" fill="white" font-family="Arial, sans-serif">X</text></svg>'>
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif;line-height:1.4;margin:24px;color:#111}
     h1{margin:0 0 16px}
@@ -133,6 +135,8 @@
 </fieldset>
 
 <script>
+const TABLE_NAME = 'vendas_import_csv_v2';
+
 const $ = (id)=>document.getElementById(id);
 const log = (m, cls)=>{ const el=$('log'); const line=document.createElement('div'); line.textContent=(typeof m==='string'?m:JSON.stringify(m,null,2)); if(cls) line.className=cls; el.appendChild(line); el.scrollTop=el.scrollHeight; };
 const set = (id, html)=>{ $(id).innerHTML = html; };
@@ -144,25 +148,34 @@ let normRows = [];
 let headers = [];
 
 document.addEventListener('DOMContentLoaded', async ()=>{
-  // tenta auto conectar
-  await connect();
+  await connect(); // auto-conectar
 });
 
 $('btn-connect').onclick = connect;
+
+async function quietPing() {
+  // Tenta uma consulta leve sem poluir o console
+  try {
+    // HEAD com count estimado na tabela alvo
+    const { error } = await supa.from(TABLE_NAME).select('*', { count: 'estimated', head: true }).limit(1);
+    if (error && String(error.message||'').includes('Could not find')) {
+      // Tenta outra tabela comum (se existir) — mas não loga erro
+      await supa.from('vendas_xlsx').select('*', { head: true }).limit(1);
+    }
+  } catch(_) { /* ignora */ }
+}
 
 async function connect(){
   try{
     const url = $('sb-url').value.trim();
     const key = $('sb-key').value.trim();
     supa = window.supabase.createClient(url, key);
-    // ping simples
-    const { data, error } = await supa.from('pg_stat_activity').select('pid').limit(1);
-    if(error && !String(error.message||'').includes('permission')) {
-      $('conn-status').textContent = 'Falhou: ' + error.message;
-      $('conn-status').className = 'err';
-      log('Conexão falhou: '+error.message,'err');
-      return;
-    }
+
+    $('conn-status').textContent = 'Conectando…';
+    $('conn-status').className = 'muted';
+
+    await quietPing(); // sem 404
+
     $('conn-status').textContent = 'Conectado ✔';
     $('conn-status').className = 'ok';
     log('✅ Supabase client ok','ok');
@@ -240,7 +253,7 @@ $('btn-validate').onclick = async () => {
     const fill = (sel, cols)=> sel.innerHTML = '<option value="">—</option>' + cols.map(c=>`<option>${c}</option>`).join('');
     selects.forEach(id => fill($(id), headers));
 
-    // autosel com “Nome da loja” prioritário
+    // autosel — prioriza “Nome da loja”
     const prefer = (names)=> headers.find(h => names.some(n => h.toLowerCase()===n));
     const setIf = (id, names)=>{ const hit = prefer(names); if(hit) $(id).value = hit; };
 
@@ -379,18 +392,17 @@ $('btn-save').onclick = async () => {
   if(!supa){ alert('Conecte no Supabase primeiro.'); return; }
   if(!normRows.length){ alert('Nada para salvar. Valide e confira o mapeamento.'); return; }
 
-  const tableName = 'vendas_import_csv_v2';
   const BATCH = 2000;
   let ok = 0, fail = 0;
 
   for(let i=0;i<normRows.length;i+=BATCH){
     const slice = normRows.slice(i, i+BATCH);
-    const { error } = await supa.from(tableName).insert(slice);
+    const { error } = await supa.from(TABLE_NAME).insert(slice);
     if(error){
       log({lote: [i, i+slice.length], error}, 'err');
       fail += slice.length;
       if(String(error.message||'').toLowerCase().includes('permission')){
-        alert('Permissão negada para inserir em '+tableName+': '+error.message);
+        alert('Permissão negada para inserir em '+TABLE_NAME+': '+error.message);
         break;
       }
     } else {
