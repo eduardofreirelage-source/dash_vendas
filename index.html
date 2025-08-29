@@ -4,9 +4,12 @@
   <meta charset="utf-8" />
   <title>Uploader Vendas + Smoke Tests</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- SheetJS (CDN). Se falhar, coloque xlsx.full.min.js ao lado deste HTML -->
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"
-          onerror="console.warn('CDN SheetJS falhou. Coloque xlsx.full.min.js no mesmo diretório.');"></script>
+  <!-- Favicon embutido para evitar 404 -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='64' height='64' fill='%230b5'/%3E%3Ctext x='50%25' y='55%25' font-size='36' text-anchor='middle' fill='white'%3E✓%3C/text%3E%3C/svg%3E" />
+  <!-- SheetJS -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+  <!-- Supabase -->
+  <script type="module" src="https://esm.sh/@supabase/supabase-js@2?bundle"></script>
   <style>
     body { font-family: system-ui, Arial, sans-serif; margin: 18px; }
     h1 { margin-bottom: 8px; }
@@ -15,8 +18,8 @@
     label { display:block; font-size: 12px; color: #555; margin-top: 6px; }
     select, input[type="text"], input[type="date"], button { padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
     .row { display:flex; gap:12px; flex-wrap: wrap; }
-    .col { min-width: 200px; flex: 1; }
-    #log { white-space: pre-wrap; background:#0b1220; color:#d7e1ff; padding:12px; border-radius:8px; max-height: 300px; overflow:auto; }
+    .col { min-width: 220px; flex: 1; }
+    #log { white-space: pre-wrap; background:#0b1220; color:#d7e1ff; padding:12px; border-radius:8px; max-height: 320px; overflow:auto; }
     .ok { color: #0a0; }
     .warn { color: #a60; }
     .err { color: #c00; }
@@ -104,8 +107,18 @@
   import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
   const $ = (sel) => document.querySelector(sel);
-  const log = (...a) => { const el = $("#log"); el.textContent += a.map(x => typeof x==='string'?x:JSON.stringify(x,null,2)).join(' ') + "\\n"; el.scrollTop = el.scrollHeight; };
-  const setPill = (id, txt, cls='') => { const el = $(id); el.textContent = txt || ''; el.className = 'pill ' + cls; };
+  function logAppend() {
+    const el = $("#log");
+    const parts = [];
+    for (let i=0;i<arguments.length;i++) {
+      const v = arguments[i];
+      parts.push(typeof v === 'string' ? v : JSON.stringify(v, null, 2));
+    }
+    el.textContent += parts.join(' ') + "\n";
+    el.scrollTop = el.scrollHeight;
+  }
+  const log = logAppend;
+  const setPill = (id, txt, cls) => { const el = $(id); el.textContent = txt || ''; el.className = 'pill ' + (cls||''); };
 
   let SUPA = null;
   let XLS = window.XLSX;
@@ -116,8 +129,8 @@
 
   // Helpers -------------------------------------------------------
   function parseDateLike(v) {
-    // suporta: Excel serial, 'dd/mm/aaaa hh:mm', 'aaaa-mm-dd hh:mm', 'aaaa-mm-dd', etc.
-    if (v == null || v === '') return { d:null, h:null };
+    // aceita: Excel serial, 'dd/mm/aaaa hh:mm', 'aaaa-mm-dd hh:mm', 'aaaa-mm-dd', etc.
+    if (v === null || v === undefined || v === '') return { d:null, h:null };
     if (typeof v === 'number') {
       // Excel serial
       const epoch = new Date(Date.UTC(1899, 11, 30));
@@ -126,71 +139,78 @@
       return { d: dt.toISOString().slice(0,10), h: dt.getUTCHours() };
     }
     const s = String(v).trim().replace('T',' ');
-    // tenta yyyy-mm-dd hh:mm[:ss]
-    let m = s.match(/^(\\d{4})[-\\/](\\d{2})[-\\/](\\d{2})(?:\\s+(\\d{1,2})(?::(\\d{2}))?)?/);
+    // yyyy-mm-dd [hh[:mm]]
+    let m = s.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})(?:\s+(\d{1,2})(?::(\d{2}))?)?/);
     if (m) {
-      const [_,Y,M,D,H] = m;
-      return { d: \`\${Y}-\${M}-\${D}\`, h: H!=null? parseInt(H,10): null };
+      const Y = m[1], M = m[2], D = m[3];
+      const H = m[4];
+      return { d: (Y + "-" + M + "-" + D), h: (H !== undefined ? parseInt(H,10) : null) };
     }
-    // tenta dd/mm/yyyy hh:mm
-    m = s.match(/^(\\d{2})[-\\/](\\d{2})[-\\/](\\d{4})(?:\\s+(\\d{1,2})(?::(\\d{2}))?)?/);
+    // dd/mm/yyyy [hh[:mm]]
+    m = s.match(/^(\d{2})[-\/](\d{2})[-\/](\d{4})(?:\s+(\d{1,2})(?::(\d{2}))?)?/);
     if (m) {
-      const [_,D,M,Y,H] = m;
-      return { d: \`\${Y}-\${M}-\${D}\`, h: H!=null? parseInt(H,10): null };
+      const D = m[1], M = m[2], Y = m[3];
+      const H = m[4];
+      return { d: (Y + "-" + M + "-" + D), h: (H !== undefined ? parseInt(H,10) : null) };
     }
-    // só hora?
-    m = s.match(/^(\\d{1,2})[:h](\\d{2})?/i);
-    if (m) return { d:null, h: parseInt(m[1],10) };
+    // só hora? "13" ou "13:45"
+    m = s.match(/^(\d{1,2})(?::(\d{2}))?$/);
+    if (m) { return { d:null, h: parseInt(m[1],10) }; }
     return { d:null, h:null };
   }
 
   function toBoolVal(v) {
     if (typeof v === 'boolean') return v;
     const s = String(v||'').trim().toLowerCase();
-    if (['sim','s','true','1','yes','y'].includes(s)) return true;
-    if (['não','nao','n','false','0','no'].includes(s)) return false;
+    if (s === 'sim' || s === 's' || s === 'true' || s === '1' || s === 'yes' || s === 'y') return true;
+    if (s === 'não' || s === 'nao' || s === 'n' || s === 'false' || s === '0' || s === 'no') return false;
     return false;
   }
 
   function toNumber(v) {
-    if (v == null || v === '') return 0;
+    if (v === null || v === undefined || v === '') return 0;
     if (typeof v === 'number') return v;
-    const s = String(v).trim().replace(/\./g,'').replace(',','.');
+    const s = String(v).trim().split('.').join('').replace(',', '.');
     const n = Number(s);
     return Number.isFinite(n) ? n : 0;
   }
 
   function fillSelectOptions(cols) {
-    for (const id of selects) {
+    for (let i=0;i<selects.length;i++) {
+      const id = selects[i];
       const sel = $("#"+id);
-      sel.innerHTML = '<option value="">-- (vazio) --</option>' + cols.map(c=>\`<option>\${c}</option>\`).join('');
+      const opts = ['<option value="">-- (vazio) --</option>'];
+      for (let j=0;j<cols.length;j++) opts.push('<option>'+cols[j]+'</option>');
+      sel.innerHTML = opts.join('');
     }
     // sugestões padrão:
-    setIfExists("#m_datahora", ["datahora","data e hora","data hora"]);
-    setIfExists("#m_data_venda", ["data_venda","data"]);
-    setIfExists("#m_hora", ["hora"]);
-    setIfExists("#m_unidade", ["unidade"]);
-    setIfExists("#m_loja", ["loja","nome da loja"]);
-    setIfExists("#m_canal", ["canal","canal de venda"]);
-    setIfExists("#m_cancelado", ["cancelado","está cancelado"]);
-    setIfExists("#m_itens", ["itens","pedidos"]);
-    setIfExists("#m_total", ["total","fat"]);
-    setIfExists("#m_des", ["des","desconto"]);
-    setIfExists("#m_fre", ["fre","entrega","frete"]);
-    setIfExists("#m_turno", ["turno"]);
-    setIfExists("#m_pagamento", ["pagamento","pagamento_base"]);
+    suggest("#m_datahora", ["datahora","data e hora","data hora"]);
+    suggest("#m_data_venda", ["data_venda","data","data da venda"]);
+    suggest("#m_hora", ["hora"]);
+    suggest("#m_unidade", ["unidade"]);
+    suggest("#m_loja", ["loja","nome da loja","nome da Loja","Nome da loja","Nome da Loja"]);
+    suggest("#m_canal", ["canal","canal de venda","Canal de venda"]);
+    suggest("#m_cancelado", ["cancelado","está cancelado","Está cancelado"]);
+    suggest("#m_itens", ["itens","Itens","pedidos"]);
+    suggest("#m_total", ["total","Total","fat"]);
+    suggest("#m_des", ["des","Desconto","desconto"]);
+    suggest("#m_fre", ["fre","frete","entrega","Entrega"]);
+    suggest("#m_turno", ["turno","Turno"]);
+    suggest("#m_pagamento", ["pagamento","Pagamento","pagamento_base"]);
   }
-  function setIfExists(sel, candidates){
+  function suggest(sel, candidates){
     const el = $(sel);
-    const opts = [...el.options].map(o => o.value.toLowerCase());
-    for (const c of candidates) {
+    const opts = [];
+    for (let i=0;i<el.options.length;i++) { opts.push(el.options[i].value.toLowerCase()); }
+    for (let i=0;i<candidates.length;i++) {
+      const c = String(candidates[i]).toLowerCase();
       const idx = opts.indexOf(c);
       if (idx >= 0) { el.selectedIndex = idx+1; break; }
     }
   }
 
   function getMap() {
-    const g = o => { const v=$("#"+o).value; return v===''?null:v; };
+    function g(id) { const v=$("#"+id).value; return v===''?null:v; }
     return {
       datahora: g('m_datahora'),
       data_venda: g('m_data_venda'),
@@ -204,32 +224,34 @@
       des: g('m_des'),
       fre: g('m_fre'),
       turno: g('m_turno'),
-      pagamento: g('m_pagamento'),
+      pagamento: g('m_pagamento')
     };
   }
 
   function mapRows(raw, map) {
     const out = [];
-    for (const r of raw) {
-      // data/hora
+    for (let i=0;i<raw.length;i++) {
+      const r = raw[i];
       let d=null, h=null;
-      if (map.datahora && r[map.datahora]!=null) {
+
+      if (map.datahora && r[map.datahora] !== null && r[map.datahora] !== undefined) {
         const x = parseDateLike(r[map.datahora]);
         d = x.d; h = x.h;
       }
-      if (!d && map.data_venda && r[map.data_venda]!=null) {
-        d = parseDateLike(r[map.data_venda]).d;
+      if (!d && map.data_venda && r[map.data_venda] !== null && r[map.data_venda] !== undefined) {
+        const x2 = parseDateLike(r[map.data_venda]);
+        d = x2.d;
       }
-      if (h==null && map.hora && r[map.hora]!=null) {
+      if (h === null && map.hora && r[map.hora] !== null && r[map.hora] !== undefined) {
         const hh = parseDateLike(r[map.hora]);
-        h = hh.h != null ? hh.h : toNumber(r[map.hora]);
+        h = (hh.h !== null) ? hh.h : toNumber(r[map.hora]);
       }
 
       const rec = {
-        data_venda: d,                                   // <- usado pela view
-        hora: h!=null ? parseInt(h,10) : null,          // <- usado pela view
+        data_venda: d,
+        hora: (h !== null ? parseInt(h,10) : null),
         unidade: map.unidade ? String(r[map.unidade]||'').trim() : null,
-        loja: map.loja ? String(r[map.loja]||'').trim() : null,     // <- loja real
+        loja: map.loja ? String(r[map.loja]||'').trim() : null,
         canal: map.canal ? String(r[map.canal]||'').trim() : null,
         cancelado: map.cancelado ? !!toBoolVal(r[map.cancelado]) : false,
         itens: map.itens ? parseInt(toNumber(r[map.itens]),10) : 1,
@@ -237,7 +259,7 @@
         des: map.des ? toNumber(r[map.des]) : 0,
         fre: map.fre ? toNumber(r[map.fre]) : 0,
         turno: map.turno ? String(r[map.turno]||'').trim() : null,
-        pagamento: map.pagamento ? String(r[map.pagamento]||'').trim() : null,
+        pagamento: map.pagamento ? String(r[map.pagamento]||'').trim() : null
       };
       out.push(rec);
     }
@@ -245,17 +267,20 @@
   }
 
   // Supabase init -----------------------------------------------
-  function initClient() {
+  let supaLoaded = false;
+  async function initClient() {
+    if (supaLoaded) return SUPA;
+    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2?bundle");
     const url = $("#url").value.trim();
     const key = $("#key").value.trim();
     SUPA = createClient(url, key);
+    supaLoaded = true;
     return SUPA;
   }
 
   async function ping() {
     try {
-      initClient();
-      // Checa se a tabela staging é visível
+      await initClient();
       const { error } = await SUPA
         .from('vendas_import_csv_v2')
         .select('id', { count:'exact', head:true })
@@ -282,12 +307,10 @@
       const sheet = wb.Sheets[sheetName];
       const json = XLS.utils.sheet_to_json(sheet, { defval: null });
       rows = json;
-      setPill("#fileInfo", `Arquivo: ${f.name} — Abas: ${wb.SheetNames.length} — Linhas: ${rows.length}`);
+      setPill("#fileInfo", "Arquivo: " + f.name + " — Abas: " + wb.SheetNames.length + " — Linhas: " + rows.length);
       log("📄 Arquivo lido", { nome:f.name, sheet: sheetName, linhas: rows.length });
-      // Preenche selects com colunas detectadas
       const cols = Object.keys(rows[0] || {});
       fillSelectOptions(cols);
-      // Mostra amostra
       log("🔧 1ª linha (amostra)", rows[0] || {});
     } catch (e) {
       log("❌ Erro lendo Excel", e);
@@ -305,12 +328,13 @@
   $("#btnInsert").addEventListener("click", async () => {
     try {
       if (!rows.length) { alert("Leia o arquivo primeiro."); return; }
-      initClient();
+      await initClient();
       const map = getMap();
       mapped = mapRows(rows, map);
-      // valida minima: precisa de data_venda
-      const semData = mapped.filter(r => !r.data_venda).length;
-      if (semData > 0) log("⚠️ Algumas linhas sem data_venda. Serão inseridas, mas não entram nos filtros por data.");
+
+      let semData = 0;
+      for (let i=0;i<mapped.length;i++) if (!mapped[i].data_venda) semData++;
+      if (semData > 0) log("⚠️ Linhas sem data_venda:", semData);
 
       const chunk = 2000;
       let ok=0, fail=0;
@@ -325,9 +349,7 @@
           log("✅ Lote inserido", { lote:[i, i+lote.length] });
         }
       }
-      setPill("#insInfo", `Inserção concluída — ok: ${ok} / falhas: ${fail}`, fail? 'warn':'ok');
-      // recarrega schema para expor a view e RPCs direitinho
-      await SUPA.rpc('pg_notify', { channel: 'pgrst', payload: 'reload schema' }).catch(()=>{});
+      setPill("#insInfo", "Inserção concluída — ok: " + ok + " / falhas: " + fail, (fail ? 'warn':'ok'));
       log("📦 Inserção concluída", { ok, fail });
     } catch (e) {
       log("❌ Erro inserindo", e);
@@ -337,20 +359,12 @@
 
   $("#btnAutoRange").addEventListener("click", async ()=>{
     try {
-      initClient();
-      // usa a VIEW
-      const { data, error } = await SUPA
-        .from('vw_vendas')
-        .select('min:dia,min:dia,max:dia', { head:false })
-        .limit(1);
-      if (error) throw error;
-      // PostgREST retorna como array de objetos com min/max agregados
-      const row = (data && data[0]) || null;
-      // fallback via SQL RPC (se necessário, você pode criar um RPC minmax)
-      const { data: d2 } = await SUPA.from('vw_vendas').select('dia').order('dia',{ascending:true}).limit(1);
-      const { data: d3 } = await SUPA.from('vw_vendas').select('dia').order('dia',{ascending:false}).limit(1);
-      const minDia = (d2 && d2[0] && d2[0].dia) || '';
-      const maxDia = (d3 && d3[0] && d3[0].dia) || '';
+      await initClient();
+      // pega min e max via ordenação (compatível com PostgREST)
+      const a = await SUPA.from('vw_vendas').select('dia').order('dia',{ascending:true}).limit(1);
+      const b = await SUPA.from('vw_vendas').select('dia').order('dia',{ascending:false}).limit(1);
+      const minDia = (a.data && a.data[0] && a.data[0].dia) ? a.data[0].dia : '';
+      const maxDia = (b.data && b.data[0] && b.data[0].dia) ? b.data[0].dia : '';
       $("#dini").value = minDia || '';
       $("#dfim").value = maxDia || '';
       log("🗓️ Intervalo auto", { minDia, maxDia });
@@ -361,11 +375,13 @@
 
   $("#btnSmoke").addEventListener("click", async ()=>{
     try{
-      initClient();
+      await initClient();
       const dini = $("#dini").value || '2025-01-01';
       const dfim = $("#dfim").value || '2025-12-31';
-      const args = { p_dini: dini, p_dfim: dfim,
-        p_unids: null, p_lojas: null, p_turnos: null, p_canais: null, p_pags: null, p_cancelado: null };
+      const args = {
+        p_dini: dini, p_dfim: dfim,
+        p_unids: null, p_lojas: null, p_turnos: null, p_canais: null, p_pags: null, p_cancelado: null
+      };
 
       // KPI
       const k = await SUPA.rpc('kpi_vendas_v2', args);
@@ -382,16 +398,25 @@
       if (m.error) throw m.error;
       if (h.error) throw h.error;
 
-      const sum = (arr, key) => (arr||[]).reduce((a,b)=> a + Number(b[key]||0), 0);
+      function sum(arr, key) {
+        let s = 0;
+        if (arr && arr.length) {
+          for (let i=0;i<arr.length;i++) { s += Number(arr[i][key] || 0); }
+        }
+        return s;
+      }
       const sd = sum(d.data,'total');
       const sm = sum(m.data,'total');
       const sh = sum(h.data,'total');
-      const fat = Number(kpi?.fat || 0);
+      const fat = Number(kpi && kpi.fat ? kpi.fat : 0);
 
-      const ok = (x,y)=> Math.abs(Number(x)-Number(y)) < 0.0001;
-      const msg = `DOW ${ok(sd,fat)?'✅':'❌'} soma=${sd.toLocaleString('pt-BR',{minimumFractionDigits:2})} vs KPI=${fat.toLocaleString('pt-BR',{minimumFractionDigits:2})}
-MÊS ${ok(sm,fat)?'✅':'❌'} soma=${sm.toLocaleString('pt-BR',{minimumFractionDigits:2})} vs KPI=${fat.toLocaleString('pt-BR',{minimumFractionDigits:2})}
-HORA ${ok(sh,fat)?'✅':'❌'} soma=${sh.toLocaleString('pt-BR',{minimumFractionDigits:2})} vs KPI=${fat.toLocaleString('pt-BR',{minimumFractionDigits:2})}`;
+      const ok = Math.abs(sd - fat) < 0.0001 && Math.abs(sm - fat) < 0.0001 && Math.abs(sh - fat) < 0.0001;
+      const msg = "DOW " + (Math.abs(sd - fat)<0.0001?'✅':'❌') + " soma=" + sd.toLocaleString('pt-BR',{minimumFractionDigits:2}) +
+                  " vs KPI=" + fat.toLocaleString('pt-BR',{minimumFractionDigits:2}) +
+                  "\nMÊS " + (Math.abs(sm - fat)<0.0001?'✅':'❌') + " soma=" + sm.toLocaleString('pt-BR',{minimumFractionDigits:2}) +
+                  " vs KPI=" + fat.toLocaleString('pt-BR',{minimumFractionDigits:2}) +
+                  "\nHORA " + (Math.abs(sh - fat)<0.0001?'✅':'❌') + " soma=" + sh.toLocaleString('pt-BR',{minimumFractionDigits:2}) +
+                  " vs KPI=" + fat.toLocaleString('pt-BR',{minimumFractionDigits:2});
       $("#smk").textContent = msg;
       log("🧪 Smoke", { dow: sd, mes: sm, hora: sh, fat });
 
@@ -402,8 +427,8 @@ HORA ${ok(sh,fat)?'✅':'❌'} soma=${sh.toLocaleString('pt-BR',{minimumFraction
   });
 
   // Inicial
-  (async ()=>{
-    await ping();
+  (async function start(){
+    try { await ping(); } catch(_){}
   })();
 </script>
 </body>
