@@ -24,11 +24,8 @@
     .box{background:#fafbfc;border:1px solid #e6eaef;border-radius:8px;padding:12px}
     #preview{max-height:220px;overflow:auto;border:1px dashed #d0d7de;border-radius:8px;padding:8px;background:#fff}
     table{border-collapse:collapse;width:100%} th,td{border:1px solid #e5e7eb;padding:6px 8px;text-align:left}
-    .right{text-align:right}
-    .flex{display:flex;align-items:center;gap:8px}
-    .btns{display:flex;gap:8px;flex-wrap:wrap}
-    .small{font-size:12px}
     .badge{background:#eef6ff;color:#0747a6;border:1px solid #d1e4ff;border-radius:999px;padding:2px 8px}
+    .small{font-size:12px}
   </style>
   <!-- SheetJS (XLSX) -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -44,11 +41,11 @@
   <div class="row">
     <div class="col">
       <label>Supabase URL</label>
-      <input id="sb-url" placeholder="https://xxxx.supabase.co" />
+      <input id="sb-url" value="https://uahmcfzerofhzjvlzrqc.supabase.co" />
     </div>
     <div class="col">
       <label>Anon/Public Key</label>
-      <input id="sb-key" placeholder="eyJhbGciOi..." />
+      <input id="sb-key" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU" />
     </div>
     <div class="col" style="align-self:end">
       <button id="btn-connect">Conectar</button>
@@ -64,10 +61,8 @@
       <input type="file" id="file" accept=".xlsx,.xls" />
     </div>
     <div class="col" style="align-self:end">
-      <div class="btns">
-        <button id="btn-validate">Validar</button>
-        <button id="btn-save" disabled>Salvar no banco</button>
-      </div>
+      <button id="btn-validate">Validar</button>
+      <button id="btn-save" disabled>Salvar no banco</button>
     </div>
   </div>
   <div id="file-info" class="muted small">Selecione o Excel e clique em <b>Validar</b>.</div>
@@ -115,18 +110,18 @@
     <label>Turno</label>
     <select id="map-turno"></select>
   </div>
-  <div class="small muted">Dica: se você preencher <b>Data+Hora</b>, pode deixar “Data” e “Hora” vazios. O script extrai ambos automaticamente.</div>
+  <div class="small muted">Se preencher <b>Data+Hora</b>, pode deixar “Data” e “Hora” vazios — eu extraio ambos.</div>
 </fieldset>
 
 <fieldset>
   <legend>Prévia / Diagnóstico</legend>
   <div class="row">
     <div class="col box">
-      <div><span class="badge">Amostra</span></div>
+      <div><span class="badge">Amostra normalizada</span></div>
       <div id="preview">—</div>
     </div>
     <div class="col box">
-      <div><span class="badge">Distincts (após mapeamento)</span></div>
+      <div><span class="badge">Distincts</span></div>
       <div id="distincts" class="small">—</div>
     </div>
   </div>
@@ -144,12 +139,18 @@ const set = (id, html)=>{ $(id).innerHTML = html; };
 const pad = (n)=> String(n).padStart(2,'0');
 
 let supa = null;
-let rawRows = [];     // linhas como vieram da planilha (obj por linha)
-let normRows = [];    // linhas normalizadas prontas pra inserir
-let headers = [];     // nomes de colunas do Excel
+let rawRows = [];
+let normRows = [];
+let headers = [];
 
-// ------------------------ Conectar ------------------------
-$('btn-connect').onclick = async () => {
+document.addEventListener('DOMContentLoaded', async ()=>{
+  // tenta auto conectar
+  await connect();
+});
+
+$('btn-connect').onclick = connect;
+
+async function connect(){
   try{
     const url = $('sb-url').value.trim();
     const key = $('sb-key').value.trim();
@@ -170,16 +171,14 @@ $('btn-connect').onclick = async () => {
     $('conn-status').className='err';
     log(e,'err');
   }
-};
+}
 
-// ------------------------ Util: parse número BR ------------------------
+// ---------- helpers ----------
 function parsePtNumber(v){
   if(v==null || v==='') return 0;
   if(typeof v==='number') return v;
   let s = String(v).trim();
-  // remove R$, espaços
   s = s.replace(/[R$\s]/g,'');
-  // se tem vírgula decimal, troca . de milhar e , de decimal
   if(/[0-9]\.[0-9]{3}/.test(s) || /,/.test(s)){
     s = s.replace(/\./g,'').replace(/,/g,'.');
   }
@@ -187,7 +186,6 @@ function parsePtNumber(v){
   return isFinite(n)? n : 0;
 }
 
-// ------------------------ Util: parse Bool/Cancelado ------------------------
 function normCancel(v){
   if (typeof v === 'boolean') return v ? 'Sim' : 'Não';
   const s = String(v || '').toLowerCase().trim();
@@ -196,8 +194,7 @@ function normCancel(v){
   return 'Não';
 }
 
-// ------------------------ Util: Data/Hora ------------------------
-function parseExcelSerial(n){ // via SheetJS
+function parseExcelSerial(n){
   try{
     const o = XLSX.SSF.parse_date_code(n);
     if(!o) return null;
@@ -209,71 +206,21 @@ function parseExcelSerial(n){ // via SheetJS
 function parseDateLike(val){
   if(val==null || val==='') return null;
   if(val instanceof Date && !isNaN(val)) return val;
-  if(typeof val === 'number') {
-    const d = parseExcelSerial(val);
-    if(d) return d;
-  }
+  if(typeof val === 'number') { const d = parseExcelSerial(val); if(d) return d; }
   const s = String(val).trim().replace('T',' ');
-  // YYYY-MM-DD HH:MM[:SS]
   let m = s.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})[ \t]+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if(m){
-    const [_,Y,Mo,D,h,mi,se] = m;
-    return new Date(Number(Y), Number(Mo)-1, Number(D), Number(h), Number(mi), Number(se||0));
-  }
-  // DD/MM/YYYY HH:MM[:SS]
+  if(m){ const [_,Y,Mo,D,h,mi,se] = m; return new Date(Number(Y), Number(Mo)-1, Number(D), Number(h), Number(mi), Number(se||0)); }
   m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})[ \t]+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if(m){
-    const [_,D,Mo,Y,h,mi,se] = m;
-    return new Date(Number(Y), Number(Mo)-1, Number(D), Number(h), Number(mi), Number(se||0));
-  }
-  // Apenas data (YYYY-MM-DD ou DD/MM/YYYY)
+  if(m){ const [_,D,Mo,Y,h,mi,se] = m; return new Date(Number(Y), Number(Mo)-1, Number(D), Number(h), Number(mi), Number(se||0)); }
   m = s.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})$/);
-  if(m){
-    const [_,Y,Mo,D] = m;
-    return new Date(Number(Y), Number(Mo)-1, Number(D), 0, 0, 0);
-  }
+  if(m){ const [_,Y,Mo,D] = m; return new Date(Number(Y), Number(Mo)-1, Number(D), 0, 0, 0); }
   m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if(m){
-    const [_,D,Mo,Y] = m;
-    return new Date(Number(Y), Number(Mo)-1, Number(D), 0, 0, 0);
-  }
+  if(m){ const [_,D,Mo,Y] = m; return new Date(Number(Y), Number(Mo)-1, Number(D), 0, 0, 0); }
   return null;
 }
+function toYYYYMMDDLocal(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
 
-function toYYYYMMDDLocal(d){
-  // usa horário local para não “andar” a data
-  const y = d.getFullYear();
-  const m = pad(d.getMonth()+1);
-  const day = pad(d.getDate());
-  return `${y}-${m}-${day}`;
-}
-
-// ------------------------ Carregar/Validar ------------------------
-function fillSelectOptions(sel, cols){
-  sel.innerHTML = '<option value="">—</option>' + cols.map(c=>`<option>${c}</option>`).join('');
-}
-
-// tenta pré-selecionar pelos nomes mais comuns
-function autosel(map){
-  const find = (names)=> headers.find(h => names.some(n => h.toLowerCase()===n));
-  const setIf = (id, names)=>{ const hit = find(names); if(hit) $(id).value = hit; };
-
-  setIf('map-datahora', ['datahora','data e hora','data hora','data/hora','data_hora','data da venda']);
-  setIf('map-dia', ['data','dia','data da venda']);
-  setIf('map-hora', ['hora','hr']);
-  setIf('map-unidade', ['unidade','unid']);
-  // Loja: use “Nome da loja” se existir
-  setIf('map-loja', ['nome da loja','loja','nome da loja ','nome de loja']);
-  setIf('map-canal', ['canal','canal de venda','canal de vendas']);
-  setIf('map-pagamento', ['pagamento','pagamento base','pagamento_base','forma de pagamento']);
-  setIf('map-cancelado', ['está cancelado','esta cancelado','cancelado']);
-  setIf('map-pedidos', ['itens','qtd','quantidade','pedidos']);
-  setIf('map-total', ['total','valor','valor total']);
-  setIf('map-desconto', ['desconto','desc']);
-  setIf('map-entrega', ['entrega','frete']);
-  setIf('map-turno', ['turno','período','periodo']);
-}
-
+// ---------- validar ----------
 $('btn-validate').onclick = async () => {
   try{
     const f = $('file').files[0];
@@ -282,20 +229,35 @@ $('btn-validate').onclick = async () => {
     const ab = await f.arrayBuffer();
     const wb = XLSX.read(ab, { cellDates:true, raw:true, dateNF:'yyyy-mm-dd hh:mm:ss' });
     const ws = wb.Sheets[wb.SheetNames[0]];
-    // defval:null mantém colunas vazias; raw:true preserva Dates/Numbers
     rawRows = XLSX.utils.sheet_to_json(ws, { defval:null, raw:true });
     headers = Object.keys(rawRows[0]||{});
     $('file-info').innerHTML = `📄 <b>${f.name}</b> — ${rawRows.length} linhas | colunas: <span class="muted">${headers.join(', ')||'—'}</span>`;
 
-    // preencher selects
     const selects = [
       'map-datahora','map-dia','map-hora','map-unidade','map-loja','map-canal',
       'map-pagamento','map-cancelado','map-pedidos','map-total','map-desconto','map-entrega','map-turno'
     ];
-    selects.forEach(id => fillSelectOptions($(id), headers));
-    autosel();
+    const fill = (sel, cols)=> sel.innerHTML = '<option value="">—</option>' + cols.map(c=>`<option>${c}</option>`).join('');
+    selects.forEach(id => fill($(id), headers));
 
-    // gerar amostra normalizada (com base no mapeamento atual)
+    // autosel com “Nome da loja” prioritário
+    const prefer = (names)=> headers.find(h => names.some(n => h.toLowerCase()===n));
+    const setIf = (id, names)=>{ const hit = prefer(names); if(hit) $(id).value = hit; };
+
+    setIf('map-datahora', ['datahora','data e hora','data hora','data/hora','data_hora','data da venda']);
+    setIf('map-dia', ['data','dia','data da venda']);
+    setIf('map-hora', ['hora','hr']);
+    setIf('map-unidade', ['unidade','unid']);
+    setIf('map-loja', ['nome da loja','loja','nome da loja ','nome de loja']);
+    setIf('map-canal', ['canal','canal de venda','canal de vendas']);
+    setIf('map-pagamento', ['pagamento','pagamento base','pagamento_base','forma de pagamento']);
+    setIf('map-cancelado', ['está cancelado','esta cancelado','cancelado']);
+    setIf('map-pedidos', ['itens','qtd','quantidade','pedidos']);
+    setIf('map-total', ['total','valor','valor total']);
+    setIf('map-desconto', ['desconto','desc']);
+    setIf('map-entrega', ['entrega','frete']);
+    setIf('map-turno', ['turno','período','periodo']);
+
     recomputeNormalized();
     $('btn-save').disabled = (normRows.length===0);
   }catch(e){
@@ -322,37 +284,35 @@ function currentMapping(){
   };
 }
 
+[
+  'map-datahora','map-dia','map-hora','map-unidade','map-loja','map-canal',
+  'map-pagamento','map-cancelado','map-pedidos','map-total','map-desconto','map-entrega','map-turno'
+].forEach(id => $(id).addEventListener('change', recomputeNormalized));
+
 function recomputeNormalized(){
   const map = currentMapping();
   const out = [];
   const dists = { unidade:new Set(), loja:new Set(), canal:new Set(), pagamento_base:new Set(), turno:new Set() };
 
   for(const r of rawRows){
-    // Data+Hora (preferência)
     let dia=null, hora=null;
     if(map.datahora){
       const v = r[map.datahora];
       const dt = parseDateLike(v);
       if(dt){ dia = toYYYYMMDDLocal(dt); hora = dt.getHours(); }
     } else {
-      // Data separada
       if(map.dia){
         const vd = r[map.dia];
         const dd = parseDateLike(vd);
         if(dd) dia = toYYYYMMDDLocal(dd);
       }
-      // Hora separada
       if(map.hora){
         const vh = r[map.hora];
         if(vh instanceof Date) hora = vh.getHours();
         else if(typeof vh==='number') hora = Math.max(0, Math.min(23, Math.floor(vh)));
-        else if(typeof vh==='string'){
-          const m = vh.match(/(\d{1,2})/);
-          if(m) hora = Math.max(0, Math.min(23, parseInt(m[1],10)));
-        }
+        else if(typeof vh==='string'){ const m = vh.match(/(\d{1,2})/); if(m) hora = Math.max(0, Math.min(23, parseInt(m[1],10))); }
       }
     }
-
     const unidade = map.unidade ? String(r[map.unidade]??'').trim() : '';
     const loja    = map.loja    ? String(r[map.loja]??'').trim()    : '';
     const canal   = map.canal   ? String(r[map.canal]??'').trim()   : '';
@@ -364,7 +324,6 @@ function recomputeNormalized(){
     const des     = map.desconto ? parsePtNumber(r[map.desconto]) : 0;
     const fre     = map.entrega ? parsePtNumber(r[map.entrega]) : 0;
 
-    // Só aceita linhas com data
     if(!dia){ continue; }
 
     const row = {
@@ -386,21 +345,17 @@ function recomputeNormalized(){
 
   normRows = out;
 
-  // prévia
   const head = out.slice(0,20);
   if(head.length){
     const cols = Object.keys(head[0]);
     let html = '<table><thead><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>';
-    for(const row of head){
-      html += '<tr>'+cols.map(c=>`<td>${row[c]??''}</td>`).join('')+'</tr>';
-    }
+    for(const row of head){ html += '<tr>'+cols.map(c=>`<td>${row[c]??''}</td>`).join('')+'</tr>'; }
     html += '</tbody></table>';
     set('preview', html);
   } else {
     set('preview','—');
   }
 
-  // distincts
   const counts = {
     linhas: out.length,
     unidades: dists.unidade.size,
@@ -419,34 +374,23 @@ function recomputeNormalized(){
   $('btn-save').disabled = (normRows.length===0);
 }
 
-// Recalcular normalização quando mudar mapeamento
-[
-  'map-datahora','map-dia','map-hora','map-unidade','map-loja','map-canal',
-  'map-pagamento','map-cancelado','map-pedidos','map-total','map-desconto','map-entrega','map-turno'
-].forEach(id => $(id).addEventListener('change', recomputeNormalized));
-
-// ------------------------ Salvar no banco ------------------------
+// ---------- salvar ----------
 $('btn-save').onclick = async () => {
   if(!supa){ alert('Conecte no Supabase primeiro.'); return; }
   if(!normRows.length){ alert('Nada para salvar. Valide e confira o mapeamento.'); return; }
 
-  // Tabela-alvo: ajuste aqui se sua ingestão for por RPC.
-  // Opção A: inserir direto na tabela staging (ex: vendas_import_csv_v2)
   const tableName = 'vendas_import_csv_v2';
-
-  // Insere em lotes de 2000 para não estourar payload
   const BATCH = 2000;
   let ok = 0, fail = 0;
+
   for(let i=0;i<normRows.length;i+=BATCH){
     const slice = normRows.slice(i, i+BATCH);
-    // tente inserir
     const { error } = await supa.from(tableName).insert(slice);
     if(error){
       log({lote: [i, i+slice.length], error}, 'err');
       fail += slice.length;
-      // se der erro de permissão, pare e avise
       if(String(error.message||'').toLowerCase().includes('permission')){
-        alert('Erro de permissão para inserir em '+tableName+': '+error.message);
+        alert('Permissão negada para inserir em '+tableName+': '+error.message);
         break;
       }
     } else {
@@ -455,10 +399,6 @@ $('btn-save').onclick = async () => {
     }
   }
   alert(`Concluído. OK: ${ok} | Falhas: ${fail}`);
-
-  // dica: se você usa um pipeline por VIEW/RPC, aqui você pode chamar funções de refresh:
-  // await supa.rpc('refresh_vendas_hour');
-  // await supa.rpc('refresh_sales_materialized');
 };
 </script>
 </body>
