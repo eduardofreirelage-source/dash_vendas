@@ -1,449 +1,449 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt-br">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Dashboard + Upload (Supabase)</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Upload de Vendas → Supabase</title>
+
+<!-- Supabase JS v2 -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<!-- SheetJS (XLSX/CSV) -->
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+
 <style>
-  :root { --bg:#0b1320; --card:#121a2b; --muted:#94a3b8; --text:#e2e8f0; --pri:#22d3ee; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; }
-  html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
-  .wrap{max-width:1200px;margin:20px auto;padding:0 12px}
-  .row{display:flex;gap:12px;flex-wrap:wrap}
-  .card{background:var(--card);border:1px solid #1e293b;border-radius:12px;padding:12px}
-  .kpi{flex:1 1 200px}
-  .kpi h3{margin:0 0 6px 0;font-size:13px;color:var(--muted)}
-  .kpi .v{font-size:22px;font-weight:700}
-  .filters .f{display:flex;flex-direction:column;gap:6px;min-width:180px}
-  select, input[type="date"], input[type="text"], button{background:#0f172a;border:1px solid #334155;color:var(--text);border-radius:8px;padding:8px}
-  button{cursor:pointer}
-  .muted{color:var(--muted)}
-  .log{white-space:pre-wrap;font-family:ui-monospace, Menlo, Monaco, Consolas, "Courier New", monospace;max-height:220px;overflow:auto;background:#0a1020;padding:8px;border-radius:8px;border:1px solid #1f2937}
-  canvas{background:#0a1020;border:1px solid #1f2937;border-radius:8px}
-  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .pill{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #334155;color:#cbd5e1;background:#0b1222;font-size:12px}
+  :root { --fg:#111; --muted:#666; --ok:#1b8f3f; --warn:#b8860b; --err:#b00020; --bg:#fafafa; --card:#fff; --bd:#e6e6e6; }
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif;background:var(--bg);color:var(--fg);margin:0}
+  header{padding:14px 16px;border-bottom:1px solid var(--bd);background:#fff;position:sticky;top:0}
+  main{padding:16px;display:grid;gap:16px;grid-template-columns:1.2fr .8fr}
+  h2{margin:0 0 8px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  label{font-weight:600}
+  input[type=text],input[type=password],textarea,select{border:1px solid var(--bd);border-radius:8px;padding:8px 10px;min-width:220px}
+  button{border:none;background:#111;color:#fff;padding:10px 14px;border-radius:8px;cursor:pointer}
+  button.secondary{background:#444}
+  button.ghost{background:#f2f2f2;color:#111}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  small.muted{color:var(--muted)}
+  .grid{display:grid;gap:8px}
+  .map-grid{display:grid;grid-template-columns:200px 1fr;gap:8px;align-items:center}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#f2f2f2;margin-left:8px}
   .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
-  .progress{height:10px;background:#0a1020;border:1px solid #1f2937;border-radius:8px;overflow:hidden}
-  .bar{height:100%;width:0;background:linear-gradient(90deg,var(--pri),#60a5fa)}
-  details summary{cursor:pointer}
-  .map{display:grid;grid-template-columns:200px 1fr;gap:8px;align-items:center}
+  pre{white-space:pre-wrap;background:#0d1117;color:#c9d1d9;padding:10px;border-radius:8px;max-height:280px;overflow:auto;font-size:12px}
+  table{width:100%;border-collapse:collapse}
+  th,td{border-bottom:1px solid var(--bd);padding:6px 8px;font-size:12px;text-align:left}
+  .kpi{display:flex;gap:12px;flex-wrap:wrap}
+  .pill{padding:8px 10px;border-radius:8px;background:#f6f6f6;border:1px solid var(--bd)}
+  .progress{height:10px;background:#eee;border-radius:999px;overflow:hidden}
+  .bar{height:100%;background:#111;width:0%}
 </style>
 </head>
 <body>
-<div class="wrap">
+<header>
+  <strong>Upload de Vendas → Supabase</strong>
+  <span class="badge">planilha → RPC → vendas_upload → vw_vendas</span>
+</header>
 
-  <div class="card">
-    <div class="row" style="align-items:center;gap:8px;">
-      <div><strong>Supabase:</strong></div>
-      <input id="url" type="text" style="min-width:360px" placeholder="SUPABASE_URL" />
-      <input id="key" type="text" style="min-width:520px" placeholder="SUPABASE_ANON_KEY" />
-      <button id="btnConnect">Conectar</button>
-      <span id="connStatus" class="pill muted">desconectado</span>
+<main>
+  <!-- Coluna esquerda -->
+  <section class="card">
+    <h2>1) Conexão</h2>
+    <div class="grid">
+      <div class="row">
+        <label>Supabase URL</label>
+        <input id="url" type="text" value="https://uahmcfzerofhzjvlzrqc.supabase.co" style="min-width:420px"/>
+      </div>
+      <div class="row">
+        <label>Anon Key</label>
+        <input id="key" type="password" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU" style="min-width:620px"/>
+        <button class="secondary" id="btnConnect">Conectar</button>
+        <span id="connStatus" class="badge">—</span>
+      </div>
+      <small class="muted">O usuário/papel do token precisa de: SELECT/INSERT/UPDATE em <code>vendas_upload</code>, SELECT em <code>vw_vendas</code>, EXECUTE em <code>ingest_vendas_json(jsonb)</code>.</small>
     </div>
-    <div class="muted" style="margin-top:6px">Já preenchido com seu projeto.</div>
-  </div>
+  </section>
 
-  <div class="card filters">
+  <section class="card">
+    <h2>Debug</h2>
+    <div class="row" style="gap:8px">
+      <button class="ghost" id="btnSmoke">Smoke test (contar vw_vendas)</button>
+      <button class="ghost" id="btnLists">Recarregar listas</button>
+    </div>
+    <pre id="log">Pronto.</pre>
+  </section>
+
+  <!-- Coluna esquerda (abaixo) -->
+  <section class="card" style="grid-column:1 / span 1">
+    <h2>2) Arquivo</h2>
     <div class="row">
-      <div class="f"><label>De</label><input id="dini" type="date" /></div>
-      <div class="f"><label>Até</label><input id="dfim" type="date" /></div>
-      <div class="f"><label>Unidades</label><select id="ms-unids" multiple size="6" title="unidade"></select></div>
-      <div class="f"><label>Lojas (<code>vw_vendas.loja</code>)</label><select id="ms-lojas" multiple size="6" title="loja"></select></div>
-      <div class="f"><label>Turnos</label><select id="ms-turnos" multiple size="6" title="turno"></select></div>
-      <div class="f"><label>Canais</label><select id="ms-canais" multiple size="6" title="canal"></select></div>
-      <div class="f"><label>Pagamentos</label><select id="ms-pags" multiple size="6" title="pagamento_base"></select></div>
-      <div class="f"><label>Cancelado</label>
-        <select id="sel-cancel"><option value="">Todos</option><option>Não</option><option>Sim</option></select>
-      </div>
-      <div class="f" style="align-self:flex-end;gap:8px">
-        <button id="btnApply">Aplicar</button>
-        <button id="btnClear">Limpar</button>
-      </div>
+      <input id="file" type="file" accept=".xlsx,.xls,.csv"/>
+      <button id="btnValidate" disabled>Validar</button>
+      <small class="muted">Aceita .xlsx/.xls/.csv. A validação é local (navegador).</small>
     </div>
-    <div class="muted" style="margin-top:4px">Se `vw_vendas` não estiver na cache, o app usa RPCs `list_*`.</div>
-  </div>
+    <div id="fileInfo" class="row"></div>
+  </section>
 
-  <div class="row">
-    <div class="card kpi"><h3>Pedidos</h3><div id="k-ped" class="v">–</div></div>
-    <div class="card kpi"><h3>Faturamento</h3><div id="k-fat" class="v">–</div></div>
-    <div class="card kpi"><h3>Descontos</h3><div id="k-des" class="v">–</div></div>
-    <div class="card kpi"><h3>Frete/Entrega</h3><div id="k-fre" class="v">–</div></div>
-  </div>
+  <!-- Coluna direita (mapeamento) -->
+  <section class="card" style="grid-column:2 / span 1">
+    <h2>3) Mapeamento de colunas</h2>
+    <small class="muted">Mapeie as colunas da planilha para os campos canônicos que o backend espera.</small>
+    <div id="mapArea" class="map-grid" style="margin-top:10px"></div>
+  </section>
 
-  <div class="grid-2" style="margin-top:12px">
-    <div class="card"><h3>Faturamento por dia da semana</h3><canvas id="c-dow" height="220"></canvas></div>
-    <div class="card"><h3>Faturamento por mês</h3><canvas id="c-month" height="220"></canvas></div>
-  </div>
-  <div class="card" style="margin-top:12px"><h3>Faturamento por hora</h3><canvas id="c-hour" height="220"></canvas></div>
-
-  <div class="card" style="margin-top:12px">
-    <h3>Upload Excel → banco</h3>
-    <div class="row" style="align-items:center">
-      <input id="file" type="file" accept=".xlsx,.xls" />
-      <button id="btnValidate">Validar arquivo</button>
+  <!-- Linha inteira -->
+  <section class="card" style="grid-column:1 / span 2">
+    <h2>4) Enviar ao banco (RPC <code>ingest_vendas_json</code>)</h2>
+    <div class="row" style="gap:12px">
       <button id="btnSave" disabled>Salvar no banco</button>
-      <span id="sheetStatus" class="pill muted">SheetJS…</span>
+      <small class="muted">Envia em lotes (padrão 2.000 linhas por chamada) com deduplicação via <code>row_key</code>.</small>
     </div>
-
-    <details id="mapBox" class="hidden" style="margin-top:12px">
-      <summary><strong>Mapeamento de colunas</strong></summary>
-      <div class="map" style="margin-top:8px">
-        <div>Data da venda → <code>data_venda</code></div><select id="m-data"></select>
-        <div>Hora (0–23) → <code>hora</code></div><select id="m-hora"></select>
-        <div>Unidade → <code>unidade</code></div><select id="m-unid"></select>
-        <div>Nome da loja → <code>"Nome da loja"</code></div><select id="m-loja"></select>
-        <div>Canal → <code>canal</code> / <code>"Canal de venda"</code></div><select id="m-canal"></select>
-        <div>Pagamento → <code>pagamento</code> / <code>"Pagamento"</code></div><select id="m-pag"></select>
-        <div>Cancelado → <code>cancelado</code> / <code>"Está cancelado"</code></div><select id="m-canc"></select>
-        <div>Turno → <code>turno</code> / <code>"Turno"</code></div><select id="m-turno"></select>
-        <div>Itens/Pedidos → <code>itens</code> / <code>"Itens"</code></div><select id="m-itens"></select>
-        <div>Total (fat) → <code>total</code> / <code>"Total"</code></div><select id="m-fat"></select>
-        <div>Desconto → <code>desconto</code> / <code>"Desconto"</code></div><select id="m-des"></select>
-        <div>Entrega (frete) → <code>entrega</code> / <code>"Entrega"</code></div><select id="m-fre"></select>
-        <div>Consumidor → <code>consumidor</code></div><select id="m-cons"></select>
-      </div>
-    </details>
-
     <div class="progress" style="margin-top:10px"><div id="bar" class="bar"></div></div>
-    <div id="upInfo" class="muted" style="margin-top:6px"></div>
-  </div>
+    <div id="saveInfo" class="row" style="margin-top:8px"></div>
+  </section>
 
-  <div class="card" style="margin-top:12px">
-    <div class="row" style="justify-content:space-between;align-items:center">
-      <h3 style="margin:0">Debug</h3>
-      <div>
-        <button id="btnPing">Smoke test (KPI bruto)</button>
-        <button id="btnReloadLists">Recarregar listas</button>
-        <span id="sumCheck" class="pill">—</span>
-      </div>
+  <!-- Amostra -->
+  <section class="card" style="grid-column:1 / span 2">
+    <h2>Amostra (10 primeiras linhas lidas)</h2>
+    <div id="sample"></div>
+  </section>
+
+  <!-- KPIs simples só para validar carga -->
+  <section class="card" style="grid-column:1 / span 2">
+    <h2>5) Resumo pós-carga</h2>
+    <div class="kpi" id="kpis">
+      <div class="pill" id="kpiCount">linhas: —</div>
+      <div class="pill" id="kpiUnid">unidades: —</div>
+      <div class="pill" id="kpiLoja">lojas: —</div>
+      <div class="pill" id="kpiTurno">turnos: —</div>
+      <div class="pill" id="kpiCanal">canais: —</div>
+      <div class="pill" id="kpiPags">pagamentos: —</div>
     </div>
-    <div id="log" class="log" style="margin-top:8px"></div>
-  </div>
-
-</div>
-
-<!-- libs -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
-<script>
-(async()=>{ // SheetJS com fallback
-  function add(src,cb){const s=document.createElement('script');s.src=src;s.onload=cb;s.onerror=cb;document.head.appendChild(s);}
-  await new Promise(r=>add('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',r));
-  if(!window.XLSX){await new Promise(r=>add('https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js',r));}
-  const badge=document.getElementById('sheetStatus');
-  badge.textContent = window.XLSX ? 'SheetJS OK' : 'SheetJS indisponível';
-  badge.className = 'pill ' + (window.XLSX?'ok':'warn');
-})();
-</script>
+  </section>
+</main>
 
 <script>
-const $ = id=>document.getElementById(id);
-const log = (...a)=>{ const t=a.map(x=> typeof x==='string'? x : JSON.stringify(x,null,2)).join(' '); $('log').textContent += t + '\n'; $('log').scrollTop = $('log').scrollHeight; };
-const fmt = n => (typeof n==='number') ? n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}) : n;
+/** ========= Helpers ========= **/
+const $ = (q)=>document.querySelector(q);
+const log = (msg, type='')=>{
+  const pre = $('#log');
+  const tag = type==='err' ? '❌ ' : type==='warn' ? '⚠️ ' : type==='ok' ? '✅ ' : '';
+  pre.textContent += (pre.textContent.endsWith('\n')?'':'\n') + tag + (typeof msg==='string'?msg:JSON.stringify(msg,null,2));
+  pre.scrollTop = pre.scrollHeight;
+};
+const setBar = (p)=> $('#bar').style.width = `${Math.max(0,Math.min(100,p))}%`;
+const nf = new Intl.NumberFormat('pt-BR',{maximumFractionDigits:2});
 
-let supa=null, charts={}, parsed={headers:[],rows:[]};
+const CANON = [
+  {key:'dia', label:'Data (dia)'},
+  {key:'hora', label:'Hora (0-23)'},
+  {key:'unidade', label:'Unidade'},
+  {key:'loja', label:'Loja (NOME DA LOJA)'},
+  {key:'canal', label:'Canal'},
+  {key:'pagamento_base', label:'Pagamento'},
+  {key:'cancelado', label:'Cancelado (Sim/Não)'},
+  {key:'pedidos', label:'Pedidos (int)'},
+  {key:'fat', label:'Faturamento'},
+  {key:'des', label:'Desconto'},
+  {key:'fre', label:'Frete'},
+  {key:'turno', label:'Turno'},
+  {key:'pedido_id', label:'Pedido ID (opcional)'}
+];
 
-$('url').value = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
-$('key').value = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
-
-async function connect(){
-  try{
-    supa = window.supabase.createClient($('url').value.trim(), $('key').value.trim());
-    $('connStatus').textContent = 'conectado';
-    $('connStatus').className = 'pill ok';
-    log('Pronto.\n✅ Supabase client ok');
-    await initDates();
-    await loadLists();
-    await applyAll();
-  }catch(e){
-    $('connStatus').textContent = 'erro';
-    $('connStatus').className = 'pill err';
-    log('❌ erro conectar', e.message||e);
-  }
+function normalizeHeader(h){
+  if(!h) return '';
+  return String(h).toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // tira acentos
+    .replace(/\s+/g,' ').trim();
 }
-
-async function initDates(){
-  const df = new Date(); const de = new Date(df); de.setDate(df.getDate()-29);
-  $('dini').value = de.toISOString().slice(0,10);
-  $('dfim').value = df.toISOString().slice(0,10);
-}
-
-async function distinctViaView(field, de, ate){
-  const { data, error } = await supa
-    .from('vw_vendas')
-    .select(field)
-    .gte('dia', de).lte('dia', ate)
-    .not(field,'is',null).neq(field,'')
-    .order(field,{ascending:true})
-    .limit(10000);
-  if(error) throw error;
-  const set = new Set((data||[]).map(r=>(r[field]||'').toString()));
-  return Array.from(set);
-}
-async function distinctViaRPC(fn, de, ate){
-  const { data, error } = await supa.rpc(fn, { p_dini: de, p_dfim: ate });
-  if(error) throw error;
-  return (data||[]).map(r=>r.val).filter(Boolean);
-}
-async function loadLists(){
-  const de = $('dini').value || '2025-01-01';
-  const ate= $('dfim').value || new Date().toISOString().slice(0,10);
-
-  async function tryBoth(field, fn){
-    try{
-      return await distinctViaView(field,de,ate);
-    }catch(e){
-      log('⚠️ loadFilters erro:', e);
-      return await distinctViaRPC(fn,de,ate);
+function guessMapping(headers){
+  const norm = headers.map(h=>({raw:h,n:normalizeHeader(h)}));
+  const pick = (cands)=> {
+    for(const c of cands){
+      const f = norm.find(x=> x.n===c || x.n.includes(c));
+      if(f) return f.raw;
     }
-  }
-
-  const [unids, lojas, turnos, canais, pags] = await Promise.all([
-    tryBoth('unidade','list_unidades'),
-    tryBoth('loja','list_lojas'),
-    tryBoth('turno','list_turnos'),
-    tryBoth('canal','list_canais'),
-    tryBoth('pagamento_base','list_pags'),
-  ]);
-
-  function fill(selId, arr){
-    const sel=$(selId); sel.innerHTML='';
-    for(const v of arr){ const o=document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o); }
-  }
-  fill('ms-unids', unids);
-  fill('ms-lojas', lojas);
-  fill('ms-turnos', turnos);
-  fill('ms-canais', canais);
-  fill('ms-pags',  pags);
-
-  log('🔎 Listas carregadas:', {unids:unids.length, lojas:lojas.length, turnos:turnos.length, canais:canais.length, pags:pags.length});
-}
-
-function collectParams(){
-  const pick = sel=> Array.from($(sel).selectedOptions).map(o=>o.value);
+    return '';
+  };
   return {
-    p_dini: $('dini').value,
-    p_dfim: $('dfim').value,
-    p_unids: (pick('ms-unids').length? pick('ms-unids'): null),
-    p_lojas: (pick('ms-lojas').length? pick('ms-lojas'): null),
-    p_turnos:(pick('ms-turnos').length? pick('ms-turnos'): null),
-    p_canais:(pick('ms-canais').length? pick('ms-canais'): null),
-    p_pags:  (pick('ms-pags').length? pick('ms-pags'): null),
-    p_cancelado: $('sel-cancel').value || null,
+    dia: pick(['data da venda','data_venda','data','dia']),
+    hora: pick(['hora','hr']),
+    unidade: pick(['unidade']),
+    loja: pick(['nome da loja','loja','consumidor','nome']),
+    canal: pick(['canal de venda','canal']),
+    pagamento_base: pick(['pagamento','pagamento base','forma de pagamento']),
+    cancelado: pick(['esta cancelado','está cancelado','cancelado']),
+    pedidos: pick(['itens','pedidos','quantidade']),
+    fat: pick(['total','valor total','faturamento','receita']),
+    des: pick(['desconto']),
+    fre: pick(['entrega','frete']),
+    turno: pick(['turno']),
+    pedido_id: pick(['pedido id','pedido'])
   };
 }
-
-async function fetchKPI(p){
-  const candidates = ['kpi_vendas_v3','kpi_vendas_v2'];
-  let lastErr = null;
-  for(const fn of candidates){
-    const { data, error } = await supa.rpc(fn, p);
-    if(!error && data){ const row = Array.isArray(data)? data[0]: data; if(row) return row; }
-    lastErr = error;
+function excelSerialToISO(serial){
+  // Excel serial (1900-based). Aceita número ou string
+  const n = Number(serial);
+  if(!isFinite(n) || n<=59) return null;
+  const ms = Math.round((n - 25569) * 86400 * 1000);
+  const d = new Date(ms);
+  if(isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0,10);
+}
+function parseDateSmart(v){
+  if(v==null || v==='') return null;
+  // Se já vier Date, ou string ISO yyyy-mm-dd
+  if (v instanceof Date) return v.toISOString().slice(0,10);
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;            // YYYY-MM-DD
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)){                   // DD/MM/YYYY
+    const [d,m,y] = s.split('/');
+    return `${y}-${m}-${d}`;
   }
-  throw lastErr || new Error('Nenhum RPC KPI disponível');
+  if (/^\d+(\.\d+)?$/.test(s)){                           // possível serial Excel
+    const iso = excelSerialToISO(Number(s));
+    if (iso) return iso;
+  }
+  // Último recurso: Date.parse
+  const t = Date.parse(s);
+  if(!isNaN(t)) return new Date(t).toISOString().slice(0,10);
+  return null;
+}
+function parseHoraSmart(v){
+  if(v==null || v==='') return null;
+  const s = String(v).trim();
+  if (/^\d{1,2}$/.test(s)) return parseInt(s,10);
+  const m = s.match(/^(\d{1,2})[:h]/i);
+  if(m) return Math.max(0, Math.min(23, parseInt(m[1],10)));
+  const n = Number(s);
+  if (isFinite(n)) return Math.max(0, Math.min(23, Math.round(n)));
+  return null;
+}
+function parseCancel(v){
+  const s = String(v??'').toLowerCase().trim();
+  if (['sim','s','true','1','yes'].includes(s)) return 'Sim';
+  return 'Não';
+}
+function parseNumKeep(v){
+  // o RPC aceita número (ex: 123.45) ou texto pt-BR (ex: "1.234,56")
+  if(v==null) return null;
+  const s = String(v).trim();
+  if(s==='') return null;
+  // se vier "1.234,56" mantenho; se vier número, devolvo Number
+  if (/[0-9],[0-9]{1,2}$/.test(s) || /,0$/.test(s)) return s;
+  const n = Number(s.replace(/\s/g,''));
+  return isFinite(n) ? n : s;
 }
 
-async function fetchChart(kind, p){
-  const map = {
-    dow:   ['chart_vendas_dow_v3','chart_vendas_dow_v2'],
-    mes:   ['chart_vendas_mes_v3','chart_vendas_mes_v2','chart_vendas_month_v3','chart_vendas_month_v2'],
-    hora:  ['chart_vendas_hora_v3','chart_vendas_hora_v2','chart_vendas_hour_v3','chart_vendas_hour_v2'],
-  };
-  const cands = map[kind] || [];
-  let lastErr = null;
-  for(const fn of cands){
-    const { data, error } = await supa.rpc(fn, p);
-    if(!error && data) return data;
-    lastErr = error;
+/** ========= Estado ========= **/
+let supa = null;
+let rowsRaw = [];
+let headers = [];
+let mapping = {};
+let rowsMapped = [];
+
+/** ========= UI ========= **/
+function renderMapping(){
+  const area = $('#mapArea');
+  area.innerHTML = '';
+  if(headers.length===0){
+    area.innerHTML = '<small class="muted">Carregue e valide um arquivo para montar o mapeamento.</small>';
+    return;
   }
-  throw lastErr || new Error(`Nenhum RPC chart para ${kind}`);
+  for(const c of CANON){
+    const lab = document.createElement('div');
+    lab.textContent = c.label;
+    const sel = document.createElement('select');
+    sel.dataset.key = c.key;
+    sel.innerHTML = ['<option value="">(sem coluna)</option>']
+      .concat(headers.map(h=>`<option value="${h}">${h}</option>`)).join('');
+    if (mapping[c.key]) sel.value = mapping[c.key];
+    sel.addEventListener('change', ()=>{
+      mapping[sel.dataset.key] = sel.value || '';
+      prepareMapped();
+    });
+    area.appendChild(lab);
+    area.appendChild(sel);
+  }
+}
+function renderSample(){
+  const cont = $('#sample');
+  if(rowsRaw.length===0){ cont.innerHTML = '<small class="muted">Sem dados.</small>'; return; }
+  const head = headers.slice(0,50);
+  const first = rowsRaw.slice(0,10);
+  let html = '<div style="overflow:auto"><table><thead><tr>';
+  for(const h of head) html += `<th>${h}</th>`;
+  html += '</tr></thead><tbody>';
+  for(const r of first){
+    html += '<tr>';
+    for(const h of head) html += `<td>${(r[h]??'')}</td>`;
+    html += '</tr>';
+  }
+  html += '</tbody></table></div>';
+  cont.innerHTML = html;
+}
+function setConn(state, msg=''){
+  const el = $('#connStatus');
+  el.textContent = state ? '✅ conectado' : '—';
+  if(msg) log(msg, state?'ok':'err');
 }
 
-function setKPI(k){ $('k-ped').textContent = (k.pedidos??0).toLocaleString('pt-BR'); $('k-fat').textContent = (k.fat??0).toLocaleString('pt-BR',{minimumFractionDigits:2}); $('k-des').textContent = (k.des??0).toLocaleString('pt-BR',{minimumFractionDigits:2}); $('k-fre').textContent = (k.fre??0).toLocaleString('pt-BR',{minimumFractionDigits:2}); }
+/** ========= Conectar ========= **/
+$('#btnConnect').addEventListener('click', async ()=>{
+  const url = $('#url').value.trim();
+  const key = $('#key').value.trim();
+  supa = window.supabase.createClient(url, key, { auth: { persistSession:false }});
+  setConn(true, 'Supabase client ok');
+});
 
-function drawChart(id, labels, values, title){
-  if(charts[id]) charts[id].destroy();
-  const ctx = $(id).getContext('2d');
-  charts[id] = new Chart(ctx, {
-    type:'bar',
-    data:{ labels, datasets:[{ label:title, data: values }] },
-    options:{ responsive:true, scales:{ x:{ ticks:{ color:'#cbd5e1'} }, y:{ ticks:{ color:'#cbd5e1'} } }, plugins:{ legend:{ labels:{ color:'#cbd5e1'} } } }
+/** ========= Validar arquivo ========= **/
+$('#file').addEventListener('change', ()=>{
+  $('#btnValidate').disabled = !$('#file').files?.length;
+});
+$('#btnValidate').addEventListener('click', async ()=>{
+  const f = $('#file').files?.[0];
+  if(!f){ alert('Escolha um arquivo primeiro'); return; }
+  try{
+    const buf = await f.arrayBuffer();
+    const wb = XLSX.read(buf, {type:'array', cellDates:true, raw:false});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(ws, {defval:'', raw:false});
+    rowsRaw = data;
+    headers = Object.keys(data[0]||{});
+    mapping = guessMapping(headers);
+    $('#fileInfo').innerHTML = `<strong>${f.name}</strong> — ${nf.format(rowsRaw.length)} linhas lidas`;
+    renderMapping();
+    renderSample();
+    prepareMapped();
+    $('#btnSave').disabled = false;
+    log(`Validação OK. Cabeçalhos: ${JSON.stringify(headers)}`);
+  }catch(e){
+    log(`Erro ao ler arquivo: ${e.message||e}`, 'err');
+  }
+});
+
+/** ========= Preparar linhas mapeadas ========= **/
+function prepareMapped(){
+  if(rowsRaw.length===0){ rowsMapped = []; return; }
+  rowsMapped = rowsRaw.map(r=>{
+    const get = (k)=> mapping[k] ? (r[mapping[k]] ?? null) : null;
+    return {
+      dia: parseDateSmart(get('dia')),
+      hora: parseHoraSmart(get('hora')),
+      unidade: (get('unidade')??'').toString().trim(),
+      loja: (get('loja')??'').toString().trim(),
+      canal: (get('canal')??'').toString().trim(),
+      pagamento_base: (get('pagamento_base')??'').toString().trim(),
+      cancelado: parseCancel(get('cancelado')),
+      pedidos: (get('pedidos')==null || String(get('pedidos')).trim()==='' ) ? 1 : parseInt(get('pedidos'),10),
+      fat: parseNumKeep(get('fat')),
+      des: parseNumKeep(get('des')),
+      fre: parseNumKeep(get('fre')),
+      turno: (get('turno')??'').toString().trim(),
+      pedido_id: (get('pedido_id')??'').toString().trim()
+    };
   });
 }
 
-async function applyAll(){
-  const p = collectParams();
-  log('→ KPI params', JSON.stringify(p,null,2));
-  const k = await fetchKPI(p);
-  setKPI(k);
+/** ========= Salvar no banco (RPC) ========= **/
+$('#btnSave').addEventListener('click', async ()=>{
+  if(!supa){ alert('Conecte primeiro'); return; }
+  if(!rowsMapped?.length){ alert('Valide o arquivo e mapeie as colunas'); return; }
 
-  const dow = await fetchChart('dow', p);
-  drawChart('c-dow', dow.map(r=>['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][r.dow]), dow.map(r=>Number(r.total||0)), 'Faturamento');
+  // limpeza básica: remove linhas sem data
+  const toSend = rowsMapped.filter(x=> !!x.dia);
+  if(toSend.length===0){ alert('Nenhuma linha com data reconhecida. Ajuste o mapeamento de "Data (dia)".'); return; }
 
-  const mon = await fetchChart('mes', p);
-  drawChart('c-month', mon.map(r=>r.ym), mon.map(r=>Number(r.total||0)), 'Faturamento');
+  $('#btnSave').disabled = true;
+  setBar(0);
+  $('#saveInfo').textContent = `Enviando ${nf.format(toSend.length)} linhas…`;
 
-  let hor = [];
-  try{ hor = await fetchChart('hora', p); drawChart('c-hour', hor.map(r=>r.h), hor.map(r=>Number(r.total||0)), 'Faturamento'); }
-  catch(e){ log('⚠️ hora RPC', e?.message||e); drawChart('c-hour', [], [], 'Faturamento'); }
-
-  const sumD = (dow||[]).reduce((a,b)=>a+Number(b.total||0),0);
-  const sumM = (mon||[]).reduce((a,b)=>a+Number(b.total||0),0);
-  const sumH = (hor||[]).reduce((a,b)=>a+Number(b.total||0),0);
-  const ok1 = Math.abs(sumD - Number(k.fat||0)) < 0.01;
-  const ok2 = Math.abs(sumM - Number(k.fat||0)) < 0.01;
-  const ok3 = Math.abs(sumH - Number(k.fat||0)) < 0.01;
-  $('sumCheck').textContent = `DOW ${ok1?'OK':'NOK'} | MÊS ${ok2?'OK':'NOK'} | HORA ${ok3?'OK':'NOK'}`;
-  $('sumCheck').className = 'pill ' + (ok1&&ok2&&ok3?'ok':'warn');
-  log(`✅ DOW soma=${fmt(sumD)} vs KPI.fat=${fmt(k.fat)} (${ok1?'ok':'mismatch'})`);
-  log(`✅ MÊS soma=${fmt(sumM)} vs KPI.fat=${fmt(k.fat)} (${ok2?'ok':'mismatch'})`);
-  log(`✅ HORA soma=${fmt(sumH)} vs KPI.fat=${fmt(k.fat)} (${ok3?'ok':'mismatch'})`);
-}
-
-/* === Upload Excel === */
-function autoGuess(headers){
-  const h = headers.map(s=>s.toString().trim().toLowerCase());
-  const pick = (...cands)=>{ for(const c of cands){ const i=h.indexOf(c.toLowerCase()); if(i>=0) return headers[i]; } return ''; };
-  return {
-    data: pick('data da venda','data','dia','data_venda'),
-    hora: pick('hora','hr','hour','time'),
-    unid: pick('unidade','filial','empresa'),
-    loja: pick('nome da loja','loja','cliente','consumidor'),
-    canal: pick('canal','canal de venda','origem'),
-    pag: pick('pagamento','pagamento_base','forma de pagamento','pagamento online','pagamento online, voucher parceiro desconto'),
-    canc: pick('está cancelado','cancelado'),
-    turno: pick('turno','período','periodo','shift'),
-    itens: pick('itens','pedidos','qtd'),
-    fat: pick('total','valor total','vl_total'),
-    des: pick('desconto'),
-    fre: pick('entrega','frete'),
-    cons: pick('consumidor','cliente'),
-  };
-}
-function fillMapSelects(headers){
-  const ids = ['m-data','m-hora','m-unid','m-loja','m-canal','m-pag','m-canc','m-turno','m-itens','m-fat','m-des','m-fre','m-cons'];
-  for(const id of ids){
-    const sel=$(id); sel.innerHTML='';
-    const o0=document.createElement('option'); o0.value=''; o0.textContent='— (ignorar)'; sel.appendChild(o0);
-    for(const h of headers){ const o=document.createElement('option'); o.value=h; o.textContent=h; sel.appendChild(o); }
+  const BATCH = 2000;
+  let done = 0, okBatches=0, errBatches=0;
+  for(let i=0;i<toSend.length;i+=BATCH){
+    const chunk = toSend.slice(i, i+BATCH);
+    try{
+      const { data, error } = await supa.rpc('ingest_vendas_json', { p_rows: chunk });
+      if(error) throw error;
+      okBatches++;
+      done += chunk.length;
+      setBar(Math.round(done*100/toSend.length));
+      $('#saveInfo').textContent = `Gravado: ${nf.format(done)} / ${nf.format(toSend.length)} (lotes OK: ${okBatches}, erros: ${errBatches})`;
+      log(`Lote OK: +${chunk.length} (retorno RPC: ${data})`, 'ok');
+    }catch(e){
+      errBatches++;
+      log(`Erro no lote (${i}-${i+BATCH}): ${e.message||e}`, 'err');
+    }
   }
-  const g = autoGuess(headers);
-  $('m-data').value=g.data; $('m-hora').value=g.hora; $('m-unid').value=g.unid; $('m-loja').value=g.loja;
-  $('m-canal').value=g.canal; $('m-pag').value=g.pag; $('m-canc').value=g.canc; $('m-turno').value=g.turno;
-  $('m-itens').value=g.itens; $('m-fat').value=g.fat; $('m-des').value=g.des; $('m-fre').value=g.fre; $('m-cons').value=g.cons;
-}
-function numBR(v){ if(v==null||v==='') return null; const s=(v+'').replace(/\./g,'').replace(',','.'); const n=Number(s); return Number.isFinite(n)? n : null; }
-function toInt(v){ const n=Number((v??'').toString().replace(/\D+/g,'')); return Number.isFinite(n)? n : null; }
-function normBool(v){
-  if(v===true) return true; if(v===false) return false;
-  const s=(v??'').toString().trim().toLowerCase();
-  if(['sim','s','true','1','y','yes'].includes(s)) return true;
-  if(['não','nao','n','false','0','no'].includes(s)) return false;
-  return null;
-}
 
-$('btnValidate').addEventListener('click', async()=>{
-  const f = $('file').files[0];
-  if(!f){ alert('Escolha um arquivo .xlsx'); return; }
-  if(!window.XLSX){ alert('SheetJS indisponível nesta rede.'); return; }
-  const ab = await f.arrayBuffer();
-  const wb = XLSX.read(ab,{type:'array'});
-  const sh = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(sh, {defval:null});
-  const headers = Object.keys(rows[0]||{});
-  parsed = { headers, rows };
-  $('mapBox').classList.remove('hidden');
-  fillMapSelects(headers);
-  $('btnSave').disabled = false;
-  log(`📄 Selecionado: ${f.name}\n✅ Lido: ${rows.length} linhas (apenas validação local)`);
+  $('#btnSave').disabled = false;
+  await refreshKPIs();
 });
 
-async function getTableCols(tbl){
-  const { data, error } = await supa
-    .from('information_schema.columns')
-    .select('column_name')
-    .eq('table_schema','public')
-    .eq('table_name',tbl);
-  if(error) return [];
-  return (data||[]).map(x=>x.column_name);
+/** ========= Smoke + Listas ========= **/
+$('#btnSmoke').addEventListener('click', refreshKPIs);
+$('#btnLists').addEventListener('click', refreshLists);
+
+async function refreshKPIs(){
+  if(!supa){ log('Conecte primeiro', 'warn'); return; }
+  try{
+    // count total via HEAD
+    let count = null;
+    {
+      const { data, error, count:ct } = await supa
+        .from('vw_vendas')
+        .select('dia', { head:true, count:'exact' });
+      if(error){ log(`count head falhou: ${error.message}`, 'warn'); }
+      count = ct ?? null;
+    }
+    // fallback se head não der count
+    if(count==null){
+      const { data, error } = await supa.rpc('rpc_count_vw_vendas'); // caso exista
+      if(!error && data && typeof data==='number') count = data;
+    }
+    // distincts
+    const [un,lo,tu,ca,pa] = await Promise.all([
+      supa.from('vw_vendas').select('unidade', {distinct:true}).limit(10000),
+      supa.from('vw_vendas').select('loja', {distinct:true}).limit(10000),
+      supa.from('vw_vendas').select('turno', {distinct:true}).limit(10000),
+      supa.from('vw_vendas').select('canal', {distinct:true}).limit(10000),
+      supa.from('vw_vendas').select('pagamento_base', {distinct:true}).limit(10000),
+    ]);
+
+    $('#kpiCount').textContent = `linhas: ${count ?? (un.data?.length || 0)}`;
+    $('#kpiUnid').textContent  = `unidades: ${un.data?.length ?? 0}`;
+    $('#kpiLoja').textContent  = `lojas: ${lo.data?.length ?? 0}`;
+    $('#kpiTurno').textContent = `turnos: ${tu.data?.length ?? 0}`;
+    $('#kpiCanal').textContent = `canais: ${ca.data?.length ?? 0}`;
+    $('#kpiPags').textContent  = `pagamentos: ${pa.data?.length ?? 0}`;
+
+    log('Smoke test concluído.', 'ok');
+  }catch(e){
+    log(`Smoke error: ${e.message||e}`, 'err');
+  }
 }
-
-$('btnSave').addEventListener('click', async()=>{
-  if(!supa){ alert('Conecte ao Supabase.'); return; }
-  if(!parsed.rows.length){ alert('Valide um arquivo primeiro.'); return; }
-
-  let target = 'vendas_import_csv_v2';
-  let cols = await getTableCols(target);
-  if(!cols.length){ alert('Tabela alvo vendas_import_csv_v2 não existe. Rode o SQL de criação e recarregue.'); return; }
-
-  const m = {
-    data: $('m-data').value, hora:$('m-hora').value, unid:$('m-unid').value, loja:$('m-loja').value,
-    canal:$('m-canal').value, pag:$('m-pag').value, canc:$('m-canc').value, turno:$('m-turno').value,
-    itens:$('m-itens').value, fat:$('m-fat').value, des:$('m-des').value, fre:$('m-fre').value, cons:$('m-cons').value
-  };
-
-  const BATCH=500; let ok=0, fail=0;
-  for(let i=0;i<parsed.rows.length;i+=BATCH){
-    const chunk = parsed.rows.slice(i,i+BATCH).map(r=>{
-      const o={};
-      const set=(name,val)=>{ if(cols.includes(name)) o[name]=val; };
-
-      if(m.data){ const d=new Date(r[m.data]); if(!isNaN(d)) set('data_venda', d.toISOString().slice(0,10)); }
-      if(m.hora){ const h=toInt(r[m.hora]); if(h!=null) set('hora', h); }
-
-      if(m.unid) set('unidade', r[m.unid]);
-      if(m.turno){ set('turno', r[m.turno]); if(cols.includes('Turno') && !o.turno) o['Turno']=r[m.turno]; }
-      if(m.canal){ set('canal', r[m.canal]); if(cols.includes('Canal de venda') && !o.canal) o['Canal de venda']=r[m.canal]; }
-      if(m.pag)  { set('pagamento', r[m.pag]); if(cols.includes('Pagamento') && !o.pagamento) o['Pagamento']=r[m.pag]; }
-      if(m.loja && cols.includes('Nome da loja')) o['Nome da loja']=r[m.loja];
-      if(m.cons && cols.includes('consumidor'))   o['consumidor']=r[m.cons];
-
-      if(m.canc){
-        const b=normBool(r[m.canc]);
-        if(b===true||b===false){
-          if(cols.includes('cancelado')) o['cancelado']=b;
-          if(cols.includes('Está cancelado')) o['Está cancelado']= b?'Sim':'Não';
-        }
-      }
-      if(m.itens){ const n=toInt(r[m.itens]); if(n!=null){ if(cols.includes('itens')) o.itens=n; if(cols.includes('Itens')) o['Itens']=n; } }
-      if(m.fat)  { const n=numBR(r[m.fat]); if(n!=null){ if(cols.includes('total')) o.total=n; if(cols.includes('Total')) o['Total']=r[m.fat]; } }
-      if(m.des)  { const n=numBR(r[m.des]); if(n!=null){ if(cols.includes('desconto')) o.desconto=n; if(cols.includes('Desconto')) o['Desconto']=r[m.des]; } }
-      if(m.fre)  { const n=numBR(r[m.fre]); if(n!=null){ if(cols.includes('entrega')) o.entrega=n; if(cols.includes('Entrega')) o['Entrega']=r[m.fre]; } }
-
-      return o;
+async function refreshLists(){
+  if(!supa){ log('Conecte primeiro', 'warn'); return; }
+  try{
+    const [un,lo,tu,ca,pa] = await Promise.all([
+      supa.from('vw_vendas').select('unidade', {distinct:true}).limit(2000),
+      supa.from('vw_vendas').select('loja', {distinct:true}).limit(2000),
+      supa.from('vw_vendas').select('turno', {distinct:true}).limit(2000),
+      supa.from('vw_vendas').select('canal', {distinct:true}).limit(2000),
+      supa.from('vw_vendas').select('pagamento_base', {distinct:true}).limit(2000),
+    ]);
+    log('Listas (amostras):', 'ok');
+    log({
+      unidade: (un.data||[]).slice(0,10),
+      loja: (lo.data||[]).slice(0,10),
+      turno: (tu.data||[]).slice(0,10),
+      canal: (ca.data||[]).slice(0,10),
+      pagamento: (pa.data||[]).slice(0,10)
     });
-
-    const { error } = await supa.from(target).insert(chunk, { returning:'minimal' });
-    if(error){ fail+=chunk.length; log('❌ insert', error.message||error); }
-    else{ ok+=chunk.length; }
-    const pct = Math.round(100*Math.min(i+BATCH, parsed.rows.length)/parsed.rows.length);
-    $('bar').style.width = pct + '%';
-    $('upInfo').textContent = `Inseridos: ${ok} | Falharam: ${fail} | Tabela: ${target}`;
+  }catch(e){
+    log(`loadFilters erro: ${e.message||e}`, 'err');
   }
-
-  // Recarrega listas e gráficos
-  await loadLists();
-  await applyAll();
-  log('✅ Upload concluído.', { ok, fail, target });
-});
-
-/* Eventos */
-$('btnConnect').addEventListener('click', connect);
-$('btnApply').addEventListener('click', async()=>{ await loadLists(); await applyAll(); });
-$('btnClear').addEventListener('click', ()=>{ ['ms-unids','ms-lojas','ms-turnos','ms-canais','ms-pags'].forEach(id=>$(id).selectedIndex=-1); $('sel-cancel').value=''; });
-$('btnReloadLists').addEventListener('click', loadLists);
-
-$('btnPing').addEventListener('click', async()=>{
-  if(!supa) return;
-  const p = { p_dini:$('dini').value, p_dfim:$('dfim').value, p_unids:null, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null };
-  for(const fn of ['kpi_vendas_v3','kpi_vendas_v2']){
-    const { data, error } = await supa.rpc(fn, p);
-    if(!error){ log('Smoke test (KPI bruto)', data); return; }
-  }
-  log('Smoke test (KPI) erro', 'Nenhum RPC disponível');
-});
-
-connect(); // conecta ao abrir
+}
 </script>
 </body>
 </html>
