@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>Uploader Vendas + Smoke Tests</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Favicon embutido para evitar 404 -->
+  <!-- Favicon embutido -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='64' height='64' fill='%230b5'/%3E%3Ctext x='50%25' y='55%25' font-size='36' text-anchor='middle' fill='white'%3E✓%3C/text%3E%3C/svg%3E" />
   <!-- SheetJS -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
@@ -92,7 +92,7 @@
     <div class="row">
       <div class="col"><label>Data inicial</label><input type="date" id="dini" /></div>
       <div class="col"><label>Data final</label><input type="date" id="dfim" /></div>
-      <div class="col" style="align-self:end"><button id="btnAutoRange" class="btn btn-secondary">Usar min/max da view</button></div>
+      <div class="col" style="align-self:end"><button id="btnAutoRange" class="btn btn-secondary">Usar min/max</button></div>
       <div class="col" style="align-self:end"><button id="btnSmoke" class="btn">Rodar smoke test</button></div>
     </div>
     <div id="smk" class="pill"></div>
@@ -119,11 +119,24 @@
   }
   const setPill = (id, txt, cls) => { const el=$(id); el.textContent = txt||''; el.className = 'pill ' + (cls||''); };
 
-  // Estado
   let SUPA = null;
   let rows = [];
 
   const selects = ["m_datahora","m_data_venda","m_hora","m_unidade","m_loja","m_canal","m_cancelado","m_itens","m_total","m_des","m_fre","m_turno","m_pagamento"];
+
+  function sanitizeHeader(k) {
+    return String(k).replace(/\s+/g,' ').trim();
+  }
+  function sanitizeRows(json) {
+    return json.map(r=>{
+      const o={};
+      for (const k of Object.keys(r)) {
+        const kk = sanitizeHeader(k);
+        o[kk] = r[k];
+      }
+      return o;
+    });
+  }
 
   function fillSelectOptions(cols) {
     for (const id of selects) {
@@ -132,18 +145,19 @@
       for (const c of cols) opts.push('<option>'+c+'</option>');
       el.innerHTML = opts.join('');
     }
-    // sugestões
-    suggest("#m_datahora", ["datahora","data e hora","data hora"]);
-    suggest("#m_data_venda", ["data_venda","data","data da venda"]);
-    suggest("#m_hora", ["hora"]);
+    // sugestões (agora com "Data")
+    suggest("#m_datahora", ["datahora","data e hora","data hora","data","Data"]);
+    suggest("#m_data_venda", ["data_venda","data","Data","data da venda"]);
+    suggest("#m_hora", ["hora","Hora"]);
     suggest("#m_unidade", ["unidade","Unidade"]);
+    // loja agora pega "loja" (sem espaço) e variações
     suggest("#m_loja", ["loja","nome da loja","Nome da loja","Nome da Loja"]);
-    suggest("#m_canal", ["canal","Canal de venda"]);
-    suggest("#m_cancelado", ["cancelado","Está cancelado","está cancelado"]);
-    suggest("#m_itens", ["itens","Itens","pedidos"]);
-    suggest("#m_total", ["total","Total","fat"]);
-    suggest("#m_des", ["des","desconto","Desconto"]);
-    suggest("#m_fre", ["fre","frete","entrega","Entrega"]);
+    suggest("#m_canal", ["canal","Canal de venda","Canal"]);
+    suggest("#m_cancelado", ["cancelado","Cancelado","Está cancelado","está cancelado"]);
+    suggest("#m_itens", ["itens","Itens","pedidos","Pedidos"]);
+    suggest("#m_total", ["total","Total","fat","Fat"]);
+    suggest("#m_des", ["des","Desconto","desconto"]);
+    suggest("#m_fre", ["fre","Frete","frete","Entrega"]);
     suggest("#m_turno", ["turno","Turno"]);
     suggest("#m_pagamento", ["pagamento","Pagamento","pagamento_base"]);
   }
@@ -177,7 +191,7 @@
   function parseDateLike(v) {
     if (v === null || v === undefined || v === '') return { d:null, h:null };
     if (typeof v === 'number') {
-      const epoch = new Date(Date.UTC(1899, 11, 30));
+      const epoch = new Date(Date.UTC(1899, 11, 30)); // Excel
       const ms = v * 86400000;
       const dt = new Date(epoch.getTime() + ms);
       return { d: dt.toISOString().slice(0,10), h: dt.getUTCHours() };
@@ -233,13 +247,10 @@
 
   async function initClient() {
     if (SUPA) return SUPA;
-    const url = $("#url").value.trim();
-    const key = $("#key").value.trim();
-    SUPA = createClient(url, key);
+    SUPA = createClient($("#url").value.trim(), $("#key").value.trim());
     return SUPA;
   }
 
-  // Ping robusto: tenta colunas reais, sem 'id'
   async function ping() {
     try {
       await initClient();
@@ -251,20 +262,11 @@
         if (!error) { ok = true; break; }
         lastErr = error;
       }
-      if (ok) {
-        setPill("#connBadge","✅ Supabase client ok","ok");
-        log("✅ Supabase client ok");
-      } else {
-        setPill("#connBadge","❌ Erro Supabase","err");
-        log("❌", lastErr || {message:"Erro desconhecido"});
-      }
-    } catch (e) {
-      setPill("#connBadge","❌ Erro Supabase","err");
-      log("❌", e);
-    }
+      if (ok) { setPill("#connBadge","✅ Supabase client ok","ok"); log("✅ Supabase client ok"); }
+      else { setPill("#connBadge","❌ Erro Supabase","err"); log("❌", lastErr || {message:"Erro desconhecido"}); }
+    } catch (e) { setPill("#connBadge","❌ Erro Supabase","err"); log("❌", e); }
   }
 
-  // UI events
   $("#btnPing").addEventListener("click", ping);
 
   $("#btnRead").addEventListener("click", async () => {
@@ -275,17 +277,14 @@
       const wb = XLSX.read(buf, {type:'array'});
       const sheetName = wb.SheetNames[0];
       const sheet = wb.Sheets[sheetName];
-      const json = XLSX.utils.sheet_to_json(sheet, { defval: null });
-      rows = json;
+      const jsonRaw = XLSX.utils.sheet_to_json(sheet, { defval: null });
+      rows = sanitizeRows(jsonRaw); // <<< normaliza cabeçalhos (remove espaços extras)
       $("#fileInfo").textContent = `Arquivo: ${f.name} — Abas: ${wb.SheetNames.length} — Linhas: ${rows.length}`;
       log("📄 Arquivo lido", { nome:f.name, sheet: sheetName, linhas: rows.length });
       const cols = Object.keys(rows[0] || {});
       fillSelectOptions(cols);
       log("🔧 Amostra mapeada (1ª linha)", rows[0] || {});
-    } catch (e) {
-      log("❌ Erro lendo Excel", e);
-      alert("Erro lendo o Excel (ver Debug).");
-    }
+    } catch (e) { log("❌ Erro lendo Excel", e); alert("Erro lendo o Excel (ver Debug)."); }
   });
 
   $("#btnPreview").addEventListener("click", () => {
@@ -316,25 +315,31 @@
       }
       setPill("#insInfo", `Inserção concluída — ok: ${ok} / falhas: ${fail}`, fail?'warn':'ok');
       log("📦 Inserção concluída", { ok, fail });
-    } catch (e) {
-      log("❌ Erro inserindo", e);
-      alert("Erro inserindo (ver Debug).");
-    }
+    } catch (e) { log("❌ Erro inserindo", e); alert("Erro inserindo (ver Debug)."); }
   });
 
   $("#btnAutoRange").addEventListener("click", async ()=>{
     try {
       await initClient();
-      const a = await SUPA.from('vw_vendas').select('dia').order('dia',{ascending:true}).limit(1);
-      const b = await SUPA.from('vw_vendas').select('dia').order('dia',{ascending:false}).limit(1);
-      const minDia = (a.data && a.data[0] && a.data[0].dia) ? a.data[0].dia : '';
-      const maxDia = (b.data && b.data[0] && b.data[0].dia) ? b.data[0].dia : '';
+      // 1) tenta na view
+      let minDia='', maxDia='';
+      {
+        const a = await SUPA.from('vw_vendas').select('dia').order('dia',{ascending:true}).limit(1);
+        const b = await SUPA.from('vw_vendas').select('dia').order('dia',{ascending:false}).limit(1);
+        if (!a.error && a.data?.length) minDia = a.data[0].dia;
+        if (!b.error && b.data?.length) maxDia = b.data[0].dia;
+      }
+      // 2) fallback na base bruta
+      if (!minDia || !maxDia) {
+        const a = await SUPA.from('vendas_import_csv_v2').select('data_venda').not('data_venda','is',null).order('data_venda',{ascending:true}).limit(1);
+        const b = await SUPA.from('vendas_import_csv_v2').select('data_venda').not('data_venda','is',null).order('data_venda',{ascending:false}).limit(1);
+        if (!minDia && !a.error && a.data?.length) minDia = a.data[0].data_venda;
+        if (!maxDia && !b.error && b.data?.length) maxDia = b.data[0].data_venda;
+      }
       $("#dini").value = minDia || '';
       $("#dfim").value = maxDia || '';
       log("🗓️ Intervalo auto", { minDia, maxDia });
-    } catch(e){
-      log("⚠️ AutoRange falhou", e);
-    }
+    } catch(e){ log("⚠️ AutoRange falhou", e); }
   });
 
   $("#btnSmoke").addEventListener("click", async ()=>{
@@ -344,43 +349,28 @@
       const dfim = $("#dfim").value || '2025-12-31';
       const args = { p_dini:dini, p_dfim:dfim, p_unids:null, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null };
 
-      // KPI
       const k = await SUPA.rpc('kpi_vendas_v2', args);
       if (k.error) { log("⚠️ KPI erro", k.error); $("#smk").textContent = "⚠️ KPI indisponível"; return; }
       const kpi = Array.isArray(k.data) ? k.data[0] : k.data;
-      log("→ KPI params", args);
-      log("✅ KPI", kpi);
+      log("→ KPI params", args); log("✅ KPI", kpi);
 
-      // DOW/MÊS/HORA (se existirem)
       const d = await SUPA.rpc('chart_vendas_dow_v2', args);
       const m = await SUPA.rpc('chart_vendas_mes_v2', args);
       const h = await SUPA.rpc('chart_vendas_hora_v2', args);
-
-      if (d.error || m.error || h.error) {
-        log("⚠️ chart erros", { dow:d.error, mes:m.error, hora:h.error });
-        $("#smk").textContent = "⚠️ Charts indisponíveis (ver Debug)";
-        return;
-      }
+      if (d.error || m.error || h.error) { log("⚠️ chart erros", { dow:d.error, mes:m.error, hora:h.error }); $("#smk").textContent = "⚠️ Charts indisponíveis"; return; }
 
       const sum = (arr, key) => (arr||[]).reduce((s,x)=>s+Number(x[key]||0),0);
-      const sd = sum(d.data,'total');
-      const sm = sum(m.data,'total');
-      const sh = sum(h.data,'total');
+      const sd = sum(d.data,'total'), sm = sum(m.data,'total'), sh = sum(h.data,'total');
       const fat = Number(kpi?.fat || 0);
 
-      const ok = Math.abs(sd-fat)<1e-6 && Math.abs(sm-fat)<1e-6 && Math.abs(sh-fat)<1e-6;
       $("#smk").textContent =
         `DOW ${Math.abs(sd-fat)<1e-6?'✅':'❌'} soma=${sd.toLocaleString('pt-BR',{minimumFractionDigits:2})} vs KPI=${fat.toLocaleString('pt-BR',{minimumFractionDigits:2})}  | `+
         `MÊS ${Math.abs(sm-fat)<1e-6?'✅':'❌'} soma=${sm.toLocaleString('pt-BR',{minimumFractionDigits:2})} vs KPI=${fat.toLocaleString('pt-BR',{minimumFractionDigits:2})}  | `+
         `HORA ${Math.abs(sh-fat)<1e-6?'✅':'❌'} soma=${sh.toLocaleString('pt-BR',{minimumFractionDigits:2})} vs KPI=${fat.toLocaleString('pt-BR',{minimumFractionDigits:2})}`;
-      log("🧪 Smoke", { dow:sd, mes:sm, hora:sh, fat, ok });
-    } catch(e){
-      $("#smk").textContent = "❌ Smoke test falhou (ver Debug)";
-      log("❌ Smoke", e);
-    }
+      log("🧪 Smoke", { dow:sd, mes:sm, hora:sh, fat, ok: Math.abs(sd-fat)<1e-6 && Math.abs(sm-fat)<1e-6 && Math.abs(sh-fat)<1e-6 });
+    } catch(e){ $("#smk").textContent = "❌ Smoke test falhou (ver Debug)"; log("❌ Smoke", e); }
   });
 
-  // Inicial
   (async function start(){ try { await ping(); } catch(_){}})();
 </script>
 </body>
