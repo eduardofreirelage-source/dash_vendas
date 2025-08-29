@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.14.0 — KPIs corretos: pedidos=1, row_key estável)</title>
+  <title>DASHBOARD — CFO (v2.13.x — upload+distinct pedido_id)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -50,7 +50,7 @@
     .delta.down{color:#ef4444;border-color:#fecaca}
     .delta.flat{color:#64748b}
 
-    .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
+    .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(0,0,0,.05)}
     .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
     .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
     .seg button{padding:6px 10px;border:0;background:#fff;cursor:pointer;font-weight:700}
@@ -154,7 +154,14 @@
         </div>
         <div>
           <div class="muted" style="margin-bottom:6px;">Cancelado</div>
-          <div id="ms-cancel" class="msel"><button class="msel-btn">Não</button><div class="msel-panel"></div></div>
+          <div id="ms-cancel" class="msel">
+            <button class="msel-btn">Não</button>
+            <div class="msel-panel">
+              <div class="msel-opt"><input type="checkbox" value=""><label>Todos</label></div>
+              <div class="msel-opt"><input type="checkbox" value="Não" checked><label>Não</label></div>
+              <div class="msel-opt"><input type="checkbox" value="Sim"><label>Sim</label></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -283,9 +290,10 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  const READ_VIEW        = 'vendas_canon';     // leituras
-  const DEST_INSERT_TABLE= 'vendas_xlsx';      // ingestão (UNIQUE row_key)
-  const REFRESH_RPC      = 'refresh_sales_materialized';
+  const READ_VIEW         = 'vendas_canon';          // leituras (views/MV já consolidadas)
+  const ALT_READS         = ['mv_vendas_canon','vw_vendas_canon']; // fallbacks
+  const DEST_INSERT_TABLE = 'vendas_xlsx';           // ingestão
+  const REFRESH_RPC       = 'refresh_sales_materialized';
 
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
@@ -314,7 +322,7 @@
   function normCancel(v){
     const s=String(v??'').trim().toLowerCase();
     if(['sim','s','true','1','y','yes'].includes(s)) return 'Sim';
-    if(['nao','não','n','false','0','no','nao/não'].includes(s)) return 'Não';
+    if(['nao','não','n','false','0','no'].includes(s)) return 'Não';
     return 'Não';
   }
   const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
@@ -433,16 +441,28 @@
   }
 
   async function updateKPIs(de, ate, dePrev, atePrev){
+    // Tenta pelos RPCs (devem contar DISTINCT pedido_id no servidor)
     const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
     const nameNow=rpcName(pNow),     namePrev=rpcName(pPrev);
-    const [now,prev,cNow,cPrev] = await Promise.all([
-      supa.rpc(nameNow, prepareArgs(nameNow,pNow)),
-      supa.rpc(namePrev, prepareArgs(namePrev,pPrev)),
-      supa.rpc(nameNow, prepareArgs(nameNow,{...pNow, p_cancelado:'Sim'})),
-      supa.rpc(namePrev, prepareArgs(namePrev,{...pPrev, p_cancelado:'Sim'})),
-    ]);
-    if(now.error) throw now.error;
-    if(prev.error) throw prev.error;
+    let now, prev, cNow, cPrev;
+    try{
+      [now,prev,cNow,cPrev] = await Promise.all([
+        supa.rpc(nameNow, prepareArgs(nameNow,pNow)),
+        supa.rpc(namePrev, prepareArgs(namePrev,pPrev)),
+        supa.rpc(nameNow, prepareArgs(nameNow,{...pNow, p_cancelado:'Sim'})),
+        supa.rpc(namePrev, prepareArgs(namePrev,{...pPrev, p_cancelado:'Sim'})),
+      ]);
+    }catch(_e){}
+
+    if(now?.error || prev?.error){
+      // Fallback local: lê do READ_VIEW e calcula DISTINCT pedido_id
+      const N = await computeLocalKPIs(de,ate, pNow);
+      const P = await computeLocalKPIs(dePrev,atePrev, pPrev);
+
+      const len=daysLen(de,ate);
+      drawKPIs(N,P,len);
+      return;
+    }
 
     const N=agg(now.data||[]), P=agg(prev.data||[]);
     let CN=agg((cNow?.data)||[]), CP=agg((cPrev?.data)||[]);
@@ -455,6 +475,10 @@
     }
 
     const len=daysLen(de,ate);
+    drawKPIs(N,P,len,CN,CP);
+  }
+
+  function drawKPIs(N,P,len,CN={ped:0,fat:0},CP={ped:0,fat:0}){
     const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
     const fatMedN = len? (N.fat/len) : 0,    fatMedP = len? (P.fat/len) : 0;
     const desPercN = N.fat? (N.des/N.fat) : 0, desPercP = P.fat? (P.des/P.fat) : 0;
@@ -581,8 +605,8 @@
         return {k, now, prev};
       }));
 
-      const pD = packs.find(p=>p.k==='dow');
       if(!only || only==='dow'){
+        const pD = packs.find(p=>p.k==='dow');
         const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
         const nArr = Array(7).fill(0), pArr = Array(7).fill(0), nMed=Array(7).fill(0), pMed=Array(7).fill(0);
         (pD?.now||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; });
@@ -590,8 +614,8 @@
         ensureChart('ch_dow', labels, (chartMode.dow==='media'?nMed:nArr), (chartMode.dow==='media'?pMed:pArr));
       }
 
-      const pM = packs.find(p=>p.k==='month');
       if(!only || only==='month'){
+        const pM = packs.find(p=>p.k==='month');
         const n = pM?.now||[], p = pM?.prev||[];
         const all = [...new Set([...n.map(r=>r.ym), ...p.map(r=>r.ym)])].sort();
         const mapN=new Map(n.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
@@ -599,8 +623,8 @@
         ensureChart('ch_month', all.map(ymToLabel), all.map(x=>mapN.get(x)||0), all.map(x=>mapP.get(x)||0));
       }
 
-      const pH = packs.find(p=>p.k==='hour');
       if(!only || only==='hour'){
+        const pH = packs.find(p=>p.k==='hour');
         const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
         const nArr = Array(24).fill(0), pArr = Array(24).fill(0), nMed=Array(24).fill(0), pMed=Array(24).fill(0);
         (pH?.now||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; });
@@ -608,8 +632,8 @@
         ensureChart('ch_hour', labels, (chartMode.hour==='media'?nMed:nArr), (chartMode.hour==='media'?pMed:pArr));
       }
 
-      const pT = packs.find(p=>p.k==='turno');
       if(!only || only==='turno'){
+        const pT = packs.find(p=>p.k==='turno');
         const order=['Manhã','Tarde','Noite','Madrugada','Dia'];
         const n = new Map((pT?.now||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
         const p = new Map((pT?.prev||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
@@ -627,7 +651,7 @@
     }
   }
 
-  /* ===================== FALLBACK LOCAL (cancelados) ===================== */
+  /* ===================== FALLBACK LOCAL (consulta genérica) ===================== */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -640,41 +664,61 @@
     const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
     const turnoKeys= ['turno','periodo','shift'].filter(has);
     const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
+    const pedIdKeys=['pedido_id','pedido','pedidoid','pedido_id_norm'].filter(has);
     const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
     const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
-    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, cancKeys};
+    const freKeys  = ['fre','frete','taxa_entrega','entrega'].filter(has);
+    const desKeys  = ['des','desconto','incentivo','incentivos','vl_desconto'].filter(has);
+    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedIdKeys, pedKeys, cancKeys, freKeys, desKeys};
   }
-  async function trySourceLocal(source, de, ate, onlyCancel){
+  async function trySourceLocal(source, de, ate, filters){
     const map = await discoverColumns(source);
     if(!map) return null;
-    const sel = uniq([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys]).join(',');
-    const q = await supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(200000);
-    if(q.error) return null;
-    const rows = (q.data||[]).filter(x=>{
-      if(!onlyCancel) return true;
-      const k = map.cancKeys[0];
-      const norm = normCancel(x[k]);
-      return norm === 'Sim';
-    }).map(x=>{
-      const fat = (map.fatKeys.length)? parseBR(x[map.fatKeys[0]]) : 0;
-      const ped = (map.pedKeys.length && map.pedKeys[0]==='pedidos') ? toInt(x[map.pedKeys[0]]) : 1; // evita somar itens
-      return { fat, pedidos: ped };
-    });
-    return rows;
+    const sel = uniq([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedIdKeys, ...map.pedKeys, ...map.cancKeys, ...map.freKeys, ...map.desKeys]).join(',');
+    let q = supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(200000);
+    const {p_unids,p_lojas,p_turnos,p_canais,p_pags,p_cancelado} = filters || {};
+    // filtros client-side pós-busca (garante robustez em nomes divergentes)
+    const r = await q;
+    if(r.error) return null;
+    let rows = r.data||[];
+    if(p_cancelado) rows = rows.filter(x=> normCancel(x[map.cancKeys[0]]) === p_cancelado);
+    // mapeia para KPIs locais com DISTINCT de pedido_id quando existir
+    const seen=new Set();
+    let ped=0,fat=0,des=0,fre=0;
+    for(const x of rows){
+      fat += parseBR(x[map.fatKeys[0]]||0);
+      des += parseBR(map.desKeys.length? x[map.desKeys[0]]:0);
+      fre += parseBR(map.freKeys.length? x[map.freKeys[0]]:0);
+      const pid = map.pedIdKeys.length ? String(x[map.pedIdKeys[0]]||'') : '';
+      if(pid){
+        if(!seen.has(pid)){ seen.add(pid); ped++; }
+      }else{
+        // sem pedido_id → cai no melhor campo de contagem
+        ped += toInt(map.pedKeys.length? x[map.pedKeys[0]]:1) || 1;
+      }
+    }
+    return [{pedidos:ped,fat,des,fre}];
   }
-  async function fetchRowsLocal(de, ate, onlyCancelValue){
-    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas', READ_VIEW];
-    const onlyCancel = (onlyCancelValue==='Sim');
+  async function computeLocalKPIs(de,ate,params){
+    const sources = [READ_VIEW, ...ALT_READS];
     for(const src of sources){
       try{
-        const res = await trySourceLocal(src, de, ate, onlyCancel);
-        if(res) return res;
+        const res = await trySourceLocal(src,de,ate,params);
+        if(res) break; else continue;
       }catch(_e){}
     }
-    return [];
+    const r = await trySourceLocal(READ_VIEW,de,ate,params);
+    const agg = {ped:0,fat:0,des:0,fre:0};
+    for(const x of (r||[])){ agg.ped+=x.pedidos||0; agg.fat+=x.fat||0; agg.des+=x.des||0; agg.fre+=x.fre||0; }
+    return agg;
+  }
+  async function fetchRowsLocal(de, ate, onlyCancelValue){
+    const params = { p_cancelado: onlyCancelValue };
+    const r = await trySourceLocal(READ_VIEW,de,ate,params);
+    return (r||[]).map(x=>({ pedidos:x.pedidos, fat:x.fat }));
   }
 
-  /* ===================== EXCEL → DB (upsert + dedupe + ped=1) ===================== */
+  /* ===================== EXCEL → DB (sempre upsert, com pedido_id normalizado) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -684,8 +728,8 @@
     if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
     const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
     if(m){
-      const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
-      const d = new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
+      const dd=+m[1], mm=+m[2], yy=+m[3], HH=+(m[4]||0), MM=+(m[5]||0), SS=+(m[6]||0);
+      const d = new Date(yy, mm-1, dd, HH, MM, SS);
       return iso(d);
     }
     if(!isNaN(+s)){ // Excel serial
@@ -703,21 +747,30 @@
     const s=String(v); const m=s.match(/(\d{1,2})/); if(!m) return null;
     const h=+m[1]; return (h>=0 && h<=23) ? h : null;
   }
+  function derivePedidoId(canal, pedido, numeroParceiro, loja, dtISO) {
+    const ch = String(canal || '').trim();
+    if (ch === 'VideoSoft') return `VS|${numeroParceiro||pedido||''}`;
+    if (ch === 'iFood')     return `IF|${pedido||numeroParceiro||''}`;
+    if (['Telefone','Neemo Delivery App','Anota.ai'].includes(ch))
+      return `${ch.slice(0,2)}|${pedido||numeroParceiro||''}`;
+    const minute = (dtISO||'').slice(0,16);
+    return `FB|${loja||''}|${pedido||''}|${minute}`;
+  }
 
   const headerAlts = {
-    dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
-    hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
+    dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora','data e hora','data/hora'],
+    hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda','datahora'],
     turno:['turno','periodo','shift'],
     fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
     des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
     fre:  ['fre','frete','taxa entrega','taxa_entrega','entrega'],
-    ped:  ['pedidos','qtd pedidos','qtd_pedidos'], // se não houver, usaremos 1
+    ped:  ['pedido','n do pedido','nº do pedido','número do pedido','id pedido','id_pedido','order id','order_id'],
     unid: ['unidade','unid','filial','cod_unidade','empresa'],
-    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja','nome da Loja'],
-    canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda','canal de Venda'],
+    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja'],
+    canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
     pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
     canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
-    pid:  ['pedido id','pedido_id','id pedido','id_pedido','order id','order_id','número do pedido no parceiro','numero do pedido no parceiro','pedido','codigo','código']
+    numparc: ['número do pedido no parceiro','numero do pedido no parceiro','pedido parceiro','id parceiro','id no parceiro']
   };
   function pickColumn(headers, alts){
     const map = headers.map(h=>({orig:h, key:normHeader(h)}));
@@ -729,25 +782,20 @@
   }
 
   function makeRowKey(x){
-    const base = [String(x.unidade||'').toLowerCase(), String(x["Nome da loja"]||'').toLowerCase(), String(x["Canal de venda"]||'').toLowerCase()];
-    const pid = String(x.pedido_id||'').trim().toLowerCase();
-    if(pid) return [...base, pid].join('|'); // estável por pedido
-    return [...base, String(x.dia||'').toLowerCase(), String(x.hora??'').toLowerCase()].join('|'); // fallback
-  }
-
-  function dedupeByKey(rows, key){
-    const m = new Map();
-    for(const r of rows){ m.set(r[key], r); } // mantém o último
-    return [...m.values()];
+    // row_key estável por pedido/unidade/loja/data
+    const parts = [
+      x.pedido_id||'', x.dia||'', x.unidade||'',
+      x['Nome da loja']||x.loja||'', x['Canal de venda']||x.canal||''
+    ].map(v=>String(v).trim().toLowerCase());
+    return parts.join('|');
   }
 
   async function uploadBatch(rows){
-    const unique = dedupeByKey(rows, 'row_key');
     const chunk = 500;
-    for(let i=0;i<unique.length;i+=chunk){
-      const slice = unique.slice(i,i+chunk);
+    for(let i=0;i<rows.length;i+=chunk){
+      const slice = rows.slice(i,i+chunk);
       const { error } = await supa.from(DEST_INSERT_TABLE)
-        .upsert(slice, { onConflict: 'row_key' });
+        .upsert(slice, { onConflict: 'row_key' }); // atualiza se já existir
       if(error){ throw error; }
     }
   }
@@ -758,59 +806,64 @@
     info('Lendo arquivo…');
     try{
       const buf = await file.arrayBuffer();
-      if(!window.XLSX){ throw new Error('Biblioteca XLSX não carregada'); }
       const wb = XLSX.read(buf, { type:'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
       const headers = json.length ? Object.keys(json[0]) : [];
 
-      const kDia  = pickColumn(headers, headerAlts.dia);
-      const kHora = pickColumn(headers, headerAlts.hora);
-      const kTurn = pickColumn(headers, headerAlts.turno);
-      const kFat  = pickColumn(headers, headerAlts.fat);
-      const kDes  = pickColumn(headers, headerAlts.des);
-      const kFre  = pickColumn(headers, headerAlts.fre);
-      const kPed  = pickColumn(headers, headerAlts.ped);
-      const kUni  = pickColumn(headers, headerAlts.unid);
-      const kLoja = pickColumn(headers, headerAlts.loja);
-      const kCan  = pickColumn(headers, headerAlts.canal);
-      const kPag  = pickColumn(headers, headerAlts.pag);
-      const kCanc = pickColumn(headers, headerAlts.canc);
-      const kPid  = pickColumn(headers, headerAlts.pid);
+      const kDia   = pickColumn(headers, headerAlts.dia);
+      const kHora  = pickColumn(headers, headerAlts.hora);
+      const kTurn  = pickColumn(headers, headerAlts.turno);
+      const kFat   = pickColumn(headers, headerAlts.fat);
+      const kDes   = pickColumn(headers, headerAlts.des);
+      const kFre   = pickColumn(headers, headerAlts.fre);
+      const kPed   = pickColumn(headers, headerAlts.ped);
+      const kUni   = pickColumn(headers, headerAlts.unid);
+      const kLoja  = pickColumn(headers, headerAlts.loja);
+      const kCan   = pickColumn(headers, headerAlts.canal);
+      const kPag   = pickColumn(headers, headerAlts.pag);
+      const kCanc  = pickColumn(headers, headerAlts.canc);
+      const kParce = pickColumn(headers, headerAlts.numparc);
 
       let mapped = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
         const dia  = normalizeDateCell(get(kDia));
-        const hora = parseHourUpload(get(kHora));
+        let   hora = parseHourUpload(get(kHora));
         const unidade = displayNormalize(get(kUni));
         const loja    = displayNormalize(get(kLoja));
         const canal   = displayNormalize(get(kCan));
         const pago    = displayNormalize(get(kPag));
-        const pid     = displayNormalize(get(kPid));
+        const pidRaw  = displayNormalize(get(kPed));
+        const numParce= displayNormalize(get(kParce));
         const cancel  = normCancel(get(kCanc));
-        const qtd_itens = parseBR(r['Itens'] ?? r['itens'] ?? null);
-
-        // >>> ajustes críticos para KPIs corretos
-        const ped = (kPed ? Math.max(1, toInt(get(kPed))) : 1); // se existir "pedidos", usa; senão 1
-        // <<<
-
+        const ped     = 1; // **crítico**: 1 por pedido (não somar itens)
         const fat     = parseBR(get(kFat));
         const des     = parseBR(get(kDes));
         const fre     = parseBR(get(kFre));
+        if(hora==null && get(kDia)){ // hora a partir do texto da data se vier junto
+          const m = String(get(kDia)).match(/(\d{1,2}):(\d{2})/);
+          if(m){ hora = Math.min(23, Math.max(0, parseInt(m[1],10))); }
+        }
+        let turno = displayNormalize(get(kTurn));
+        if(!turno){ // turno automático
+          const h = (hora==null)? 12 : hora;
+          turno = (h>=6 && h<=17) ? 'Dia' : 'Noite';
+        }
+
+        const pedido_id = derivePedidoId(canal, pidRaw, numParce, loja, dia);
 
         const row = {
-          dia,
-          hora,
+          dia, hora,
           unidade,
-          "Nome da loja": loja,
-          "Canal de venda": canal,
+          'Nome da loja': loja,
+          'Canal de venda': canal,
           pagamento_base: pago,
           cancelado: cancel,
-          pedidos: ped,           // 1 por pedido (ou valor da coluna 'pedidos' se existir)
-          qtd_itens: qtd_itens||null, // informativo, não entra no KPI
+          pedidos: ped,
           fat, des, fre,
-          pedido_id: pid || null,
+          turno,
+          pedido_id,
           created_at: new Date().toISOString()
         };
         row.row_key = makeRowKey(row);
@@ -826,10 +879,8 @@
       setStatus('Upload concluído','ok');
       info(`Gravado/atualizado em "${DEST_INSERT_TABLE}": ${ok.length} linhas.`);
 
-      // Atualiza MVs para estabilizar filtros/views
       try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
 
-      // Atualiza datas e filtros
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
         if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`; }
@@ -854,9 +905,7 @@
       supa.from('vw_vendas_turnos').select('turno').order('turno'),
       supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
     ]);
-
     const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
-
     if(ok(unids))  ms.unids.setOptions((unids.value.data||[]).map(r=>r.unidade));
     if(ok(lojas))  ms.lojas.setOptions((lojas.value.data||[]).map(r=>r.loja));
     if(ok(canais)) ms.canais.setOptions((canais.value.data||[]).map(r=>r.canal));
@@ -866,15 +915,15 @@
     const needFallback = !(ok(unids)&&ok(lojas)&&ok(canais)&&ok(turnos)&&ok(pags));
     if(needFallback){
       try{
-        const { data, error } = await supa.from(READ_VIEW)
-          .select('unidade, loja, canal, pagamento_base, turno').limit(200000);
-        if(!error && Array.isArray(data)){
-          const uniqBy = (arr, key)=> [...new Set(arr.map(x=>x[key]).filter(v=>v!=null && v!==' ' && v!==''))];
-          ms.unids.setOptions( uniqBy(data,'unidade') );
-          ms.lojas.setOptions( uniqBy(data,'loja') );
-          ms.canais.setOptions( uniqBy(data,'canal') );
-          ms.pags.setOptions( uniqBy(data,'pagamento_base') );
-          ms.turnos.setOptions( uniqBy(data,'turno') );
+        let source = READ_VIEW, r = await supa.from(source).select('unidade, loja, canal, pagamento_base, turno').limit(200000);
+        if(r.error){ for(const s of ALT_READS){ const t = await supa.from(s).select('unidade, loja, canal, pagamento_base, turno').limit(200000); if(!t.error){ r=t; break; } } }
+        if(!r.error && Array.isArray(r.data)){
+          const uniqBy = (arr, key)=> [...new Set(arr.map(x=>x[key]).filter(v=>v!=null && v!==''))];
+          ms.unids.setOptions( uniqBy(r.data,'unidade') );
+          ms.lojas.setOptions( uniqBy(r.data,'loja') );
+          ms.canais.setOptions( uniqBy(r.data,'canal') );
+          ms.pags.setOptions( uniqBy(r.data,'pagamento_base') );
+          ms.turnos.setOptions( uniqBy(r.data,'turno') );
         }
       }catch(e){ console.warn('fallback options error', e?.message||e); }
     }
@@ -883,17 +932,15 @@
   /* ===================== LOOP PRINCIPAL ===================== */
   async function applyAll(){
     try{
-      const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-      if(!de || !ate){ setStatus('Aguardando dados…'); return; }
+      const de=fDe.value||firstDay||iso(new Date());
+      const ate=fAte.value||lastDay||iso(new Date());
       const {dePrev, atePrev} = computePrevRangeISO(de,ate);
 
       setStatus('Consultando…');
-
-      let kpiOk=true;
-      await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
+      let ok=true;
+      await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); ok=false; });
       await updateChartsServer();
-
-      if(!kpiOk) setStatus('OK (sem KPIs — RPC indisponível)');
+      if(!ok) setStatus('OK (sem KPIs — RPC indisponível)');
       else setStatus('OK','ok');
     }catch(e){
       console.error(e);
@@ -906,11 +953,8 @@
       setStatus('Carregando…');
       const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
       if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
-
       await reloadStaticOptions();
-
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
-
       $('periodoInfo').textContent=`Último dia carregado: ${lastDay||'—'}`;
       applyQuick('30');
     }catch(e){
