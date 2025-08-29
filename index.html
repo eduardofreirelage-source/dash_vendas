@@ -2,311 +2,409 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
-  <title>Uploader de Vendas → Supabase</title>
+  <title>Uploader Vendas + Smoke Tests</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Tenta SheetJS local; se falhar, carrega via CDN -->
-  <script src="./xlsx.full.min.js"
-          onerror="var s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js'; document.head.appendChild(s);"></script>
+  <!-- SheetJS (CDN). Se falhar, coloque xlsx.full.min.js ao lado deste HTML -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"
+          onerror="console.warn('CDN SheetJS falhou. Coloque xlsx.full.min.js no mesmo diretório.');"></script>
   <style>
-    :root { color-scheme: light dark; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
-    h1 { margin-top: 0; }
-    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-    .card { border: 1px solid #9993; border-radius: 10px; padding: 16px; margin-top: 16px; }
-    button { padding: 10px 14px; border-radius: 8px; border: 1px solid #9996; cursor: pointer; background: #fafafa; }
-    button.primary { background: #2563eb; color: #fff; border-color: #1d4ed8; }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
-    input[type="file"] { padding: 8px; }
-    progress { width: 240px; height: 14px; }
-    pre { white-space: pre-wrap; word-break: break-word; background: #00000008; padding: 12px; border-radius: 8px; border: 1px dashed #9995; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ccc; padding: 6px 8px; font-size: 13px; }
-    .muted { opacity: .8; font-size: 12px; }
-    .ok { color: #059669; }
-    .warn { color: #ca8a04; }
-    .err { color: #dc2626; }
-    .small { font-size: 12px; }
+    body { font-family: system-ui, Arial, sans-serif; margin: 18px; }
+    h1 { margin-bottom: 8px; }
+    fieldset { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+    legend { padding: 0 6px; color: #444; }
+    label { display:block; font-size: 12px; color: #555; margin-top: 6px; }
+    select, input[type="text"], input[type="date"], button { padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
+    .row { display:flex; gap:12px; flex-wrap: wrap; }
+    .col { min-width: 200px; flex: 1; }
+    #log { white-space: pre-wrap; background:#0b1220; color:#d7e1ff; padding:12px; border-radius:8px; max-height: 300px; overflow:auto; }
+    .ok { color: #0a0; }
+    .warn { color: #a60; }
+    .err { color: #c00; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#eef; margin-right:6px; font-size:12px; }
+    .btn { background:#0b5; color:#fff; border:none; cursor:pointer; }
+    .btn:disabled { opacity:.5; cursor:not-allowed; }
+    .btn-secondary { background:#456; }
   </style>
 </head>
 <body>
-  <h1>Uploader de Vendas → Supabase</h1>
+  <h1>Uploader & Debug (Supabase)</h1>
 
-  <div class="card">
+  <fieldset>
+    <legend>Supabase</legend>
     <div class="row">
-      <input id="file" type="file" accept=".xlsx,.xls,.csv" />
-      <button id="btn-validate">Validar arquivo</button>
-      <button id="btn-upload" class="primary" disabled>Enviar ao banco</button>
-      <label class="small">
-        Lote:
-        <input id="batch" type="number" min="200" step="200" value="2000" style="width:80px" />
-      </label>
-      <progress id="pg" max="100" value="0"></progress>
-      <span id="pg-label" class="small"></span>
+      <div class="col">
+        <label>URL</label>
+        <input id="url" type="text" value="https://uahmcfzerofhzjvlzrqc.supabase.co" />
+      </div>
+      <div class="col">
+        <label>Anon key</label>
+        <input id="key" type="text" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU" />
+      </div>
+      <div class="col" style="align-self:end">
+        <button id="btnPing" class="btn">Testar conexão</button>
+      </div>
     </div>
-    <div class="muted small">Suporta colunas: <code>Data e Hora</code> (ou <code>Data da venda</code>), <code>Unidade</code>, <code>Nome da loja</code> (ou <code>Consumidor</code>), <code>Canal de venda</code>, <code>Está cancelado</code>, <code>Itens</code>, <code>Total</code>, <code>Desconto</code>, <code>Entrega</code>, <code>Turno</code>, <code>Pagamento</code>.</div>
-  </div>
+    <div id="connBadge"></div>
+  </fieldset>
 
-  <div class="card">
-    <strong>Resumo</strong>
-    <div id="summary" class="small muted">Nenhum arquivo carregado.</div>
-    <div style="margin-top:8px;">
-      <table id="preview" style="display:none;">
-        <thead><tr id="preview-head"></tr></thead>
-        <tbody id="preview-body"></tbody>
-      </table>
+  <fieldset>
+    <legend>Upload Excel</legend>
+    <div class="row">
+      <div class="col">
+        <input id="file" type="file" accept=".xlsx,.xls" />
+      </div>
+      <div class="col">
+        <button id="btnRead" class="btn">Ler arquivo</button>
+      </div>
+      <div class="col">
+        <span id="fileInfo" class="pill"></span>
+      </div>
     </div>
-  </div>
 
-  <div class="card">
-    <strong>Debug</strong>
-    <pre id="log">Pronto.</pre>
-  </div>
+    <div class="row">
+      <div class="col"><label>Coluna com Data+Hora (opcional)</label><select id="m_datahora"></select></div>
+      <div class="col"><label>Data (yyyy-mm-dd)</label><select id="m_data_venda"></select></div>
+      <div class="col"><label>Hora (0–23)</label><select id="m_hora"></select></div>
+      <div class="col"><label>Unidade</label><select id="m_unidade"></select></div>
+      <div class="col"><label><b>Loja</b></label><select id="m_loja"></select></div>
+      <div class="col"><label>Canal</label><select id="m_canal"></select></div>
+      <div class="col"><label>Cancelado (Sim/Não/true/false)</label><select id="m_cancelado"></select></div>
+      <div class="col"><label>Itens</label><select id="m_itens"></select></div>
+      <div class="col"><label>Total</label><select id="m_total"></select></div>
+      <div class="col"><label>Desconto</label><select id="m_des"></select></div>
+      <div class="col"><label>Frete</label><select id="m_fre"></select></div>
+      <div class="col"><label>Turno</label><select id="m_turno"></select></div>
+      <div class="col"><label>Pagamento</label><select id="m_pagamento"></select></div>
+    </div>
 
-  <script>
-    /*** CONFIG SUPABASE ***/
-    const SUPA_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
-    const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
-    const TABLE     = 'vendas_import_csv_v2';
+    <div class="row" style="margin-top:10px">
+      <div class="col"><button id="btnPreview" class="btn btn-secondary">Validar & Prévia (5 linhas)</button></div>
+      <div class="col"><button id="btnInsert" class="btn">Inserir no banco (lotes de 2.000)</button></div>
+      <div class="col"><span id="insInfo" class="pill"></span></div>
+    </div>
+  </fieldset>
 
-    const elFile = document.getElementById('file');
-    const elValidate = document.getElementById('btn-validate');
-    const elUpload = document.getElementById('btn-upload');
-    const elSummary = document.getElementById('summary');
-    const elPreview = document.getElementById('preview');
-    const elPrevHead = document.getElementById('preview-head');
-    const elPrevBody = document.getElementById('preview-body');
-    const elLog = document.getElementById('log');
-    const elPg = document.getElementById('pg');
-    const elPgLabel = document.getElementById('pg-label');
-    const elBatch = document.getElementById('batch');
+  <fieldset>
+    <legend>Smoke tests</legend>
+    <div class="row">
+      <div class="col"><label>Data inicial</label><input type="date" id="dini" /></div>
+      <div class="col"><label>Data final</label><input type="date" id="dfim" /></div>
+      <div class="col" style="align-self:end"><button id="btnAutoRange" class="btn btn-secondary">Usar min/max da view</button></div>
+      <div class="col" style="align-self:end"><button id="btnSmoke" class="btn">Rodar smoke test</button></div>
+    </div>
+    <div id="smk" class="pill"></div>
+  </fieldset>
 
-    let parsedRows = []; // linhas brutas do XLSX (objetos)
-    let mappedRows = []; // linhas mapeadas p/ colunas da tabela
+  <fieldset>
+    <legend>Debug</legend>
+    <pre id="log"></pre>
+  </fieldset>
 
-    function log(msg, data) {
-      const time = new Date().toISOString().slice(11,19);
-      elLog.textContent += `\n[${time}] ${msg}` + (data ? `\n${JSON.stringify(data, null, 2)}` : '');
-      elLog.scrollTop = elLog.scrollHeight;
-      console.log(msg, data ?? '');
+<script type="module">
+  import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+  const $ = (sel) => document.querySelector(sel);
+  const log = (...a) => { const el = $("#log"); el.textContent += a.map(x => typeof x==='string'?x:JSON.stringify(x,null,2)).join(' ') + "\\n"; el.scrollTop = el.scrollHeight; };
+  const setPill = (id, txt, cls='') => { const el = $(id); el.textContent = txt || ''; el.className = 'pill ' + cls; };
+
+  let SUPA = null;
+  let XLS = window.XLSX;
+  let rows = [];        // linhas cruas do Excel
+  let mapped = [];      // linhas mapeadas p/ inserção
+
+  const selects = ["m_datahora","m_data_venda","m_hora","m_unidade","m_loja","m_canal","m_cancelado","m_itens","m_total","m_des","m_fre","m_turno","m_pagamento"];
+
+  // Helpers -------------------------------------------------------
+  function parseDateLike(v) {
+    // suporta: Excel serial, 'dd/mm/aaaa hh:mm', 'aaaa-mm-dd hh:mm', 'aaaa-mm-dd', etc.
+    if (v == null || v === '') return { d:null, h:null };
+    if (typeof v === 'number') {
+      // Excel serial
+      const epoch = new Date(Date.UTC(1899, 11, 30));
+      const ms = v * 24 * 3600 * 1000;
+      const dt = new Date(epoch.getTime() + ms);
+      return { d: dt.toISOString().slice(0,10), h: dt.getUTCHours() };
     }
+    const s = String(v).trim().replace('T',' ');
+    // tenta yyyy-mm-dd hh:mm[:ss]
+    let m = s.match(/^(\\d{4})[-\\/](\\d{2})[-\\/](\\d{2})(?:\\s+(\\d{1,2})(?::(\\d{2}))?)?/);
+    if (m) {
+      const [_,Y,M,D,H] = m;
+      return { d: \`\${Y}-\${M}-\${D}\`, h: H!=null? parseInt(H,10): null };
+    }
+    // tenta dd/mm/yyyy hh:mm
+    m = s.match(/^(\\d{2})[-\\/](\\d{2})[-\\/](\\d{4})(?:\\s+(\\d{1,2})(?::(\\d{2}))?)?/);
+    if (m) {
+      const [_,D,M,Y,H] = m;
+      return { d: \`\${Y}-\${M}-\${D}\`, h: H!=null? parseInt(H,10): null };
+    }
+    // só hora?
+    m = s.match(/^(\\d{1,2})[:h](\\d{2})?/i);
+    if (m) return { d:null, h: parseInt(m[1],10) };
+    return { d:null, h:null };
+  }
 
-    async function ping() {
-      log('Verificando Supabase…');
-      try {
-        const r = await fetch(`${SUPA_URL}/rest/v1/?select=*`, {
-          headers: { apikey: SUPA_ANON, Authorization: `Bearer ${SUPA_ANON}` }
-        });
-        if (r.ok) log('✅ Supabase client ok');
-        else log('❌ Supabase erro', { status: r.status, text: await r.text() });
-      } catch (e) {
-        log('❌ Supabase erro', { error: String(e) });
+  function toBoolVal(v) {
+    if (typeof v === 'boolean') return v;
+    const s = String(v||'').trim().toLowerCase();
+    if (['sim','s','true','1','yes','y'].includes(s)) return true;
+    if (['não','nao','n','false','0','no'].includes(s)) return false;
+    return false;
+  }
+
+  function toNumber(v) {
+    if (v == null || v === '') return 0;
+    if (typeof v === 'number') return v;
+    const s = String(v).trim().replace(/\./g,'').replace(',','.');
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function fillSelectOptions(cols) {
+    for (const id of selects) {
+      const sel = $("#"+id);
+      sel.innerHTML = '<option value="">-- (vazio) --</option>' + cols.map(c=>\`<option>\${c}</option>\`).join('');
+    }
+    // sugestões padrão:
+    setIfExists("#m_datahora", ["datahora","data e hora","data hora"]);
+    setIfExists("#m_data_venda", ["data_venda","data"]);
+    setIfExists("#m_hora", ["hora"]);
+    setIfExists("#m_unidade", ["unidade"]);
+    setIfExists("#m_loja", ["loja","nome da loja"]);
+    setIfExists("#m_canal", ["canal","canal de venda"]);
+    setIfExists("#m_cancelado", ["cancelado","está cancelado"]);
+    setIfExists("#m_itens", ["itens","pedidos"]);
+    setIfExists("#m_total", ["total","fat"]);
+    setIfExists("#m_des", ["des","desconto"]);
+    setIfExists("#m_fre", ["fre","entrega","frete"]);
+    setIfExists("#m_turno", ["turno"]);
+    setIfExists("#m_pagamento", ["pagamento","pagamento_base"]);
+  }
+  function setIfExists(sel, candidates){
+    const el = $(sel);
+    const opts = [...el.options].map(o => o.value.toLowerCase());
+    for (const c of candidates) {
+      const idx = opts.indexOf(c);
+      if (idx >= 0) { el.selectedIndex = idx+1; break; }
+    }
+  }
+
+  function getMap() {
+    const g = o => { const v=$("#"+o).value; return v===''?null:v; };
+    return {
+      datahora: g('m_datahora'),
+      data_venda: g('m_data_venda'),
+      hora: g('m_hora'),
+      unidade: g('m_unidade'),
+      loja: g('m_loja'),
+      canal: g('m_canal'),
+      cancelado: g('m_cancelado'),
+      itens: g('m_itens'),
+      total: g('m_total'),
+      des: g('m_des'),
+      fre: g('m_fre'),
+      turno: g('m_turno'),
+      pagamento: g('m_pagamento'),
+    };
+  }
+
+  function mapRows(raw, map) {
+    const out = [];
+    for (const r of raw) {
+      // data/hora
+      let d=null, h=null;
+      if (map.datahora && r[map.datahora]!=null) {
+        const x = parseDateLike(r[map.datahora]);
+        d = x.d; h = x.h;
       }
-    }
-    ping();
-
-    /** ---------- PARSE EXCEL ---------- **/
-    function readWorkbook(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(reader.error);
-        reader.onload = () => {
-          try {
-            const data = new Uint8Array(reader.result);
-            const wb = XLSX.read(data, { type: 'array' });
-            const firstSheet = wb.SheetNames[0];
-            const ws = wb.Sheets[firstSheet];
-            const rows = XLSX.utils.sheet_to_json(ws, { defval: null, raw: false });
-            resolve({ sheet: firstSheet, rows });
-          } catch (err) { reject(err); }
-        };
-        reader.readAsArrayBuffer(file);
-      });
-    }
-
-    /** ---------- HELPERS DE CONVERSÃO ---------- **/
-    function parseDateTimeBRorISO(v) {
-      if (!v) return null;
-      if (v instanceof Date) return v.toISOString();
-      const s = String(v).trim();
-      if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-        const d = new Date(s);
-        return isNaN(d) ? null : d.toISOString();
+      if (!d && map.data_venda && r[map.data_venda]!=null) {
+        d = parseDateLike(r[map.data_venda]).d;
       }
-      const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
-      if (m) {
-        const [_, dd, mm, yyyy, HH='00', MM='00', SS='00'] = m;
-        const d = new Date(Number(yyyy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
-        return isNaN(d) ? null : d.toISOString();
+      if (h==null && map.hora && r[map.hora]!=null) {
+        const hh = parseDateLike(r[map.hora]);
+        h = hh.h != null ? hh.h : toNumber(r[map.hora]);
       }
-      const d = new Date(s);
-      return isNaN(d) ? null : d.toISOString();
-    }
 
-    function hourFromISO(iso) {
-      if (!iso) return null;
-      const d = new Date(iso);
-      return isNaN(d) ? null : d.getUTCHours();
-    }
-
-    function parseNumberBR(v) {
-      if (v === null || v === undefined || v === '') return null;
-      if (typeof v === 'number') return v;
-      const n = Number(String(v).replace(/\./g,'').replace(',', '.'));
-      return isNaN(n) ? null : n;
-    }
-
-    function toBool(v) {
-      if (typeof v === 'boolean') return v;
-      const s = String(v ?? '').trim().toLowerCase();
-      if (['sim','true','1','y','yes'].includes(s)) return true;
-      if (['não','nao','false','0','n','no',''].includes(s)) return false;
-      return false;
-    }
-
-    /** ---------- MAPEAMENTO XLS → TABELA ---------- **/
-    function mapRowToDb(row) {
-      const dt = row['Data e Hora'] ?? row['Data da venda'] ?? row['data_venda'] ?? row['datahora'];
-      const iso = parseDateTimeBRorISO(dt);
-      return {
-        data_venda : iso,                                                 // timestamptz
-        hora       : row['Hora'] ?? hourFromISO(iso),                     // int (opcional)
-        unidade    : row['Unidade'] ?? row['unidade'] ?? null,            // text
-        consumidor : row['Nome da loja'] ?? row['Consumidor'] ?? row['Nome da Loja'] ?? null,
-        canal      : row['Canal de venda'] ?? row['canal'] ?? null,
-        cancelado  : toBool(row['Está cancelado'] ?? row['cancelado']),
-        itens      : (row['Itens'] ?? row['itens'] ?? 1) | 0,
-        total      : parseNumberBR(row['Total'] ?? row['total']),
-        des        : parseNumberBR(row['Desconto'] ?? row['des']),
-        fre        : parseNumberBR(row['Entrega'] ?? row['fre']),
-        turno      : row['Turno'] ?? row['turno'] ?? null,
-        pagamento  : row['Pagamento'] ?? row['pagamento'] ?? null,
+      const rec = {
+        data_venda: d,                                   // <- usado pela view
+        hora: h!=null ? parseInt(h,10) : null,          // <- usado pela view
+        unidade: map.unidade ? String(r[map.unidade]||'').trim() : null,
+        loja: map.loja ? String(r[map.loja]||'').trim() : null,     // <- loja real
+        canal: map.canal ? String(r[map.canal]||'').trim() : null,
+        cancelado: map.cancelado ? !!toBoolVal(r[map.cancelado]) : false,
+        itens: map.itens ? parseInt(toNumber(r[map.itens]),10) : 1,
+        total: map.total ? toNumber(r[map.total]) : 0,
+        des: map.des ? toNumber(r[map.des]) : 0,
+        fre: map.fre ? toNumber(r[map.fre]) : 0,
+        turno: map.turno ? String(r[map.turno]||'').trim() : null,
+        pagamento: map.pagamento ? String(r[map.pagamento]||'').trim() : null,
       };
+      out.push(rec);
     }
+    return out;
+  }
 
-    function showPreview(rows) {
-      if (!rows.length) {
-        elPreview.style.display = 'none';
-        elPrevHead.innerHTML = '';
-        elPrevBody.innerHTML = '';
-        return;
-      }
-      const cols = Object.keys(rows[0]);
-      elPrevHead.innerHTML = cols.map(c => `<th>${c}</th>`).join('');
-      elPrevBody.innerHTML = rows.slice(0, 5).map(r =>
-        `<tr>${cols.map(c => `<td>${r[c] ?? ''}</td>`).join('')}</tr>`
-      ).join('');
-      elPreview.style.display = '';
+  // Supabase init -----------------------------------------------
+  function initClient() {
+    const url = $("#url").value.trim();
+    const key = $("#key").value.trim();
+    SUPA = createClient(url, key);
+    return SUPA;
+  }
+
+  async function ping() {
+    try {
+      initClient();
+      // Checa se a tabela staging é visível
+      const { error } = await SUPA
+        .from('vendas_import_csv_v2')
+        .select('id', { count:'exact', head:true })
+        .limit(1);
+      if (error) throw error;
+      setPill("#connBadge","✅ Supabase client ok","ok");
+      log("✅ Supabase client ok");
+    } catch (e) {
+      setPill("#connBadge","❌ Erro Supabase","err");
+      log("❌", e);
     }
+  }
 
-    function summarize(raw, mapped) {
-      const dist = (arr, key) => {
-        const s = new Set(arr.map(r => (r[key] ?? '').toString().trim()).filter(Boolean));
-        return Array.from(s).sort();
-      };
-      const unids = dist(raw, 'Unidade');
-      const lojas = dist(raw, 'Nome da loja').length ? dist(raw, 'Nome da loja') : dist(raw, 'Consumidor');
-      const canais = dist(raw, 'Canal de venda');
-      const turnos = dist(raw, 'Turno');
-      const pags = dist(raw, 'Pagamento');
+  // UI handlers --------------------------------------------------
+  $("#btnPing").addEventListener("click", ping);
 
-      elSummary.innerHTML =
-        `Linhas lidas: <b>${raw.length}</b><br>` +
-        `• unidade: ${unids.length} distintos ${unids.length? '['+unids.slice(0,8).join(', ')+(unids.length>8?'…]':']'): ''}<br>` +
-        `• loja: ${lojas.length} distintos ${lojas.length? '['+lojas.slice(0,8).join(', ')+(lojas.length>8?'…]':']'): ''}<br>` +
-        `• canal: ${canais.length} distintos ${canais.length? '['+canais.slice(0,8).join(', ')+(canais.length>8?'…]':']'): ''}<br>` +
-        `• turno: ${turnos.length} distintos ${turnos.length? '['+turnos.slice(0,8).join(', ')+(turnos.length>8?'…]':']'): ''}<br>` +
-        `• pagamento: ${pags.length} distintos ${pags.length? '['+pags.slice(0,8).join(', ')+(pags.length>8?'…]':']'): ''}<br>` +
-        `<span class="muted">* Nomes exibidos são do arquivo, gravaremos normalizado nas colunas da tabela.</span>`;
+  $("#btnRead").addEventListener("click", async () => {
+    try {
+      const f = $("#file").files[0];
+      if (!f) { alert("Escolha um .xlsx"); return; }
+      const buf = await f.arrayBuffer();
+      const wb = XLS.read(buf, {type:'array'});
+      const sheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const json = XLS.utils.sheet_to_json(sheet, { defval: null });
+      rows = json;
+      setPill("#fileInfo", `Arquivo: ${f.name} — Abas: ${wb.SheetNames.length} — Linhas: ${rows.length}`);
+      log("📄 Arquivo lido", { nome:f.name, sheet: sheetName, linhas: rows.length });
+      // Preenche selects com colunas detectadas
+      const cols = Object.keys(rows[0] || {});
+      fillSelectOptions(cols);
+      // Mostra amostra
+      log("🔧 1ª linha (amostra)", rows[0] || {});
+    } catch (e) {
+      log("❌ Erro lendo Excel", e);
+      alert("Erro lendo o Excel (ver Debug).");
     }
+  });
 
-    /** ---------- INSERT EM LOTES ---------- **/
-    async function bulkInsertVendas(rows, batchSize=2000) {
-      const url = `${SUPA_URL}/rest/v1/${TABLE}`;
+  $("#btnPreview").addEventListener("click", () => {
+    if (!rows.length) { alert("Leia o arquivo primeiro."); return; }
+    const map = getMap();
+    mapped = mapRows(rows.slice(0,5), map);
+    log("✅ Prévia (5 linhas mapeadas):", mapped);
+  });
+
+  $("#btnInsert").addEventListener("click", async () => {
+    try {
+      if (!rows.length) { alert("Leia o arquivo primeiro."); return; }
+      initClient();
+      const map = getMap();
+      mapped = mapRows(rows, map);
+      // valida minima: precisa de data_venda
+      const semData = mapped.filter(r => !r.data_venda).length;
+      if (semData > 0) log("⚠️ Algumas linhas sem data_venda. Serão inseridas, mas não entram nos filtros por data.");
+
+      const chunk = 2000;
       let ok=0, fail=0;
-
-      for (let i=0; i<rows.length; i+=batchSize) {
-        const chunk = rows.slice(i, i+batchSize).map(mapRowToDb);
-        // atualiza barra
-        elPg.value = Math.round(((i+chunk.length)/rows.length)*100);
-        elPgLabel.textContent = `${i+chunk.length}/${rows.length}`;
-
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: {
-            apikey: SUPA_ANON,
-            Authorization: `Bearer ${SUPA_ANON}`,
-            'Content-Type': 'application/json',
-            Prefer: 'return=minimal'
-            // Para upsert por chave única, troque por:
-            // Prefer: 'resolution=ignore-duplicates,return=minimal'
-          },
-          body: JSON.stringify(chunk)
-        });
-
-        if (resp.ok) {
-          ok += chunk.length;
-          log('✅ Lote inserido', {lote:[i, i+chunk.length]});
+      for (let i=0;i<mapped.length;i+=chunk){
+        const lote = mapped.slice(i, i+chunk);
+        const { error } = await SUPA.from('vendas_import_csv_v2').insert(lote);
+        if (error) {
+          fail += lote.length;
+          log({ lote:[i, i+lote.length], error });
         } else {
-          fail += chunk.length;
-          const txt = await resp.text().catch(()=> '');
-          log('❌ Erro no lote', {lote:[i, i+chunk.length], status: resp.status, body: txt});
-          // Não para, continua os próximos lotes. Se quiser parar:
-          // break;
+          ok += lote.length;
+          log("✅ Lote inserido", { lote:[i, i+lote.length] });
         }
       }
-      log('📦 Inserção concluída', {ok, fail});
-      alert(`Concluído. OK: ${ok} | Falhas: ${fail}`);
+      setPill("#insInfo", `Inserção concluída — ok: ${ok} / falhas: ${fail}`, fail? 'warn':'ok');
+      // recarrega schema para expor a view e RPCs direitinho
+      await SUPA.rpc('pg_notify', { channel: 'pgrst', payload: 'reload schema' }).catch(()=>{});
+      log("📦 Inserção concluída", { ok, fail });
+    } catch (e) {
+      log("❌ Erro inserindo", e);
+      alert("Erro inserindo (ver Debug).");
     }
+  });
 
-    /** ---------- UI HANDLERS ---------- **/
-    elValidate.addEventListener('click', async () => {
-      const f = elFile.files?.[0];
-      if (!f) { alert('Selecione um arquivo .xlsx/.xls/.csv'); return; }
-      elValidate.disabled = true; elUpload.disabled = true;
-      elPg.value = 0; elPgLabel.textContent = '';
+  $("#btnAutoRange").addEventListener("click", async ()=>{
+    try {
+      initClient();
+      // usa a VIEW
+      const { data, error } = await SUPA
+        .from('vw_vendas')
+        .select('min:dia,min:dia,max:dia', { head:false })
+        .limit(1);
+      if (error) throw error;
+      // PostgREST retorna como array de objetos com min/max agregados
+      const row = (data && data[0]) || null;
+      // fallback via SQL RPC (se necessário, você pode criar um RPC minmax)
+      const { data: d2 } = await SUPA.from('vw_vendas').select('dia').order('dia',{ascending:true}).limit(1);
+      const { data: d3 } = await SUPA.from('vw_vendas').select('dia').order('dia',{ascending:false}).limit(1);
+      const minDia = (d2 && d2[0] && d2[0].dia) || '';
+      const maxDia = (d3 && d3[0] && d3[0].dia) || '';
+      $("#dini").value = minDia || '';
+      $("#dfim").value = maxDia || '';
+      log("🗓️ Intervalo auto", { minDia, maxDia });
+    } catch(e){
+      log("⚠️ AutoRange falhou", e);
+    }
+  });
 
-      try {
-        const { sheet, rows } = await readWorkbook(f);
-        parsedRows = rows;
-        mappedRows = rows.map(mapRowToDb);
-        log('📄 Arquivo lido', {nome: f.name, sheet, linhas: rows.length});
-        showPreview(rows);
-        summarize(rows, mappedRows);
+  $("#btnSmoke").addEventListener("click", async ()=>{
+    try{
+      initClient();
+      const dini = $("#dini").value || '2025-01-01';
+      const dfim = $("#dfim").value || '2025-12-31';
+      const args = { p_dini: dini, p_dfim: dfim,
+        p_unids: null, p_lojas: null, p_turnos: null, p_canais: null, p_pags: null, p_cancelado: null };
 
-        // checagem rápida de colunas mapeadas (evita PGRST204 por nomes errados)
-        const sample = mappedRows[0] || {};
-        log('🔧 Amostra mapeada (1ª linha)', sample);
+      // KPI
+      const k = await SUPA.rpc('kpi_vendas_v2', args);
+      if (k.error) throw k.error;
+      const kpi = Array.isArray(k.data) ? k.data[0] : k.data;
+      log("→ KPI params", args);
+      log("✅ KPI", kpi);
 
-        // teste rápido de tabela acessível:
-        const head = await fetch(`${SUPA_URL}/rest/v1/${TABLE}?select=count`, {
-          headers: { apikey: SUPA_ANON, Authorization: `Bearer ${SUPA_ANON}` }
-        });
-        if (!head.ok) {
-          log('⚠️ Tabela inacessível', { status: head.status, text: await head.text() });
-        } else {
-          log('✅ Tabela acessível');
-        }
+      // DOW/MÊS/HORA
+      const d = await SUPA.rpc('chart_vendas_dow_v2', args);
+      const m = await SUPA.rpc('chart_vendas_mes_v2', args);
+      const h = await SUPA.rpc('chart_vendas_hora_v2', args);
+      if (d.error) throw d.error;
+      if (m.error) throw m.error;
+      if (h.error) throw h.error;
 
-        elUpload.disabled = !rows.length;
-      } catch (err) {
-        log('❌ Erro lendo arquivo', {erro: String(err)});
-        alert('Erro ao ler o arquivo. Ver Console/Debug.');
-      } finally {
-        elValidate.disabled = false;
-      }
-    });
+      const sum = (arr, key) => (arr||[]).reduce((a,b)=> a + Number(b[key]||0), 0);
+      const sd = sum(d.data,'total');
+      const sm = sum(m.data,'total');
+      const sh = sum(h.data,'total');
+      const fat = Number(kpi?.fat || 0);
 
-    elUpload.addEventListener('click', async () => {
-      if (!parsedRows.length) { alert('Valide o arquivo primeiro.'); return; }
-      const batchSize = Math.max(200, Number(elBatch.value) || 2000);
-      elUpload.disabled = true; elValidate.disabled = true;
-      elPg.value = 0; elPgLabel.textContent = '';
-      try {
-        await bulkInsertVendas(parsedRows, batchSize);
-      } finally {
-        elUpload.disabled = false; elValidate.disabled = false;
-      }
-    });
-  </script>
+      const ok = (x,y)=> Math.abs(Number(x)-Number(y)) < 0.0001;
+      const msg = `DOW ${ok(sd,fat)?'✅':'❌'} soma=${sd.toLocaleString('pt-BR',{minimumFractionDigits:2})} vs KPI=${fat.toLocaleString('pt-BR',{minimumFractionDigits:2})}
+MÊS ${ok(sm,fat)?'✅':'❌'} soma=${sm.toLocaleString('pt-BR',{minimumFractionDigits:2})} vs KPI=${fat.toLocaleString('pt-BR',{minimumFractionDigits:2})}
+HORA ${ok(sh,fat)?'✅':'❌'} soma=${sh.toLocaleString('pt-BR',{minimumFractionDigits:2})} vs KPI=${fat.toLocaleString('pt-BR',{minimumFractionDigits:2})}`;
+      $("#smk").textContent = msg;
+      log("🧪 Smoke", { dow: sd, mes: sm, hora: sh, fat });
+
+    } catch(e){
+      $("#smk").textContent = "❌ Smoke test falhou (ver Debug)";
+      log("❌ Smoke", e);
+    }
+  });
+
+  // Inicial
+  (async ()=>{
+    await ping();
+  })();
+</script>
 </body>
 </html>
