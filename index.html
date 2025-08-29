@@ -19,14 +19,14 @@
     select, input[type="text"], input[type="date"], button { padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
     .row { display:flex; gap:12px; flex-wrap: wrap; }
     .col { min-width: 220px; flex: 1; }
-    #log { white-space: pre-wrap; background:#0b1220; color:#d7e1ff; padding:12px; border-radius:8px; max-height: 320px; overflow:auto; }
-    .ok { color: #0a0; }
-    .warn { color: #a60; }
-    .err { color: #c00; }
+    #log { white-space: pre-wrap; background:#0b1220; color:#d7e1ff; padding:12px; border-radius:8px; max-height: 360px; overflow:auto; }
     .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#eef; margin-right:6px; font-size:12px; }
-    .btn { background:#0b5; color:#fff; border:none; cursor:pointer; }
-    .btn:disabled { opacity:.5; cursor:not-allowed; }
+    .ok { color:#0a0; }
+    .warn { color:#a60; }
+    .err { color:#c00; }
+    .btn { background:#0b5; color:#fff; border:none; cursor:pointer; padding:8px 12px; border-radius:6px; }
     .btn-secondary { background:#456; }
+    .btn:disabled { opacity:.5; cursor:not-allowed; }
   </style>
 </head>
 <body>
@@ -47,7 +47,7 @@
         <button id="btnPing" class="btn">Testar conexão</button>
       </div>
     </div>
-    <div id="connBadge"></div>
+    <div id="connBadge" class="pill"></div>
   </fieldset>
 
   <fieldset>
@@ -104,10 +104,10 @@
   </fieldset>
 
 <script type="module">
-  import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+  import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
 
   const $ = (sel) => document.querySelector(sel);
-  function logAppend() {
+  function log() {
     const el = $("#log");
     const parts = [];
     for (let i=0;i<arguments.length;i++) {
@@ -117,100 +117,46 @@
     el.textContent += parts.join(' ') + "\n";
     el.scrollTop = el.scrollHeight;
   }
-  const log = logAppend;
-  const setPill = (id, txt, cls) => { const el = $(id); el.textContent = txt || ''; el.className = 'pill ' + (cls||''); };
+  const setPill = (id, txt, cls) => { const el=$(id); el.textContent = txt||''; el.className = 'pill ' + (cls||''); };
 
+  // Estado
   let SUPA = null;
-  let XLS = window.XLSX;
-  let rows = [];        // linhas cruas do Excel
-  let mapped = [];      // linhas mapeadas p/ inserção
+  let rows = [];
 
   const selects = ["m_datahora","m_data_venda","m_hora","m_unidade","m_loja","m_canal","m_cancelado","m_itens","m_total","m_des","m_fre","m_turno","m_pagamento"];
 
-  // Helpers -------------------------------------------------------
-  function parseDateLike(v) {
-    // aceita: Excel serial, 'dd/mm/aaaa hh:mm', 'aaaa-mm-dd hh:mm', 'aaaa-mm-dd', etc.
-    if (v === null || v === undefined || v === '') return { d:null, h:null };
-    if (typeof v === 'number') {
-      // Excel serial
-      const epoch = new Date(Date.UTC(1899, 11, 30));
-      const ms = v * 24 * 3600 * 1000;
-      const dt = new Date(epoch.getTime() + ms);
-      return { d: dt.toISOString().slice(0,10), h: dt.getUTCHours() };
-    }
-    const s = String(v).trim().replace('T',' ');
-    // yyyy-mm-dd [hh[:mm]]
-    let m = s.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})(?:\s+(\d{1,2})(?::(\d{2}))?)?/);
-    if (m) {
-      const Y = m[1], M = m[2], D = m[3];
-      const H = m[4];
-      return { d: (Y + "-" + M + "-" + D), h: (H !== undefined ? parseInt(H,10) : null) };
-    }
-    // dd/mm/yyyy [hh[:mm]]
-    m = s.match(/^(\d{2})[-\/](\d{2})[-\/](\d{4})(?:\s+(\d{1,2})(?::(\d{2}))?)?/);
-    if (m) {
-      const D = m[1], M = m[2], Y = m[3];
-      const H = m[4];
-      return { d: (Y + "-" + M + "-" + D), h: (H !== undefined ? parseInt(H,10) : null) };
-    }
-    // só hora? "13" ou "13:45"
-    m = s.match(/^(\d{1,2})(?::(\d{2}))?$/);
-    if (m) { return { d:null, h: parseInt(m[1],10) }; }
-    return { d:null, h:null };
-  }
-
-  function toBoolVal(v) {
-    if (typeof v === 'boolean') return v;
-    const s = String(v||'').trim().toLowerCase();
-    if (s === 'sim' || s === 's' || s === 'true' || s === '1' || s === 'yes' || s === 'y') return true;
-    if (s === 'não' || s === 'nao' || s === 'n' || s === 'false' || s === '0' || s === 'no') return false;
-    return false;
-  }
-
-  function toNumber(v) {
-    if (v === null || v === undefined || v === '') return 0;
-    if (typeof v === 'number') return v;
-    const s = String(v).trim().split('.').join('').replace(',', '.');
-    const n = Number(s);
-    return Number.isFinite(n) ? n : 0;
-  }
-
   function fillSelectOptions(cols) {
-    for (let i=0;i<selects.length;i++) {
-      const id = selects[i];
-      const sel = $("#"+id);
+    for (const id of selects) {
+      const el = $("#"+id);
       const opts = ['<option value="">-- (vazio) --</option>'];
-      for (let j=0;j<cols.length;j++) opts.push('<option>'+cols[j]+'</option>');
-      sel.innerHTML = opts.join('');
+      for (const c of cols) opts.push('<option>'+c+'</option>');
+      el.innerHTML = opts.join('');
     }
-    // sugestões padrão:
+    // sugestões
     suggest("#m_datahora", ["datahora","data e hora","data hora"]);
     suggest("#m_data_venda", ["data_venda","data","data da venda"]);
     suggest("#m_hora", ["hora"]);
-    suggest("#m_unidade", ["unidade"]);
-    suggest("#m_loja", ["loja","nome da loja","nome da Loja","Nome da loja","Nome da Loja"]);
-    suggest("#m_canal", ["canal","canal de venda","Canal de venda"]);
-    suggest("#m_cancelado", ["cancelado","está cancelado","Está cancelado"]);
+    suggest("#m_unidade", ["unidade","Unidade"]);
+    suggest("#m_loja", ["loja","nome da loja","Nome da loja","Nome da Loja"]);
+    suggest("#m_canal", ["canal","Canal de venda"]);
+    suggest("#m_cancelado", ["cancelado","Está cancelado","está cancelado"]);
     suggest("#m_itens", ["itens","Itens","pedidos"]);
     suggest("#m_total", ["total","Total","fat"]);
-    suggest("#m_des", ["des","Desconto","desconto"]);
+    suggest("#m_des", ["des","desconto","Desconto"]);
     suggest("#m_fre", ["fre","frete","entrega","Entrega"]);
     suggest("#m_turno", ["turno","Turno"]);
     suggest("#m_pagamento", ["pagamento","Pagamento","pagamento_base"]);
   }
-  function suggest(sel, candidates){
+  function suggest(sel, list) {
     const el = $(sel);
-    const opts = [];
-    for (let i=0;i<el.options.length;i++) { opts.push(el.options[i].value.toLowerCase()); }
-    for (let i=0;i<candidates.length;i++) {
-      const c = String(candidates[i]).toLowerCase();
-      const idx = opts.indexOf(c);
-      if (idx >= 0) { el.selectedIndex = idx+1; break; }
+    const vals = Array.from(el.options).map(o => o.value.toLowerCase());
+    for (const c of list) {
+      const idx = vals.indexOf(String(c).toLowerCase());
+      if (idx >= 0) { el.selectedIndex = idx + 1; break; }
     }
   }
-
   function getMap() {
-    function g(id) { const v=$("#"+id).value; return v===''?null:v; }
+    const g = id => { const v=$("#"+id).value; return v===''?null:v; };
     return {
       datahora: g('m_datahora'),
       data_venda: g('m_data_venda'),
@@ -228,28 +174,48 @@
     };
   }
 
+  function parseDateLike(v) {
+    if (v === null || v === undefined || v === '') return { d:null, h:null };
+    if (typeof v === 'number') {
+      const epoch = new Date(Date.UTC(1899, 11, 30));
+      const ms = v * 86400000;
+      const dt = new Date(epoch.getTime() + ms);
+      return { d: dt.toISOString().slice(0,10), h: dt.getUTCHours() };
+    }
+    const s = String(v).trim().replace('T',' ');
+    let m = s.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})(?:\s+(\d{1,2})(?::\d{2})?)?/);
+    if (m) return { d:`${m[1]}-${m[2]}-${m[3]}`, h: m[4]?parseInt(m[4],10):null };
+    m = s.match(/^(\d{2})[-\/](\d{2})[-\/](\d{4})(?:\s+(\d{1,2})(?::\d{2})?)?/);
+    if (m) return { d:`${m[3]}-${m[2]}-${m[1]}`, h: m[4]?parseInt(m[4],10):null };
+    m = s.match(/^(\d{1,2})(?::\d{2})?$/);
+    if (m) return { d:null, h: parseInt(m[1],10) };
+    return { d:null, h:null };
+  }
+  function toBoolVal(v) {
+    if (typeof v === 'boolean') return v;
+    const s = String(v||'').trim().toLowerCase();
+    if (['sim','s','true','1','yes','y'].includes(s)) return true;
+    if (['nao','não','n','false','0','no'].includes(s)) return false;
+    return false;
+  }
+  function toNumber(v) {
+    if (v === null || v === undefined || v === '') return 0;
+    if (typeof v === 'number') return v;
+    const n = Number(String(v).trim().split('.').join('').replace(',', '.'));
+    return Number.isFinite(n) ? n : 0;
+  }
   function mapRows(raw, map) {
     const out = [];
-    for (let i=0;i<raw.length;i++) {
-      const r = raw[i];
+    for (const r of raw) {
       let d=null, h=null;
-
-      if (map.datahora && r[map.datahora] !== null && r[map.datahora] !== undefined) {
-        const x = parseDateLike(r[map.datahora]);
-        d = x.d; h = x.h;
+      if (map.datahora && r[map.datahora] != null) { const x = parseDateLike(r[map.datahora]); d=x.d; h=x.h; }
+      if (!d && map.data_venda && r[map.data_venda] != null) { const x = parseDateLike(r[map.data_venda]); d=x.d; }
+      if (h==null && map.hora && r[map.hora] != null) {
+        const x = parseDateLike(r[map.hora]); h = (x.h!=null?x.h:toNumber(r[map.hora]));
       }
-      if (!d && map.data_venda && r[map.data_venda] !== null && r[map.data_venda] !== undefined) {
-        const x2 = parseDateLike(r[map.data_venda]);
-        d = x2.d;
-      }
-      if (h === null && map.hora && r[map.hora] !== null && r[map.hora] !== undefined) {
-        const hh = parseDateLike(r[map.hora]);
-        h = (hh.h !== null) ? hh.h : toNumber(r[map.hora]);
-      }
-
-      const rec = {
+      out.push({
         data_venda: d,
-        hora: (h !== null ? parseInt(h,10) : null),
+        hora: (h!=null?parseInt(h,10):null),
         unidade: map.unidade ? String(r[map.unidade]||'').trim() : null,
         loja: map.loja ? String(r[map.loja]||'').trim() : null,
         canal: map.canal ? String(r[map.canal]||'').trim() : null,
@@ -260,41 +226,45 @@
         fre: map.fre ? toNumber(r[map.fre]) : 0,
         turno: map.turno ? String(r[map.turno]||'').trim() : null,
         pagamento: map.pagamento ? String(r[map.pagamento]||'').trim() : null
-      };
-      out.push(rec);
+      });
     }
     return out;
   }
 
-  // Supabase init -----------------------------------------------
-  let supaLoaded = false;
   async function initClient() {
-    if (supaLoaded) return SUPA;
-    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2?bundle");
+    if (SUPA) return SUPA;
     const url = $("#url").value.trim();
     const key = $("#key").value.trim();
     SUPA = createClient(url, key);
-    supaLoaded = true;
     return SUPA;
   }
 
+  // Ping robusto: tenta colunas reais, sem 'id'
   async function ping() {
     try {
       await initClient();
-      const { error } = await SUPA
-        .from('vendas_import_csv_v2')
-        .select('id', { count:'exact', head:true })
-        .limit(1);
-      if (error) throw error;
-      setPill("#connBadge","✅ Supabase client ok","ok");
-      log("✅ Supabase client ok");
+      const tryCols = ['data_venda','loja','unidade','turno','*'];
+      let ok = false, lastErr = null;
+      for (const col of tryCols) {
+        const q = SUPA.from('vendas_import_csv_v2').select(col).limit(1);
+        const { error } = await q;
+        if (!error) { ok = true; break; }
+        lastErr = error;
+      }
+      if (ok) {
+        setPill("#connBadge","✅ Supabase client ok","ok");
+        log("✅ Supabase client ok");
+      } else {
+        setPill("#connBadge","❌ Erro Supabase","err");
+        log("❌", lastErr || {message:"Erro desconhecido"});
+      }
     } catch (e) {
       setPill("#connBadge","❌ Erro Supabase","err");
       log("❌", e);
     }
   }
 
-  // UI handlers --------------------------------------------------
+  // UI events
   $("#btnPing").addEventListener("click", ping);
 
   $("#btnRead").addEventListener("click", async () => {
@@ -302,16 +272,16 @@
       const f = $("#file").files[0];
       if (!f) { alert("Escolha um .xlsx"); return; }
       const buf = await f.arrayBuffer();
-      const wb = XLS.read(buf, {type:'array'});
+      const wb = XLSX.read(buf, {type:'array'});
       const sheetName = wb.SheetNames[0];
       const sheet = wb.Sheets[sheetName];
-      const json = XLS.utils.sheet_to_json(sheet, { defval: null });
+      const json = XLSX.utils.sheet_to_json(sheet, { defval: null });
       rows = json;
-      setPill("#fileInfo", "Arquivo: " + f.name + " — Abas: " + wb.SheetNames.length + " — Linhas: " + rows.length);
+      $("#fileInfo").textContent = `Arquivo: ${f.name} — Abas: ${wb.SheetNames.length} — Linhas: ${rows.length}`;
       log("📄 Arquivo lido", { nome:f.name, sheet: sheetName, linhas: rows.length });
       const cols = Object.keys(rows[0] || {});
       fillSelectOptions(cols);
-      log("🔧 1ª linha (amostra)", rows[0] || {});
+      log("🔧 Amostra mapeada (1ª linha)", rows[0] || {});
     } catch (e) {
       log("❌ Erro lendo Excel", e);
       alert("Erro lendo o Excel (ver Debug).");
@@ -321,8 +291,8 @@
   $("#btnPreview").addEventListener("click", () => {
     if (!rows.length) { alert("Leia o arquivo primeiro."); return; }
     const map = getMap();
-    mapped = mapRows(rows.slice(0,5), map);
-    log("✅ Prévia (5 linhas mapeadas):", mapped);
+    const prev = mapRows(rows.slice(0,5), map);
+    log("✅ Prévia (5 linhas)", prev);
   });
 
   $("#btnInsert").addEventListener("click", async () => {
@@ -330,26 +300,21 @@
       if (!rows.length) { alert("Leia o arquivo primeiro."); return; }
       await initClient();
       const map = getMap();
-      mapped = mapRows(rows, map);
+      const data = mapRows(rows, map);
 
       let semData = 0;
-      for (let i=0;i<mapped.length;i++) if (!mapped[i].data_venda) semData++;
-      if (semData > 0) log("⚠️ Linhas sem data_venda:", semData);
+      for (const r of data) if (!r.data_venda) semData++;
+      if (semData) log("⚠️ Linhas sem data_venda:", semData);
 
       const chunk = 2000;
       let ok=0, fail=0;
-      for (let i=0;i<mapped.length;i+=chunk){
-        const lote = mapped.slice(i, i+chunk);
+      for (let i=0;i<data.length;i+=chunk){
+        const lote = data.slice(i, i+chunk);
         const { error } = await SUPA.from('vendas_import_csv_v2').insert(lote);
-        if (error) {
-          fail += lote.length;
-          log({ lote:[i, i+lote.length], error });
-        } else {
-          ok += lote.length;
-          log("✅ Lote inserido", { lote:[i, i+lote.length] });
-        }
+        if (error) { fail += lote.length; log({ lote:[i, i+lote.length], error }); }
+        else { ok += lote.length; log("✅ Lote inserido", { lote:[i, i+lote.length] }); }
       }
-      setPill("#insInfo", "Inserção concluída — ok: " + ok + " / falhas: " + fail, (fail ? 'warn':'ok'));
+      setPill("#insInfo", `Inserção concluída — ok: ${ok} / falhas: ${fail}`, fail?'warn':'ok');
       log("📦 Inserção concluída", { ok, fail });
     } catch (e) {
       log("❌ Erro inserindo", e);
@@ -360,7 +325,6 @@
   $("#btnAutoRange").addEventListener("click", async ()=>{
     try {
       await initClient();
-      // pega min e max via ordenação (compatível com PostgREST)
       const a = await SUPA.from('vw_vendas').select('dia').order('dia',{ascending:true}).limit(1);
       const b = await SUPA.from('vw_vendas').select('dia').order('dia',{ascending:false}).limit(1);
       const minDia = (a.data && a.data[0] && a.data[0].dia) ? a.data[0].dia : '';
@@ -378,48 +342,38 @@
       await initClient();
       const dini = $("#dini").value || '2025-01-01';
       const dfim = $("#dfim").value || '2025-12-31';
-      const args = {
-        p_dini: dini, p_dfim: dfim,
-        p_unids: null, p_lojas: null, p_turnos: null, p_canais: null, p_pags: null, p_cancelado: null
-      };
+      const args = { p_dini:dini, p_dfim:dfim, p_unids:null, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null };
 
       // KPI
       const k = await SUPA.rpc('kpi_vendas_v2', args);
-      if (k.error) throw k.error;
+      if (k.error) { log("⚠️ KPI erro", k.error); $("#smk").textContent = "⚠️ KPI indisponível"; return; }
       const kpi = Array.isArray(k.data) ? k.data[0] : k.data;
       log("→ KPI params", args);
       log("✅ KPI", kpi);
 
-      // DOW/MÊS/HORA
+      // DOW/MÊS/HORA (se existirem)
       const d = await SUPA.rpc('chart_vendas_dow_v2', args);
       const m = await SUPA.rpc('chart_vendas_mes_v2', args);
       const h = await SUPA.rpc('chart_vendas_hora_v2', args);
-      if (d.error) throw d.error;
-      if (m.error) throw m.error;
-      if (h.error) throw h.error;
 
-      function sum(arr, key) {
-        let s = 0;
-        if (arr && arr.length) {
-          for (let i=0;i<arr.length;i++) { s += Number(arr[i][key] || 0); }
-        }
-        return s;
+      if (d.error || m.error || h.error) {
+        log("⚠️ chart erros", { dow:d.error, mes:m.error, hora:h.error });
+        $("#smk").textContent = "⚠️ Charts indisponíveis (ver Debug)";
+        return;
       }
+
+      const sum = (arr, key) => (arr||[]).reduce((s,x)=>s+Number(x[key]||0),0);
       const sd = sum(d.data,'total');
       const sm = sum(m.data,'total');
       const sh = sum(h.data,'total');
-      const fat = Number(kpi && kpi.fat ? kpi.fat : 0);
+      const fat = Number(kpi?.fat || 0);
 
-      const ok = Math.abs(sd - fat) < 0.0001 && Math.abs(sm - fat) < 0.0001 && Math.abs(sh - fat) < 0.0001;
-      const msg = "DOW " + (Math.abs(sd - fat)<0.0001?'✅':'❌') + " soma=" + sd.toLocaleString('pt-BR',{minimumFractionDigits:2}) +
-                  " vs KPI=" + fat.toLocaleString('pt-BR',{minimumFractionDigits:2}) +
-                  "\nMÊS " + (Math.abs(sm - fat)<0.0001?'✅':'❌') + " soma=" + sm.toLocaleString('pt-BR',{minimumFractionDigits:2}) +
-                  " vs KPI=" + fat.toLocaleString('pt-BR',{minimumFractionDigits:2}) +
-                  "\nHORA " + (Math.abs(sh - fat)<0.0001?'✅':'❌') + " soma=" + sh.toLocaleString('pt-BR',{minimumFractionDigits:2}) +
-                  " vs KPI=" + fat.toLocaleString('pt-BR',{minimumFractionDigits:2});
-      $("#smk").textContent = msg;
-      log("🧪 Smoke", { dow: sd, mes: sm, hora: sh, fat });
-
+      const ok = Math.abs(sd-fat)<1e-6 && Math.abs(sm-fat)<1e-6 && Math.abs(sh-fat)<1e-6;
+      $("#smk").textContent =
+        `DOW ${Math.abs(sd-fat)<1e-6?'✅':'❌'} soma=${sd.toLocaleString('pt-BR',{minimumFractionDigits:2})} vs KPI=${fat.toLocaleString('pt-BR',{minimumFractionDigits:2})}  | `+
+        `MÊS ${Math.abs(sm-fat)<1e-6?'✅':'❌'} soma=${sm.toLocaleString('pt-BR',{minimumFractionDigits:2})} vs KPI=${fat.toLocaleString('pt-BR',{minimumFractionDigits:2})}  | `+
+        `HORA ${Math.abs(sh-fat)<1e-6?'✅':'❌'} soma=${sh.toLocaleString('pt-BR',{minimumFractionDigits:2})} vs KPI=${fat.toLocaleString('pt-BR',{minimumFractionDigits:2})}`;
+      log("🧪 Smoke", { dow:sd, mes:sm, hora:sh, fat, ok });
     } catch(e){
       $("#smk").textContent = "❌ Smoke test falhou (ver Debug)";
       log("❌ Smoke", e);
@@ -427,9 +381,7 @@
   });
 
   // Inicial
-  (async function start(){
-    try { await ping(); } catch(_){}
-  })();
+  (async function start(){ try { await ping(); } catch(_){}})();
 </script>
 </body>
 </html>
