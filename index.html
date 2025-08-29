@@ -1,419 +1,465 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-br">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Upload de Vendas → Supabase</title>
-
-<!-- Supabase JS v2 -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-<!-- SheetJS (XLSX/CSV) -->
-<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
-
-<style>
-  :root { --fg:#111; --muted:#666; --ok:#1b8f3f; --warn:#b8860b; --err:#b00020; --bg:#fafafa; --card:#fff; --bd:#e6e6e6; }
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif;background:var(--bg);color:var(--fg);margin:0}
-  header{padding:14px 16px;border-bottom:1px solid var(--bd);background:#fff;position:sticky;top:0}
-  main{padding:16px;display:grid;gap:16px;grid-template-columns:1.2fr .8fr}
-  h2{margin:0 0 8px}
-  .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px}
-  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
-  label{font-weight:600}
-  input[type=text],input[type=password],textarea,select{border:1px solid var(--bd);border-radius:8px;padding:8px 10px;min-width:220px}
-  button{border:none;background:#111;color:#fff;padding:10px 14px;border-radius:8px;cursor:pointer}
-  button.secondary{background:#444}
-  button.ghost{background:#f2f2f2;color:#111}
-  button:disabled{opacity:.5;cursor:not-allowed}
-  small.muted{color:var(--muted)}
-  .grid{display:grid;gap:8px}
-  .map-grid{display:grid;grid-template-columns:200px 1fr;gap:8px;align-items:center}
-  .badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#f2f2f2;margin-left:8px}
-  .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
-  pre{white-space:pre-wrap;background:#0d1117;color:#c9d1d9;padding:10px;border-radius:8px;max-height:280px;overflow:auto;font-size:12px}
-  table{width:100%;border-collapse:collapse}
-  th,td{border-bottom:1px solid var(--bd);padding:6px 8px;font-size:12px;text-align:left}
-  .kpi{display:flex;gap:12px;flex-wrap:wrap}
-  .pill{padding:8px 10px;border-radius:8px;background:#f6f6f6;border:1px solid var(--bd)}
-  .progress{height:10px;background:#eee;border-radius:999px;overflow:hidden}
-  .bar{height:100%;background:#111;width:0%}
-</style>
+  <meta charset="utf-8" />
+  <title>Ingestão de Vendas — Excel → Supabase</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif;line-height:1.4;margin:24px;color:#111}
+    h1{margin:0 0 16px}
+    fieldset{border:1px solid #ddd;border-radius:8px;padding:16px;margin:0 0 16px}
+    legend{font-weight:600}
+    label{display:block;margin:6px 0 2px}
+    input,select,button,textarea{font:inherit;padding:8px;border:1px solid #bbb;border-radius:6px}
+    button{cursor:pointer}
+    .row{display:flex;gap:12px;flex-wrap:wrap}
+    .col{flex:1;min-width:260px}
+    .ok{color:#0a7f2e}
+    .warn{color:#9a6b00}
+    .err{color:#b00020;white-space:pre-wrap}
+    .muted{color:#666}
+    .pill{display:inline-block;background:#f0f2f5;border:1px solid #d9dee3;border-radius:999px;padding:2px 8px;margin:2px 4px 0 0}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:8px}
+    .grid label{margin-top:12px}
+    .box{background:#fafbfc;border:1px solid #e6eaef;border-radius:8px;padding:12px}
+    #preview{max-height:220px;overflow:auto;border:1px dashed #d0d7de;border-radius:8px;padding:8px;background:#fff}
+    table{border-collapse:collapse;width:100%} th,td{border:1px solid #e5e7eb;padding:6px 8px;text-align:left}
+    .right{text-align:right}
+    .flex{display:flex;align-items:center;gap:8px}
+    .btns{display:flex;gap:8px;flex-wrap:wrap}
+    .small{font-size:12px}
+    .badge{background:#eef6ff;color:#0747a6;border:1px solid #d1e4ff;border-radius:999px;padding:2px 8px}
+  </style>
+  <!-- SheetJS (XLSX) -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <!-- Supabase JS v2 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-<header>
-  <strong>Upload de Vendas → Supabase</strong>
-  <span class="badge">planilha → RPC → vendas_upload → vw_vendas</span>
-</header>
 
-<main>
-  <!-- Coluna esquerda -->
-  <section class="card">
-    <h2>1) Conexão</h2>
-    <div class="grid">
-      <div class="row">
-        <label>Supabase URL</label>
-        <input id="url" type="text" value="https://uahmcfzerofhzjvlzrqc.supabase.co" style="min-width:420px"/>
+<h1>Ingestão de Vendas (Excel → Supabase)</h1>
+
+<fieldset>
+  <legend>Conexão</legend>
+  <div class="row">
+    <div class="col">
+      <label>Supabase URL</label>
+      <input id="sb-url" placeholder="https://xxxx.supabase.co" />
+    </div>
+    <div class="col">
+      <label>Anon/Public Key</label>
+      <input id="sb-key" placeholder="eyJhbGciOi..." />
+    </div>
+    <div class="col" style="align-self:end">
+      <button id="btn-connect">Conectar</button>
+      <span id="conn-status" class="muted"></span>
+    </div>
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>Arquivo</legend>
+  <div class="row">
+    <div class="col">
+      <input type="file" id="file" accept=".xlsx,.xls" />
+    </div>
+    <div class="col" style="align-self:end">
+      <div class="btns">
+        <button id="btn-validate">Validar</button>
+        <button id="btn-save" disabled>Salvar no banco</button>
       </div>
-      <div class="row">
-        <label>Anon Key</label>
-        <input id="key" type="password" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU" style="min-width:620px"/>
-        <button class="secondary" id="btnConnect">Conectar</button>
-        <span id="connStatus" class="badge">—</span>
-      </div>
-      <small class="muted">O usuário/papel do token precisa de: SELECT/INSERT/UPDATE em <code>vendas_upload</code>, SELECT em <code>vw_vendas</code>, EXECUTE em <code>ingest_vendas_json(jsonb)</code> e <code>vw_vendas_stats(date,date)</code>.</small>
     </div>
-  </section>
+  </div>
+  <div id="file-info" class="muted small">Selecione o Excel e clique em <b>Validar</b>.</div>
+</fieldset>
 
-  <section class="card">
-    <h2>Debug</h2>
-    <div class="row" style="gap:8px">
-      <button class="ghost" id="btnSmoke">Smoke test (contar vw_vendas)</button>
-      <button class="ghost" id="btnLists">Recarregar listas</button>
+<fieldset>
+  <legend>Mapeamento de colunas</legend>
+  <div class="grid">
+    <label>Data+Hora (mesma coluna)</label>
+    <select id="map-datahora"></select>
+
+    <label>Data (separada)</label>
+    <select id="map-dia"></select>
+
+    <label>Hora (separada)</label>
+    <select id="map-hora"></select>
+
+    <label>Unidade</label>
+    <select id="map-unidade"></select>
+
+    <label>Loja (NOME DA LOJA)</label>
+    <select id="map-loja"></select>
+
+    <label>Canal</label>
+    <select id="map-canal"></select>
+
+    <label>Pagamento</label>
+    <select id="map-pagamento"></select>
+
+    <label>Cancelado</label>
+    <select id="map-cancelado"></select>
+
+    <label>Pedidos / Itens</label>
+    <select id="map-pedidos"></select>
+
+    <label>Total</label>
+    <select id="map-total"></select>
+
+    <label>Desconto</label>
+    <select id="map-desconto"></select>
+
+    <label>Entrega</label>
+    <select id="map-entrega"></select>
+
+    <label>Turno</label>
+    <select id="map-turno"></select>
+  </div>
+  <div class="small muted">Dica: se você preencher <b>Data+Hora</b>, pode deixar “Data” e “Hora” vazios. O script extrai ambos automaticamente.</div>
+</fieldset>
+
+<fieldset>
+  <legend>Prévia / Diagnóstico</legend>
+  <div class="row">
+    <div class="col box">
+      <div><span class="badge">Amostra</span></div>
+      <div id="preview">—</div>
     </div>
-    <pre id="log">Pronto.</pre>
-  </section>
-
-  <!-- Coluna esquerda (abaixo) -->
-  <section class="card" style="grid-column:1 / span 1">
-    <h2>2) Arquivo</h2>
-    <div class="row">
-      <input id="file" type="file" accept=".xlsx,.xls,.csv"/>
-      <button id="btnValidate" disabled>Validar</button>
-      <small class="muted">Aceita .xlsx/.xls/.csv. A validação é local (navegador).</small>
+    <div class="col box">
+      <div><span class="badge">Distincts (após mapeamento)</span></div>
+      <div id="distincts" class="small">—</div>
     </div>
-    <div id="fileInfo" class="row"></div>
-  </section>
+  </div>
+</fieldset>
 
-  <!-- Coluna direita (mapeamento) -->
-  <section class="card" style="grid-column:2 / span 1">
-    <h2>3) Mapeamento de colunas</h2>
-    <small class="muted">Mapeie as colunas da planilha para os campos canônicos que o backend espera.</small>
-    <div id="mapArea" class="map-grid" style="margin-top:10px"></div>
-  </section>
-
-  <!-- Linha inteira -->
-  <section class="card" style="grid-column:1 / span 2">
-    <h2>4) Enviar ao banco (RPC <code>ingest_vendas_json</code>)</h2>
-    <div class="row" style="gap:12px">
-      <button id="btnSave" disabled>Salvar no banco</button>
-      <small class="muted">Envia em lotes (padrão 2.000 linhas por chamada) com deduplicação via <code>row_key</code>.</small>
-    </div>
-    <div class="progress" style="margin-top:10px"><div id="bar" class="bar"></div></div>
-    <div id="saveInfo" class="row" style="margin-top:8px"></div>
-  </section>
-
-  <!-- Amostra -->
-  <section class="card" style="grid-column:1 / span 2">
-    <h2>Amostra (10 primeiras linhas lidas)</h2>
-    <div id="sample"></div>
-  </section>
-
-  <!-- KPIs simples para validar carga -->
-  <section class="card" style="grid-column:1 / span 2">
-    <h2>5) Resumo pós-carga</h2>
-    <div class="kpi" id="kpis">
-      <div class="pill" id="kpiCount">linhas: —</div>
-      <div class="pill" id="kpiUnid">unidades: —</div>
-      <div class="pill" id="kpiLoja">lojas: —</div>
-      <div class="pill" id="kpiTurno">turnos: —</div>
-      <div class="pill" id="kpiCanal">canais: —</div>
-      <div class="pill" id="kpiPags">pagamentos: —</div>
-    </div>
-  </section>
-</main>
+<fieldset>
+  <legend>Debug</legend>
+  <pre id="log" class="small"></pre>
+</fieldset>
 
 <script>
-/** ========= Helpers ========= **/
-const $ = (q)=>document.querySelector(q);
-const log = (msg, type='')=>{
-  const pre = $('#log');
-  const tag = type==='err' ? '❌ ' : type==='warn' ? '⚠️ ' : type==='ok' ? '✅ ' : '';
-  pre.textContent += (pre.textContent.endsWith('\n')?'':'\n') + tag + (typeof msg==='string'?msg:JSON.stringify(msg,null,2));
-  pre.scrollTop = pre.scrollHeight;
-};
-const setBar = (p)=> $('#bar').style.width = `${Math.max(0,Math.min(100,p))}%`;
-const nf = new Intl.NumberFormat('pt-BR',{maximumFractionDigits:2});
+const $ = (id)=>document.getElementById(id);
+const log = (m, cls)=>{ const el=$('log'); const line=document.createElement('div'); line.textContent=(typeof m==='string'?m:JSON.stringify(m,null,2)); if(cls) line.className=cls; el.appendChild(line); el.scrollTop=el.scrollHeight; };
+const set = (id, html)=>{ $(id).innerHTML = html; };
+const pad = (n)=> String(n).padStart(2,'0');
 
-const CANON = [
-  {key:'dia', label:'Data (dia)'},
-  {key:'hora', label:'Hora (0-23)'},
-  {key:'unidade', label:'Unidade'},
-  {key:'loja', label:'Loja (NOME DA LOJA)'},
-  {key:'canal', label:'Canal'},
-  {key:'pagamento_base', label:'Pagamento'},
-  {key:'cancelado', label:'Cancelado (Sim/Não)'},
-  {key:'pedidos', label:'Pedidos (int)'},
-  {key:'fat', label:'Faturamento'},
-  {key:'des', label:'Desconto'},
-  {key:'fre', label:'Frete'},
-  {key:'turno', label:'Turno'},
-  {key:'pedido_id', label:'Pedido ID (opcional)'}
-];
+let supa = null;
+let rawRows = [];     // linhas como vieram da planilha (obj por linha)
+let normRows = [];    // linhas normalizadas prontas pra inserir
+let headers = [];     // nomes de colunas do Excel
 
-function normalizeHeader(h){
-  if(!h) return '';
-  return String(h).toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-    .replace(/\s+/g,' ').trim();
-}
-function guessMapping(headers){
-  const norm = headers.map(h=>({raw:h,n:normalizeHeader(h)}));
-  const pick = (cands)=> {
-    for(const c of cands){
-      const f = norm.find(x=> x.n===c || x.n.includes(c));
-      if(f) return f.raw;
+// ------------------------ Conectar ------------------------
+$('btn-connect').onclick = async () => {
+  try{
+    const url = $('sb-url').value.trim();
+    const key = $('sb-key').value.trim();
+    supa = window.supabase.createClient(url, key);
+    // ping simples
+    const { data, error } = await supa.from('pg_stat_activity').select('pid').limit(1);
+    if(error && !String(error.message||'').includes('permission')) {
+      $('conn-status').textContent = 'Falhou: ' + error.message;
+      $('conn-status').className = 'err';
+      log('Conexão falhou: '+error.message,'err');
+      return;
     }
-    return '';
-  };
-  return {
-    dia: pick(['data da venda','data_venda','data','dia']),
-    hora: pick(['hora','hr']),
-    unidade: pick(['unidade']),
-    loja: pick(['nome da loja','loja','consumidor','nome']),
-    canal: pick(['canal de venda','canal']),
-    pagamento_base: pick(['pagamento','pagamento base','forma de pagamento']),
-    cancelado: pick(['esta cancelado','está cancelado','cancelado']),
-    pedidos: pick(['itens','pedidos','quantidade']),
-    fat: pick(['total','valor total','faturamento','receita']),
-    des: pick(['desconto']),
-    fre: pick(['entrega','frete']),
-    turno: pick(['turno']),
-    pedido_id: pick(['pedido id','pedido'])
-  };
+    $('conn-status').textContent = 'Conectado ✔';
+    $('conn-status').className = 'ok';
+    log('✅ Supabase client ok','ok');
+  }catch(e){
+    $('conn-status').textContent='Erro: '+e.message;
+    $('conn-status').className='err';
+    log(e,'err');
+  }
+};
+
+// ------------------------ Util: parse número BR ------------------------
+function parsePtNumber(v){
+  if(v==null || v==='') return 0;
+  if(typeof v==='number') return v;
+  let s = String(v).trim();
+  // remove R$, espaços
+  s = s.replace(/[R$\s]/g,'');
+  // se tem vírgula decimal, troca . de milhar e , de decimal
+  if(/[0-9]\.[0-9]{3}/.test(s) || /,/.test(s)){
+    s = s.replace(/\./g,'').replace(/,/g,'.');
+  }
+  const n = Number(s);
+  return isFinite(n)? n : 0;
 }
-function excelSerialToISO(serial){
-  const n = Number(serial);
-  if(!isFinite(n) || n<=59) return null;
-  const ms = Math.round((n - 25569) * 86400 * 1000);
-  const d = new Date(ms);
-  if(isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0,10);
-}
-function parseDateSmart(v){
-  if(v==null || v==='') return null;
-  if (v instanceof Date) return v.toISOString().slice(0,10);
-  const s = String(v).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)){ const [d,m,y]=s.split('/'); return `${y}-${m}-${d}`; }
-  if (/^\d+(\.\d+)?$/.test(s)){ const iso = excelSerialToISO(Number(s)); if (iso) return iso; }
-  const t = Date.parse(s); if(!isNaN(t)) return new Date(t).toISOString().slice(0,10);
-  return null;
-}
-function parseHoraSmart(v){
-  if(v==null || v==='') return null;
-  const s = String(v).trim();
-  if (/^\d{1,2}$/.test(s)) return parseInt(s,10);
-  const m = s.match(/^(\d{1,2})[:h]/i); if(m) return Math.max(0, Math.min(23, parseInt(m[1],10)));
-  const n = Number(s); if (isFinite(n)) return Math.max(0, Math.min(23, Math.round(n)));
-  return null;
-}
-function parseCancel(v){
-  const s = String(v??'').toLowerCase().trim();
-  if (['sim','s','true','1','yes'].includes(s)) return 'Sim';
+
+// ------------------------ Util: parse Bool/Cancelado ------------------------
+function normCancel(v){
+  if (typeof v === 'boolean') return v ? 'Sim' : 'Não';
+  const s = String(v || '').toLowerCase().trim();
+  if (['sim','s','true','1','yes','y'].includes(s)) return 'Sim';
+  if (['não','nao','n','false','0','no'].includes(s)) return 'Não';
   return 'Não';
 }
-function parseNumKeep(v){
-  if(v==null) return null;
-  const s = String(v).trim();
-  if(s==='') return null;
-  if (/[0-9],[0-9]{1,2}$/.test(s) || /,0$/.test(s)) return s;        // mantém "1.234,56"
-  const n = Number(s.replace(/\s/g,'')); return isFinite(n) ? n : s;  // número puro
-}
 
-/** ========= Estado ========= **/
-let supa = null;
-let rowsRaw = [];
-let headers = [];
-let mapping = {};
-let rowsMapped = [];
-
-/** ========= UI ========= **/
-function renderMapping(){
-  const area = $('#mapArea');
-  area.innerHTML = '';
-  if(headers.length===0){
-    area.innerHTML = '<small class="muted">Carregue e valide um arquivo para montar o mapeamento.</small>';
-    return;
-  }
-  for(const c of CANON){
-    const lab = document.createElement('div');
-    lab.textContent = c.label;
-    const sel = document.createElement('select');
-    sel.dataset.key = c.key;
-    sel.innerHTML = ['<option value="">(sem coluna)</option>']
-      .concat(headers.map(h=>`<option value="${h}">${h}</option>`)).join('');
-    if (mapping[c.key]) sel.value = mapping[c.key];
-    sel.addEventListener('change', ()=>{
-      mapping[sel.dataset.key] = sel.value || '';
-      prepareMapped();
-    });
-    area.appendChild(lab);
-    area.appendChild(sel);
-  }
-}
-function renderSample(){
-  const cont = $('#sample');
-  if(rowsRaw.length===0){ cont.innerHTML = '<small class="muted">Sem dados.</small>'; return; }
-  const head = headers.slice(0,50);
-  const first = rowsRaw.slice(0,10);
-  let html = '<div style="overflow:auto"><table><thead><tr>';
-  for(const h of head) html += `<th>${h}</th>`;
-  html += '</tr></thead><tbody>';
-  for(const r of first){
-    html += '<tr>';
-    for(const h of head) html += `<td>${(r[h]??'')}</td>`;
-    html += '</tr>';
-  }
-  html += '</tbody></table></div>';
-  cont.innerHTML = html;
-}
-function setConn(state, msg=''){
-  const el = $('#connStatus');
-  el.textContent = state ? '✅ conectado' : '—';
-  if(msg) log(msg, state?'ok':'err');
-}
-
-/** ========= Conectar ========= **/
-$('#btnConnect').addEventListener('click', async ()=>{
-  const url = $('#url').value.trim();
-  const key = $('#key').value.trim();
-  supa = window.supabase.createClient(url, key, { auth: { persistSession:false }});
-  setConn(true, 'Supabase client ok');
-});
-
-/** ========= Validar arquivo ========= **/
-$('#file').addEventListener('change', ()=>{
-  $('#btnValidate').disabled = !$('#file').files?.length;
-});
-$('#btnValidate').addEventListener('click', async ()=>{
-  const f = $('#file').files?.[0];
-  if(!f){ alert('Escolha um arquivo primeiro'); return; }
+// ------------------------ Util: Data/Hora ------------------------
+function parseExcelSerial(n){ // via SheetJS
   try{
-    const buf = await f.arrayBuffer();
-    const wb = XLSX.read(buf, {type:'array', cellDates:true, raw:false});
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const data = XLSX.utils.sheet_to_json(ws, {defval:'', raw:false});
-    rowsRaw = data;
-    headers = Object.keys(data[0]||{});
-    mapping = guessMapping(headers);
-    $('#fileInfo').innerHTML = `<strong>${f.name}</strong> — ${nf.format(rowsRaw.length)} linhas lidas`;
-    renderMapping();
-    renderSample();
-    prepareMapped();
-    $('#btnSave').disabled = false;
-    log(`Validação OK. Cabeçalhos: ${JSON.stringify(headers)}`);
-  }catch(e){
-    log(`Erro ao ler arquivo: ${e.message||e}`, 'err');
-  }
-});
-
-/** ========= Preparar linhas mapeadas ========= **/
-function prepareMapped(){
-  if(rowsRaw.length===0){ rowsMapped = []; return; }
-  rowsMapped = rowsRaw.map(r=>{
-    const get = (k)=> mapping[k] ? (r[mapping[k]] ?? null) : null;
-    return {
-      dia: parseDateSmart(get('dia')),
-      hora: parseHoraSmart(get('hora')),
-      unidade: (get('unidade')??'').toString().trim(),
-      loja: (get('loja')??'').toString().trim(),
-      canal: (get('canal')??'').toString().trim(),
-      pagamento_base: (get('pagamento_base')??'').toString().trim(),
-      cancelado: parseCancel(get('cancelado')),
-      pedidos: (get('pedidos')==null || String(get('pedidos')).trim()==='' ) ? 1 : parseInt(get('pedidos'),10),
-      fat: parseNumKeep(get('fat')),
-      des: parseNumKeep(get('des')),
-      fre: parseNumKeep(get('fre')),
-      turno: (get('turno')??'').toString().trim(),
-      pedido_id: (get('pedido_id')??'').toString().trim()
-    };
-  });
+    const o = XLSX.SSF.parse_date_code(n);
+    if(!o) return null;
+    const d = new Date(Date.UTC(o.y, (o.m||1)-1, o.d||1, o.H||0, o.M||0, Math.floor(o.S||0)));
+    return d;
+  }catch{ return null; }
 }
 
-/** ========= Salvar no banco (RPC) ========= **/
-$('#btnSave').addEventListener('click', async ()=>{
-  if(!supa){ alert('Conecte primeiro'); return; }
-  if(!rowsMapped?.length){ alert('Valide o arquivo e mapeie as colunas'); return; }
+function parseDateLike(val){
+  if(val==null || val==='') return null;
+  if(val instanceof Date && !isNaN(val)) return val;
+  if(typeof val === 'number') {
+    const d = parseExcelSerial(val);
+    if(d) return d;
+  }
+  const s = String(val).trim().replace('T',' ');
+  // YYYY-MM-DD HH:MM[:SS]
+  let m = s.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})[ \t]+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if(m){
+    const [_,Y,Mo,D,h,mi,se] = m;
+    return new Date(Number(Y), Number(Mo)-1, Number(D), Number(h), Number(mi), Number(se||0));
+  }
+  // DD/MM/YYYY HH:MM[:SS]
+  m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})[ \t]+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if(m){
+    const [_,D,Mo,Y,h,mi,se] = m;
+    return new Date(Number(Y), Number(Mo)-1, Number(D), Number(h), Number(mi), Number(se||0));
+  }
+  // Apenas data (YYYY-MM-DD ou DD/MM/YYYY)
+  m = s.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})$/);
+  if(m){
+    const [_,Y,Mo,D] = m;
+    return new Date(Number(Y), Number(Mo)-1, Number(D), 0, 0, 0);
+  }
+  m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if(m){
+    const [_,D,Mo,Y] = m;
+    return new Date(Number(Y), Number(Mo)-1, Number(D), 0, 0, 0);
+  }
+  return null;
+}
 
-  const toSend = rowsMapped.filter(x=> !!x.dia);
-  if(toSend.length===0){ alert('Nenhuma linha com data reconhecida. Ajuste o mapeamento de "Data (dia)".'); return; }
+function toYYYYMMDDLocal(d){
+  // usa horário local para não “andar” a data
+  const y = d.getFullYear();
+  const m = pad(d.getMonth()+1);
+  const day = pad(d.getDate());
+  return `${y}-${m}-${day}`;
+}
 
-  $('#btnSave').disabled = true;
-  setBar(0);
-  $('#saveInfo').textContent = `Enviando ${nf.format(toSend.length)} linhas…`;
+// ------------------------ Carregar/Validar ------------------------
+function fillSelectOptions(sel, cols){
+  sel.innerHTML = '<option value="">—</option>' + cols.map(c=>`<option>${c}</option>`).join('');
+}
 
+// tenta pré-selecionar pelos nomes mais comuns
+function autosel(map){
+  const find = (names)=> headers.find(h => names.some(n => h.toLowerCase()===n));
+  const setIf = (id, names)=>{ const hit = find(names); if(hit) $(id).value = hit; };
+
+  setIf('map-datahora', ['datahora','data e hora','data hora','data/hora','data_hora','data da venda']);
+  setIf('map-dia', ['data','dia','data da venda']);
+  setIf('map-hora', ['hora','hr']);
+  setIf('map-unidade', ['unidade','unid']);
+  // Loja: use “Nome da loja” se existir
+  setIf('map-loja', ['nome da loja','loja','nome da loja ','nome de loja']);
+  setIf('map-canal', ['canal','canal de venda','canal de vendas']);
+  setIf('map-pagamento', ['pagamento','pagamento base','pagamento_base','forma de pagamento']);
+  setIf('map-cancelado', ['está cancelado','esta cancelado','cancelado']);
+  setIf('map-pedidos', ['itens','qtd','quantidade','pedidos']);
+  setIf('map-total', ['total','valor','valor total']);
+  setIf('map-desconto', ['desconto','desc']);
+  setIf('map-entrega', ['entrega','frete']);
+  setIf('map-turno', ['turno','período','periodo']);
+}
+
+$('btn-validate').onclick = async () => {
+  try{
+    const f = $('file').files[0];
+    if(!f){ alert('Escolha um arquivo .xlsx'); return; }
+    $('file-info').textContent = 'Lendo…';
+    const ab = await f.arrayBuffer();
+    const wb = XLSX.read(ab, { cellDates:true, raw:true, dateNF:'yyyy-mm-dd hh:mm:ss' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    // defval:null mantém colunas vazias; raw:true preserva Dates/Numbers
+    rawRows = XLSX.utils.sheet_to_json(ws, { defval:null, raw:true });
+    headers = Object.keys(rawRows[0]||{});
+    $('file-info').innerHTML = `📄 <b>${f.name}</b> — ${rawRows.length} linhas | colunas: <span class="muted">${headers.join(', ')||'—'}</span>`;
+
+    // preencher selects
+    const selects = [
+      'map-datahora','map-dia','map-hora','map-unidade','map-loja','map-canal',
+      'map-pagamento','map-cancelado','map-pedidos','map-total','map-desconto','map-entrega','map-turno'
+    ];
+    selects.forEach(id => fillSelectOptions($(id), headers));
+    autosel();
+
+    // gerar amostra normalizada (com base no mapeamento atual)
+    recomputeNormalized();
+    $('btn-save').disabled = (normRows.length===0);
+  }catch(e){
+    log(e,'err');
+    alert('Erro ao ler o Excel: '+e.message);
+  }
+};
+
+function currentMapping(){
+  return {
+    datahora: $('map-datahora').value || '',
+    dia: $('map-dia').value || '',
+    hora: $('map-hora').value || '',
+    unidade: $('map-unidade').value || '',
+    loja: $('map-loja').value || '',
+    canal: $('map-canal').value || '',
+    pagamento: $('map-pagamento').value || '',
+    cancelado: $('map-cancelado').value || '',
+    pedidos: $('map-pedidos').value || '',
+    total: $('map-total').value || '',
+    desconto: $('map-desconto').value || '',
+    entrega: $('map-entrega').value || '',
+    turno: $('map-turno').value || '',
+  };
+}
+
+function recomputeNormalized(){
+  const map = currentMapping();
+  const out = [];
+  const dists = { unidade:new Set(), loja:new Set(), canal:new Set(), pagamento_base:new Set(), turno:new Set() };
+
+  for(const r of rawRows){
+    // Data+Hora (preferência)
+    let dia=null, hora=null;
+    if(map.datahora){
+      const v = r[map.datahora];
+      const dt = parseDateLike(v);
+      if(dt){ dia = toYYYYMMDDLocal(dt); hora = dt.getHours(); }
+    } else {
+      // Data separada
+      if(map.dia){
+        const vd = r[map.dia];
+        const dd = parseDateLike(vd);
+        if(dd) dia = toYYYYMMDDLocal(dd);
+      }
+      // Hora separada
+      if(map.hora){
+        const vh = r[map.hora];
+        if(vh instanceof Date) hora = vh.getHours();
+        else if(typeof vh==='number') hora = Math.max(0, Math.min(23, Math.floor(vh)));
+        else if(typeof vh==='string'){
+          const m = vh.match(/(\d{1,2})/);
+          if(m) hora = Math.max(0, Math.min(23, parseInt(m[1],10)));
+        }
+      }
+    }
+
+    const unidade = map.unidade ? String(r[map.unidade]??'').trim() : '';
+    const loja    = map.loja    ? String(r[map.loja]??'').trim()    : '';
+    const canal   = map.canal   ? String(r[map.canal]??'').trim()   : '';
+    const pag     = map.pagamento ? String(r[map.pagamento]??'').trim() : '';
+    const turno   = map.turno   ? String(r[map.turno]??'').trim()   : '';
+    const canc    = normCancel(map.cancelado ? r[map.cancelado] : 'Não');
+    const ped     = map.pedidos ? (Number(r[map.pedidos])||1) : 1;
+    const fat     = map.total ? parsePtNumber(r[map.total]) : 0;
+    const des     = map.desconto ? parsePtNumber(r[map.desconto]) : 0;
+    const fre     = map.entrega ? parsePtNumber(r[map.entrega]) : 0;
+
+    // Só aceita linhas com data
+    if(!dia){ continue; }
+
+    const row = {
+      dia, hora: (hora==null? null : Number(hora)),
+      unidade, loja, canal,
+      pagamento_base: pag,
+      cancelado: canc,
+      pedidos: Number.isFinite(ped)? ped : 1,
+      fat, des, fre
+    };
+    out.push(row);
+
+    if(unidade) dists.unidade.add(unidade);
+    if(loja)    dists.loja.add(loja);
+    if(canal)   dists.canal.add(canal);
+    if(pag)     dists.pagamento_base.add(pag);
+    if(turno)   dists.turno.add(turno);
+  }
+
+  normRows = out;
+
+  // prévia
+  const head = out.slice(0,20);
+  if(head.length){
+    const cols = Object.keys(head[0]);
+    let html = '<table><thead><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>';
+    for(const row of head){
+      html += '<tr>'+cols.map(c=>`<td>${row[c]??''}</td>`).join('')+'</tr>';
+    }
+    html += '</tbody></table>';
+    set('preview', html);
+  } else {
+    set('preview','—');
+  }
+
+  // distincts
+  const counts = {
+    linhas: out.length,
+    unidades: dists.unidade.size,
+    lojas: dists.loja.size,
+    canais: dists.canal.size,
+    pagamentos: dists.pagamento_base.size
+  };
+  set('distincts',
+    `<div class="pill">linhas: <b>${counts.linhas}</b></div>`+
+    `<div class="pill">unidades: <b>${counts.unidades}</b></div>`+
+    `<div class="pill">lojas: <b>${counts.lojas}</b></div>`+
+    `<div class="pill">canais: <b>${counts.canais}</b></div>`+
+    `<div class="pill">pagamentos: <b>${counts.pagamentos}</b></div>`
+  );
+
+  $('btn-save').disabled = (normRows.length===0);
+}
+
+// Recalcular normalização quando mudar mapeamento
+[
+  'map-datahora','map-dia','map-hora','map-unidade','map-loja','map-canal',
+  'map-pagamento','map-cancelado','map-pedidos','map-total','map-desconto','map-entrega','map-turno'
+].forEach(id => $(id).addEventListener('change', recomputeNormalized));
+
+// ------------------------ Salvar no banco ------------------------
+$('btn-save').onclick = async () => {
+  if(!supa){ alert('Conecte no Supabase primeiro.'); return; }
+  if(!normRows.length){ alert('Nada para salvar. Valide e confira o mapeamento.'); return; }
+
+  // Tabela-alvo: ajuste aqui se sua ingestão for por RPC.
+  // Opção A: inserir direto na tabela staging (ex: vendas_import_csv_v2)
+  const tableName = 'vendas_import_csv_v2';
+
+  // Insere em lotes de 2000 para não estourar payload
   const BATCH = 2000;
-  let done = 0, okBatches=0, errBatches=0;
-  for(let i=0;i<toSend.length;i+=BATCH){
-    const chunk = toSend.slice(i, i+BATCH);
-    try{
-      const { data, error } = await supa.rpc('ingest_vendas_json', { p_rows: chunk });
-      if(error) throw error;
-      okBatches++;
-      done += chunk.length;
-      setBar(Math.round(done*100/toSend.length));
-      $('#saveInfo').textContent = `Gravado: ${nf.format(done)} / ${nf.format(toSend.length)} (lotes OK: ${okBatches}, erros: ${errBatches})`;
-      log(`Lote OK: +${chunk.length} (retorno RPC: ${data})`, 'ok');
-    }catch(e){
-      errBatches++;
-      log(`Erro no lote (${i}-${i+BATCH}): ${e.message||e}`, 'err');
+  let ok = 0, fail = 0;
+  for(let i=0;i<normRows.length;i+=BATCH){
+    const slice = normRows.slice(i, i+BATCH);
+    // tente inserir
+    const { error } = await supa.from(tableName).insert(slice);
+    if(error){
+      log({lote: [i, i+slice.length], error}, 'err');
+      fail += slice.length;
+      // se der erro de permissão, pare e avise
+      if(String(error.message||'').toLowerCase().includes('permission')){
+        alert('Erro de permissão para inserir em '+tableName+': '+error.message);
+        break;
+      }
+    } else {
+      ok += slice.length;
+      log(`✅ Lote ${i}-${i+slice.length-1} inserido`, 'ok');
     }
   }
+  alert(`Concluído. OK: ${ok} | Falhas: ${fail}`);
 
-  $('#btnSave').disabled = false;
-  await refreshKPIs();
-});
-
-/** ========= Smoke + Listas ========= **/
-$('#btnSmoke').addEventListener('click', refreshKPIs);
-$('#btnLists').addEventListener('click', refreshLists);
-
-/* >>> NOVO: usa função SQL vw_vendas_stats para evitar travar em 1000 <<< */
-async function refreshKPIs(){
-  if(!supa){ log('Conecte primeiro', 'warn'); return; }
-  try{
-    const p_dini = '1900-01-01';
-    const p_dfim = '2100-01-01';
-    const { data, error } = await supa.rpc('vw_vendas_stats', { p_dini, p_dfim });
-    if(error) throw error;
-    const stat = (data && data[0]) ? data[0] : {linhas:0, unids:0, lojas:0, turnos:0, canais:0, pags:0};
-
-    $('#kpiCount').textContent = `linhas: ${stat.linhas ?? 0}`;
-    $('#kpiUnid').textContent  = `unidades: ${stat.unids ?? 0}`;
-    $('#kpiLoja').textContent  = `lojas: ${stat.lojas ?? 0}`;
-    $('#kpiTurno').textContent = `turnos: ${stat.turnos ?? 0}`;
-    $('#kpiCanal').textContent = `canais: ${stat.canais ?? 0}`;
-    $('#kpiPags').textContent  = `pagamentos: ${stat.pags ?? 0}`;
-
-    log('Resumo pós-carga ok (via vw_vendas_stats).', 'ok');
-  }catch(e){
-    log(`Smoke error: ${e.message||e}`, 'err');
-  }
-}
-
-/* Listas (amostra) — continuam client-side, apenas para inspeção */
-async function refreshLists(){
-  if(!supa){ log('Conecte primeiro', 'warn'); return; }
-  try{
-    const [un,lo,tu,ca,pa] = await Promise.all([
-      supa.from('vw_vendas').select('unidade', {distinct:true}).limit(1000),
-      supa.from('vw_vendas').select('loja', {distinct:true}).limit(1000),
-      supa.from('vw_vendas').select('turno', {distinct:true}).limit(1000),
-      supa.from('vw_vendas').select('canal', {distinct:true}).limit(1000),
-      supa.from('vw_vendas').select('pagamento_base', {distinct:true}).limit(1000),
-    ]);
-    log('Listas (amostras, limitadas a 1000 pelo PostgREST):', 'ok');
-    log({
-      unidade: (un.data||[]).slice(0,10),
-      loja: (lo.data||[]).slice(0,10),
-      turno: (tu.data||[]).slice(0,10),
-      canal: (ca.data||[]).slice(0,10),
-      pagamento: (pa.data||[]).slice(0,10)
-    });
-  }catch(e){
-    log(`loadFilters erro: ${e.message||e}`, 'err');
-  }
-}
+  // dica: se você usa um pipeline por VIEW/RPC, aqui você pode chamar funções de refresh:
+  // await supa.rpc('refresh_vendas_hour');
+  // await supa.rpc('refresh_sales_materialized');
+};
 </script>
 </body>
 </html>
