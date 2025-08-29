@@ -1,397 +1,478 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-br">
 <head>
   <meta charset="utf-8" />
-  <title>Dashboard Vendas • Supabase</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Vendas • Dashboard + Upload</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- evita 404 do favicon -->
+  <link rel="icon" href="data:,">
+  <!-- Supabase JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.46.1/dist/umd/supabase.js"></script>
+  <!-- SheetJS para XLSX -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
-    :root {
-      --bg:#0f172a; --card:#111827; --muted:#9ca3af; --txt:#e5e7eb; --ok:#10b981; --warn:#f59e0b; --err:#ef4444; --pri:#6366f1;
-      --chip:#1f2937; --chipb:#374151;
-    }
-    body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu;}
-    h1{font-size:18px;margin:16px 0}
-    .wrap{max-width:1100px;margin:0 auto;padding:16px}
-    .row{display:flex;gap:12px;flex-wrap:wrap}
-    .card{background:var(--card);border:1px solid #1f2937;border-radius:12px;padding:14px}
-    .w100{flex:1 1 100%}.w50{flex:1 1 520px}.w33{flex:1 1 340px}.w25{flex:1 1 250px}
-    label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
-    input,select,button,textarea{
-      background:#0b1220;color:var(--txt);border:1px solid #21314f;border-radius:10px;padding:10px 12px;
-      outline:none;width:100%;
-    }
-    select[multiple]{height:120px}
-    button{cursor:pointer;background:var(--pri);border-color:#4f46e5}
-    button.ghost{background:#0b1220;border-color:#334155}
-    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-    .kpi{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-    .kpi .item{background:#0b1220;border:1px solid #21314f;border-radius:10px;padding:12px}
-    .kpi .item h3{margin:0 0 4px 0;font-size:12px;color:var(--muted)}
-    .kpi .item .v{font-size:18px}
-    .chips{display:flex;flex-wrap:wrap;gap:6px}
-    .chip{background:var(--chip);border:1px solid var(--chipb);padding:6px 10px;border-radius:999px;color:#cbd5e1}
-    .muted{color:var(--muted)}
-    .ok{color:var(--ok)}.warn{color:var(--warn)}.err{color:var(--err)}
-    pre{white-space:pre-wrap;background:#0b1220;border:1px solid #21314f;border-radius:10px;padding:10px;max-height:280px;overflow:auto}
-    .flex{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    :root { --bg:#0f172a; --card:#111827; --muted:#9ca3af; --fg:#f9fafb; --ok:#10b981; --warn:#f59e0b; --err:#ef4444; --accent:#38bdf8; }
+    html,body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji"; }
+    .wrap { max-width:1200px; margin:24px auto; padding:0 16px; }
+    h1{ font-size:20px; margin:0 0 16px; }
+    .row{ display:flex; gap:16px; flex-wrap:wrap; }
+    .card{ background:var(--card); border:1px solid #1f2937; border-radius:14px; padding:14px; }
+    .grow{ flex:1 1 0; min-width:260px }
+    label{ font-size:12px; color:var(--muted); display:block; margin-bottom:6px }
+    input,select,button{ background:#0b1220; color:var(--fg); border:1px solid #283042; border-radius:10px; padding:8px 10px; }
+    select[multiple]{ height:140px; }
+    button{ cursor:pointer; }
+    button.primary{ background:linear-gradient(135deg,#0ea5e9,#22d3ee); border:0; color:black; font-weight:700 }
+    .kpi{ display:grid; grid-template-columns:repeat(4, minmax(140px,1fr)); gap:14px; }
+    .kpi .tile{ padding:12px; border-radius:12px; background:#0b1220; border:1px solid #1f2937 }
+    .kpi .big{ font-size:18px; font-weight:800 }
+    .ok{ color:var(--ok) } .warn{ color:var(--warn) } .err{ color:var(--err) } .muted{ color:var(--muted) }
+    pre#debug{ white-space:pre-wrap; max-height:340px; overflow:auto; background:#0b1220; padding:12px; border-radius:10px; border:1px solid #1f2937 }
+    .row .card h2{ margin:0 0 10px; font-size:16px }
+    .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px }
+    .hint{ font-size:12px; color:var(--muted); margin-top:6px }
+    .bar{ display:flex; gap:8px; flex-wrap:wrap }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Dashboard • Vendas</h1>
+<div class="wrap">
+  <h1>Vendas — Upload, Filtros & KPI</h1>
 
-    <!-- Filtros -->
-    <div class="card w100">
-      <div class="row">
-        <div class="w25">
-          <label>Data inicial</label>
-          <input type="date" id="dini">
+  <!-- Conexão + Datas -->
+  <div class="row">
+    <div class="card">
+      <h2>Conexão</h2>
+      <div class="grid2">
+        <div>
+          <label>Supabase URL</label>
+          <input id="sbUrl" value="https://uahmcfzerofhzjvlzrqc.supabase.co" style="width:360px">
         </div>
-        <div class="w25">
-          <label>Data final</label>
-          <input type="date" id="dfim">
-        </div>
-        <div class="w25">
-          <label>Unidade</label>
-          <select id="f-unid" multiple></select>
-        </div>
-        <div class="w25">
-          <label>Loja</label>
-          <select id="f-loja" multiple></select>
-        </div>
-        <div class="w25">
-          <label>Turno</label>
-          <select id="f-turno" multiple></select>
-        </div>
-        <div class="w25">
-          <label>Canal</label>
-          <select id="f-canal" multiple></select>
-        </div>
-        <div class="w25">
-          <label>Pagamento</label>
-          <select id="f-pag" multiple></select>
-        </div>
-        <div class="w25">
-          <label>Cancelado</label>
-          <select id="f-canc">
-            <option value="">(todos)</option>
-            <option value="Sim">Sim</option>
-            <option value="Não">Não</option>
-          </select>
+        <div>
+          <label>Anon Key</label>
+          <input id="sbKey" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU" style="width:560px">
         </div>
       </div>
-      <div class="row" style="margin-top:10px">
-        <div class="flex">
-          <button id="btn-reload" class="ghost">Recarregar listas</button>
-          <button id="btn-kpi">Atualizar KPI</button>
-          <span class="muted" id="lbl-listas"></span>
-          <span class="chip">Smoke: <span id="smoke-ok" class="ok" style="margin-left:6px">—</span></span>
-        </div>
+      <div class="bar" style="margin-top:10px">
+        <button id="btnConnect" class="primary">Conectar / Ping</button>
+        <span class="hint">O ping usa <code>data_venda</code> (não depende de <code>id</code>).</span>
       </div>
     </div>
 
-    <!-- KPIs -->
-    <div class="card w100">
-      <div class="kpi">
-        <div class="item"><h3>Pedidos</h3><div class="v" id="k-ped">—</div></div>
-        <div class="item"><h3>Faturamento</h3><div class="v" id="k-fat">—</div></div>
-        <div class="item"><h3>Descontos</h3><div class="v" id="k-des">—</div></div>
-        <div class="item"><h3>Frete</h3><div class="v" id="k-fre">—</div></div>
-      </div>
-    </div>
-
-    <!-- Upload -->
-    <div class="card w100">
-      <div class="row">
-        <div class="w50">
-          <label>Arquivo Excel (.xlsx) — aba “UNIFICADA”</label>
-          <input type="file" id="file" accept=".xlsx" />
+    <div class="card grow">
+      <h2>Período</h2>
+      <div class="grid2">
+        <div>
+          <label>De</label>
+          <input id="dini" type="date">
         </div>
-        <div class="w50 flex">
-          <button id="btn-validate" class="ghost">Validar arquivo</button>
-          <button id="btn-insert">Carregar no banco</button>
-          <span class="muted">Valida no navegador; “Carregar” insere em lotes na tabela <b>public.vendas_import_csv_v2</b>.</span>
+        <div>
+          <label>Até</label>
+          <input id="dfim" type="date">
         </div>
       </div>
-      <div class="row">
-        <div class="w100">
-          <label>Prévia (5 linhas)</label>
-          <pre id="preview">—</pre>
-        </div>
+      <div class="bar" style="margin-top:10px">
+        <button id="btnAutoDates">Auto (min/max)</button>
+        <button id="btnLoadFilters">Recarregar listas</button>
+        <span class="hint">Busca min/max direto da tabela <code>vendas_import_csv_v2</code>.</span>
       </div>
-    </div>
-
-    <!-- Debug -->
-    <div class="card w100">
-      <div class="flex">
-        <span>Debug</span>
-        <span id="ping" class="chip">—</span>
-      </div>
-      <pre id="log">Pronto.</pre>
     </div>
   </div>
 
-  <!-- Supabase JS -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- SheetJS (se a rede bloquear, baixe e sirva localmente) -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js"></script>
+  <!-- Filtros -->
+  <div class="row">
+    <div class="card grow">
+      <h2>Filtros</h2>
+      <div class="row">
+        <div>
+          <label>Unidades</label>
+          <select id="selUnid" multiple></select>
+        </div>
+        <div>
+          <label>Lojas</label>
+          <select id="selLoja" multiple></select>
+        </div>
+        <div>
+          <label>Turnos</label>
+          <select id="selTurno" multiple></select>
+        </div>
+        <div>
+          <label>Canais</label>
+          <select id="selCanal" multiple></select>
+        </div>
+        <div>
+          <label>Pagamentos</label>
+          <select id="selPag" multiple></select>
+        </div>
+      </div>
+      <div class="bar" style="margin-top:10px">
+        <button id="btnKpi" class="primary">Calcular KPI + Smoke</button>
+        <span class="hint">Os filtros enviam arrays <code>text[]</code> (lowercase) para os RPCs v2.</span>
+      </div>
+    </div>
+  </div>
 
-  <script>
-  // ====== CONFIG SUPABASE (seus dados) ======
-  const SUPA_URL = "https://uahmcfzerofhzjvlzrqc.supabase.co";
-  const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU";
+  <!-- KPIs -->
+  <div class="row">
+    <div class="card grow">
+      <h2>KPIs</h2>
+      <div class="kpi">
+        <div class="tile">
+          <div class="muted">Pedidos</div>
+          <div id="kpiPed" class="big">—</div>
+        </div>
+        <div class="tile">
+          <div class="muted">Faturamento</div>
+          <div id="kpiFat" class="big">—</div>
+        </div>
+        <div class="tile">
+          <div class="muted">Descontos</div>
+          <div id="kpiDes" class="big">—</div>
+        </div>
+        <div class="tile">
+          <div class="muted">Frete</div>
+          <div id="kpiFre" class="big">—</div>
+        </div>
+      </div>
+      <div class="hint" id="smoke">Smoke: —</div>
+    </div>
+  </div>
 
-  const supa = window.supabase.createClient(SUPA_URL, SUPA_KEY, {
-    auth: { persistSession: false }
-  });
+  <!-- Upload Excel -->
+  <div class="row">
+    <div class="card grow">
+      <h2>Upload Excel → public.vendas_import_csv_v2</h2>
+      <div class="row">
+        <div>
+          <label>Arquivo (.xlsx)</label>
+          <input id="fileXlsx" type="file" accept=".xlsx" />
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <div class="bar">
+            <button id="btnValidar">Validar arquivo</button>
+            <button id="btnCarregar" class="primary">Carregar no banco</button>
+          </div>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:6px">
+        Mapeamento automático das colunas (exige <b>Data</b> com data+hora). Ex.: <code>01/05/2025 11:01</code>
+      </div>
+      <pre id="preview" class="card" style="margin-top:10px; background:#0b1220"></pre>
+    </div>
+  </div>
 
-  // ====== HELPERS ======
-  const $ = s => document.querySelector(s);
-  const log = (...a) => { const el = $("#log"); el.textContent += "\\n" + a.map(x => typeof x==="string"?x:JSON.stringify(x,null,2)).join(" "); el.scrollTop = el.scrollHeight; };
-  const setText = (id, v) => { const el = $(id); if (el) el.textContent = v; };
-  const fmt = n => n==null? "—" : n.toLocaleString("pt-BR",{maximumFractionDigits:2});
-  const todayISO = () => new Date().toISOString().slice(0,10);
+  <!-- Debug -->
+  <div class="row">
+    <div class="card grow">
+      <h2>Debug</h2>
+      <pre id="debug"></pre>
+    </div>
+  </div>
+</div>
 
-  // remove acentos/espacos e minúsculas
-  const canon = s => (s ?? "").toString().normalize("NFD").replace(/\p{Diacritic}/gu,"").trim().toLowerCase();
-  // pega primeira chave possível do objeto (variações aceitáveis)
-  const pick = (row, names) => {
-    const map = new Map(Object.keys(row).map(k => [canon(k), k]));
-    for (const n of names) {
-      const got = map.get(canon(n));
-      if (got) return row[got];
-    }
-    return undefined;
+<script>
+(function(){
+  // Estado
+  let supabaseClient = null;
+  let lastRows = []; // linhas parseadas do Excel (após validação)
+  const TBL = 'vendas_import_csv_v2';
+
+  const $ = (id)=>document.getElementById(id);
+  const addLog = (msg) => {
+    const ts = new Date().toTimeString().slice(0,8);
+    $('debug').textContent = `[${ts}] ${msg}\n` + $('debug').textContent;
   };
 
-  // parse "dd/mm/yyyy hh:mm" -> {data_venda, hora}
-  function parseDataHora(txt) {
-    if (!txt) return { data_venda:null, hora:null };
-    const m = String(txt).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2})(?::(\d{2}))?)?$/);
-    if (!m) return { data_venda:null, hora:null };
-    const [_, d, mo, y, hh] = m;
-    const iso = `${y}-${mo.padStart(2,"0")}-${d.padStart(2,"0")}`;
-    return { data_venda: iso, hora: hh? Number(hh): null };
+  const money = (n)=> new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(n||0);
+
+  // Inicial
+  $('btnConnect').onclick = connectAndPing;
+  $('btnAutoDates').onclick = autoDates;
+  $('btnLoadFilters').onclick = () => loadFilters();
+  $('btnKpi').onclick = runKpiAndSmoke;
+  $('btnValidar').onclick = validarArquivo;
+  $('btnCarregar').onclick = carregarBanco;
+
+  // Conexão / Ping
+  async function connectAndPing(){
+    try{
+      const url = $('sbUrl').value.trim();
+      const key = $('sbKey').value.trim();
+      supabaseClient = supabase.createClient(url, key, { auth: { persistSession:false }});
+      addLog('✅ Supabase client ok');
+
+      // Ping sem depender de 'id'
+      const { data, error } = await supabaseClient
+        .from(TBL)
+        .select('data_venda')
+        .limit(1);
+
+      if(error) addLog(`⚠️ ping erro\n${JSON.stringify(error,null,2)}`);
+      else addLog('✅ ping ok');
+    }catch(e){
+      console.error(e);
+      addLog(`❌ erro conectar\n${e.message||e}`);
+    }
   }
 
-  // ====== FILTROS (listas) ======
-  async function autoRange() {
-    const { data, error } = await supa.rpc("range_vendas");
-    if (error || !data || !data.length) return { min: null, max: null };
-    return { min: data[0].min_dia, max: data[0].max_dia };
+  // Datas min/max a partir da tabela
+  async function autoDates(){
+    if(!supabaseClient){ await connectAndPing(); }
+    const hdr = { count:'exact' };
+    const qmin = supabaseClient.from(TBL).select('data_venda').order('data_venda',{ascending:true}).limit(1);
+    const qmax = supabaseClient.from(TBL).select('data_venda').order('data_venda',{ascending:false}).limit(1);
+    const [rmin,rmax] = await Promise.all([qmin, qmax]);
+    const min = rmin.data?.[0]?.data_venda || '';
+    const max = rmax.data?.[0]?.data_venda || '';
+    if(min) $('dini').value = min;
+    if(max) $('dfim').value = max;
+    addLog(`🗓️ Intervalo auto {"minDia":"${min}","maxDia":"${max}"}`);
   }
 
-  function selVals(id) {
-    const opts = Array.from($(id).selectedOptions).map(o => o.value);
-    return opts.length ? opts : null;
+  // Helpers de filtros
+  const norm = (s)=> (s ?? '').toString().trim().toLowerCase();
+  function getSelValues(id){
+    const opts = Array.from($(id).selectedOptions||[]);
+    if(opts.length===0) return null;
+    return opts.map(o => norm(o.value)).filter(Boolean);
   }
-  function paramsFromUI() {
-    const dini = $("#dini").value || null;
-    const dfim = $("#dfim").value || null;
-    return {
-      p_dini: dini, p_dfim: dfim,
-      p_unids: selVals("#f-unid"),
-      p_lojas: selVals("#f-loja"),
-      p_turnos: selVals("#f-turno"),
-      p_canais: selVals("#f-canal"),
-      p_pags:  selVals("#f-pag"),
-      p_cancelado: $("#f-canc").value || null
-    };
-  }
-
-  async function loadList(fn, params, elSel) {
-    const { data, error } = await supa.rpc(fn, params);
-    if (error) throw error;
-    const arr = (data||[]).map(r => r.val).filter(Boolean).sort((a,b)=>a.localeCompare(b,"pt-BR"));
-    const sel = $(elSel);
-    sel.innerHTML = "";
-    for (const v of arr) {
-      const opt = document.createElement("option");
-      opt.value = v; opt.textContent = v;
+  function setOptions(id, values){
+    const sel = $(id);
+    sel.innerHTML = '';
+    values.forEach(v=>{
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
       sel.appendChild(opt);
+    });
+  }
+
+  // Carrega listas (distintos) da própria tabela no período
+  async function loadFilters(){
+    if(!supabaseClient){ await connectAndPing(); }
+    const dini = $('dini').value || '1900-01-01';
+    const dfim = $('dfim').value || '3000-12-31';
+
+    async function distinct(col){
+      const { data, error } = await supabaseClient
+        .from(TBL)
+        .select(col)
+        .gte('data_venda', dini)
+        .lte('data_venda', dfim)
+        .limit(100000);
+      if(error){ addLog(`⚠️ distinct ${col} ${JSON.stringify(error)}`); return []; }
+      const set = new Set();
+      (data||[]).forEach(r=>{
+        const v = (r[col] ?? '').toString().trim();
+        if(v) set.add(v);
+      });
+      return Array.from(set).sort((a,b)=>a.localeCompare(b,'pt-BR'));
     }
-    return arr.length;
+
+    const [unids,lojas,turnos,canais,pags] = await Promise.all([
+      distinct('unidade'),
+      distinct('loja'),
+      distinct('turno'),
+      distinct('canal'),
+      distinct('pagamento')
+    ]);
+
+    setOptions('selUnid', unids);
+    setOptions('selLoja', lojas);
+    setOptions('selTurno', turnos);
+    setOptions('selCanal', canais);
+    setOptions('selPag', pags);
+
+    addLog(`🔎 Listas carregadas {\n  "unids": ${unids.length},\n  "lojas": ${lojas.length},\n  "turnos": ${turnos.length},\n  "canais": ${canais.length},\n  "pags": ${pags.length}\n}`);
   }
 
-  async function reloadLists() {
-    const r = await autoRange();
-    if (r.min && r.max) {
-      $("#dini").value = r.min;
-      $("#dfim").value = r.max;
-      log("🗓️ Intervalo auto", JSON.stringify({minDia:r.min, maxDia:r.max}));
+  // Chama KPIs e gráficos (RPC v2)
+  async function runKpiAndSmoke(){
+    if(!supabaseClient){ await connectAndPing(); }
+    const dini = $('dini').value || '1900-01-01';
+    const dfim = $('dfim').value || '3000-12-31';
+
+    const p_unids = getSelValues('selUnid');
+    const p_lojas = getSelValues('selLoja');
+    const p_turnos = getSelValues('selTurno');
+    const p_canais = getSelValues('selCanal');
+    const p_pags  = getSelValues('selPag');
+    const p_cancelado = null; // você pode ligar a um checkbox depois
+
+    const args = { p_dini:dini, p_dfim:dfim, p_unids, p_lojas, p_turnos, p_canais, p_pags, p_cancelado };
+
+    // KPI
+    const k = await supabaseClient.rpc('kpi_vendas_v2', args);
+    if(k.error){ addLog(`❌ KPI erro\n${JSON.stringify(k.error,null,2)}`); return; }
+    const kpi = Array.isArray(k.data)? k.data[0] : k.data;
+    $('kpiPed').textContent = (kpi?.pedidos ?? 0).toLocaleString('pt-BR');
+    $('kpiFat').textContent = money(kpi?.fat ?? 0);
+    $('kpiDes').textContent = money(kpi?.des ?? 0);
+    $('kpiFre').textContent = money(kpi?.fre ?? 0);
+
+    // Smoke: soma dos gráficos deve bater com KPI.fat
+    const [d,m,h] = await Promise.all([
+      supabaseClient.rpc('chart_vendas_dow_v2', args),
+      supabaseClient.rpc('chart_vendas_mes_v2', args),
+      supabaseClient.rpc('chart_vendas_hora_v2', args)
+    ]);
+    const sum = (arr, key) => (Array.isArray(arr)? arr.reduce((a,r)=>a + Number(r[key]||0), 0) : 0);
+    const dow = sum(d.data||[], 'total');
+    const mes = sum(m.data||[], 'total');
+    const hora= sum(h.data||[], 'total');
+    const fat = Number(kpi?.fat || 0);
+    const ok = Math.abs(dow-fat)<0.01 && Math.abs(mes-fat)<0.01 && Math.abs(hora-fat)<0.01;
+
+    $('smoke').innerHTML = `🧪 Smoke { "dow": ${dow.toFixed(2)}, "mes": ${mes.toFixed(2)}, "hora": ${hora.toFixed(2)}, "fat": ${fat.toFixed(2)}, "ok": ${ok} }`;
+    addLog(`→ KPI params ${JSON.stringify(args,null,2)}`);
+  }
+
+  // ====== UPLOAD XLSX ======
+  function parseExcelToRows(file){
+    return new Promise((resolve,reject)=>{
+      const reader = new FileReader();
+      reader.onload = (e)=>{
+        try{
+          const data = new Uint8Array(e.target.result);
+          const wb = XLSX.read(data, { type:'array' });
+          const sheetName = wb.SheetNames[0]; // usa a primeira (ex.: UNIFICADA)
+          const ws = wb.Sheets[sheetName];
+          const json = XLSX.utils.sheet_to_json(ws, { defval:null, raw:true });
+
+          // Mapeia colunas (aceita variações) e converte "Data" => data_venda/hora
+          const out = json.map((r)=>{
+            // data/hora
+            let dtRaw = r['Data'] ?? r['data'] ?? r['data_venda'] ?? null;
+            let data_venda = null, hora = null;
+            if(dtRaw){
+              if(typeof dtRaw === 'string'){
+                // tenta "dd/mm/yyyy HH:MM"
+                const m = dtRaw.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2})/);
+                if(m){
+                  const [_,dd,mm,yyyy,HH,MM] = m;
+                  data_venda = `${yyyy}-${mm}-${dd}`;
+                  hora = parseInt(HH,10);
+                }else{
+                  // tenta Date parse do Excel
+                  const d = new Date(dtRaw);
+                  if(!isNaN(d)){
+                    data_venda = d.toISOString().slice(0,10);
+                    hora = d.getHours();
+                  }
+                }
+              }else if(typeof dtRaw === 'number'){
+                // Excel serial date
+                const d = XLSX.SSF.parse_date_code(dtRaw);
+                if(d){
+                  const yyyy = String(d.y);
+                  const mm   = String(d.m).padStart(2,'0');
+                  const dd   = String(d.d).padStart(2,'0');
+                  const HH   = String(d.H).padStart(2,'0');
+                  data_venda = `${yyyy}-${mm}-${dd}`;
+                  hora = parseInt(HH,10);
+                }
+              }
+            }
+
+            const unidade   = r['Unidade'] ?? r['unidade'] ?? null;
+            const loja      = r['loja'] ?? r['Nome da loja'] ?? r['Nome da Loja'] ?? r['Consumidor'] ?? null;
+            const canal     = r['Canal'] ?? r['Canal de venda'] ?? r['canal'] ?? null;
+            const cancelado = (()=>{
+              const v = (r['Cancelado'] ?? r['Está cancelado'] ?? r['cancelado'] ?? '').toString().trim().toLowerCase();
+              if(v === 's' || v === 'sim' || v === 'true' || v === '1') return true;
+              if(v === 'n' || v === 'não' || v === 'nao' || v === 'false' || v === '0') return false;
+              return false; // default
+            })();
+            const itens     = Number(r['Itens'] ?? r['itens'] ?? r['Pedido'] ?? 1) || 1;
+            const total     = Number(r['Total'] ?? r['total'] ?? 0) || 0;
+            const des       = Number(r['Desconto'] ?? r['des'] ?? r['desconto'] ?? 0) || 0;
+            const fre       = Number(r['Entrega'] ?? r['fre'] ?? r['entrega'] ?? 0) || 0;
+            const turno     = r['Turno'] ?? r['turno'] ?? null;
+            const pagamento = r['Pagamento'] ?? r['pagamento'] ?? null;
+
+            return {
+              data_venda, hora,
+              unidade, loja, canal,
+              cancelado, itens, total, des, fre,
+              turno, pagamento
+            };
+          }).filter(x => x.data_venda && x.hora !== null);
+
+          resolve({ rows: out, sheet: sheetName, totalLinhas: json.length });
+        }catch(err){ reject(err); }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  async function validarArquivo(){
+    try{
+      if(!supabaseClient){ await connectAndPing(); }
+      const f = $('fileXlsx').files?.[0];
+      if(!f){ addLog('⚠️ Selecione um arquivo .xlsx'); return; }
+
+      const { rows, sheet, totalLinhas } = await parseExcelToRows(f);
+      lastRows = rows;
+
+      // Prévia (5 linhas)
+      $('preview').textContent = [
+        `📄 Arquivo lido { "nome": "${f.name}", "sheet": "${sheet}", "linhas": ${totalLinhas} }`,
+        '🔧 Amostra mapeada (5 primeiras):',
+        JSON.stringify(rows.slice(0,5), null, 2)
+      ].join('\n');
+
+      addLog(`📄 Arquivo lido\n${JSON.stringify({nome:f.name,sheet,linhas:totalLinhas},null,2)}`);
+      addLog(`✅ Prévia pronta (${rows.length} linhas válidas com data/hora)`);
+    }catch(e){
+      console.error(e);
+      addLog(`❌ Validação falhou\n${e.message||e}`);
     }
-    const p = paramsFromUI();
-    const counts = {};
-    try {
-      const n1 = await loadList("list_unids_v1", p, "#f-unid"); counts.unids = n1;
-      const n2 = await loadList("list_lojas_v1", p, "#f-loja"); counts.lojas = n2;
-      const n3 = await loadList("list_turnos_v1", p, "#f-turno"); counts.turnos = n3;
-      const n4 = await loadList("list_canais_v1", p, "#f-canal"); counts.canais = n4;
-      const n5 = await loadList("list_pags_v1",  p, "#f-pag");  counts.pags = n5;
-      setText("#lbl-listas", `🔎 Listas carregadas { unids: ${counts.unids}, lojas: ${counts.lojas}, turnos: ${counts.turnos}, canais: ${counts.canais}, pags: ${counts.pags} }`);
-      log("✅ Supabase client ok");
-      log("🔎 Listas carregadas", counts);
-    } catch (e) {
-      log("⚠️ loadFilters erro:", e);
+  }
+
+  async function carregarBanco(){
+    try{
+      if(!supabaseClient){ await connectAndPing(); }
+      if(!lastRows.length){ addLog('⚠️ Valide o arquivo antes de carregar.'); return; }
+
+      // Verifica acesso / política
+      const ping = await supabaseClient.from(TBL).select('data_venda').limit(1);
+      if(ping.error){ addLog(`⚠️ Tabela inacessível\n${JSON.stringify(ping.error,null,2)}`); return; }
+      addLog('✅ Tabela acessível');
+
+      // Inserção em lotes
+      const BATCH = 2000;
+      let ok=0, fail=0;
+      for(let i=0; i<lastRows.length; i+=BATCH){
+        const slice = lastRows.slice(i, i+BATCH);
+        const { error } = await supabaseClient.from(TBL).insert(slice, { returning:'minimal' });
+        if(error){
+          fail += slice.length;
+          addLog(JSON.stringify({ lote:[i, Math.min(i+BATCH,lastRows.length)], error }, null, 2));
+        }else{
+          ok += slice.length;
+          addLog(JSON.stringify({ lote:[i, Math.min(i+BATCH,lastRows.length)] }, null, 2));
+        }
+      }
+      addLog(`📦 Inserção concluída\n${JSON.stringify({ok, fail}, null, 2)}`);
+
+      // Após carga, ajustar datas e filtros
+      await autoDates();
+      await loadFilters();
+    }catch(e){
+      console.error(e);
+      addLog(`❌ Carga falhou\n${e.message||e}`);
     }
   }
 
-  // ====== KPI + Smoke ======
-  async function fetchKPI(p) {
-    log("→ KPI params", JSON.stringify(p, null, 2));
-    const { data, error } = await supa.rpc("kpi_vendas_v2", p);
-    if (error) { log("❌ erro conectar", error.message||error); throw error; }
-    const d = Array.isArray(data) ? (data[0] ?? {}) : data;
-    return { pedidos: d.pedidos ?? 0, fat: d.fat ?? 0, des: d.des ?? 0, fre: d.fre ?? 0 };
-  }
-
-  async function fetchSum(fn, p) {
-    const { data, error } = await supa.rpc(fn, p);
-    if (error) throw error;
-    const total = (data||[]).reduce((a,r)=> a + Number(r.total||0), 0);
-    return total;
-  }
-
-  async function updateKPI() {
-    const p = paramsFromUI();
-    const k = await fetchKPI(p);
-    setText("#k-ped", fmt(k.pedidos));
-    setText("#k-fat", "R$ " + fmt(k.fat));
-    setText("#k-des", "R$ " + fmt(k.des));
-    setText("#k-fre", "R$ " + fmt(k.fre));
-
-    // Smoke: soma dos gráficos == KPI.fat
-    try {
-      const sd = await fetchSum("chart_vendas_dow_v2",  p);
-      const sm = await fetchSum("chart_vendas_mes_v2",  p);
-      const sh = await fetchSum("chart_vendas_hora_v2", p);
-      const ok = Math.abs(sd - k.fat) < 0.01 && Math.abs(sm - k.fat) < 0.01 && Math.abs(sh - k.fat) < 0.01;
-      $("#smoke-ok").textContent = ok ? "ok" : "mismatch";
-      $("#smoke-ok").className = ok ? "ok" : "err";
-      log("🧪 Smoke", {dow:sd, mes:sm, hora:sh, fat:k.fat, ok});
-    } catch(e) {
-      $("#smoke-ok").textContent = "erro";
-      $("#smoke-ok").className = "warn";
-      log("🧪 Smoke erro", e);
-    }
-  }
-
-  // ====== UPLOAD (Validar + Inserir) ======
-  let parsedRows = []; // linhas normalizadas prontas p/ DB
-
-  function normalizeRow(row) {
-    // nomes candidatos por campo
-    const vData = pick(row, ["Data","data","data da venda","data_venda"]);
-    const vUnid = pick(row, ["Unidade","unidade"]);
-    const vLoja = pick(row, ["loja","nome da loja","nome da loja "]); // com/sem espaço
-    const vCanal = pick(row, ["Canal","canal","canal de venda"]);
-    const vCanc  = pick(row, ["Cancelado","Está cancelado","cancelado"]);
-    const vItens = pick(row, ["Itens","itens","pedido_itens"]);
-    const vTot   = pick(row, ["Total","total","fat","faturamento"]);
-    const vDes   = pick(row, ["Desconto","desconto","des"]);
-    const vFre   = pick(row, ["Entrega","entrega","frete","fre"]);
-    const vTurno = pick(row, ["Turno","turno"]);
-    const vPag   = pick(row, ["Pagamento","pagamento","pagamento_base"]);
-
-    const { data_venda, hora } = parseDataHora(vData);
-    const canc = (String(vCanc||"").toLowerCase().trim());
-    const isCancel = ["s","sim","true","1","y"].includes(canc) ? true : ["n","nao","não","false","0"].includes(canc) ? false : Boolean(vCanc)===true;
-
-    const num = x => {
-      if (x==null || x==="") return 0;
-      if (typeof x === "number") return x;
-      // aceita "1.234,56"
-      const t = String(x).replace(/\./g,"").replace(",",".");
-      const n = Number(t);
-      return isFinite(n) ? n : 0;
-    };
-
-    return {
-      data_venda: data_venda,                       // date (YYYY-MM-DD)
-      hora: hora ?? null,                           // int
-      unidade: vUnid ? String(vUnid).trim() : null,
-      loja: vLoja ? String(vLoja).trim() : "",      // pode vir vazio
-      canal: vCanal ? String(vCanal).trim() : null,
-      cancelado: !!isCancel,                         // boolean
-      itens: Math.round(num(vItens)),                // numeric -> int
-      total: num(vTot),
-      des: num(vDes),
-      fre: num(vFre),
-      turno: vTurno ? String(vTurno).trim() : null,
-      pagamento: vPag ? String(vPag).trim() : null
-    };
-  }
-
-  $("#btn-validate").addEventListener("click", async () => {
-    const f = $("#file").files[0];
-    if (!f) { alert("Selecione um .xlsx"); return; }
-    const buf = await f.arrayBuffer();
-    const wb = XLSX.read(buf, { type:"array" });
-    const ws = wb.Sheets["UNIFICADA"] || wb.Sheets[wb.SheetNames[0]];
-    const raw = XLSX.utils.sheet_to_json(ws, { defval:null, raw:true });
-
-    parsedRows = raw.map(normalizeRow);
-
-    // prévia
-    const preview = parsedRows.slice(0,5);
-    $("#preview").textContent = JSON.stringify(preview, null, 2);
-
-    // intervalo auto
-    const dates = parsedRows.map(r=>r.data_venda).filter(Boolean).sort();
-    const minDia = dates[0] || "";
-    const maxDia = dates[dates.length-1] || "";
-    log("📄 Arquivo lido", { nome:f.name, sheet: wb.SheetNames[0], linhas: raw.length });
-    log("🔧 Amostra mapeada (1ª linha)", raw[0]);
-    log("✅ Prévia (5 linhas)", preview);
-    log("🗓️ Intervalo auto", {minDia, maxDia});
-    if (minDia && !$("#dini").value) $("#dini").value = minDia;
-    if (maxDia && !$("#dfim").value) $("#dfim").value = maxDia;
-  });
-
-  $("#btn-insert").addEventListener("click", async () => {
-    if (!parsedRows.length) { alert("Valide o arquivo primeiro."); return; }
-
-    // checa acesso tabela
-    const { error: tErr } = await supa.from("vendas_import_csv_v2").select("data_venda").limit(1);
-    if (tErr) { log("❌ Acesso tabela erro", tErr); alert("Erro de acesso à tabela."); return; }
-    log("✅ Tabela acessível");
-
-    // insere em lotes de 2000
-    const BATCH = 2000;
-    let ok = 0, fail = 0;
-    for (let i=0;i<parsedRows.length;i+=BATCH) {
-      const chunk = parsedRows.slice(i, i+BATCH);
-      const { error } = await supa.from("vendas_import_csv_v2").insert(chunk, { returning:"minimal" });
-      if (error) { fail += chunk.length; log("❌ Lote erro", {lote:[i, i+chunk.length], error}); }
-      else { ok += chunk.length; log("✅ Lote inserido", { lote:[i, i+chunk.length] }); }
-    }
-    log("📦 Inserção concluída", { ok, fail });
-    // recarrega listas e KPI
-    await reloadLists();
-    await updateKPI();
-  });
-
-  // Botões principais
-  $("#btn-reload").addEventListener("click", reloadLists);
-  $("#btn-kpi").addEventListener("click", updateKPI);
-
-  // Inicialização
-  (async function init(){
-    try {
-      // ping simples
-      const { error } = await supa.from("vendas_import_csv_v2").select("id").limit(1);
-      if (!error) { $("#ping").textContent = "✅ Supabase client ok"; }
-      else { $("#ping").textContent = "⚠️ ping erro"; log(error); }
-    } catch(e) { $("#ping").textContent = "⚠️ ping erro"; log(e); }
-
-    // se houver range na base, usa
-    const r = await autoRange();
-    if (r.min) $("#dini").value = r.min;
-    if (r.max) $("#dfim").value = r.max;
-
-    await reloadLists();
-    await updateKPI();
+  // Auto: conecta e tenta popular datas/filtros
+  (async()=>{
+    await connectAndPing();
+    await autoDates().catch(()=>{});
+    await loadFilters().catch(()=>{});
   })();
-  </script>
+
+})();
+</script>
 </body>
 </html>
