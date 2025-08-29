@@ -2,416 +2,311 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
-  <title>Ingestão de Vendas — Excel → Supabase1</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <!-- Favicon inline para evitar 404 -->
-  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="%2300c853"/><text x="32" y="38" font-size="28" text-anchor="middle" fill="white" font-family="Arial, sans-serif">X</text></svg>'>
+  <title>Uploader de Vendas → Supabase</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Tenta SheetJS local; se falhar, carrega via CDN -->
+  <script src="./xlsx.full.min.js"
+          onerror="var s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js'; document.head.appendChild(s);"></script>
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif;line-height:1.4;margin:24px;color:#111}
-    h1{margin:0 0 16px}
-    fieldset{border:1px solid #ddd;border-radius:8px;padding:16px;margin:0 0 16px}
-    legend{font-weight:600}
-    label{display:block;margin:6px 0 2px}
-    input,select,button,textarea{font:inherit;padding:8px;border:1px solid #bbb;border-radius:6px}
-    button{cursor:pointer}
-    .row{display:flex;gap:12px;flex-wrap:wrap}
-    .col{flex:1;min-width:260px}
-    .ok{color:#0a7f2e}
-    .warn{color:#9a6b00}
-    .err{color:#b00020;white-space:pre-wrap}
-    .muted{color:#666}
-    .pill{display:inline-block;background:#f0f2f5;border:1px solid #d9dee3;border-radius:999px;padding:2px 8px;margin:2px 4px 0 0}
-    .grid{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:8px}
-    .grid label{margin-top:12px}
-    .box{background:#fafbfc;border:1px solid #e6eaef;border-radius:8px;padding:12px}
-    #preview{max-height:220px;overflow:auto;border:1px dashed #d0d7de;border-radius:8px;padding:8px;background:#fff}
-    table{border-collapse:collapse;width:100%} th,td{border:1px solid #e5e7eb;padding:6px 8px;text-align:left}
-    .badge{background:#eef6ff;color:#0747a6;border:1px solid #d1e4ff;border-radius:999px;padding:2px 8px}
-    .small{font-size:12px}
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    h1 { margin-top: 0; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .card { border: 1px solid #9993; border-radius: 10px; padding: 16px; margin-top: 16px; }
+    button { padding: 10px 14px; border-radius: 8px; border: 1px solid #9996; cursor: pointer; background: #fafafa; }
+    button.primary { background: #2563eb; color: #fff; border-color: #1d4ed8; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    input[type="file"] { padding: 8px; }
+    progress { width: 240px; height: 14px; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #00000008; padding: 12px; border-radius: 8px; border: 1px dashed #9995; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 6px 8px; font-size: 13px; }
+    .muted { opacity: .8; font-size: 12px; }
+    .ok { color: #059669; }
+    .warn { color: #ca8a04; }
+    .err { color: #dc2626; }
+    .small { font-size: 12px; }
   </style>
-  <!-- SheetJS (XLSX) -->
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <!-- Supabase JS v2 -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+  <h1>Uploader de Vendas → Supabase</h1>
 
-<h1>Ingestão de Vendas (Excel → Supabase)</h1>
+  <div class="card">
+    <div class="row">
+      <input id="file" type="file" accept=".xlsx,.xls,.csv" />
+      <button id="btn-validate">Validar arquivo</button>
+      <button id="btn-upload" class="primary" disabled>Enviar ao banco</button>
+      <label class="small">
+        Lote:
+        <input id="batch" type="number" min="200" step="200" value="2000" style="width:80px" />
+      </label>
+      <progress id="pg" max="100" value="0"></progress>
+      <span id="pg-label" class="small"></span>
+    </div>
+    <div class="muted small">Suporta colunas: <code>Data e Hora</code> (ou <code>Data da venda</code>), <code>Unidade</code>, <code>Nome da loja</code> (ou <code>Consumidor</code>), <code>Canal de venda</code>, <code>Está cancelado</code>, <code>Itens</code>, <code>Total</code>, <code>Desconto</code>, <code>Entrega</code>, <code>Turno</code>, <code>Pagamento</code>.</div>
+  </div>
 
-<fieldset>
-  <legend>Conexão</legend>
-  <div class="row">
-    <div class="col">
-      <label>Supabase URL</label>
-      <input id="sb-url" value="https://uahmcfzerofhzjvlzrqc.supabase.co" />
-    </div>
-    <div class="col">
-      <label>Anon/Public Key</label>
-      <input id="sb-key" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU" />
-    </div>
-    <div class="col" style="align-self:end">
-      <button id="btn-connect">Conectar</button>
-      <span id="conn-status" class="muted"></span>
+  <div class="card">
+    <strong>Resumo</strong>
+    <div id="summary" class="small muted">Nenhum arquivo carregado.</div>
+    <div style="margin-top:8px;">
+      <table id="preview" style="display:none;">
+        <thead><tr id="preview-head"></tr></thead>
+        <tbody id="preview-body"></tbody>
+      </table>
     </div>
   </div>
-</fieldset>
 
-<fieldset>
-  <legend>Arquivo</legend>
-  <div class="row">
-    <div class="col">
-      <input type="file" id="file" accept=".xlsx,.xls" />
-    </div>
-    <div class="col" style="align-self:end">
-      <button id="btn-validate">Validar</button>
-      <button id="btn-save" disabled>Salvar no banco</button>
-    </div>
+  <div class="card">
+    <strong>Debug</strong>
+    <pre id="log">Pronto.</pre>
   </div>
-  <div id="file-info" class="muted small">Selecione o Excel e clique em <b>Validar</b>.</div>
-</fieldset>
 
-<fieldset>
-  <legend>Mapeamento de colunas</legend>
-  <div class="grid">
-    <label>Data+Hora (mesma coluna)</label>
-    <select id="map-datahora"></select>
+  <script>
+    /*** CONFIG SUPABASE ***/
+    const SUPA_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
+    const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
+    const TABLE     = 'vendas_import_csv_v2';
 
-    <label>Data (separada)</label>
-    <select id="map-dia"></select>
+    const elFile = document.getElementById('file');
+    const elValidate = document.getElementById('btn-validate');
+    const elUpload = document.getElementById('btn-upload');
+    const elSummary = document.getElementById('summary');
+    const elPreview = document.getElementById('preview');
+    const elPrevHead = document.getElementById('preview-head');
+    const elPrevBody = document.getElementById('preview-body');
+    const elLog = document.getElementById('log');
+    const elPg = document.getElementById('pg');
+    const elPgLabel = document.getElementById('pg-label');
+    const elBatch = document.getElementById('batch');
 
-    <label>Hora (separada)</label>
-    <select id="map-hora"></select>
+    let parsedRows = []; // linhas brutas do XLSX (objetos)
+    let mappedRows = []; // linhas mapeadas p/ colunas da tabela
 
-    <label>Unidade</label>
-    <select id="map-unidade"></select>
-
-    <label>Loja (NOME DA LOJA)</label>
-    <select id="map-loja"></select>
-
-    <label>Canal</label>
-    <select id="map-canal"></select>
-
-    <label>Pagamento</label>
-    <select id="map-pagamento"></select>
-
-    <label>Cancelado</label>
-    <select id="map-cancelado"></select>
-
-    <label>Pedidos / Itens</label>
-    <select id="map-pedidos"></select>
-
-    <label>Total</label>
-    <select id="map-total"></select>
-
-    <label>Desconto</label>
-    <select id="map-desconto"></select>
-
-    <label>Entrega</label>
-    <select id="map-entrega"></select>
-
-    <label>Turno</label>
-    <select id="map-turno"></select>
-  </div>
-  <div class="small muted">Se preencher <b>Data+Hora</b>, pode deixar “Data” e “Hora” vazios — eu extraio ambos.</div>
-</fieldset>
-
-<fieldset>
-  <legend>Prévia / Diagnóstico</legend>
-  <div class="row">
-    <div class="col box">
-      <div><span class="badge">Amostra normalizada</span></div>
-      <div id="preview">—</div>
-    </div>
-    <div class="col box">
-      <div><span class="badge">Distincts</span></div>
-      <div id="distincts" class="small">—</div>
-    </div>
-  </div>
-</fieldset>
-
-<fieldset>
-  <legend>Debug</legend>
-  <pre id="log" class="small"></pre>
-</fieldset>
-
-<script>
-const TABLE_NAME = 'vendas_import_csv_v2';
-
-const $ = (id)=>document.getElementById(id);
-const log = (m, cls)=>{ const el=$('log'); const line=document.createElement('div'); line.textContent=(typeof m==='string'?m:JSON.stringify(m,null,2)); if(cls) line.className=cls; el.appendChild(line); el.scrollTop=el.scrollHeight; };
-const set = (id, html)=>{ $(id).innerHTML = html; };
-const pad = (n)=> String(n).padStart(2,'0');
-
-let supa = null;
-let rawRows = [];
-let normRows = [];
-let headers = [];
-
-document.addEventListener('DOMContentLoaded', async ()=>{
-  await connect(); // auto-conectar
-});
-
-$('btn-connect').onclick = connect;
-
-async function quietPing() {
-  // Tenta uma consulta leve sem poluir o console
-  try {
-    // HEAD com count estimado na tabela alvo
-    const { error } = await supa.from(TABLE_NAME).select('*', { count: 'estimated', head: true }).limit(1);
-    if (error && String(error.message||'').includes('Could not find')) {
-      // Tenta outra tabela comum (se existir) — mas não loga erro
-      await supa.from('vendas_xlsx').select('*', { head: true }).limit(1);
+    function log(msg, data) {
+      const time = new Date().toISOString().slice(11,19);
+      elLog.textContent += `\n[${time}] ${msg}` + (data ? `\n${JSON.stringify(data, null, 2)}` : '');
+      elLog.scrollTop = elLog.scrollHeight;
+      console.log(msg, data ?? '');
     }
-  } catch(_) { /* ignora */ }
-}
 
-async function connect(){
-  try{
-    const url = $('sb-url').value.trim();
-    const key = $('sb-key').value.trim();
-    supa = window.supabase.createClient(url, key);
-
-    $('conn-status').textContent = 'Conectando…';
-    $('conn-status').className = 'muted';
-
-    await quietPing(); // sem 404
-
-    $('conn-status').textContent = 'Conectado ✔';
-    $('conn-status').className = 'ok';
-    log('✅ Supabase client ok','ok');
-  }catch(e){
-    $('conn-status').textContent='Erro: '+e.message;
-    $('conn-status').className='err';
-    log(e,'err');
-  }
-}
-
-// ---------- helpers ----------
-function parsePtNumber(v){
-  if(v==null || v==='') return 0;
-  if(typeof v==='number') return v;
-  let s = String(v).trim();
-  s = s.replace(/[R$\s]/g,'');
-  if(/[0-9]\.[0-9]{3}/.test(s) || /,/.test(s)){
-    s = s.replace(/\./g,'').replace(/,/g,'.');
-  }
-  const n = Number(s);
-  return isFinite(n)? n : 0;
-}
-
-function normCancel(v){
-  if (typeof v === 'boolean') return v ? 'Sim' : 'Não';
-  const s = String(v || '').toLowerCase().trim();
-  if (['sim','s','true','1','yes','y'].includes(s)) return 'Sim';
-  if (['não','nao','n','false','0','no'].includes(s)) return 'Não';
-  return 'Não';
-}
-
-function parseExcelSerial(n){
-  try{
-    const o = XLSX.SSF.parse_date_code(n);
-    if(!o) return null;
-    const d = new Date(Date.UTC(o.y, (o.m||1)-1, o.d||1, o.H||0, o.M||0, Math.floor(o.S||0)));
-    return d;
-  }catch{ return null; }
-}
-
-function parseDateLike(val){
-  if(val==null || val==='') return null;
-  if(val instanceof Date && !isNaN(val)) return val;
-  if(typeof val === 'number') { const d = parseExcelSerial(val); if(d) return d; }
-  const s = String(val).trim().replace('T',' ');
-  let m = s.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})[ \t]+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if(m){ const [_,Y,Mo,D,h,mi,se] = m; return new Date(Number(Y), Number(Mo)-1, Number(D), Number(h), Number(mi), Number(se||0)); }
-  m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})[ \t]+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if(m){ const [_,D,Mo,Y,h,mi,se] = m; return new Date(Number(Y), Number(Mo)-1, Number(D), Number(h), Number(mi), Number(se||0)); }
-  m = s.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})$/);
-  if(m){ const [_,Y,Mo,D] = m; return new Date(Number(Y), Number(Mo)-1, Number(D), 0, 0, 0); }
-  m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if(m){ const [_,D,Mo,Y] = m; return new Date(Number(Y), Number(Mo)-1, Number(D), 0, 0, 0); }
-  return null;
-}
-function toYYYYMMDDLocal(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
-
-// ---------- validar ----------
-$('btn-validate').onclick = async () => {
-  try{
-    const f = $('file').files[0];
-    if(!f){ alert('Escolha um arquivo .xlsx'); return; }
-    $('file-info').textContent = 'Lendo…';
-    const ab = await f.arrayBuffer();
-    const wb = XLSX.read(ab, { cellDates:true, raw:true, dateNF:'yyyy-mm-dd hh:mm:ss' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    rawRows = XLSX.utils.sheet_to_json(ws, { defval:null, raw:true });
-    headers = Object.keys(rawRows[0]||{});
-    $('file-info').innerHTML = `📄 <b>${f.name}</b> — ${rawRows.length} linhas | colunas: <span class="muted">${headers.join(', ')||'—'}</span>`;
-
-    const selects = [
-      'map-datahora','map-dia','map-hora','map-unidade','map-loja','map-canal',
-      'map-pagamento','map-cancelado','map-pedidos','map-total','map-desconto','map-entrega','map-turno'
-    ];
-    const fill = (sel, cols)=> sel.innerHTML = '<option value="">—</option>' + cols.map(c=>`<option>${c}</option>`).join('');
-    selects.forEach(id => fill($(id), headers));
-
-    // autosel — prioriza “Nome da loja”
-    const prefer = (names)=> headers.find(h => names.some(n => h.toLowerCase()===n));
-    const setIf = (id, names)=>{ const hit = prefer(names); if(hit) $(id).value = hit; };
-
-    setIf('map-datahora', ['datahora','data e hora','data hora','data/hora','data_hora','data da venda']);
-    setIf('map-dia', ['data','dia','data da venda']);
-    setIf('map-hora', ['hora','hr']);
-    setIf('map-unidade', ['unidade','unid']);
-    setIf('map-loja', ['nome da loja','loja','nome da loja ','nome de loja']);
-    setIf('map-canal', ['canal','canal de venda','canal de vendas']);
-    setIf('map-pagamento', ['pagamento','pagamento base','pagamento_base','forma de pagamento']);
-    setIf('map-cancelado', ['está cancelado','esta cancelado','cancelado']);
-    setIf('map-pedidos', ['itens','qtd','quantidade','pedidos']);
-    setIf('map-total', ['total','valor','valor total']);
-    setIf('map-desconto', ['desconto','desc']);
-    setIf('map-entrega', ['entrega','frete']);
-    setIf('map-turno', ['turno','período','periodo']);
-
-    recomputeNormalized();
-    $('btn-save').disabled = (normRows.length===0);
-  }catch(e){
-    log(e,'err');
-    alert('Erro ao ler o Excel: '+e.message);
-  }
-};
-
-function currentMapping(){
-  return {
-    datahora: $('map-datahora').value || '',
-    dia: $('map-dia').value || '',
-    hora: $('map-hora').value || '',
-    unidade: $('map-unidade').value || '',
-    loja: $('map-loja').value || '',
-    canal: $('map-canal').value || '',
-    pagamento: $('map-pagamento').value || '',
-    cancelado: $('map-cancelado').value || '',
-    pedidos: $('map-pedidos').value || '',
-    total: $('map-total').value || '',
-    desconto: $('map-desconto').value || '',
-    entrega: $('map-entrega').value || '',
-    turno: $('map-turno').value || '',
-  };
-}
-
-[
-  'map-datahora','map-dia','map-hora','map-unidade','map-loja','map-canal',
-  'map-pagamento','map-cancelado','map-pedidos','map-total','map-desconto','map-entrega','map-turno'
-].forEach(id => $(id).addEventListener('change', recomputeNormalized));
-
-function recomputeNormalized(){
-  const map = currentMapping();
-  const out = [];
-  const dists = { unidade:new Set(), loja:new Set(), canal:new Set(), pagamento_base:new Set(), turno:new Set() };
-
-  for(const r of rawRows){
-    let dia=null, hora=null;
-    if(map.datahora){
-      const v = r[map.datahora];
-      const dt = parseDateLike(v);
-      if(dt){ dia = toYYYYMMDDLocal(dt); hora = dt.getHours(); }
-    } else {
-      if(map.dia){
-        const vd = r[map.dia];
-        const dd = parseDateLike(vd);
-        if(dd) dia = toYYYYMMDDLocal(dd);
-      }
-      if(map.hora){
-        const vh = r[map.hora];
-        if(vh instanceof Date) hora = vh.getHours();
-        else if(typeof vh==='number') hora = Math.max(0, Math.min(23, Math.floor(vh)));
-        else if(typeof vh==='string'){ const m = vh.match(/(\d{1,2})/); if(m) hora = Math.max(0, Math.min(23, parseInt(m[1],10))); }
+    async function ping() {
+      log('Verificando Supabase…');
+      try {
+        const r = await fetch(`${SUPA_URL}/rest/v1/?select=*`, {
+          headers: { apikey: SUPA_ANON, Authorization: `Bearer ${SUPA_ANON}` }
+        });
+        if (r.ok) log('✅ Supabase client ok');
+        else log('❌ Supabase erro', { status: r.status, text: await r.text() });
+      } catch (e) {
+        log('❌ Supabase erro', { error: String(e) });
       }
     }
-    const unidade = map.unidade ? String(r[map.unidade]??'').trim() : '';
-    const loja    = map.loja    ? String(r[map.loja]??'').trim()    : '';
-    const canal   = map.canal   ? String(r[map.canal]??'').trim()   : '';
-    const pag     = map.pagamento ? String(r[map.pagamento]??'').trim() : '';
-    const turno   = map.turno   ? String(r[map.turno]??'').trim()   : '';
-    const canc    = normCancel(map.cancelado ? r[map.cancelado] : 'Não');
-    const ped     = map.pedidos ? (Number(r[map.pedidos])||1) : 1;
-    const fat     = map.total ? parsePtNumber(r[map.total]) : 0;
-    const des     = map.desconto ? parsePtNumber(r[map.desconto]) : 0;
-    const fre     = map.entrega ? parsePtNumber(r[map.entrega]) : 0;
+    ping();
 
-    if(!dia){ continue; }
-
-    const row = {
-      dia, hora: (hora==null? null : Number(hora)),
-      unidade, loja, canal,
-      pagamento_base: pag,
-      cancelado: canc,
-      pedidos: Number.isFinite(ped)? ped : 1,
-      fat, des, fre
-    };
-    out.push(row);
-
-    if(unidade) dists.unidade.add(unidade);
-    if(loja)    dists.loja.add(loja);
-    if(canal)   dists.canal.add(canal);
-    if(pag)     dists.pagamento_base.add(pag);
-    if(turno)   dists.turno.add(turno);
-  }
-
-  normRows = out;
-
-  const head = out.slice(0,20);
-  if(head.length){
-    const cols = Object.keys(head[0]);
-    let html = '<table><thead><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>';
-    for(const row of head){ html += '<tr>'+cols.map(c=>`<td>${row[c]??''}</td>`).join('')+'</tr>'; }
-    html += '</tbody></table>';
-    set('preview', html);
-  } else {
-    set('preview','—');
-  }
-
-  const counts = {
-    linhas: out.length,
-    unidades: dists.unidade.size,
-    lojas: dists.loja.size,
-    canais: dists.canal.size,
-    pagamentos: dists.pagamento_base.size
-  };
-  set('distincts',
-    `<div class="pill">linhas: <b>${counts.linhas}</b></div>`+
-    `<div class="pill">unidades: <b>${counts.unidades}</b></div>`+
-    `<div class="pill">lojas: <b>${counts.lojas}</b></div>`+
-    `<div class="pill">canais: <b>${counts.canais}</b></div>`+
-    `<div class="pill">pagamentos: <b>${counts.pagamentos}</b></div>`
-  );
-
-  $('btn-save').disabled = (normRows.length===0);
-}
-
-// ---------- salvar ----------
-$('btn-save').onclick = async () => {
-  if(!supa){ alert('Conecte no Supabase primeiro.'); return; }
-  if(!normRows.length){ alert('Nada para salvar. Valide e confira o mapeamento.'); return; }
-
-  const BATCH = 2000;
-  let ok = 0, fail = 0;
-
-  for(let i=0;i<normRows.length;i+=BATCH){
-    const slice = normRows.slice(i, i+BATCH);
-    const { error } = await supa.from(TABLE_NAME).insert(slice);
-    if(error){
-      log({lote: [i, i+slice.length], error}, 'err');
-      fail += slice.length;
-      if(String(error.message||'').toLowerCase().includes('permission')){
-        alert('Permissão negada para inserir em '+TABLE_NAME+': '+error.message);
-        break;
-      }
-    } else {
-      ok += slice.length;
-      log(`✅ Lote ${i}-${i+slice.length-1} inserido`, 'ok');
+    /** ---------- PARSE EXCEL ---------- **/
+    function readWorkbook(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error);
+        reader.onload = () => {
+          try {
+            const data = new Uint8Array(reader.result);
+            const wb = XLSX.read(data, { type: 'array' });
+            const firstSheet = wb.SheetNames[0];
+            const ws = wb.Sheets[firstSheet];
+            const rows = XLSX.utils.sheet_to_json(ws, { defval: null, raw: false });
+            resolve({ sheet: firstSheet, rows });
+          } catch (err) { reject(err); }
+        };
+        reader.readAsArrayBuffer(file);
+      });
     }
-  }
-  alert(`Concluído. OK: ${ok} | Falhas: ${fail}`);
-};
-</script>
+
+    /** ---------- HELPERS DE CONVERSÃO ---------- **/
+    function parseDateTimeBRorISO(v) {
+      if (!v) return null;
+      if (v instanceof Date) return v.toISOString();
+      const s = String(v).trim();
+      if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+        const d = new Date(s);
+        return isNaN(d) ? null : d.toISOString();
+      }
+      const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+      if (m) {
+        const [_, dd, mm, yyyy, HH='00', MM='00', SS='00'] = m;
+        const d = new Date(Number(yyyy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
+        return isNaN(d) ? null : d.toISOString();
+      }
+      const d = new Date(s);
+      return isNaN(d) ? null : d.toISOString();
+    }
+
+    function hourFromISO(iso) {
+      if (!iso) return null;
+      const d = new Date(iso);
+      return isNaN(d) ? null : d.getUTCHours();
+    }
+
+    function parseNumberBR(v) {
+      if (v === null || v === undefined || v === '') return null;
+      if (typeof v === 'number') return v;
+      const n = Number(String(v).replace(/\./g,'').replace(',', '.'));
+      return isNaN(n) ? null : n;
+    }
+
+    function toBool(v) {
+      if (typeof v === 'boolean') return v;
+      const s = String(v ?? '').trim().toLowerCase();
+      if (['sim','true','1','y','yes'].includes(s)) return true;
+      if (['não','nao','false','0','n','no',''].includes(s)) return false;
+      return false;
+    }
+
+    /** ---------- MAPEAMENTO XLS → TABELA ---------- **/
+    function mapRowToDb(row) {
+      const dt = row['Data e Hora'] ?? row['Data da venda'] ?? row['data_venda'] ?? row['datahora'];
+      const iso = parseDateTimeBRorISO(dt);
+      return {
+        data_venda : iso,                                                 // timestamptz
+        hora       : row['Hora'] ?? hourFromISO(iso),                     // int (opcional)
+        unidade    : row['Unidade'] ?? row['unidade'] ?? null,            // text
+        consumidor : row['Nome da loja'] ?? row['Consumidor'] ?? row['Nome da Loja'] ?? null,
+        canal      : row['Canal de venda'] ?? row['canal'] ?? null,
+        cancelado  : toBool(row['Está cancelado'] ?? row['cancelado']),
+        itens      : (row['Itens'] ?? row['itens'] ?? 1) | 0,
+        total      : parseNumberBR(row['Total'] ?? row['total']),
+        des        : parseNumberBR(row['Desconto'] ?? row['des']),
+        fre        : parseNumberBR(row['Entrega'] ?? row['fre']),
+        turno      : row['Turno'] ?? row['turno'] ?? null,
+        pagamento  : row['Pagamento'] ?? row['pagamento'] ?? null,
+      };
+    }
+
+    function showPreview(rows) {
+      if (!rows.length) {
+        elPreview.style.display = 'none';
+        elPrevHead.innerHTML = '';
+        elPrevBody.innerHTML = '';
+        return;
+      }
+      const cols = Object.keys(rows[0]);
+      elPrevHead.innerHTML = cols.map(c => `<th>${c}</th>`).join('');
+      elPrevBody.innerHTML = rows.slice(0, 5).map(r =>
+        `<tr>${cols.map(c => `<td>${r[c] ?? ''}</td>`).join('')}</tr>`
+      ).join('');
+      elPreview.style.display = '';
+    }
+
+    function summarize(raw, mapped) {
+      const dist = (arr, key) => {
+        const s = new Set(arr.map(r => (r[key] ?? '').toString().trim()).filter(Boolean));
+        return Array.from(s).sort();
+      };
+      const unids = dist(raw, 'Unidade');
+      const lojas = dist(raw, 'Nome da loja').length ? dist(raw, 'Nome da loja') : dist(raw, 'Consumidor');
+      const canais = dist(raw, 'Canal de venda');
+      const turnos = dist(raw, 'Turno');
+      const pags = dist(raw, 'Pagamento');
+
+      elSummary.innerHTML =
+        `Linhas lidas: <b>${raw.length}</b><br>` +
+        `• unidade: ${unids.length} distintos ${unids.length? '['+unids.slice(0,8).join(', ')+(unids.length>8?'…]':']'): ''}<br>` +
+        `• loja: ${lojas.length} distintos ${lojas.length? '['+lojas.slice(0,8).join(', ')+(lojas.length>8?'…]':']'): ''}<br>` +
+        `• canal: ${canais.length} distintos ${canais.length? '['+canais.slice(0,8).join(', ')+(canais.length>8?'…]':']'): ''}<br>` +
+        `• turno: ${turnos.length} distintos ${turnos.length? '['+turnos.slice(0,8).join(', ')+(turnos.length>8?'…]':']'): ''}<br>` +
+        `• pagamento: ${pags.length} distintos ${pags.length? '['+pags.slice(0,8).join(', ')+(pags.length>8?'…]':']'): ''}<br>` +
+        `<span class="muted">* Nomes exibidos são do arquivo, gravaremos normalizado nas colunas da tabela.</span>`;
+    }
+
+    /** ---------- INSERT EM LOTES ---------- **/
+    async function bulkInsertVendas(rows, batchSize=2000) {
+      const url = `${SUPA_URL}/rest/v1/${TABLE}`;
+      let ok=0, fail=0;
+
+      for (let i=0; i<rows.length; i+=batchSize) {
+        const chunk = rows.slice(i, i+batchSize).map(mapRowToDb);
+        // atualiza barra
+        elPg.value = Math.round(((i+chunk.length)/rows.length)*100);
+        elPgLabel.textContent = `${i+chunk.length}/${rows.length}`;
+
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: {
+            apikey: SUPA_ANON,
+            Authorization: `Bearer ${SUPA_ANON}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=minimal'
+            // Para upsert por chave única, troque por:
+            // Prefer: 'resolution=ignore-duplicates,return=minimal'
+          },
+          body: JSON.stringify(chunk)
+        });
+
+        if (resp.ok) {
+          ok += chunk.length;
+          log('✅ Lote inserido', {lote:[i, i+chunk.length]});
+        } else {
+          fail += chunk.length;
+          const txt = await resp.text().catch(()=> '');
+          log('❌ Erro no lote', {lote:[i, i+chunk.length], status: resp.status, body: txt});
+          // Não para, continua os próximos lotes. Se quiser parar:
+          // break;
+        }
+      }
+      log('📦 Inserção concluída', {ok, fail});
+      alert(`Concluído. OK: ${ok} | Falhas: ${fail}`);
+    }
+
+    /** ---------- UI HANDLERS ---------- **/
+    elValidate.addEventListener('click', async () => {
+      const f = elFile.files?.[0];
+      if (!f) { alert('Selecione um arquivo .xlsx/.xls/.csv'); return; }
+      elValidate.disabled = true; elUpload.disabled = true;
+      elPg.value = 0; elPgLabel.textContent = '';
+
+      try {
+        const { sheet, rows } = await readWorkbook(f);
+        parsedRows = rows;
+        mappedRows = rows.map(mapRowToDb);
+        log('📄 Arquivo lido', {nome: f.name, sheet, linhas: rows.length});
+        showPreview(rows);
+        summarize(rows, mappedRows);
+
+        // checagem rápida de colunas mapeadas (evita PGRST204 por nomes errados)
+        const sample = mappedRows[0] || {};
+        log('🔧 Amostra mapeada (1ª linha)', sample);
+
+        // teste rápido de tabela acessível:
+        const head = await fetch(`${SUPA_URL}/rest/v1/${TABLE}?select=count`, {
+          headers: { apikey: SUPA_ANON, Authorization: `Bearer ${SUPA_ANON}` }
+        });
+        if (!head.ok) {
+          log('⚠️ Tabela inacessível', { status: head.status, text: await head.text() });
+        } else {
+          log('✅ Tabela acessível');
+        }
+
+        elUpload.disabled = !rows.length;
+      } catch (err) {
+        log('❌ Erro lendo arquivo', {erro: String(err)});
+        alert('Erro ao ler o arquivo. Ver Console/Debug.');
+      } finally {
+        elValidate.disabled = false;
+      }
+    });
+
+    elUpload.addEventListener('click', async () => {
+      if (!parsedRows.length) { alert('Valide o arquivo primeiro.'); return; }
+      const batchSize = Math.max(200, Number(elBatch.value) || 2000);
+      elUpload.disabled = true; elValidate.disabled = true;
+      elPg.value = 0; elPgLabel.textContent = '';
+      try {
+        await bulkInsertVendas(parsedRows, batchSize);
+      } finally {
+        elUpload.disabled = false; elValidate.disabled = false;
+      }
+    });
+  </script>
 </body>
 </html>
