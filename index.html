@@ -290,8 +290,8 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  const READ_VIEW        = 'vendas_canon';     // para leituras (views, gráficos, filtros)
-  const DEST_INSERT_TABLE= 'vendas_xlsx';      // tabela real de ingestão
+  const READ_VIEW        = 'vendas_canon';     // leitura (filtros/KPIs/gráficos)
+  const DEST_INSERT_TABLE= 'vendas_xlsx';      // <<< pasta/tabela atual de ingestão
   const REFRESH_RPC      = 'refresh_sales_materialized';
 
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
@@ -681,7 +681,7 @@
     return [];
   }
 
-  /* ===================== EXCEL → DB (sempre upsert) ===================== */
+  /* ===================== EXCEL → DB (upsert em public.vendas_xlsx) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -712,19 +712,19 @@
   }
 
   const headerAlts = {
-    dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
+    dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora','data e hora','data hora venda'],
     hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
-    turno:['turno','periodo','shift'],
+    turno:['turno','periodo','shift','turno da venda','turno_venda'],
     fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
     des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
     fre:  ['fre','frete','taxa entrega','taxa_entrega','entrega'],
     ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
     unid: ['unidade','unid','filial','cod_unidade','empresa'],
-    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja'],
+    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja','nome da Loja'],
     canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
     pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
-    canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
-    pid:  ['pedido id','pedido_id','id pedido','id_pedido','order id','order_id']
+    canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada','está cancelado','esta cancelado'],
+    pid:  ['pedido id','pedido_id','id pedido','id_pedido','order id','order_id','Número do pedido no parceiro']
   };
   function pickColumn(headers, alts){
     const map = headers.map(h=>({orig:h, key:normHeader(h)}));
@@ -736,28 +736,26 @@
   }
 
   function makeRowKey(x){
-    // row_key SEM valores monetários, focado em identificação do pedido/linha
+    // chave estável sem valores monetários
     const parts = [
-      x.dia||'', x.hora??'', x.unidade||'',
-      x["Nome da loja"]||'', x["Canal de venda"]||'',
-      x.pagamento_base||'', x.pedido_id||'',
-      x.pedidos??'', x.cancelado||''
-    ].map(v=>String(v).trim().toLowerCase());
+      x.dia||'', x.hora??'', (x.unidade||'').toLowerCase(),
+      (x.loja||'').toLowerCase(), (x.canal||'').toLowerCase(),
+      (x.pagamento_base||'').toLowerCase(), x.pedido_id||'',
+      x.pedidos??'', (x.cancelado||'').toLowerCase()
+    ];
     return parts.join('|');
   }
 
   async function uploadBatch(rows){
-    const chunk = 500;
+    const chunk = 800;
     for(let i=0;i<rows.length;i+=chunk){
       const slice = rows.slice(i,i+chunk);
-      // UPSERT: atualiza em caso de conflito pelo row_key
       const { error } = await supa.from(DEST_INSERT_TABLE)
-        .upsert(slice, { onConflict: 'row_key' }); // (sem ignoreDuplicates → atualiza)
+        .upsert(slice, { onConflict: 'row_key' });
       if(error){ throw error; }
     }
   }
 
-  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file){ info(''); return; }
@@ -787,7 +785,13 @@
       let mapped = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
         const dia  = normalizeDateCell(get(kDia));
-        const hora = parseHourUpload(get(kHora));
+        // hora pode estar junto na "Data" → extrai se houver
+        let hora   = parseHourUpload(get(kHora));
+        if(!hora && kDia && r[kDia]){
+          const s = String(r[kDia]);
+          const m = s.match(/\b(\d{1,2}):(\d{2})/); // 11:01
+          if(m) hora = Math.max(0, Math.min(23, parseInt(m[1],10)));
+        }
         const unidade = displayNormalize(get(kUni));
         const loja    = displayNormalize(get(kLoja));
         const canal   = displayNormalize(get(kCan));
@@ -798,17 +802,19 @@
         const fat     = parseBR(get(kFat));
         const des     = parseBR(get(kDes));
         const fre     = parseBR(get(kFre));
+        const turno   = displayNormalize(get(kTurn));
 
         const row = {
           dia,
           hora,
           unidade,
-          "Nome da loja": loja,
-          "Canal de venda": canal,
-          pagamento_base: pago,
-          cancelado: cancel,
+          loja,                 // <<< usamos 'loja' (sem espaço) para alinhar ao canônico
+          canal,                // idem
+          pagamento_base: pago, // idem
+          cancelado: cancel,    // 'Sim'/'Não'
           pedidos: ped,
           fat, des, fre,
+          turno,
           pedido_id: pid || null,
           created_at: new Date().toISOString()
         };
@@ -816,24 +822,24 @@
         return row;
       });
 
-      const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Enviando ao banco em ${DEST_INSERT_TABLE}…`);
+      const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='' && x.hora!=null);
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Gravando em ${DEST_INSERT_TABLE}…`);
       if(ok.length===0){ setStatus('Nada para gravar (0 linhas mapeadas).','err'); return; }
 
       setStatus('Enviando Excel…');
       await uploadBatch(ok);
       setStatus('Upload concluído','ok');
-      info(`Gravado/atualizado em "${DEST_INSERT_TABLE}": ${ok.length} linhas.`);
+      info(`Upsert em "${DEST_INSERT_TABLE}": ${ok.length} linhas.`);
 
-      // Atualiza MVs para estabilizar filtros/views
+      // Atualiza MVs para reidratar views (filtros/KPIs)
       try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
 
-      // Atualiza datas dos limites e recarrega filtros e dados
+      // Atualiza limites de data e recarrega
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
         if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`; }
       }catch(_e){}
-      await reloadStaticOptions(); // para reidratar opções (caso surja loja nova)
+      await reloadStaticOptions();
       await applyAll();
     }catch(e){
       console.error(e);
@@ -863,7 +869,7 @@
     if(ok(turnos)) ms.turnos.setOptions((turnos.value.data||[]).map(r=>r.turno));
     if(ok(pags))   ms.pags.setOptions((pags.value.data||[]).map(r=>r.pagamento_base));
 
-    // 2) Fallback se alguma view der 500/erro → busca direto em vendas_canon
+    // 2) Fallback → busca direto no canônico se alguma view falhar
     const needFallback = !(ok(unids)&&ok(lojas)&&ok(canais)&&ok(turnos)&&ok(pags));
     if(needFallback){
       try{
@@ -905,7 +911,6 @@
     try{
       setStatus('Carregando…');
       const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
-      if(dr.error) throw dr.error;
       if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
 
       await reloadStaticOptions();
