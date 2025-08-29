@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.13.1 — upload: extrai HORA de “Data”)</title>
+  <title>DASHBOARD — CFO (v2.13.1 — upload fix/upsert + MV refresh + filtros fallback)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -154,14 +154,7 @@
         </div>
         <div>
           <div class="muted" style="margin-bottom:6px;">Cancelado</div>
-          <div id="ms-cancel" class="msel">
-            <button class="msel-btn">Não</button>
-            <div class="msel-panel">
-              <div class="msel-opt"><input type="checkbox" value=""><label>Todos</label></div>
-              <div class="msel-opt"><input type="checkbox" value="Não" checked><label>Não</label></div>
-              <div class="msel-opt"><input type="checkbox" value="Sim"><label>Sim</label></div>
-            </div>
-          </div>
+          <div id="ms-cancel" class="msel"><button class="msel-btn">Não</button><div class="msel-panel"></div></div>
         </div>
       </div>
     </div>
@@ -283,15 +276,15 @@
     </div>
   </div>
 
-  <!-- libs (ordem importa: XLSX antes do nosso script) -->
+  <!-- libs -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 
   <script>
   /* ===================== CONFIG ===================== */
-  const READ_VIEW        = 'vendas_canon';     // para leituras (views, gráficos, filtros)
-  const DEST_INSERT_TABLE= 'vendas_xlsx';      // tabela real de ingestão
+  const READ_VIEW        = 'vendas_canon';     // leituras (views/gráficos/filtros)
+  const DEST_INSERT_TABLE= 'vendas_xlsx';      // tabela real de ingestão (tem UNIQUE(row_key))
   const REFRESH_RPC      = 'refresh_sales_materialized';
 
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
@@ -397,7 +390,7 @@
     const ate=lastDay||iso(new Date());
     const de=addDaysISO(ate, -(Number(val)-1));
     fDe.value=de; fAte.value=ate;
-    periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
+    periodoInfo.textContent=`Último dia carregado: ${lastDay||'—'}`;
     applyAll();
   }
   $('btnClear').addEventListener('click', ()=>{
@@ -408,7 +401,7 @@
   chips.forEach(b=> b.addEventListener('click', ()=>applyQuick(b.dataset.q)));
   ;[fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{
     chips.forEach(c=>c.classList.remove('active'));
-    periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
+    periodoInfo.textContent=`Último dia carregado: ${lastDay||'—'}`;
     applyAll();
   }));
 
@@ -655,7 +648,7 @@
     const map = await discoverColumns(source);
     if(!map) return null;
     const sel = uniq([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys]).join(',');
-    const q = await supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
+    const q = await supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(200000);
     if(q.error) return null;
     const rows = (q.data||[]).filter(x=>{
       if(!onlyCancel) return true;
@@ -681,7 +674,7 @@
     return [];
   }
 
-  /* ===================== EXCEL → DB (sempre upsert) ===================== */
+  /* ===================== EXCEL → DB (sempre upsert, com dedupe) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -710,35 +703,9 @@
     const s=String(v); const m=s.match(/(\d{1,2})/); if(!m) return null;
     const h=+m[1]; return (h>=0 && h<=23) ? h : null;
   }
-  // **NOVO**: extrai HORA da mesma célula de Data (texto, Date ou serial Excel)
-  function parseHourFromDateCell(v){
-    if(v==null) return null;
-    if(v instanceof Date) return v.getHours();
-    const s = String(v).trim();
-    // HH:MM (ou HH:MM:SS)
-    const m1 = s.match(/(\d{1,2}):(\d{2})(?::\d{2})?/);
-    if(m1){
-      const h = parseInt(m1[1],10);
-      if(h>=0 && h<=23) return h;
-    }
-    // serial Excel
-    if(!isNaN(+s)){
-      const serial = +s;
-      const base = new Date(Date.UTC(1899,11,30));
-      const d = new Date(base.getTime() + serial*24*60*60*1000);
-      return d.getUTCHours();
-    }
-    // ISO com hora
-    const m2 = s.match(/T(\d{2}):\d{2}/);
-    if(m2){
-      const h = parseInt(m2[1],10);
-      if(h>=0 && h<=23) return h;
-    }
-    return null;
-  }
 
   const headerAlts = {
-    dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora','data/hora','data e hora'],
+    dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
     hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
     turno:['turno','periodo','shift'],
     fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
@@ -746,11 +713,11 @@
     fre:  ['fre','frete','taxa entrega','taxa_entrega','entrega'],
     ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
     unid: ['unidade','unid','filial','cod_unidade','empresa'],
-    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja'],
-    canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
+    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja','nome da Loja'],
+    canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda','canal de Venda'],
     pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
-    canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
-    pid:  ['pedido id','pedido_id','id pedido','id_pedido','order id','order_id']
+    canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada','está cancelado','esta cancelado'],
+    pid:  ['pedido id','pedido_id','id pedido','id_pedido','order id','order_id','número do pedido no parceiro','numero do pedido no parceiro']
   };
   function pickColumn(headers, alts){
     const map = headers.map(h=>({orig:h, key:normHeader(h)}));
@@ -772,23 +739,32 @@
     return parts.join('|');
   }
 
+  function dedupeByKey(rows, key){
+    const m = new Map();
+    for(const r of rows){ m.set(r[key], r); } // mantém o último
+    return [...m.values()];
+  }
+
   async function uploadBatch(rows){
+    // Dedupe dentro do lote para evitar: "ON CONFLICT DO UPDATE ... affect row a second time"
+    const unique = dedupeByKey(rows, 'row_key');
+
     const chunk = 500;
-    for(let i=0;i<rows.length;i+=chunk){
-      const slice = rows.slice(i,i+chunk);
+    for(let i=0;i<unique.length;i+=chunk){
+      const slice = unique.slice(i,i+chunk);
       const { error } = await supa.from(DEST_INSERT_TABLE)
         .upsert(slice, { onConflict: 'row_key' });
       if(error){ throw error; }
     }
   }
 
-  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file){ info(''); return; }
     info('Lendo arquivo…');
     try{
       const buf = await file.arrayBuffer();
+      if(!window.XLSX){ throw new Error('Biblioteca XLSX não carregada'); }
       const wb = XLSX.read(buf, { type:'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
@@ -811,12 +787,8 @@
 
       let mapped = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
-        const diaRaw = get(kDia);
-        const dia  = normalizeDateCell(diaRaw);
-        // 1ª tentativa: coluna “Hora”; 2ª: extrair da “Data”
-        let hora = parseHourUpload(get(kHora));
-        if (hora == null) hora = parseHourFromDateCell(diaRaw);
-
+        const dia  = normalizeDateCell(get(kDia));
+        const hora = parseHourUpload(get(kHora));
         const unidade = displayNormalize(get(kUni));
         const loja    = displayNormalize(get(kLoja));
         const canal   = displayNormalize(get(kCan));
@@ -839,7 +811,7 @@
           pedidos: ped,
           fat, des, fre,
           pedido_id: pid || null,
-          created_at: new Date().toISOString(),
+          created_at: new Date().toISOString()
         };
         row.row_key = makeRowKey(row);
         return row;
@@ -857,12 +829,12 @@
       // Atualiza MVs para estabilizar filtros/views
       try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
 
-      // Atualiza datas dos limites e recarrega filtros e dados
+      // Atualiza datas e filtros
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
         if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`; }
       }catch(_e){}
-      await reloadStaticOptions(); // reidrata opções
+      await reloadStaticOptions();
       await applyAll();
     }catch(e){
       console.error(e);
@@ -892,7 +864,7 @@
     if(ok(turnos)) ms.turnos.setOptions((turnos.value.data||[]).map(r=>r.turno));
     if(ok(pags))   ms.pags.setOptions((pags.value.data||[]).map(r=>r.pagamento_base));
 
-    // 2) Fallback se alguma view der erro → busca direto em vendas_canon
+    // 2) Fallback se alguma view der 404/erro → busca direto em vendas_canon
     const needFallback = !(ok(unids)&&ok(lojas)&&ok(canais)&&ok(turnos)&&ok(pags));
     if(needFallback){
       try{
@@ -914,6 +886,7 @@
   async function applyAll(){
     try{
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
+      if(!de || !ate){ setStatus('Aguardando dados…'); return; }
       const {dePrev, atePrev} = computePrevRangeISO(de,ate);
 
       setStatus('Consultando…');
@@ -934,14 +907,13 @@
     try{
       setStatus('Carregando…');
       const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
-      if(dr.error) throw dr.error;
-      if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
+      if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
 
       await reloadStaticOptions();
 
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
 
-      $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
+      $('periodoInfo').textContent=`Último dia carregado: ${lastDay||'—'}`;
       applyQuick('30');
     }catch(e){
       console.error(e);
