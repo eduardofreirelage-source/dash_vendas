@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
-  <title>Uploader Vendas + Smoke Tests</title>
+  <title>Vendas – Upload, Filtros & Smoke</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <!-- Favicon inline para evitar 404 -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='64' height='64' fill='%230b5'/%3E%3Ctext x='50%25' y='55%25' font-size='36' text-anchor='middle' fill='white'%3E✓%3C/text%3E%3C/svg%3E" />
@@ -10,25 +10,26 @@
   <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
   <style>
     :root{--bg:#0b1220;--fg:#d7e1ff;--green:#0b5;}
-    body { font-family: system-ui, Arial, sans-serif; margin: 18px; }
-    h1 { margin: 0 0 8px; }
-    fieldset { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 14px 0; }
-    legend { padding: 0 6px; color: #444; }
-    label { display:block; font-size: 12px; color: #555; margin: 6px 0 4px; }
-    select, input[type="text"], input[type="date"], button { padding: 8px; border-radius: 6px; border: 1px solid #ccc; width:100%; box-sizing:border-box; }
-    .row { display:flex; gap:12px; flex-wrap: wrap; }
-    .col { min-width: 220px; flex: 1; }
-    #log { white-space: pre-wrap; background:var(--bg); color:var(--fg); padding:12px; border-radius:8px; max-height: 380px; overflow:auto; }
-    .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#eef; margin-right:6px; font-size:12px; }
-    .ok { color:#0a0; } .warn { color:#a60; } .err { color:#c00; }
-    .btn { background:var(--green); color:#fff; border:none; cursor:pointer; padding:8px 12px; border-radius:6px; }
-    .btn-secondary { background:#456; color:#fff; }
-    .btn:disabled { opacity:.5; cursor:not-allowed; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    body{font-family:system-ui,Arial,sans-serif;margin:18px}
+    h1{margin:0 0 8px}
+    fieldset{border:1px solid #ddd;border-radius:8px;padding:12px;margin:14px 0}
+    legend{padding:0 6px;color:#444}
+    label{display:block;font-size:12px;color:#555;margin:6px 0 4px}
+    select,input[type="text"],input[type="date"],button{padding:8px;border-radius:6px;border:1px solid #ccc;box-sizing:border-box}
+    select[multiple]{min-height:180px}
+    .row{display:flex;gap:12px;flex-wrap:wrap}
+    .col{min-width:220px;flex:1}
+    .btn{background:var(--green);color:#fff;border:none;cursor:pointer;padding:8px 12px;border-radius:6px}
+    .btn-secondary{background:#456;color:#fff}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef;margin-right:6px;font-size:12px}
+    .ok{color:#0a0}.warn{color:#a60}.err{color:#c00}
+    #log{white-space:pre-wrap;background:var(--bg);color:var(--fg);padding:12px;border-radius:8px;max-height:420px;overflow:auto}
+    .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
   </style>
 </head>
 <body>
-  <h1>Uploader & Debug (Supabase)</h1>
+  <h1>Vendas – Upload, Filtros & Smoke</h1>
 
   <!-- SUPABASE -->
   <fieldset>
@@ -82,16 +83,26 @@
     </div>
   </fieldset>
 
-  <!-- SMOKE TESTS -->
+  <!-- FILTROS -->
   <fieldset>
-    <legend>Smoke tests</legend>
+    <legend>Filtros (por período)</legend>
     <div class="row">
       <div class="col"><label>Data inicial</label><input type="date" id="dini" /></div>
       <div class="col"><label>Data final</label><input type="date" id="dfim" /></div>
-      <div class="col" style="align-self:end"><button id="btnAutoRange" class="btn btn-secondary">Usar min/max</button></div>
-      <div class="col" style="align-self:end"><button id="btnSmoke" class="btn">Rodar smoke test</button></div>
+      <div class="col" style="align-self:end"><button id="btnAutoRange" class="btn btn-secondary">Min/Max automáticos</button></div>
+      <div class="col" style="align-self:end"><button id="btnLoadLists" class="btn btn-secondary">Carregar listas</button></div>
     </div>
-    <div id="smk" class="pill mono"></div>
+    <div class="row">
+      <div class="col"><label>Unidade (multi)</label><select id="f_unids" multiple></select></div>
+      <div class="col"><label><b>Loja (multi)</b></label><select id="f_lojas" multiple></select></div>
+      <div class="col"><label>Turno (multi)</label><select id="f_turnos" multiple></select></div>
+      <div class="col"><label>Canal (multi)</label><select id="f_canais" multiple></select></div>
+      <div class="col"><label>Pagamento (multi)</label><select id="f_pags" multiple></select></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="col" style="max-width:260px"><button id="btnSmoke" class="btn">KPI + Charts (com filtros)</button></div>
+      <div class="col"><span id="smk" class="pill mono"></span></div>
+    </div>
   </fieldset>
 
   <!-- DEBUG -->
@@ -125,7 +136,6 @@
         return o;
       });
     }
-
     function fillSelectOptions(cols){
       for (const id of picks) {
         const el = $("#"+id);
@@ -172,7 +182,7 @@
       };
     }
 
-    // --- Parsers ---
+    // Parsers
     function parseDateLike(v){
       if (v === null || v === undefined || v === "") return { d:null, h:null };
       if (typeof v === "number") { // Excel serial
@@ -181,13 +191,10 @@
         return { d: dt.toISOString().slice(0,10), h: dt.getUTCHours() };
       }
       const s = String(v).trim().replace("T"," ");
-      // yyyy-mm-dd [hh[:mm]]
       let m = s.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})(?:\s+(\d{1,2})(?::\d{2})?)?/);
       if (m) return { d:`${m[1]}-${m[2]}-${m[3]}`, h: m[4]?parseInt(m[4],10):null };
-      // dd/mm/yyyy [hh[:mm]]
       m = s.match(/^(\d{2})[-\/](\d{2})[-\/](\d{4})(?:\s+(\d{1,2})(?::\d{2})?)?/);
       if (m) return { d:`${m[3]}-${m[2]}-${m[1]}`, h: m[4]?parseInt(m[4],10):null };
-      // hh[:mm]
       m = s.match(/^(\d{1,2})(?::\d{2})?$/);
       if (m) return { d:null, h: parseInt(m[1],10) };
       return { d:null, h:null };
@@ -235,10 +242,8 @@
     function normalizeInputDate(s){
       if (!s) return "";
       s = String(s).trim();
-      // dd/mm/yyyy
       let m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
       if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-      // yyyy-mm-dd (corrige 20225-.. para 2025-..)
       m = s.match(/^(\d{4,5})-(\d{2})-(\d{2})$/);
       if (m) {
         let y = m[1];
@@ -258,11 +263,9 @@
       SB = createClient($("#url").value.trim(), $("#key").value.trim());
       return SB;
     }
-
     async function ping(){
       try {
         await initClient();
-        // tenta colunas seguras para evitar 400
         const tryCols = ["data_venda","loja","unidade","turno","*"];
         let ok=false, lastErr=null;
         for (const col of tryCols) {
@@ -273,6 +276,32 @@
         if (ok) { setPill("#connBadge","✅ Supabase client ok","ok"); log("✅ Supabase client ok"); }
         else { setPill("#connBadge","❌ Erro Supabase","err"); log("❌", lastErr||{message:"Erro desconhecido"}); }
       } catch (e) { setPill("#connBadge","❌ Erro Supabase","err"); log("❌", e); }
+    }
+
+    // Distinct (cliente) via vw_vendas por período – dedup no cliente
+    async function distinctValues(col, dini, dfim){
+      try{
+        const q = SB.from("vw_vendas")
+          .select(col)
+          .not(col,"is",null)
+          .neq(col,"")
+          .gte("dia", dini)
+          .lte("dia", dfim)
+          .order(col,{ascending:true})
+          .limit(100000); // suficiente p/ listas
+        const { data, error } = await q;
+        if (error) { log("⚠️ distinct "+col, error); return []; }
+        const vals = [...new Set((data||[]).map(r => (r[col]??"").toString().trim()).filter(Boolean))]
+          .sort((a,b)=>a.localeCompare(b,"pt-BR",{sensitivity:"base"}));
+        return vals;
+      }catch(e){ log("⚠️ distinct "+col+" exceção", e); return []; }
+    }
+    function fillMulti(id, arr){
+      const el = $("#"+id);
+      el.innerHTML = arr.map(v => `<option>${v}</option>`).join("");
+    }
+    function selectedMulti(id){
+      return Array.from($("#"+id).selectedOptions).map(o=>o.value).filter(Boolean);
     }
 
     // Eventos
@@ -331,14 +360,12 @@
       try {
         await initClient();
         let minDia="", maxDia="";
-        // tenta view
         {
           const a = await SB.from("vw_vendas").select("dia").order("dia",{ascending:true}).limit(1);
           const b = await SB.from("vw_vendas").select("dia").order("dia",{ascending:false}).limit(1);
           if (!a.error && a.data?.length) minDia = a.data[0].dia;
-          if (!b.error && b.data?.length) maxDia = b.data[0].dia;
+          if (!b.error && b.data?.length) maxDia = a.data?.length ? b.data[0].dia : "";
         }
-        // fallback base bruta
         if (!minDia || !maxDia) {
           const a = await SB.from("vendas_import_csv_v2").select("data_venda").not("data_venda","is",null).order("data_venda",{ascending:true}).limit(1);
           const b = await SB.from("vendas_import_csv_v2").select("data_venda").not("data_venda","is",null).order("data_venda",{ascending:false}).limit(1);
@@ -351,6 +378,30 @@
       } catch(e){ log("⚠️ AutoRange falhou", e); }
     });
 
+    $("#btnLoadLists").addEventListener("click", async ()=>{
+      try{
+        await initClient();
+        let dini = normalizeInputDate($("#dini").value);
+        let dfim = normalizeInputDate($("#dfim").value);
+        if (!dini || !dfim) { await $("#btnAutoRange").click(); dini=$("#dini").value; dfim=$("#dfim").value; }
+        const [unids, lojas, turnos, canais, pags] = await Promise.all([
+          distinctValues("unidade", dini, dfim),
+          distinctValues("loja", dini, dfim),          // <- loja REAL
+          distinctValues("turno", dini, dfim),
+          distinctValues("canal", dini, dfim),
+          distinctValues("pagamento_base", dini, dfim),
+        ]);
+        fillMulti("f_unids", unids);
+        fillMulti("f_lojas", lojas);
+        fillMulti("f_turnos", turnos);
+        fillMulti("f_canais", canais);
+        fillMulti("f_pags",   pags);
+        log("🔎 Listas carregadas", {
+          unids: unids.length, lojas: lojas.length, turnos: turnos.length, canais: canais.length, pags: pags.length
+        });
+      }catch(e){ log("⚠️ loadLists erro", e); }
+    });
+
     $("#btnSmoke").addEventListener("click", async ()=>{
       try{
         await initClient();
@@ -358,7 +409,21 @@
         let dfim = normalizeInputDate($("#dfim").value) || dini;
         ({dini, dfim} = clampRange(dini, dfim));
 
-        const args = { p_dini:dini, p_dfim:dfim, p_unids:null, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null };
+        const p_unids = selectedMulti("f_unids");
+        const p_lojas = selectedMulti("f_lojas");
+        const p_turnos = selectedMulti("f_turnos");
+        const p_canais = selectedMulti("f_canais");
+        const p_pags  = selectedMulti("f_pags");
+
+        const args = {
+          p_dini: dini, p_dfim: dfim,
+          p_unids: p_unids.length? p_unids : null,
+          p_lojas: p_lojas.length? p_lojas : null,
+          p_turnos: p_turnos.length? p_turnos : null,
+          p_canais: p_canais.length? p_canais : null,
+          p_pags:  p_pags.length?  p_pags  : null,
+          p_cancelado: null
+        };
 
         // KPI
         const k = await SB.rpc("kpi_vendas_v2", args);
@@ -389,6 +454,7 @@
       } catch(e){ $("#smk").textContent = "❌ Smoke test falhou (ver Debug)"; log("❌ Smoke", e); }
     });
 
+    // start
     (async function start(){ try { await ping(); } catch(_){}})();
   </script>
 </body>
