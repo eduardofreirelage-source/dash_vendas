@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.15.0 — pid parceiro + turno derivado + DISTINCT pedidos)</title>
+  <title>DASHBOARD — CFO (v2.15.1)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -22,7 +22,7 @@
     .row{display:grid;gap:12px}
     .cols-3{grid-template-columns:repeat(3,1fr)}
     .cols-2{grid-template-columns:repeat(2,1fr)}
-    input[type="date"], .msel-btn, .input{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+    input[type="date"], .msel-btn{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
     .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
     .chip{padding:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:700}
     .chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
@@ -237,7 +237,7 @@
   function toInt(v){ const n=parseBR(v); if(!isFinite(n)) return 0; return Math.round(n); }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
-  // ============= split data/hora (inclui serial Excel com fração)
+  // Data+hora eventualmente na mesma célula (aceita serial Excel com fração)
   function splitDateTimeCell(v){
     if(v==null) return {dateISO:null, hour:null};
     if(v instanceof Date){ return {dateISO: iso(v), hour: v.getHours()}; }
@@ -259,7 +259,6 @@
     if(!isNaN(t)) return {dateISO: iso(t), hour: t.getHours()};
     return {dateISO:null, hour:null};
   }
-  // normalizador de pedido_id (parceiro)
   function normalizePid(v){
     if(v==null) return null;
     let s = String(v).trim();
@@ -268,7 +267,6 @@
     if(s.toLowerCase()==='nan') return null;
     return s;
   }
-  // Row-key estável (identidade)
   function makeRowKey(x){
     const parts = [x.dia||'', x["Nome da loja"]||'', x["Canal de venda"]||'', x.pedido_id||''].map(s=>String(s).trim().toLowerCase());
     const s = parts.join('|'); let h=5381; for(let i=0;i<s.length;i++){ h=((h<<5)+h)^s.charCodeAt(i); }
@@ -405,17 +403,19 @@
     $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,fremedP); // typo fixed below
+    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
+
+    $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
+    $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
+    $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
+
+    const roiN = (N.des>0)? ((N.fat-N.des)/N.des) : NaN;
+    const roiP = (P.des>0)? ((P.fat-P.des)/P.des) : NaN;
+    $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
+    $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
+    deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
   }
-  </script>
-  <script>
-  // Pequeno fix para a linha acima: referenciar freMedP corretamente
-  // (navegadores antigos às vezes mantém cache de script; por isso separo)
-  document.addEventListener('DOMContentLoaded', ()=>{
-    const s=document.querySelector('script:last-of-type').previousElementSibling.textContent;
-  });
-  </script>
-  <script>
+
   /* ===================== GRÁFICOS VIA RPC ===================== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
@@ -477,7 +477,9 @@
 
   async function updateChartsServer(only){
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-    const {dePrev, atePrev} = (function computePrevRangeISO(deISO, ateISO){
+
+    // período anterior do mesmo tamanho (ou Y/Y se mês completo)
+    function computePrevRangeISO(deISO, ateISO){
       function iso(d){return d.toISOString().slice(0,10);}
       function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
       function isFullYear(d1,d2){ return d1.getMonth()===0 && d1.getDate()===1 && d2.getMonth()===11 && d2.getDate()===31 && d1.getFullYear()===d2.getFullYear(); }
@@ -489,7 +491,8 @@
       const atePrev=new Date(d1.getTime()-24*60*60*1000);
       const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);
       return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
-    })(de,ate);
+    }
+    const {dePrev, atePrev} = computePrevRangeISO(de,ate);
 
     try{
       setDiag('');
@@ -547,7 +550,7 @@
     }
   }
 
-  /* ===================== FALLBACK LOCAL (cancelados) ===================== */
+  /* ===================== FALLBACK LOCAL (apenas p/ cancelados) ===================== */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -594,7 +597,7 @@
     return [];
   }
 
-  /* ===================== EXCEL → DB (sempre upsert) ===================== */
+  /* ===================== EXCEL → DB (upsert) ===================== */
   document.getElementById('btnUpload').addEventListener('click', ()=> document.getElementById('fileExcel').click());
 
   const headerAlts = {
@@ -610,11 +613,7 @@
     canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
     pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
     canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
-    pid:  [
-      'numero do pedido no parceiro','número do pedido no parceiro','num pedido parceiro','nº pedido parceiro',
-      'order id parceiro','order partner id',
-      'pedido','pedido id','pedido_id','id pedido','id_pedido','order id','order_id'
-    ]
+    pid:  ['numero do pedido no parceiro','número do pedido no parceiro','num pedido parceiro','nº pedido parceiro','order id parceiro','order partner id','pedido','pedido id','pedido_id','id pedido','id_pedido','order id','order_id']
   };
   function pickColumn(headers, alts){
     const map = headers.map(h=>({orig:h, key: normHeader(h)}));
@@ -638,7 +637,6 @@
       const headers = json.length ? Object.keys(json[0]) : [];
       const kDia  = pickColumn(headers, headerAlts.dia);
       const kHora = pickColumn(headers, headerAlts.hora);
-      const kTurn = pickColumn(headers, headerAlts.turno);
       const kFat  = pickColumn(headers, headerAlts.fat);
       const kDes  = pickColumn(headers, headerAlts.des);
       const kFre  = pickColumn(headers, headerAlts.fre);
@@ -653,7 +651,7 @@
       let mapped = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
         const {dateISO, hour} = splitDateTimeCell(get(kDia));
-        const hora = (function(hc){ // se houver coluna separada de hora, usa
+        const hora = (function(hc){
           if(hc!=null){
             if(typeof hc==='number' && hc>=0 && hc<=23) return Math.floor(hc);
             const m=String(hc).match(/(\d{1,2})/); if(m){ const hh=+m[1]; if(hh>=0&&hh<=23) return hh; }
@@ -680,7 +678,7 @@
           "Canal de venda": canal,
           pagamento_base: pago,
           cancelado: cancel,
-          pedidos: 1, // neutro (será ignorado nos cálculos do back)
+          pedidos: 1,
           fat, des, fre,
           pedido_id: pid,
           created_at: new Date().toISOString()
@@ -760,7 +758,7 @@
   async function applyAll(){
     try{
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-      // período anterior do mesmo tamanho
+      // período anterior do mesmo tamanho (ou Y/Y em mês fechado)
       function computePrevRangeISO(deISO, ateISO){
         function iso(d){return d.toISOString().slice(0,10);}
         function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
