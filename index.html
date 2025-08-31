@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.13.0 — upload fix/upsert + MV refresh + filtros fallback)</title>
+  <title>DASHBOARD — CFO (v2.14.0 — upsert dedupe + MV refresh + filtros fallback)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -294,6 +294,7 @@
   const DEST_INSERT_TABLE= 'vendas_xlsx';      // tabela real de ingestão
   const REFRESH_RPC      = 'refresh_sales_materialized';
 
+  // >>> Seu projeto
   const SUPABASE_URL  = 'https://msmyfxgrnuusnvoqyeuo.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -344,6 +345,22 @@
   function toInt(v){ const n=parseBR(v); if(!isFinite(n)) return 0; return Math.round(n); }
   function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
+
+  // === DEDUPE pelo row_key (evita erro ON CONFLICT afetar a mesma linha 2x)
+  function dedupeByRowKey(rows){
+    const map = new Map();
+    for(const r of rows){
+      const k = r.row_key || makeRowKey(r);
+      r.row_key = k;
+      map.set(k, r); // mantém a última ocorrência
+    }
+    return Array.from(map.values());
+  }
+  function summarizeRows(arr){
+    const n = arr.length;
+    const keys = new Set(arr.map(r=>r.row_key));
+    return { total:n, unicos: keys.size, duplicados: n - keys.size };
+  }
 
   /* ===================== MULTISELECT ===================== */
   function MultiSelect(rootId, placeholder){
@@ -681,7 +698,7 @@
     return [];
   }
 
-  /* ===================== EXCEL → DB (sempre upsert) ===================== */
+  /* ===================== EXCEL → DB (sempre upsert + DEDUPE) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   function normalizeDateCell(v){
@@ -712,24 +729,23 @@
   }
 
   const headerAlts = {
-  dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
-  hora: ['hora','hr','hour','horario','hora do pedido','time_hour','hora venda','hora_venda'],
-  turno:['turno','periodo','shift'],
-  // inclui 'liquido' puro para casar com sua planilha
-  fat:  ['fat','faturamento','liquido','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
-  des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
-  // inclui 'taxa de entrega' literal
-  fre:  ['fre','frete','taxa entrega','taxa de entrega','taxa_entrega','entrega'],
-  ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
-  unid: ['unidade','unid','filial','cod_unidade','empresa'],
-  loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja'],
-  canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
-  pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','forma de pagamento','meio pgto','meio_pgto'],
-  canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
-  // inclui 'pedido' e 'número do pedido no parceiro'
-  pid:  ['pedido id','pedido','número do pedido no parceiro','numero do pedido no parceiro','pedido_id','id pedido','id_pedido','order id','order_id']
-};
-
+    dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
+    hora: ['hora','hr','hour','horario','hora do pedido','time_hour','hora venda','hora_venda'],
+    turno:['turno','periodo','shift'],
+    // inclui 'liquido' puro e variações
+    fat:  ['fat','faturamento','liquido','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
+    des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
+    // inclui 'taxa de entrega' literal
+    fre:  ['fre','frete','taxa entrega','taxa de entrega','taxa_entrega','entrega'],
+    ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
+    unid: ['unidade','unid','filial','cod_unidade','empresa'],
+    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja'],
+    canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
+    pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','forma de pagamento','meio pgto','meio_pgto'],
+    canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
+    // inclui 'pedido' e 'número do pedido no parceiro'
+    pid:  ['pedido id','pedido','número do pedido no parceiro','numero do pedido no parceiro','pedido_id','id pedido','id_pedido','order id','order_id']
+  };
   function pickColumn(headers, alts){
     const map = headers.map(h=>({orig:h, key:normHeader(h)}));
     for(const a of alts){
@@ -754,14 +770,12 @@
     const chunk = 500;
     for(let i=0;i<rows.length;i+=chunk){
       const slice = rows.slice(i,i+chunk);
-      // UPSERT: atualiza em caso de conflito pelo row_key
       const { error } = await supa.from(DEST_INSERT_TABLE)
-        .upsert(slice, { onConflict: 'row_key' }); // (sem ignoreDuplicates → atualiza)
+        .upsert(slice, { onConflict: 'row_key' }); // após dedupe, não conflita 2x
       if(error){ throw error; }
     }
   }
 
-  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file){ info(''); return; }
@@ -820,14 +834,19 @@
         return row;
       });
 
+      // Filtra válidas e DEDUPLICA pelo row_key (evita erro ON CONFLICT 2x)
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Enviando ao banco em ${DEST_INSERT_TABLE}…`);
-      if(ok.length===0){ setStatus('Nada para gravar (0 linhas mapeadas).','err'); return; }
+      ok.forEach(r => { r.row_key = r.row_key || makeRowKey(r); });
+      const dedup = dedupeByRowKey(ok);
+      const sum = summarizeRows(ok);
+
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Duplicadas por row_key: ${sum.duplicados}. Enviando ${dedup.length} linhas em "${DEST_INSERT_TABLE}"…`);
+      if(dedup.length===0){ setStatus('Nada para gravar (0 após dedupe).','err'); return; }
 
       setStatus('Enviando Excel…');
-      await uploadBatch(ok);
+      await uploadBatch(dedup);
       setStatus('Upload concluído','ok');
-      info(`Gravado/atualizado em "${DEST_INSERT_TABLE}": ${ok.length} linhas.`);
+      info(`Gravado/atualizado em "${DEST_INSERT_TABLE}": ${dedup.length} linhas.`);
 
       // Atualiza MVs para estabilizar filtros/views
       try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
@@ -909,7 +928,6 @@
     try{
       setStatus('Carregando…');
       const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
-      if(dr.error) throw dr.error;
       if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
 
       await reloadStaticOptions();
@@ -925,4 +943,4 @@
   })();
   </script>
 </body>
-</html> 
+</html>
