@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.16.2 — turno func + datetime split + dedupe)</title>
+  <title>DASHBOARD — CFO (v2.14.2 — dt+hora split, pedido_uid, quick-period fix)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -14,6 +14,7 @@
     h1{margin:0;font-size:28px;letter-spacing:.2px}
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
     .btn.clear{gap:6px}
+
     .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px}
     .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap}
     .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
@@ -26,6 +27,7 @@
     .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
     .chip{padding:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:700}
     .chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
+
     .msel{position:relative}
     .msel-btn{cursor:pointer;text-align:left}
     .msel-btn:after{content:"▾";float:right;color:#475569}
@@ -34,6 +36,7 @@
     .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
     .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
     .msel-opt:hover{background:#f3f4f6}
+
     .krow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
     .kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .kpi .bar{position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:14px 0 0 14px;background:var(--bar)}
@@ -46,6 +49,7 @@
     .delta.up{color:var(--ok);border-color:#86efac}
     .delta.down{color:#ef4444;border-color:#fecaca}
     .delta.flat{color:#64748b}
+
     .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
     .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
@@ -54,8 +58,10 @@
     .chart-box{height:280px}
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
     .diag{font-size:12px;color:#475569;margin-left:8px}
+
     .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .upload-info{margin-top:8px;font-size:12px;color:#475569}
+
     @media (max-width:1024px){
       .cols-3{grid-template-columns:repeat(2,1fr)}
       .cols-2{grid-template-columns:1fr}
@@ -284,8 +290,8 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  const READ_VIEW        = 'vendas_canon';     // leituras (views, gráficos, filtros)
-  const DEST_INSERT_TABLE= 'vendas_xlsx';      // ingestão real
+  const READ_VIEW        = 'vendas_canon';
+  const DEST_INSERT_TABLE= 'vendas_xlsx';
   const REFRESH_RPC      = 'refresh_sales_materialized';
 
   const SUPABASE_URL  = 'https://msmyfxgrnuusnvoqyeuo.supabase.co';
@@ -339,13 +345,13 @@
   function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
-  // === parse data+hora na MESMA célula (inclui serial Excel fracionado)
+  // === Split data+hora (inclui Excel serial com fração)
   function splitDateTimeCell(v){
     if(v==null) return {dateISO:null, hour:null};
     if(v instanceof Date){ return {dateISO: iso(v), hour: v.getHours()}; }
     let s=String(v).trim();
     if(!s) return {dateISO:null, hour:null};
-    // Excel serial
+    // Excel serial (permite fração para hora)
     if(/^-?\d+(\.\d+)?$/.test(s)){
       const num=Number(s); const base=new Date(Date.UTC(1899,11,30));
       const d = new Date(base.getTime() + num*86400000);
@@ -353,25 +359,39 @@
       const hour = Math.floor(frac*24 + 1e-6);
       return {dateISO: iso(d), hour: (hour>=0 && hour<=23)?hour:null};
     }
-    // dd/mm/yyyy hh:mm[:ss]
+    // dd/mm/yyyy [hh[:mm[:ss]]]
     const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T](\d{1,2})(?::(\d{2})(?::(\d{2}))?)?)?$/);
     if(m){
       const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
       const d=new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
       return {dateISO: iso(d), hour: d.getHours()};
     }
-    // ISO/parseável
+    // ISO e outros parseáveis
     const t = new Date(s.replace('T',' '));
     if(!isNaN(t)) return {dateISO: iso(t), hour: t.getHours()};
     return {dateISO:null, hour:null};
   }
 
-  // hash DJB2 como row_key
-  function rowHash(x){
+  // parse hora quando vier em coluna separada
+  function parseHourUpload(v){
+    if(v==null) return null;
+    if(typeof v==='number' && v>=0 && v<=23) return Math.floor(v);
+    const s=String(v); const m=s.match(/(\d{1,2})/); if(!m) return null;
+    const h=+m[1]; return (h>=0 && h<=23) ? h : null;
+  }
+  function parseHourFromEither(dateCell, hourCell){
+    let h = parseHourUpload(hourCell);
+    if(h==null){ const {hour} = splitDateTimeCell(dateCell); h = hour; }
+    return h;
+  }
+
+  // hash DJB2 para row_key (evita duplicação no upsert)
+  function hashRow(obj){
     const keys = ['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
-    const s = keys.map(k => k+':'+String(x[k]??'')).join('|');
-    let h = 5381; for(let i=0;i<s.length;i++){ h = ((h<<5)+h) ^ s.charCodeAt(i); }
-    return String(h>>>0);
+    const s = keys.map(k => k+':'+String(obj[k]??'')).join('|');
+    let h = 5381;
+    for(let i=0;i<s.length;i++){ h = ((h << 5) + h) ^ s.charCodeAt(i); }
+    return String(h >>> 0);
   }
 
   /* ===================== MULTISELECT ===================== */
@@ -426,7 +446,7 @@
     const ate=lastDay||iso(new Date());
     const de=addDaysISO(ate, -(Number(val)-1));
     fDe.value=de; fAte.value=ate;
-    periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
+    periodoInfo.textContent=`Último dia carregado: ${lastDay || '—'}`;
     applyAll();
   }
   $('btnClear').addEventListener('click', ()=>{
@@ -437,7 +457,7 @@
   chips.forEach(b=> b.addEventListener('click', ()=>applyQuick(b.dataset.q)));
   ;[fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{
     chips.forEach(c=>c.classList.remove('active'));
-    periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
+    periodoInfo.textContent=`Último dia carregado: ${lastDay || '—'}`;
     applyAll();
   }));
 
@@ -504,6 +524,7 @@
     $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
+
     $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
 
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
@@ -516,7 +537,7 @@
     deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
   }
 
-  /* ===== intervalo anterior do mesmo tamanho ===== */
+  /* ===== Comparativo: período anterior exato ===== */
   function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
   function isFullYear(d1,d2){
     return d1.getMonth()===0 && d1.getDate()===1 &&
@@ -654,7 +675,7 @@
       }
 
       const sum = a => (a||[]).reduce((acc,r)=> acc + (+r.total||0), 0);
-      setDiag(`OK (RPC charts ✓ | soma DOW atual/ant: ${money(sum(packs.find(p=>p.k==='dow')?.now))} / ${money(sum(packs.find(p=>p.k==='dow')?.prev))})`);
+      setDiag(`(RPC charts ✓ | soma DOW atual/ant: ${money(sum(packs.find(p=>p.k==='dow')?.now))} / ${money(sum(packs.find(p=>p.k==='dow')?.prev))})`);
       setStatus('OK — gráficos via RPC','ok');
     }catch(e){
       console.error(e);
@@ -710,9 +731,10 @@
     return [];
   }
 
-  /* ===================== EXCEL → DB (sempre upsert + dedupe) ===================== */
-  document.getElementById('btnUpload').addEventListener('click', ()=> document.getElementById('fileExcel').click());
+  /* ===================== EXCEL → DB (sempre upsert) ===================== */
+  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
+  // sinônimos (inclui “Número do pedido no parceiro”)
   const headerAlts = {
     dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
     hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
@@ -726,8 +748,9 @@
     canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
     pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
     canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
-    pid:  ['pedido','pedido id','pedido_id','id pedido','id_pedido','numero pedido','número pedido','nº pedido','order id','order_id']
+    pid:  ['pedido','pedido id','pedido_id','id pedido','id_pedido','numero pedido','número pedido','numero do pedido','número do pedido','nº do pedido','nº pedido','num pedido','nr pedido','numero do pedido no parceiro','número do pedido no parceiro','order id','order_id','numero do pedido parceiro','número do pedido parceiro']
   };
+
   function pickColumn(headers, alts){
     const map = headers.map(h=>({orig:h, key:normHeader(h)}));
     for(const a of alts){
@@ -737,7 +760,7 @@
     return null;
   }
 
-  document.getElementById('fileExcel').addEventListener('change', async (ev)=>{
+  $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file){ info(''); return; }
     info('Lendo arquivo…');
@@ -768,15 +791,7 @@
 
         const dtSplit = splitDateTimeCell(get(kDia));
         const dia  = dtSplit.dateISO;
-        const hora = (function parseHourFromEither(dateCell, hourCell){
-          let h = null;
-          if(hourCell!=null){
-            if(typeof hourCell==='number' && hourCell>=0 && hourCell<=23) h = Math.floor(hourCell);
-            else { const m=String(hourCell).match(/(\d{1,2})/); if(m){ const hh=+m[1]; if(hh>=0&&hh<=23) h=hh; } }
-          }
-          if(h==null) h = splitDateTimeCell(dateCell).hour;
-          return h;
-        })(get(kDia), get(kHora));
+        const hora = parseHourFromEither(get(kDia), get(kHora));
 
         const unidade = displayNormalize(get(kUni));
         const loja    = displayNormalize(get(kLoja));
@@ -801,20 +816,19 @@
           pedido_id: pid || null,
           created_at: new Date().toISOString()
         };
-        row.row_key = rowHash(row);
+        row.row_key = hashRow(row);
         return row;
       });
 
-      // válidas
+      // Mantém só linhas com data válida
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
 
-      // DEDUPE por row_key no mesmo upload
+      // DEDUPE por row_key (no mesmo upload)
       const mapByKey = new Map();
       for(const r of ok){ mapByKey.set(r.row_key, r); }
       const rows = [...mapByKey.values()];
       const removed = ok.length - rows.length;
-
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, removidas duplicadas: ${removed}). Enviando…`);
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, dedupe: ${removed}). Enviando…`);
       if(rows.length===0){ setStatus('Nada para gravar (0 linhas após dedupe).','err'); return; }
 
       // Upsert em lotes
@@ -822,13 +836,15 @@
       const chunk = 300;
       for(let i=0;i<rows.length;i+=chunk){
         const slice = rows.slice(i,i+chunk);
-        const { error } = await supa.from(DEST_INSERT_TABLE).upsert(slice, { onConflict: 'row_key' });
+        const { error } = await supa.from(DEST_INSERT_TABLE)
+          .upsert(slice, { onConflict: 'row_key' });
         if(error){ throw error; }
       }
 
       setStatus('Upload concluído','ok');
       info(`Gravado/atualizado: ${rows.length} linhas (duplicadas removidas: ${removed}).`);
 
+      // Atualiza MVs/limites e recarrega filtros+dados
       try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
@@ -841,7 +857,7 @@
       setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
       info('');
     }finally{
-      document.getElementById('fileExcel').value='';
+      $('fileExcel').value='';
     }
   });
 
@@ -864,7 +880,8 @@
     const needFallback = !(ok(unids)&&ok(lojas)&&ok(canais)&&ok(turnos)&&ok(pags));
     if(needFallback){
       try{
-        const { data, error } = await supa.from(READ_VIEW).select('unidade, loja, canal, pagamento_base, turno').limit(200000);
+        const { data, error } = await supa.from(READ_VIEW)
+          .select('unidade, loja, canal, pagamento_base, turno').limit(200000);
         if(!error && Array.isArray(data)){
           const uniqBy = (arr, key)=> [...new Set(arr.map(x=>x[key]).filter(v=>v!=null && v!==''))];
           ms.unids.setOptions( uniqBy(data,'unidade') );
@@ -882,11 +899,15 @@
     try{
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
       const {dePrev, atePrev} = computePrevRangeISO(de,ate);
+
       setStatus('Consultando…');
+
       let kpiOk=true;
       await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
       await updateChartsServer();
-      if(!kpiOk) setStatus('OK (sem KPIs — RPC indisponível)'); else setStatus('OK','ok');
+
+      if(!kpiOk) setStatus('OK (sem KPIs — RPC indisponível)');
+      else setStatus('OK','ok');
     }catch(e){
       console.error(e);
       setStatus('Erro: '+(e.message||e),'err');
@@ -897,11 +918,15 @@
     try{
       setStatus('Carregando…');
       const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
+      if(dr.error) throw dr.error;
       if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
+
       await reloadStaticOptions();
+
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
-      $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
-      applyQuick('30'); // sempre ancorado em lastDay
+
+      $('periodoInfo').textContent=`Último dia carregado: ${lastDay || '—'}`;
+      applyQuick('30');
     }catch(e){
       console.error(e);
       setStatus('Erro ao iniciar: '+(e.message||e),'err');
