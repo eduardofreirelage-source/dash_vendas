@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.14.2 — dt+hora split, pedido_uid, quick-period fix)</title>
+  <title>DASHBOARD — CFO (v2.14.3 — patch pedidos + turno + dt split)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -345,13 +345,12 @@
   function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
-  // === Split data+hora (inclui Excel serial com fração)
+  // === parse data+hora (Excel serial com fração incluso)
   function splitDateTimeCell(v){
     if(v==null) return {dateISO:null, hour:null};
     if(v instanceof Date){ return {dateISO: iso(v), hour: v.getHours()}; }
     let s=String(v).trim();
     if(!s) return {dateISO:null, hour:null};
-    // Excel serial (permite fração para hora)
     if(/^-?\d+(\.\d+)?$/.test(s)){
       const num=Number(s); const base=new Date(Date.UTC(1899,11,30));
       const d = new Date(base.getTime() + num*86400000);
@@ -359,33 +358,18 @@
       const hour = Math.floor(frac*24 + 1e-6);
       return {dateISO: iso(d), hour: (hour>=0 && hour<=23)?hour:null};
     }
-    // dd/mm/yyyy [hh[:mm[:ss]]]
     const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T](\d{1,2})(?::(\d{2})(?::(\d{2}))?)?)?$/);
     if(m){
       const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
       const d=new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
       return {dateISO: iso(d), hour: d.getHours()};
     }
-    // ISO e outros parseáveis
     const t = new Date(s.replace('T',' '));
     if(!isNaN(t)) return {dateISO: iso(t), hour: t.getHours()};
     return {dateISO:null, hour:null};
   }
 
-  // parse hora quando vier em coluna separada
-  function parseHourUpload(v){
-    if(v==null) return null;
-    if(typeof v==='number' && v>=0 && v<=23) return Math.floor(v);
-    const s=String(v); const m=s.match(/(\d{1,2})/); if(!m) return null;
-    const h=+m[1]; return (h>=0 && h<=23) ? h : null;
-  }
-  function parseHourFromEither(dateCell, hourCell){
-    let h = parseHourUpload(hourCell);
-    if(h==null){ const {hour} = splitDateTimeCell(dateCell); h = hour; }
-    return h;
-  }
-
-  // hash DJB2 para row_key (evita duplicação no upsert)
+  // === hash DJB2 estável para row_key
   function hashRow(obj){
     const keys = ['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
     const s = keys.map(k => k+':'+String(obj[k]??'')).join('|');
@@ -446,7 +430,7 @@
     const ate=lastDay||iso(new Date());
     const de=addDaysISO(ate, -(Number(val)-1));
     fDe.value=de; fAte.value=ate;
-    periodoInfo.textContent=`Último dia carregado: ${lastDay || '—'}`;
+    periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
     applyAll();
   }
   $('btnClear').addEventListener('click', ()=>{
@@ -457,7 +441,7 @@
   chips.forEach(b=> b.addEventListener('click', ()=>applyQuick(b.dataset.q)));
   ;[fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{
     chips.forEach(c=>c.classList.remove('active'));
-    periodoInfo.textContent=`Último dia carregado: ${lastDay || '—'}`;
+    periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
     applyAll();
   }));
 
@@ -524,7 +508,6 @@
     $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-
     $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
 
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
@@ -537,7 +520,7 @@
     deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
   }
 
-  /* ===== Comparativo: período anterior exato ===== */
+  /* ===== Período anterior exato ===== */
   function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
   function isFullYear(d1,d2){
     return d1.getMonth()===0 && d1.getDate()===1 &&
@@ -684,7 +667,7 @@
     }
   }
 
-  /* ===================== FALLBACK LOCAL (cancelados) ===================== */
+  /* ===================== FALLBACK LOCAL ===================== */
   async function discoverColumns(source){
     const r = await supa.from(source).select('*').limit(1);
     if(r.error) return null;
@@ -731,10 +714,9 @@
     return [];
   }
 
-  /* ===================== EXCEL → DB (sempre upsert) ===================== */
-  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
+  /* ===================== EXCEL → DB (upsert) ===================== */
+  document.getElementById('btnUpload').addEventListener('click', ()=> document.getElementById('fileExcel').click());
 
-  // sinônimos (inclui “Número do pedido no parceiro”)
   const headerAlts = {
     dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
     hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
@@ -760,7 +742,14 @@
     return null;
   }
 
-  $('fileExcel').addEventListener('change', async (ev)=>{
+  function makeRowKey(row){
+    const keys = ['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
+    const s = keys.map(k => k+':'+String(row[k]??'')).join('|');
+    let h = 5381; for(let i=0;i<s.length;i++){ h = ((h<<5)+h) ^ s.charCodeAt(i); }
+    return String(h>>>0);
+  }
+
+  document.getElementById('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file){ info(''); return; }
     info('Lendo arquivo…');
@@ -791,7 +780,15 @@
 
         const dtSplit = splitDateTimeCell(get(kDia));
         const dia  = dtSplit.dateISO;
-        const hora = parseHourFromEither(get(kDia), get(kHora));
+        const hora = (function parseHourFromEither(dateCell, hourCell){
+          let h = null;
+          if(hourCell!=null){
+            if(typeof hourCell==='number' && hourCell>=0 && hourCell<=23) h = Math.floor(hourCell);
+            else { const m=String(hourCell).match(/(\d{1,2})/); if(m){ const hh=+m[1]; if(hh>=0&&hh<=23) h=hh; } }
+          }
+          if(h==null) h = splitDateTimeCell(dateCell).hour;
+          return h;
+        })(get(kDia), get(kHora));
 
         const unidade = displayNormalize(get(kUni));
         const loja    = displayNormalize(get(kLoja));
@@ -816,35 +813,29 @@
           pedido_id: pid || null,
           created_at: new Date().toISOString()
         };
-        row.row_key = hashRow(row);
+        row.row_key = makeRowKey(row);
         return row;
       });
 
-      // Mantém só linhas com data válida
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
-
-      // DEDUPE por row_key (no mesmo upload)
       const mapByKey = new Map();
       for(const r of ok){ mapByKey.set(r.row_key, r); }
       const rows = [...mapByKey.values()];
       const removed = ok.length - rows.length;
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, dedupe: ${removed}). Enviando…`);
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, removidos duplicados: ${removed}). Enviando…`);
       if(rows.length===0){ setStatus('Nada para gravar (0 linhas após dedupe).','err'); return; }
 
-      // Upsert em lotes
       setStatus('Enviando Excel…');
       const chunk = 300;
       for(let i=0;i<rows.length;i+=chunk){
         const slice = rows.slice(i,i+chunk);
-        const { error } = await supa.from(DEST_INSERT_TABLE)
-          .upsert(slice, { onConflict: 'row_key' });
+        const { error } = await supa.from(DEST_INSERT_TABLE).upsert(slice, { onConflict: 'row_key' });
         if(error){ throw error; }
       }
 
       setStatus('Upload concluído','ok');
       info(`Gravado/atualizado: ${rows.length} linhas (duplicadas removidas: ${removed}).`);
 
-      // Atualiza MVs/limites e recarrega filtros+dados
       try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
@@ -857,7 +848,7 @@
       setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
       info('');
     }finally{
-      $('fileExcel').value='';
+      document.getElementById('fileExcel').value='';
     }
   });
 
@@ -883,7 +874,7 @@
         const { data, error } = await supa.from(READ_VIEW)
           .select('unidade, loja, canal, pagamento_base, turno').limit(200000);
         if(!error && Array.isArray(data)){
-          const uniqBy = (arr, key)=> [...new Set(arr.map(x=>x[key]).filter(v=>v!=null && v!==''))];
+          const uniqBy = (arr, key)=> [...new Set(arr.map(x=>x[key]).filter(v=>v!=null && v!==' ' && v!==''))];
           ms.unids.setOptions( uniqBy(data,'unidade') );
           ms.lojas.setOptions( uniqBy(data,'loja') );
           ms.canais.setOptions( uniqBy(data,'canal') );
@@ -918,14 +909,12 @@
     try{
       setStatus('Carregando…');
       const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
-      if(dr.error) throw dr.error;
       if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
 
       await reloadStaticOptions();
-
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
 
-      $('periodoInfo').textContent=`Último dia carregado: ${lastDay || '—'}`;
+      $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
       applyQuick('30');
     }catch(e){
       console.error(e);
