@@ -767,6 +767,9 @@
     return hashRow(row);
   }
 
+ <script>
+  // ... (restante do arquivo permanece igual)
+
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file){ info(''); return; }
@@ -798,25 +801,29 @@
 
         const dtSplit = splitDateTimeCell(get(kDia));
         const dia  = dtSplit.dateISO;
-        const hora = parseHourFromEither(get(kDia), get(kHora));
+        const hora = (function parseHourFromEither(dateCell, hourCell){
+          let h = null;
+          if(hourCell!=null){
+            if(typeof hourCell==='number' && hourCell>=0 && hourCell<=23) h = Math.floor(hourCell);
+            else { const m=String(hourCell).match(/(\d{1,2})/); if(m){ const hh=+m[1]; if(hh>=0&&hh<=23) h=hh; } }
+          }
+          if(h==null) h = splitDateTimeCell(dateCell).hour;
+          return h;
+        })(get(kDia), get(kHora));
 
         const unidade = displayNormalize(get(kUni));
         const loja    = displayNormalize(get(kLoja));
         const canal   = displayNormalize(get(kCan));
         const pago    = displayNormalize(get(kPag));
-        const pid     = displayNormalize(get(kPid)); // agora pega 'Pedido'
+        const pid     = displayNormalize(get(kPid));
         const cancel  = normCancel(get(kCanc));
-
-        // ‘pedidos’ continua aceitando mapeamentos como ‘Itens/Quantidade’,
-        // mas KPIs usarão DISTINCT pedido_id quando existir.
         const ped     = toInt(get(kPed) ?? 1);
         const fat     = parseBR(get(kFat));
         const des     = parseBR(get(kDes));
         const fre     = parseBR(get(kFre));
 
         const row = {
-          dia,
-          hora,
+          dia, hora,
           unidade,
           "Nome da loja": loja,
           "Canal de venda": canal,
@@ -827,28 +834,42 @@
           pedido_id: pid || null,
           created_at: new Date().toISOString()
         };
-        row.row_key = makeRowKey(row); // hash estável dos campos de negócio
+        row.row_key = (function makeRowKey(x){
+          const keys = ['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
+          const s = keys.map(k => k+':'+String(x[k]??'')).join('|');
+          let h = 5381; for(let i=0;i<s.length;i++){ h = ((h<<5)+h) ^ s.charCodeAt(i); }
+          return String(h>>>0);
+        })(row);
         return row;
       });
 
+      // Só com linhas válidas (dia preenchido)
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}). Enviando ao banco em ${DEST_INSERT_TABLE}…`);
-      if(ok.length===0){ setStatus('Nada para gravar (0 linhas mapeadas).','err'); return; }
+
+      // >>>>>>>>>>>>>>>>>>>> NOVO: DEDUP por row_key <<<<<<<<<<<<<<<<<<<<<<
+      const mapByKey = new Map();
+      for(const r of ok){
+        // last-write-wins para chaves repetidas no MESMO arquivo
+        mapByKey.set(r.row_key, r);
+      }
+      const rows = [...mapByKey.values()];
+      const removed = ok.length - rows.length;
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, removidos duplicados por row_key: ${removed}). Enviando…`);
+      if(rows.length===0){ setStatus('Nada para gravar (0 linhas após dedupe).','err'); return; }
 
       // Envio em lotes (upsert por row_key)
       setStatus('Enviando Excel…');
-      const chunk = 500;
-      for(let i=0;i<ok.length;i+=chunk){
-        const slice = ok.slice(i,i+chunk);
+      const chunk = 300;
+      for(let i=0;i<rows.length;i+=chunk){
+        const slice = rows.slice(i,i+chunk);
         const { error } = await supa.from(DEST_INSERT_TABLE)
           .upsert(slice, { onConflict: 'row_key' });
         if(error){ throw error; }
       }
 
       setStatus('Upload concluído','ok');
-      info(`Gravado/atualizado em "${DEST_INSERT_TABLE}": ${ok.length} linhas.`);
+      info(`Gravado/atualizado: ${rows.length} linhas (duplicadas removidas: ${removed}).`);
 
-      // Atualiza MVs e limites
       try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
@@ -865,6 +886,9 @@
     }
   });
 
+  // ... (restante do arquivo permanece igual)
+</script>
+  
   /* ===================== OPÇÕES (com fallback) ===================== */
   async function reloadStaticOptions(){
     // Tenta views dedicadas
