@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v3.0 — View normalizada + KPIs/Gráficos sem RPC)</title>
+  <title>DASHBOARD — CFO (v3.2.0 — KPIs sem sum(), filtros e gráficos)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -14,6 +14,7 @@
     h1{margin:0;font-size:28px;letter-spacing:.2px}
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
     .btn.clear{gap:6px}
+
     .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px}
     .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap}
     .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
@@ -26,6 +27,7 @@
     .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
     .chip{padding:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:700}
     .chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
+
     .msel{position:relative}
     .msel-btn{cursor:pointer;text-align:left}
     .msel-btn:after{content:"▾";float:right;color:#475569}
@@ -34,6 +36,7 @@
     .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
     .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
     .msel-opt:hover{background:#f3f4f6}
+
     .krow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
     .kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .kpi .bar{position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:14px 0 0 14px;background:var(--bar)}
@@ -46,6 +49,7 @@
     .delta.up{color:var(--ok);border-color:#86efac}
     .delta.down{color:#ef4444;border-color:#fecaca}
     .delta.flat{color:#64748b}
+
     .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
     .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
@@ -54,10 +58,19 @@
     .chart-box{height:280px}
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
     .diag{font-size:12px;color:#475569;margin-left:8px}
+
     .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .upload-info{margin-top:8px;font-size:12px;color:#475569}
-    @media (max-width:1024px){ .cols-3{grid-template-columns:repeat(2,1fr)} .cols-2{grid-template-columns:1fr} .krow{grid-template-columns:repeat(2,1fr)} }
-    @media (max-width:640px){ .cols-3{grid-template-columns:1fr} .krow{grid-template-columns:1fr} }
+
+    @media (max-width:1024px){
+      .cols-3{grid-template-columns:repeat(2,1fr)}
+      .cols-2{grid-template-columns:1fr}
+      .krow{grid-template-columns:repeat(2,1fr)}
+    }
+    @media (max-width:640px){
+      .cols-3{grid-template-columns:1fr}
+      .krow{grid-template-columns:1fr}
+    }
   </style>
 </head>
 <body>
@@ -80,8 +93,14 @@
         <button id="btnClear" class="btn clear">✖ Limpar filtros</button>
       </div>
       <div class="row cols-3">
-        <div><div class="muted" style="margin-bottom:6px;">Intervalo (início)</div><input type="date" id="fDe"></div>
-        <div><div class="muted" style="margin-bottom:6px;">Intervalo (fim)</div><input type="date" id="fAte"></div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Intervalo (início)</div>
+          <input type="date" id="fDe">
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Intervalo (fim)</div>
+          <input type="date" id="fAte">
+        </div>
         <div>
           <div class="muted" style="margin-bottom:6px;">Período rápido</div>
           <div class="chips">
@@ -111,13 +130,28 @@
         </div>
       </div>
       <div class="row cols-3">
-        <div><div class="muted" style="margin-bottom:6px;">Unidade</div><div id="ms-unids" class="msel"><button class="msel-btn">Todas as unidades</button><div class="msel-panel"></div></div></div>
-        <div><div class="muted" style="margin-bottom:6px;">Loja</div><div id="ms-lojas" class="msel"><button class="msel-btn">Todas as lojas</button><div class="msel-panel"></div></div></div>
-        <div><div class="muted" style="margin-bottom:6px;">Turno</div><div id="ms-turnos" class="msel"><button class="msel-btn">Todos os turnos</button><div class="msel-panel"></div></div></div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Unidade</div>
+          <div id="ms-unids" class="msel"><button class="msel-btn">Todas as unidades</button><div class="msel-panel"></div></div>
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Nome da Loja</div>
+          <div id="ms-lojas" class="msel"><button class="msel-btn">Todas as lojas</button><div class="msel-panel"></div></div>
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Turno da Venda</div>
+          <div id="ms-turnos" class="msel"><button class="msel-btn">Todos os turnos</button><div class="msel-panel"></div></div>
+        </div>
       </div>
       <div class="row cols-3" style="margin-top:10px;">
-        <div><div class="muted" style="margin-bottom:6px;">Canal</div><div id="ms-canais" class="msel"><button class="msel-btn">Todos os canais</button><div class="msel-panel"></div></div></div>
-        <div><div class="muted" style="margin-bottom:6px;">Tipo de Pagamento</div><div id="ms-pags" class="msel"><button class="msel-btn">Todos os tipos</button><div class="msel-panel"></div></div></div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Canal de Venda</div>
+          <div id="ms-canais" class="msel"><button class="msel-btn">Todos os canais</button><div class="msel-panel"></div></div>
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px;">Tipo de Pagamento</div>
+          <div id="ms-pags" class="msel"><button class="msel-btn">Todos os tipos</button><div class="msel-panel"></div></div>
+        </div>
         <div>
           <div class="muted" style="margin-bottom:6px;">Cancelado</div>
           <div id="ms-cancel" class="msel">
@@ -256,9 +290,9 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  const READ_VIEW         = 'vendas_canon_front';   // << NOVO: view normalizada (sem espaços)
-  const DEST_INSERT_TABLE = 'vendas_xlsx';          // ingestão (upsert)
-  const REFRESH_RPC       = 'refresh_sales_materialized'; // opcional; se existir, chamamos
+  const READ_VIEW         = 'vendas_canon_front';   // leitura (views/gráficos/filtros)
+  const DEST_INSERT_TABLE = 'vendas_xlsx';          // ingestão (upsert) — opcional
+  const REFRESH_RPC       = 'refresh_sales_materialized'; // opcional (se existir)
 
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
@@ -273,26 +307,16 @@
   const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const num =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
   const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
-  function iso(d){return d.toISOString().slice(0,10);}
+  const iso = d => d.toISOString().slice(0,10);
   function addDaysISO(isoStr,n){const d=new Date(isoStr+'T00:00:00'); d.setDate(d.getDate()+n); return iso(d);}
   function daysLen(de,ate){const d1=new Date(de+'T00:00:00'), d2=new Date(ate+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24))+1;}
-  function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l5 6h-3v8H8V9H5l5-6z"/></svg>';}
-  function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 17l-5-6h3V3h4v8h3l-5 6z"/></svg>';}
+  const upSVG=()=>'<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l5 6h-3v8H8V9H5l5-6z"/></svg>';
+  const downSVG=()=>'<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 17l-5-6h3V3h4v8h3l-5 6z"/></svg>';
   function deltaBadge(el,curr,prev){
     if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
     const p=((curr-prev)/prev)*100;
     el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
     el.className='delta '+(p>=0?'up':'down');
-  }
-  function rmAcc(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
-  function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
-  function parseBR(v){
-    if(v==null) return 0;
-    if(typeof v==='number' && isFinite(v)) return v;
-    let s=String(v).trim(); if(!s) return 0; s=s.replace(/[^\d,.\-]/g,'');
-    const lastC=s.lastIndexOf(','), lastD=s.lastIndexOf('.');
-    if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
-    const n=Number(s); return isFinite(n)?n:0;
   }
   function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
@@ -356,7 +380,7 @@
   }
   $('btnClear').addEventListener('click', ()=>{
     ms.unids.set([]); ms.lojas.set([]); ms.canais.set([]); ms.turnos.set([]); ms.pags.set([]);
-    ms.cancel.set(['Não']); // default: NÃO cancelado
+    ms.cancel.set(['Não']);
     applyQuick('30');
   });
   chips.forEach(b=> b.addEventListener('click', ()=>applyQuick(b.dataset.q)));
@@ -366,64 +390,84 @@
     applyAll();
   }));
 
-  /* ===================== QUERY BUILDERS (REST) ===================== */
-  function baseRangeQuery(selectList, de, ate){
-    let q = supa.from(READ_VIEW).select(selectList).gte('dia', de).lte('dia', ate);
-    const u = ms.unids.get(), l = ms.lojas.get(), c = ms.canais.get(), t = ms.turnos.get(), p = ms.pags.get();
-    const canc = ms.cancel.get();
-    if(u.length) q = q.in('unidade', u);
-    if(l.length) q = q.in('loja', l);
-    if(c.length) q = q.in('canal', c);
-    if(t.length) q = q.in('turno', t);
-    if(p.length) q = q.in('pagamento_base', p);
-    if(canc.length===1 && (canc[0]==='Sim' || canc[0]==='Não')) q = q.eq('cancelado', canc[0]);
-    return q;
+  /* ===== Comparativo: período anterior exato ===== */
+  function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
+  function isFullYear(d1,d2){
+    return d1.getMonth()===0 && d1.getDate()===1 &&
+           d2.getMonth()===11 && d2.getDate()===31 &&
+           d1.getFullYear()===d2.getFullYear();
   }
-
-  async function aggKPI(de, ate, overrideCancel=null){
-    let q = supa.from(READ_VIEW).select('pedidos:sum(pedidos),fat:sum(fat),des:sum(des),fre:sum(fre)').gte('dia', de).lte('dia', ate);
-    const u = ms.unids.get(), l = ms.lojas.get(), c = ms.canais.get(), t = ms.turnos.get(), p = ms.pags.get();
-    if(u.length) q = q.in('unidade', u);
-    if(l.length) q = q.in('loja', l);
-    if(c.length) q = q.in('canal', c);
-    if(t.length) q = q.in('turno', t);
-    if(p.length) q = q.in('pagamento_base', p);
-    if(overrideCancel!=null){ q = q.eq('cancelado', overrideCancel); }
-    else {
-      const canc = ms.cancel.get();
-      if(canc.length===1 && (canc[0]==='Sim' || canc[0]==='Não')) q = q.eq('cancelado', canc[0]);
-    }
-    const { data, error } = await q.single();
-    if(error) throw error;
-    return {
-      ped: +data.pedidos || 0,
-      fat: +data.fat || 0,
-      des: +data.des || 0,
-      fre: +data.fre || 0
-    };
+  function isFullMonthsAligned(d1,d2){
+    return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth());
   }
-
-  /* ===================== KPIs ===================== */
+  function shiftYear(date,delta){
+    const d=new Date(date); d.setFullYear(d.getFullYear()+delta);
+    const ld = lastDayOfMonth(d.getFullYear(), d.getMonth());
+    if(d.getDate()>ld) d.setDate(ld);
+    return d;
+  }
   function computePrevRangeISO(deISO, ateISO){
     const d1=new Date(deISO+'T00:00:00'), d2=new Date(ateISO+'T00:00:00');
+    if(isFullYear(d1,d2) || isFullMonthsAligned(d1,d2)){
+      const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1);
+      return { dePrev: iso(p1), atePrev: iso(p2) };
+    }
     const len=daysLen(deISO,ateISO);
     const atePrev=new Date(d1.getTime()-24*60*60*1000);
     const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);
     return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
   }
 
-  async function updateKPIs(de, ate){
-    const {dePrev, atePrev} = computePrevRangeISO(de,ate);
+  /* ===================== KPIs: SOMA NO CLIENTE ===================== */
+  function buildFilters(q, de, ate, overrideCancel=null){
+    q = q.select('dia,unidade,loja,canal,turno,pagamento_base,cancelado,pedidos,fat,des,fre')
+         .gte('dia', de).lte('dia', ate);
+
+    const u = ms.unids.get(), l = ms.lojas.get(), c = ms.canais.get(),
+          t = ms.turnos.get(), p = ms.pags.get();
+
+    if (u.length) q = q.in('unidade', u);
+    if (l.length) q = q.in('loja', l);
+    if (c.length) q = q.in('canal', c);
+    if (t.length) q = q.in('turno', t);
+    if (p.length) q = q.in('pagamento_base', p);
+
+    if (overrideCancel != null) {
+      q = q.eq('cancelado', overrideCancel);
+    } else {
+      const canc = ms.cancel.get();
+      if (canc.length === 1 && (canc[0] === 'Sim' || canc[0] === 'Não')) q = q.eq('cancelado', canc[0]);
+    }
+    return q;
+  }
+
+  async function aggKPI(de, ate, overrideCancel=null){
+    let q = supa.from(READ_VIEW);
+    q = buildFilters(q, de, ate, overrideCancel);
+    const { data, error } = await q.limit(200000);
+    if (error) throw error;
+
+    let ped=0, fat=0, des=0, fre=0;
+    for (const r of (data||[])) {
+      ped += +r.pedidos || 0;
+      fat += +r.fat || 0;
+      des += +r.des || 0;
+      fre += +r.fre || 0;
+    }
+    return { ped, fat, des, fre };
+  }
+
+  async function updateKPIs(de, ate, dePrev, atePrev){
     const [N, P, CN, CP] = await Promise.all([
-      aggKPI(de, ate, null),
-      aggKPI(dePrev, atePrev, null),
-      aggKPI(de, ate, 'Sim'),
-      aggKPI(dePrev, atePrev, 'Sim'),
+      aggKPI(de,ate,null),
+      aggKPI(dePrev,atePrev,null),
+      aggKPI(de,ate,'Sim'),
+      aggKPI(dePrev,atePrev,'Sim'),
     ]);
 
     const len=daysLen(de,ate);
-    const tktN = N.ped>0 ? (N.fat/N.ped) : 0, tktP = P.ped>0 ? (P.fat/P.ped) : 0;
-    const fatMedN = len? (N.fat/len) : 0, fatMedP = len? (P.fat/len) : 0;
+    const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
+    const fatMedN = len? (N.fat/len) : 0,    fatMedP = len? (P.fat/len) : 0;
     const desPercN = N.fat? (N.des/N.fat) : 0, desPercP = P.fat? (P.des/P.fat) : 0;
     const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/P.ped) : 0;
     const partCancN = N.ped? (CN.ped/N.ped) : 0, partCancP = P.ped? (CP.ped/P.ped) : 0;
@@ -447,17 +491,13 @@
     deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
   }
 
-  /* ===================== GRÁFICOS (REST + agregação local) ===================== */
-  const chartMode={dow:'total', month:'total', hour:'total', turno:'total'};
-  document.querySelectorAll('.seg').forEach(seg=>{
-    seg.addEventListener('click',(e)=>{
-      const btn=e.target.closest('.seg-btn'); if(!btn) return;
-      const key=seg.dataset.chart; chartMode[key]=btn.dataset.mode;
-      seg.querySelectorAll('.seg-btn').forEach(b=> b.classList.toggle('active', b===btn));
-      updateCharts(key);
-    });
-  });
-
+  /* ===================== GRÁFICOS VIA RPC (com fallback) ===================== */
+  function formatCurrencyTick(value){
+    const v=Number(value)||0;
+    if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
+    if(Math.abs(v)>=1_000)     return 'R$ '+(v/1_000).toFixed(1).replace('.',',')+' mil';
+    return 'R$ '+v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+  }
   function ensureChart(canvasId, labels, nowArr, prevArr){
     const canvas=$(canvasId); if(!canvas) return;
     if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
@@ -470,295 +510,191 @@
       ]},
       options:{
         responsive:true, maintainAspectRatio:false, animation:false,
-        scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:(v)=>formatCurrencyTick(v)}}},
+        scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:formatCurrencyTick}}},
         plugins:{ legend:{position:'top'}, tooltip:{mode:'index',intersect:false,callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${money(ctx.parsed.y||0)}`}}}
       }
     });
     canvas.__chart=chart;
   }
-  function formatCurrencyTick(value){
-    const v=Number(value)||0;
-    if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
-    if(Math.abs(v)>=1_000)     return 'R$ '+(v/1_000).toFixed(1).replace('.',',')+' mil';
-    return 'R$ '+v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+
+  const chartMode={dow:'total', month:'total', hour:'total', turno:'total'};
+  document.querySelectorAll('.seg').forEach(seg=>{
+    seg.addEventListener('click',(e)=>{
+      const btn=e.target.closest('.seg-btn'); if(!btn) return;
+      const key=seg.dataset.chart; chartMode[key]=btn.dataset.mode;
+      seg.querySelectorAll('.seg-btn').forEach(b=> b.classList.toggle('active', b===btn));
+      updateChartsServer(key);
+    });
+  });
+
+  const RPC_FN = {
+    dow:   'chart_vendas_dow_v1',
+    month: 'chart_vendas_mes_v1',
+    hour:  'chart_vendas_hora_v1',
+    turno: 'chart_vendas_turno_v1',
+  };
+
+  async function fetchChartRPC(kind, de, ate){
+    const params = {
+      p_dini: de, p_dfim: ate,
+      p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
+      p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
+      p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
+      p_canais: ms.canais.get().length ? ms.canais.get() : null,
+      p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
+      p_cancelado: (ms.cancel.get().length===1 && (ms.cancel.get()[0]==='Sim' || ms.cancel.get()[0]==='Não')) ? ms.cancel.get()[0] : null
+    };
+    const { data, error } = await supa.rpc(RPC_FN[kind], params);
+    if(error){ throw error; }
+    return data||[];
   }
   function ymToLabel(ym){ const [y,m]=ym.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
 
-  async function fetchRowsForCharts(de, ate){
-    // Apenas o necessário para agregarmos localmente
-    const { data, error } = await baseRangeQuery('dia,hora,turno,pedidos,fat', de, ate).limit(200000);
-    if(error) throw error;
-    return data||[];
-  }
-
-  function groupByDay(rows){
-    const byDay=new Map();
-    for(const r of rows){
-      const k=r.dia;
-      const prev=byDay.get(k)||{ fat:0, ped:0 };
-      byDay.set(k, { fat: prev.fat + (+r.fat||0), ped: prev.ped + (+r.pedidos||0) });
-    }
-    return byDay;
-  }
-
-  async function updateCharts(only){
+  async function updateChartsServer(only){
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
     const {dePrev, atePrev} = computePrevRangeISO(de,ate);
 
     try{
-      const [now, prev] = await Promise.all([ fetchRowsForCharts(de,ate), fetchRowsForCharts(dePrev,atePrev) ]);
+      setDiag('');
+      const kinds = ['dow','month','hour','turno'];
+      const toDo = only ? [only] : kinds;
 
-      // DOW
+      const packs = await Promise.all(toDo.map(async k=>{
+        const [now, prev] = await Promise.all([ fetchChartRPC(k,de,ate), fetchChartRPC(k,dePrev,atePrev) ]);
+        return {k, now, prev};
+      }));
+
+      const pD = packs.find(p=>p.k==='dow');
       if(!only || only==='dow'){
         const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-        function build(rows){
-          const byDay=groupByDay(rows);
-          const totals=Array(7).fill(0), medias=Array(7).fill(0), count=Array(7).fill(0);
-          byDay.forEach((v,k)=>{ const d=new Date(k+'T00:00:00').getDay(); totals[d]+=v.fat; count[d]++; });
-          for(let i=0;i<7;i++) medias[i] = count[i]>0 ? (totals[i]/count[i]) : 0;
-          return {totals,medias};
-        }
-        const N=build(now), P=build(prev);
-        ensureChart('ch_dow', labels, chartMode.dow==='media'?N.medias:N.totals, chartMode.dow==='media'?P.medias:P.totals);
+        const nArr = Array(7).fill(0), pArr = Array(7).fill(0), nMed=Array(7).fill(0), pMed=Array(7).fill(0);
+        (pD?.now||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; });
+        (pD?.prev||[]).forEach(r=>{ pArr[r.dow]=+r.total||0; pMed[r.dow]=+r.media||0; });
+        ensureChart('ch_dow', labels, (chartMode.dow==='media'?nMed:nArr), (chartMode.dow==='media'?pMed:pArr));
       }
 
-      // Month
+      const pM = packs.find(p=>p.k==='month');
       if(!only || only==='month'){
-        function build(rows){
-          const byYM=new Map(), days=new Map();
-          const byDay=groupByDay(rows);
-          byDay.forEach((v,k)=>{ const ym=k.slice(0,7); byYM.set(ym,(byYM.get(ym)||0)+v.fat); days.set(ym,(days.get(ym)||0)+1); });
-          const all=[...byYM.keys()].sort();
-          const totals=all.map(k=>byYM.get(k)||0);
-          const medias=all.map(k=>{ const d=days.get(k)||0; return d? (byYM.get(k)/d) : 0; });
-          return {labels: all.map(ymToLabel), totals, medias};
-        }
-        const N=build(now), P=build(prev);
-        const labels=[...new Set([...N.labels, ...P.labels])];
-        const mapN=new Map(N.labels.map((l,i)=>[l, chartMode.month==='media'?N.medias[i]:N.totals[i]]));
-        const mapP=new Map(P.labels.map((l,i)=>[l, chartMode.month==='media'?P.medias[i]:P.totals[i]]));
-        ensureChart('ch_month', labels, labels.map(l=>mapN.get(l)||0), labels.map(l=>mapP.get(l)||0));
+        const n = pM?.now||[], p = pM?.prev||[];
+        const all = [...new Set([...n.map(r=>r.ym), ...p.map(r=>r.ym)])].sort();
+        const mapN=new Map(n.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
+        const mapP=new Map(p.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
+        ensureChart('ch_month', all.map(ymToLabel), all.map(x=>mapN.get(x)||0), all.map(x=>mapP.get(x)||0));
       }
 
-      // Hour
+      const pH = packs.find(p=>p.k==='hour');
       if(!only || only==='hour'){
-        function build(rows){
-          const totals=Array(24).fill(0), count=Array(24).fill(0);
-          const byDayHour=new Map();
-          for(const r of rows){
-            const key = r.dia+'|'+String(r.hora);
-            const prev = byDayHour.get(key)||0;
-            byDayHour.set(key, prev + (+r.fat||0));
-          }
-          byDayHour.forEach((fat,key)=>{
-            const h = +key.split('|')[1];
-            totals[h]+=fat; count[h]++; // conta quantos dias tiveram aquele horário
-          });
-          const medias=totals.map((v,i)=> count[i] ? (v/count[i]) : 0);
-          return {totals, medias};
-        }
-        const N=build(now), P=build(prev);
         const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
-        ensureChart('ch_hour', labels, chartMode.hour==='media'?N.medias:N.totals, chartMode.hour==='media'?P.medias:P.totals);
+        const nArr = Array(24).fill(0), pArr = Array(24).fill(0), nMed=Array(24).fill(0), pMed=Array(24).fill(0);
+        (pH?.now||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; });
+        (pH?.prev||[]).forEach(r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; });
+        ensureChart('ch_hour', labels, (chartMode.hour==='media'?nMed:nArr), (chartMode.hour==='media'?pMed:pArr));
       }
 
-      // Turno
+      const pT = packs.find(p=>p.k==='turno');
       if(!only || only==='turno'){
-        function build(rows){
-          const order=['Dia','Noite','Manhã','Tarde','Madrugada'];
-          const sum=new Map(), days= new Map();
-          const byDay=groupByDay(rows);
-          // mapeia por dia -> precisamos também do breakdown por turno
-          const byDayTurno = new Map(); // (dia,turno) -> fat
-          for(const r of rows){
-            const key=r.dia+'|'+(r.turno||'');
-            byDayTurno.set(key, (byDayTurno.get(key)||0) + (+r.fat||0));
-          }
-          byDayTurno.forEach((fat,key)=>{
-            const turno=key.split('|')[1]||'';
-            sum.set(turno,(sum.get(turno)||0)+fat);
-          });
-          // nº de dias no período (para média por dia, por turno)
-          const dias = new Set([...byDay.keys()]);
-          order.forEach(t=>days.set(t,dias.size));
-          const labels = order.filter(t=> sum.has(t));
-          const totals = labels.map(t=> sum.get(t)||0);
-          const medias = labels.map((t,i)=> { const d=days.get(t)||0; return d? totals[i]/d : 0; });
-          return {labels, totals, medias};
-        }
-        const N=build(now), P=build(prev);
-        const labels=[...new Set([...N.labels, ...P.labels])];
-        const mapN=new Map(N.labels.map((l,i)=>[l, chartMode.turno==='media'?N.medias[i]:N.totals[i]]));
-        const mapP=new Map(P.labels.map((l,i)=>[l, chartMode.turno==='media'?P.medias[i]:P.totals[i]]));
-        ensureChart('ch_turno', labels, labels.map(l=>mapN.get(l)||0), labels.map(l=>mapP.get(l)||0));
+        const order=['Manhã','Tarde','Noite','Madrugada','Dia'];
+        const n = new Map((pT?.now||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
+        const p = new Map((pT?.prev||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
+        const labels = order.filter(x=> n.has(x) || p.has(x));
+        ensureChart('ch_turno', labels, labels.map(l=>n.get(l)||0), labels.map(l=>p.get(l)||0));
       }
 
-      setStatus('OK — KPIs/Gráficos (REST)','ok');
+      const sum = a => (a||[]).reduce((acc,r)=> acc + (+r.total||0), 0);
+      setDiag(`(Charts via RPC ✓ | soma DOW atual/ant: ${money(sum(packs.find(p=>p.k==='dow')?.now))} / ${money(sum(packs.find(p=>p.k==='dow')?.prev))})`);
+      setStatus('OK','ok');
     }catch(e){
-      console.error(e);
-      setStatus('Erro ao carregar gráficos','err');
-      setDiag(e.message||String(e));
+      console.warn('[charts rpc erro]', e?.message||e);
+      setStatus('OK (gráficos RPC indisponíveis — KPIs ok)','ok');
+      setDiag('');
     }
   }
 
-  /* ===================== OPTIONS (Distinct) ===================== */
-  async function reloadOptions(){
-    try{
-      async function distinct(col){
-        const { data, error } = await supa.from(READ_VIEW).select(col).not(col,'is',null).neq(col,'').limit(10000);
-        if(error) throw error;
-        return uniq((data||[]).map(r=>String(r[col]))).sort((a,b)=>a.localeCompare(b,'pt-BR'));
-      }
-      const [unids, lojas, canais, turnos, pags] = await Promise.all([
-        distinct('unidade'), distinct('loja'), distinct('canal'), distinct('turno'), distinct('pagamento_base')
-      ]);
-      ms.unids.setOptions(unids); ms.lojas.setOptions(lojas); ms.canais.setOptions(canais); ms.turnos.setOptions(turnos); ms.pags.setOptions(pags);
-    }catch(e){
-      console.warn('reloadOptions:', e.message);
-    }
+  /* ===================== CARREGAR VALORES FIXOS DOS FILTROS ===================== */
+  async function reloadStaticOptions(){
+    // traz colunas essenciais e deduplica no cliente
+    const { data, error } = await supa.from(READ_VIEW)
+      .select('unidade,loja,canal,turno,pagamento_base')
+      .limit(200000);
+
+    if (error) { console.error(error); setStatus('Erro ao atualizar','err'); return; }
+
+    const get = (k)=> uniq((data||[]).map(r=>r[k]).filter(v=>v!=null && v!==''));
+    ms.unids.setOptions(get('unidade'));
+    ms.lojas.setOptions(get('loja'));
+    ms.canais.setOptions(get('canal'));
+    ms.turnos.setOptions(get('turno'));
+    ms.pags.setOptions(get('pagamento_base'));
+
+    setStatus('OK','ok');
   }
 
-  /* ===================== CARGA INICIAL ===================== */
-  async function detectDateBounds(){
-    const minQ = await supa.from(READ_VIEW).select('dia').order('dia',{ascending:true}).limit(1);
-    const maxQ = await supa.from(READ_VIEW).select('dia').order('dia',{ascending:false}).limit(1);
-    if(minQ.error || maxQ.error || !minQ.data?.length || !maxQ.data?.length){
-      firstDay = iso(new Date(new Date().getFullYear(),0,1));
-      lastDay = iso(new Date());
-    }else{
-      firstDay = minQ.data[0].dia;
-      lastDay  = maxQ.data[0].dia;
-    }
-    applyQuick('30');
+  /* ===================== INICIALIZAÇÃO ===================== */
+  async function getMinMaxDay(){
+    const last = await supa.from(READ_VIEW).select('dia').order('dia',{ascending:false}).limit(1);
+    const first= await supa.from(READ_VIEW).select('dia').order('dia',{ascending:true}).limit(1);
+    if(last.error||first.error){ throw (last.error||first.error); }
+    lastDay  = (last.data?.[0]?.dia)  || iso(new Date());
+    firstDay = (first.data?.[0]?.dia) || lastDay;
+    periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
+    if(!fDe.value || !fAte.value){ fAte.value=lastDay; fDe.value=addDaysISO(lastDay,-29); }
   }
 
   async function applyAll(){
-    const de=fDe.value||firstDay, ate=fAte.value||lastDay;
     try{
-      await updateKPIs(de,ate);
-      await updateCharts();
+      setStatus('Atualizando…','');
+      const de=fDe.value, ate=fAte.value;
+      const { dePrev, atePrev } = computePrevRangeISO(de,ate);
+      await Promise.all([ updateKPIs(de,ate,dePrev,atePrev), updateChartsServer() ]);
+      setStatus('OK','ok');
     }catch(e){
+      console.error(e);
       setStatus('Erro ao atualizar','err');
-      setDiag(e.message||String(e));
     }
   }
 
-  /* ===================== UPLOAD EXCEL ===================== */
-  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
-  $('fileExcel').addEventListener('change', async (ev)=>{
-    const file = ev.target.files[0]; if(!file) return;
-    setStatus('Lendo arquivo…',''); info('');
+  async function init(){
     try{
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type:'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval:null, raw:false });
-
-      function findCol(keys){
-        const hdrs = Object.keys(rows[0]||{}).map(h=>({h, n:rmAcc(h).toLowerCase()}));
-        for(const k of keys){
-          const n=rmAcc(k).toLowerCase();
-          const m=hdrs.find(x=>x.n===n);
-          if(m) return m.h;
-        }
-        return null;
-      }
-
-      const colData = findCol(['Data','Dia','Data da venda','Data do pedido','Data/Hora','Data e Hora']);
-      const colHora = findCol(['Hora','Horário','Horario','Time','Hora da venda']);
-      const colUnid = findCol(['Unidade','uni','Filial']);
-      const colLoja = findCol(['Nome da loja','Loja','Estabelecimento']);
-      const colCanal= findCol(['Canal','Canal de venda']);
-      const colPag  = findCol(['Tipo de pagamento','Pagamento','Forma de pagamento']);
-      const colCanc = findCol(['Cancelado','Cancelada','Situação','Status']);
-      const colFat  = findCol(['Fat','Faturamento','Valor','Total','Total Nota','Valor líquido','Faturamento líquido']);
-      const colDes  = findCol(['Des','Desconto','Incentivos']);
-      const colFre  = findCol(['Fre','Frete','Taxa de entrega']);
-      const colPed  = findCol(['Pedido','ID do pedido','Nº Pedido','Numero do Pedido']);
-
-      function parseDateCell(v){
-        if(v==null) return null;
-        if(v instanceof Date) return v.toISOString().slice(0,10);
-        const s=String(v).trim();
-        if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
-        const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-        if(m){ const [_,dd,mm,yy]=m; const d=new Date(Number(yy),Number(mm)-1,Number(dd)); return d.toISOString().slice(0,10); }
-        if(!isNaN(+s)){ const serial=+s; const base=new Date(Date.UTC(1899,11,30)); const d=new Date(base.getTime()+serial*86400000); return d.toISOString().slice(0,10); }
-        const t=new Date(s); return isNaN(t.getTime())? null : t.toISOString().slice(0,10);
-      }
-      function parseHour(v){
-        if(v==null) return null;
-        if(typeof v==='number' && isFinite(v) && v>=0 && v<=23) return Math.floor(v);
-        const s=String(v).trim();
-        const m=s.match(/(\d{1,2}):(\d{2})/); if(m){ const h=+m[1]; return (h>=0 && h<=23)?h:null; }
-        if(!isNaN(+s)){ const serial=+s; const frac=serial-Math.floor(serial); if(frac>0){ const h=Math.floor(frac*24+1e-6); return (h>=0 && h<=23)?h:null; } }
-        return null;
-      }
-      function turnoFromHour(h){ if(h==null) return 'Dia'; return (h<=17) ? 'Dia' : 'Noite'; }
-      function normCancel(v){
-        const s=String(v??'').trim().toLowerCase();
-        if(['sim','s','true','1','y','yes','cancelado','cancelada'].includes(s)) return 'Sim';
-        return 'Não';
-      }
-
-      const payload=[];
-      for(const r of rows){
-        const dia = parseDateCell(colData? r[colData] : null);
-        const hora = parseHour(colHora? r[colHora] : null);
-        const turno = turnoFromHour(hora);
-        const unidade = cleanSpaces(r[colUnid] ?? '') || null;
-        const loja    = cleanSpaces(r[colLoja] ?? '') || null;
-        const canal   = cleanSpaces(r[colCanal]?? '') || null;
-        const pagamento_base = cleanSpaces(r[colPag]  ?? '') || null;
-        const cancelado = normCancel(r[colCanc]);
-        const fat = parseBR(r[colFat]);
-        const des = parseBR(r[colDes]);
-        const fre = parseBR(r[colFre]);
-        const pedido_uid = cleanSpaces(r[colPed] ?? '');
-        const row_key = [
-          dia||'', (unidade||''), (loja||''), (canal||''), (pagamento_base||''), (pedido_uid||''), cancelado.toLowerCase()
-        ].join('|').toLowerCase();
-
-        if(!dia) continue; // ignora linhas sem data
-        payload.push({
-          dia, hora, turno, unidade, loja, canal, pagamento_base, cancelado,
-          pedidos: 1, fat, des, fre,
-          pedido_uid: pedido_uid || null,
-          row_key
-        });
-      }
-
-      setStatus(`Preparando upload: ${payload.length} linhas…`, '');
-      // upsert em lotes
-      const CHUNK=500;
-      for(let i=0;i<payload.length;i+=CHUNK){
-        const chunk=payload.slice(i,i+CHUNK);
-        const { error } = await supa.from(DEST_INSERT_TABLE).upsert(chunk, { onConflict: 'row_key' });
-        if(error) throw error;
-        info(`Upsert: ${Math.min(i+CHUNK,payload.length)}/${payload.length}`);
-      }
-
-      // tenta refresh da MV se existir RPC
-      try{ await supa.rpc(REFRESH_RPC); }catch(_e){ /* opcional */ }
-
-      setStatus('Upload concluído','ok');
-      await detectDateBounds(); // recarrega período + KPIs/charts
-      await reloadOptions();
+      await getMinMaxDay();
+      await reloadStaticOptions();
+      await applyAll();
     }catch(e){
       console.error(e);
-      setStatus('Erro no upload','err');
-      info(e.message||String(e));
+      setStatus('Erro na inicialização','err');
+    }
+  }
+  init();
+
+  /* ===================== UPLOAD EXCEL (OPCIONAL) ===================== */
+  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
+  $('fileExcel').addEventListener('change', async (e)=>{
+    const file=e.target.files?.[0]; if(!file) return;
+    try{
+      setStatus('Processando Excel…','');
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:null, raw:true});
+      if(!rows.length){ info('Nada para importar.'); return; }
+
+      // envia crú — o backend deve tratar/normalizar (ou use um edge function)
+      const { error } = await supa.from(DEST_INSERT_TABLE).insert(rows, { returning:'minimal' });
+      if(error) throw error;
+
+      // tenta chamar um RPC que atualiza as materialized views (se existir)
+      try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
+
+      info(`Upload OK: ${rows.length} linhas.`);
+      await getMinMaxDay(); await reloadStaticOptions(); await applyAll();
+      setStatus('OK','ok');
+    }catch(err){
+      console.error(err);
+      setStatus('Falha no upload','err');
+      info(err?.message||String(err));
     }finally{
       $('fileExcel').value='';
     }
   });
-
-  /* ===================== BOOT ===================== */
-  (async function init(){
-    setStatus('Carregando…','');
-    await detectDateBounds();
-    await reloadOptions();
-  })();
   </script>
 </body>
 </html>
