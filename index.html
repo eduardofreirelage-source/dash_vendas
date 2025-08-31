@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.14.0 — datetime split + pedido_id + row_key hash)</title>
+  <title>DASHBOARD — CFO (v2.14.1 — datetime split + dedupe + hash row_key)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -57,7 +57,7 @@
     .seg button.active{background:var(--pri);color:#fff}
     .chart-box{height:280px}
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
-    .diag{font-size:12px;color:#475569;margin-left:8px}
+    .diag{font-size:12px;color:#475569}
 
     .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .upload-info{margin-top:8px;font-size:12px;color:#475569}
@@ -288,6 +288,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 
+  <!-- APP -->
   <script>
   /* ===================== CONFIG ===================== */
   const READ_VIEW        = 'vendas_canon';     // leituras (views, gráficos, filtros)
@@ -345,16 +346,17 @@
   function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
-  // === NOVO: parse de data+hora na MESMA célula (inclui serial Excel com fração)
+  // === Data e hora na MESMA célula (também Excel serial com fração)
   function splitDateTimeCell(v){
     if(v==null) return {dateISO:null, hour:null};
     if(v instanceof Date){ return {dateISO: iso(v), hour: v.getHours()}; }
     let s=String(v).trim();
     if(!s) return {dateISO:null, hour:null};
-    // Excel serial
+    // Excel serial (com fração do dia)
     if(/^-?\d+(\.\d+)?$/.test(s)){
       const num=Number(s); const base=new Date(Date.UTC(1899,11,30));
-      const d = new Date(base.getTime() + num*86400000);
+      const ms = num*86400000;
+      const d = new Date(base.getTime() + ms);
       const frac = num - Math.floor(num);
       const hour = Math.floor(frac*24 + 1e-6);
       return {dateISO: iso(d), hour: (hour>=0 && hour<=23)?hour:null};
@@ -366,13 +368,13 @@
       const d=new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
       return {dateISO: iso(d), hour: d.getHours()};
     }
-    // ISO ou outros formatos parseáveis
+    // ISO ou outros formatos
     const t = new Date(s.replace('T',' '));
     if(!isNaN(t)) return {dateISO: iso(t), hour: t.getHours()};
     return {dateISO:null, hour:null};
   }
 
-  // === NOVO: hash DJB2 estável como row_key
+  // Hash DJB2 estável para row_key
   function hashRow(obj){
     const keys = ['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
     const s = keys.map(k => k+':'+String(obj[k]??'')).join('|');
@@ -718,9 +720,8 @@
   }
 
   /* ===================== EXCEL → DB (sempre upsert) ===================== */
-  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
+  document.getElementById('btnUpload').addEventListener('click', ()=> document.getElementById('fileExcel').click());
 
-  // NOVO: sinônimos ampliados (incluindo PT-BR)
   const headerAlts = {
     dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
     hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
@@ -734,8 +735,7 @@
     canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
     pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
     canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
-    // NOVO: inclui 'Pedido' e variações PT-BR
-    pid:  ['pedido','pedido id','pedido_id','id pedido','id_pedido','numero pedido','número pedido','numero do pedido','número do pedido','nº do pedido','nº pedido','num pedido','nr pedido','numero do pedido no parceiro','número do pedido no parceiro','order id','order_id','numero do pedido parceiro','número do pedido parceiro']
+    pid:  ['pedido','pedido id','pedido_id','id pedido','id_pedido','numero pedido','número pedido','numero do pedido','número do pedido','nº do pedido','nº pedido','num pedido','nr pedido','order id','order_id']
   };
 
   function pickColumn(headers, alts){
@@ -747,30 +747,19 @@
     return null;
   }
 
-  // se existir coluna específica de hora, usa; senão, extrai da coluna de data
   function parseHourFromEither(dateCell, hourCell){
     let h = null;
-    if(hourCell!=null) h = (function parseHourUpload(v){
-      if(v==null) return null;
-      if(typeof v==='number' && v>=0 && v<=23) return Math.floor(v);
-      const s=String(v); const m=s.match(/(\d{1,2})/); if(!m) return null;
-      const hh=+m[1]; return (hh>=0 && hh<=23) ? hh : null;
-    })(hourCell);
-    if(h==null){
-      const {hour} = splitDateTimeCell(dateCell);
-      h = hour;
+    if(hourCell!=null){
+      if(typeof hourCell==='number' && hourCell>=0 && hourCell<=23) h = Math.floor(hourCell);
+      else { const m=String(hourCell).match(/(\d{1,2})/); if(m){ const hh=+m[1]; if(hh>=0&&hh<=23) h=hh; } }
     }
+    if(h==null) h = splitDateTimeCell(dateCell).hour;
     return h;
   }
 
-  function makeRowKey(row){
-    return hashRow(row);
-  }
+  function makeRowKey(row){ return hashRow(row); }
 
- <script>
-  // ... (restante do arquivo permanece igual)
-
-  $('fileExcel').addEventListener('change', async (ev)=>{
+  document.getElementById('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file){ info(''); return; }
     info('Lendo arquivo…');
@@ -796,20 +785,11 @@
       const kCanc = pickColumn(headers, headerAlts.canc);
       const kPid  = pickColumn(headers, headerAlts.pid);
 
-      let mapped = json.map(r=>{
+      const mapped = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
-
-        const dtSplit = splitDateTimeCell(get(kDia));
-        const dia  = dtSplit.dateISO;
-        const hora = (function parseHourFromEither(dateCell, hourCell){
-          let h = null;
-          if(hourCell!=null){
-            if(typeof hourCell==='number' && hourCell>=0 && hourCell<=23) h = Math.floor(hourCell);
-            else { const m=String(hourCell).match(/(\d{1,2})/); if(m){ const hh=+m[1]; if(hh>=0&&hh<=23) h=hh; } }
-          }
-          if(h==null) h = splitDateTimeCell(dateCell).hour;
-          return h;
-        })(get(kDia), get(kHora));
+        const {dateISO, hour} = splitDateTimeCell(get(kDia));
+        const dia  = dateISO;
+        const hora = parseHourFromEither(get(kDia), get(kHora));
 
         const unidade = displayNormalize(get(kUni));
         const loja    = displayNormalize(get(kLoja));
@@ -834,30 +814,21 @@
           pedido_id: pid || null,
           created_at: new Date().toISOString()
         };
-        row.row_key = (function makeRowKey(x){
-          const keys = ['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
-          const s = keys.map(k => k+':'+String(x[k]??'')).join('|');
-          let h = 5381; for(let i=0;i<s.length;i++){ h = ((h<<5)+h) ^ s.charCodeAt(i); }
-          return String(h>>>0);
-        })(row);
+        row.row_key = makeRowKey(row);
         return row;
       });
 
-      // Só com linhas válidas (dia preenchido)
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
 
-      // >>>>>>>>>>>>>>>>>>>> NOVO: DEDUP por row_key <<<<<<<<<<<<<<<<<<<<<<
+      // DEDUPE por row_key (última ocorrência vence)
       const mapByKey = new Map();
-      for(const r of ok){
-        // last-write-wins para chaves repetidas no MESMO arquivo
-        mapByKey.set(r.row_key, r);
-      }
+      for(const r of ok){ mapByKey.set(r.row_key, r); }
       const rows = [...mapByKey.values()];
       const removed = ok.length - rows.length;
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, removidos duplicados por row_key: ${removed}). Enviando…`);
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, duplicadas removidas: ${removed}). Enviando…`);
       if(rows.length===0){ setStatus('Nada para gravar (0 linhas após dedupe).','err'); return; }
 
-      // Envio em lotes (upsert por row_key)
+      // Upsert em lotes
       setStatus('Enviando Excel…');
       const chunk = 300;
       for(let i=0;i<rows.length;i+=chunk){
@@ -882,16 +853,12 @@
       setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
       info('');
     }finally{
-      $('fileExcel').value='';
+      document.getElementById('fileExcel').value='';
     }
   });
 
-  // ... (restante do arquivo permanece igual)
-</script>
-  
   /* ===================== OPÇÕES (com fallback) ===================== */
   async function reloadStaticOptions(){
-    // Tenta views dedicadas
     const [unids,lojas,canais,turnos,pags] = await Promise.allSettled([
       supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
       supa.from('vw_vendas_lojas').select('loja').order('loja'),
@@ -899,15 +866,14 @@
       supa.from('vw_vendas_turnos').select('turno').order('turno'),
       supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
     ]);
-    const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
-    if(ok(unids))  ms.unids.setOptions((unids.value.data||[]).map(r=>r.unidade));
-    if(ok(lojas))  ms.lojas.setOptions((lojas.value.data||[]).map(r=>r.loja));
-    if(ok(canais)) ms.canais.setOptions((canais.value.data||[]).map(r=>r.canal));
-    if(ok(turnos)) ms.turnos.setOptions((turnos.value.data||[]).map(r=>r.turno));
-    if(ok(pags))   ms.pags.setOptions((pags.value.data||[]).map(r=>r.pagamento_base));
+    const okRes = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
+    if(okRes(unids))  ms.unids.setOptions((unids.value.data||[]).map(r=>r.unidade));
+    if(okRes(lojas))  ms.lojas.setOptions((lojas.value.data||[]).map(r=>r.loja));
+    if(okRes(canais)) ms.canais.setOptions((canais.value.data||[]).map(r=>r.canal));
+    if(okRes(turnos)) ms.turnos.setOptions((turnos.value.data||[]).map(r=>r.turno));
+    if(okRes(pags))   ms.pags.setOptions((pags.value.data||[]).map(r=>r.pagamento_base));
 
-    // Fallback direto na view principal
-    const needFallback = !(ok(unids)&&ok(lojas)&&ok(canais)&&ok(turnos)&&ok(pags));
+    const needFallback = !(okRes(unids)&&okRes(lojas)&&okRes(canais)&&okRes(turnos)&&okRes(pags));
     if(needFallback){
       try{
         const { data, error } = await supa.from(READ_VIEW)
