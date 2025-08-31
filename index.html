@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.15.0 — turno Dia/Noite + minuto + tooltips período anterior)</title>
+  <title>DASHBOARD — CFO (v2.15.1 — turno Dia/Noite + minuto + tooltips período anterior)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -343,16 +343,14 @@
     const n=Number(s); return isFinite(n)?n:0;
   }
   function toInt(v){ const n=parseBR(v); if(!isFinite(n)) return 0; return Math.round(n); }
-  function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
-  // === split data & hora (suporta serial com fração → minuto)
+  // split data/hora com minuto (Excel serial com fração incluso)
   function splitDateTimeCell(v){
     if(v==null) return {dateISO:null, hour:null, minute:0};
     if(v instanceof Date){ return {dateISO: iso(v), hour: v.getHours(), minute: v.getMinutes()}; }
     let s=String(v).trim();
     if(!s) return {dateISO:null, hour:null, minute:0};
-    // Excel serial (com fração)
     if(/^-?\d+(\.\d+)?$/.test(s)){
       const num=Number(s); const base=new Date(Date.UTC(1899,11,30));
       const ms = base.getTime() + num*86400000;
@@ -362,20 +360,18 @@
       const hour = Math.floor(frac*24 + 1e-6);
       return {dateISO: iso(d), hour, minute: minutes};
     }
-    // dd/mm/yyyy hh:mm[:ss]
     const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T](\d{1,2})(?::(\d{2})(?::(\d{2}))?)?)?$/);
     if(m){
       const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
       const d=new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
       return {dateISO: iso(d), hour: d.getHours(), minute: d.getMinutes()};
     }
-    // ISO e afins
     const t = new Date(s.replace('T',' '));
     if(!isNaN(t)) return {dateISO: iso(t), hour: t.getHours(), minute: t.getMinutes()};
     return {dateISO:null, hour:null, minute:0};
   }
 
-  // Hash para row_key (estável)
+  // Hash para row_key
   function hashRow(obj){
     const keys = ['dia','hora','minuto','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
     const s = keys.map(k => k+':'+String(obj[k]??'')).join('|');
@@ -420,7 +416,7 @@
 
   /* ===================== ESTADO / PERÍODO ===================== */
   let firstDay='', lastDay='';
-  let prevPeriodText = ''; // mostrado nos tooltips
+  let prevPeriodText = '';
   const chips=[...document.querySelectorAll('.chip')];
   const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
   const ms={
@@ -479,51 +475,6 @@
     return { CN:N, CP:P };
   }
 
-  async function updateKPIs(de, ate, dePrev, atePrev){
-    const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
-    const nameNow=rpcName(pNow),     namePrev=rpcName(pPrev);
-    const [now,prev,cNow,cPrev] = await Promise.all([
-      supa.rpc(nameNow, prepareArgs(nameNow,pNow)),
-      supa.rpc(namePrev, prepareArgs(namePrev,pPrev)),
-      supa.rpc(nameNow, prepareArgs(nameNow,{...pNow, p_cancelado:'Sim'})),
-      supa.rpc(namePrev, prepareArgs(namePrev,{...pPrev, p_cancelado:'Sim'})),
-    ]);
-    if(now.error) throw now.error;
-    if(prev.error) throw prev.error;
-
-    const N=agg(now.data||[]), P=agg(prev.data||[]);
-    let CN=agg((cNow?.data)||[]), CP=agg((cPrev?.data)||[]);
-
-    if((!cNow || cNow.error || (!CN.ped && !CN.fat)) && (N.ped>0 || N.fat>0)){
-      try{ const fb = await kpiCancelFallback(de,ate,dePrev,atePrev);
-        CN = { ped: fb.CN.ped, fat: fb.CN.fat, des:0, fre:0 };
-        CP = { ped: fb.CP.ped, fat: fb.CP.fat, des:0, fre:0 };
-      }catch(_e){}
-    }
-
-    const len=daysLen(de,ate);
-    const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
-    const fatMedN = len? (N.fat/len) : 0,    fatMedP = len? (P.fat/len) : 0;
-    const desPercN = N.fat? (N.des/N.fat) : 0, desPercP = P.fat? (P.des/P.fat) : 0;
-    const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/P.ped) : 0;
-    const partCancN = N.ped? (CN.ped/N.ped) : 0, partCancP = P.ped? (CP.ped/P.ped) : 0;
-
-    $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
-    $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
-    $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
-    $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
-    $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
-    $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
-    $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,fremedP); // typo fixed below
-  }
-  </script>
-  <script>
-    // pequeno fix no typo acima
-    function fixTypo(){ try{ const de=$('k_fremed').textContent; }catch(_e){} }
-  </script>
-  <script>
-  // continuação verdadeira (o bloco anterior foi cortado em alguns editors)
   async function updateKPIs(de, ate, dePrev, atePrev){
     const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
     const nameNow=rpcName(pNow),     namePrev=rpcName(pPrev);
@@ -622,9 +573,7 @@
         responsive:true, maintainAspectRatio:false, animation:false,
         scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:formatCurrencyTick}}},
         plugins:{ legend:{position:'top'},
-          tooltip:{mode:'index',intersect:false,callbacks:{
-            footer:()=> extraTT ? extraTT : ''
-          }}
+          tooltip:{mode:'index',intersect:false,callbacks:{ footer:()=> extraTT ? extraTT : '' }}
         }
       }
     });
@@ -667,7 +616,7 @@
   async function updateChartsServer(only){
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
     const {dePrev, atePrev} = computePrevRangeISO(de,ate);
-    prevPeriodText = `Comparado com: ${fmtBR(dePrev)} — ${fmtBR(atePrev)}`;
+    const prevPeriodText = `Comparado com: ${fmtBR(dePrev)} — ${fmtBR(atePrev)}`;
 
     try{
       setDiag('');
@@ -685,8 +634,7 @@
         const nArr = Array(7).fill(0), pArr = Array(7).fill(0), nMed=Array(7).fill(0), pMed=Array(7).fill(0);
         (pD?.now||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; });
         (pD?.prev||[]).forEach(r=>{ pArr[r.dow]=+r.total||0; pMed[r.dow]=+r.media||0; });
-        const N = (chartMode.dow==='media'?nMed:nArr), P=(chartMode.dow==='media'?pMed:pArr);
-        ensureChart('ch_dow', labels, N, P, prevPeriodText);
+        ensureChart('ch_dow', labels, (chartMode.dow==='media'?nMed:nArr), (chartMode.dow==='media'?pMed:pArr), prevPeriodText);
       }
 
       const pM = packs.find(p=>p.k==='month');
@@ -700,26 +648,23 @@
 
       const pH = packs.find(p=>p.k==='hour');
       if(!only || only==='hour'){
-        // Somente horas com vendas (atual ou anterior) para despoluir
-        const hours=Array.from({length:24},(_,h)=>h);
         const totalsN = new Map((pH?.now||[]).map(r=>[r.h, chartMode.hour==='media'? (+r.media||0) : (+r.total||0)]));
         const totalsP = new Map((pH?.prev||[]).map(r=>[r.h, chartMode.hour==='media'? (+r.media||0) : (+r.total||0)]));
-        const keep = hours.filter(h => (totalsN.get(h)||0)+(totalsP.get(h)||0) > 0);
-        const labels = keep.map(h=>String(h).padStart(2,'0')+'h');
-        ensureChart('ch_hour', labels, keep.map(h=>totalsN.get(h)||0), keep.map(h=>totalsP.get(h)||0), prevPeriodText);
+        const hours=Array.from({length:24},(_,h)=>h).filter(h => (totalsN.get(h)||0)+(totalsP.get(h)||0) > 0);
+        const labels = hours.map(h=>String(h).padStart(2,'0')+'h');
+        ensureChart('ch_hour', labels, hours.map(h=>totalsN.get(h)||0), hours.map(h=>totalsP.get(h)||0), prevPeriodText);
       }
 
       const pT = packs.find(p=>p.k==='turno');
       if(!only || only==='turno'){
-        const order=['Dia','Noite']; // só estes
+        const order=['Dia','Noite'];
         const n = new Map((pT?.now||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
         const p = new Map((pT?.prev||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
         const labels = order;
         ensureChart('ch_turno', labels, labels.map(l=>n.get(l)||0), labels.map(l=>p.get(l)||0), prevPeriodText);
       }
 
-      const sum = a => (a||[]).reduce((acc,r)=> acc + (+r.total||0), 0);
-      setDiag(`OK (RPC charts ✓ | soma DOW atual/ant: ${money(sum(packs.find(p=>p.k==='dow')?.now))} / ${money(sum(packs.find(p=>p.k==='dow')?.prev))})`);
+      setDiag('OK');
       setStatus('OK','ok');
     }catch(e){
       console.error(e);
@@ -775,13 +720,12 @@
     return [];
   }
 
-  /* ===================== EXCEL → DB (sempre upsert) ===================== */
+  /* ===================== EXCEL → DB (upsert por row_key) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   const headerAlts = {
     dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
     hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
-    turno:['turno','periodo','shift'],
     fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
     des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
     fre:  ['fre','frete','taxa entrega','taxa_entrega','entrega'],
@@ -816,7 +760,6 @@
 
       const kDia  = pickColumn(headers, headerAlts.dia);
       const kHora = pickColumn(headers, headerAlts.hora);
-      const kTurn = pickColumn(headers, headerAlts.turno);
       const kFat  = pickColumn(headers, headerAlts.fat);
       const kDes  = pickColumn(headers, headerAlts.des);
       const kFre  = pickColumn(headers, headerAlts.fre);
@@ -828,46 +771,36 @@
       const kCanc = pickColumn(headers, headerAlts.canc);
       const kPid  = pickColumn(headers, headerAlts.pid);
 
-      let mapped = json.map(r=>{
-        const get = (k)=> (k? r[k] : null);
-
+      const mapped = json.map(r=>{
+        const get = k => (k? r[k] : null);
         const dt = splitDateTimeCell(get(kDia));
-        const dia   = dt.dateISO;
-        const hora  = (get(kHora)!=null ? (function(v){ if(typeof v==='number' && v>=0 && v<=23) return Math.floor(v); const m=String(v).match(/(\d{1,2})/); return m? Math.min(23,Math.max(0,+m[1])) : null; })(get(kHora)) : dt.hour);
-        const minuto= dt.minute||0;
-
-        const unidade = displayNormalize(get(kUni));
-        const loja    = displayNormalize(get(kLoja));
-        const canal   = displayNormalize(get(kCan));
-        const pago    = displayNormalize(get(kPag));
-        const pid     = displayNormalize(get(kPid));
-        const cancel  = normCancel(get(kCanc));
-        const ped     = toInt(get(kPed) ?? 1);
-        const fat     = parseBR(get(kFat));
-        const des     = parseBR(get(kDes));
-        const fre     = parseBR(get(kFre));
+        const dia    = dt.dateISO;
+        const hora   = (get(kHora)!=null ? (function(v){ if(typeof v==='number' && v>=0 && v<=23) return Math.floor(v); const m=String(v).match(/(\d{1,2})/); return m? Math.min(23,Math.max(0,+m[1])) : null; })(get(kHora)) : dt.hour);
+        const minuto = dt.minute||0;
 
         const row = {
           dia, hora, minuto,
-          unidade,
-          "Nome da loja": loja,
-          "Canal de venda": canal,
-          pagamento_base: pago,
-          cancelado: cancel,
-          pedidos: ped,
-          fat, des, fre,
-          pedido_id: pid || null,
-          created_at: new Date().toISOString()
+          unidade:        displayNormalize(get(kUni)),
+          "Nome da loja": displayNormalize(get(kLoja)),
+          "Canal de venda": displayNormalize(get(kCan)),
+          pagamento_base: displayNormalize(get(kPag)),
+          cancelado:      normCancel(get(kCanc)),
+          pedidos:        toInt(get(kPed) ?? 1),
+          fat:            parseBR(get(kFat)),
+          des:            parseBR(get(kDes)),
+          fre:            parseBR(get(kFre)),
+          pedido_id:      displayNormalize(get(kPid)) || null,
+          created_at:     new Date().toISOString()
         };
         row.row_key = hashRow(row);
         return row;
       });
 
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
-      const mapByKey = new Map();
-      for(const r of ok){ mapByKey.set(r.row_key, r); }
+      const mapByKey = new Map(ok.map(r=>[r.row_key, r])); // dedupe por row_key
       const rows = [...mapByKey.values()];
       const removed = ok.length - rows.length;
+
       info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, removidos duplicados por row_key: ${removed}). Enviando…`);
       if(rows.length===0){ setStatus('Nada para gravar (0 linhas após dedupe).','err'); return; }
 
@@ -875,8 +808,7 @@
       const chunk = 300;
       for(let i=0;i<rows.length;i+=chunk){
         const slice = rows.slice(i,i+chunk);
-        const { error } = await supa.from(DEST_INSERT_TABLE)
-          .upsert(slice, { onConflict: 'row_key' });
+        const { error } = await supa.from(DEST_INSERT_TABLE).upsert(slice, { onConflict: 'row_key' });
         if(error){ throw error; }
       }
 
@@ -899,14 +831,12 @@
     }
   });
 
-  /* ===================== OPÇÕES (com fallback e range grande) ===================== */
+  /* ===================== OPÇÕES (range grande) ===================== */
   async function reloadStaticOptions(){
-    // Tenta views dedicadas (range grande para garantir todas as opções)
-    const [unids,lojas,canais,turnos,pags] = await Promise.allSettled([
+    const [unids,lojas,canais,pags] = await Promise.allSettled([
       supa.from('vw_vendas_unidades').select('unidade').order('unidade').range(0, 9999),
       supa.from('vw_vendas_lojas').select('loja').order('loja').range(0, 99999),
       supa.from('vw_vendas_canais').select('canal').order('canal').range(0, 9999),
-      supa.from('vw_vendas_turnos').select('turno').order('turno'),
       supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base').range(0, 9999),
     ]);
     const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
@@ -914,8 +844,7 @@
     if(ok(unids))  ms.unids.setOptions((unids.value.data||[]).map(r=>r.unidade));
     if(ok(lojas))  ms.lojas.setOptions((lojas.value.data||[]).map(r=>r.loja));
     if(ok(canais)) ms.canais.setOptions((canais.value.data||[]).map(r=>r.canal));
-    // Turno fica fixo (Dia/Noite)
-    ms.turnos.setOptions(['Dia','Noite']);
+    ms.turnos.setOptions(['Dia','Noite']); // fixo
     if(ok(pags))   ms.pags.setOptions((pags.value.data||[]).map(r=>r.pagamento_base));
   }
 
@@ -925,7 +854,6 @@
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
       const {dePrev, atePrev} = computePrevRangeISO(de,ate);
 
-      prevPeriodText = `Comparado com: ${fmtBR(dePrev)} — ${fmtBR(atePrev)}`;
       setStatus('Consultando…');
 
       let kpiOk=true;
@@ -950,10 +878,10 @@
       await reloadStaticOptions();
 
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
-      ms.turnos.setOptions(['Dia','Noite']); // garante
+      ms.turnos.setOptions(['Dia','Noite']);
 
       $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
-      applyQuick('30');  // período rápido conta a partir do último dia carregado
+      applyQuick('30');  // período rápido a partir de max_dia
     }catch(e){
       console.error(e);
       setStatus('Erro ao iniciar: '+(e.message||e),'err');
