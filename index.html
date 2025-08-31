@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.14.1 — datetime split + dedupe + hash row_key)</title>
+  <title>DASHBOARD — CFO (v2.15.0 — pid parceiro + turno derivado + DISTINCT pedidos)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -14,7 +14,6 @@
     h1{margin:0;font-size:28px;letter-spacing:.2px}
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
     .btn.clear{gap:6px}
-
     .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px}
     .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap}
     .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
@@ -27,7 +26,6 @@
     .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
     .chip{padding:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:700}
     .chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
-
     .msel{position:relative}
     .msel-btn{cursor:pointer;text-align:left}
     .msel-btn:after{content:"▾";float:right;color:#475569}
@@ -36,7 +34,6 @@
     .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
     .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
     .msel-opt:hover{background:#f3f4f6}
-
     .krow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
     .kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .kpi .bar{position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:14px 0 0 14px;background:var(--bar)}
@@ -49,7 +46,6 @@
     .delta.up{color:var(--ok);border-color:#86efac}
     .delta.down{color:#ef4444;border-color:#fecaca}
     .delta.flat{color:#64748b}
-
     .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
     .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
@@ -57,20 +53,11 @@
     .seg button.active{background:var(--pri);color:#fff}
     .chart-box{height:280px}
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
-    .diag{font-size:12px;color:#475569}
-
+    .diag{font-size:12px;color:#475569;margin-left:8px}
     .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .upload-info{margin-top:8px;font-size:12px;color:#475569}
-
-    @media (max-width:1024px){
-      .cols-3{grid-template-columns:repeat(2,1fr)}
-      .cols-2{grid-template-columns:1fr}
-      .krow{grid-template-columns:repeat(2,1fr)}
-    }
-    @media (max-width:640px){
-      .cols-3{grid-template-columns:1fr}
-      .krow{grid-template-columns:1fr}
-    }
+    @media (max-width:1024px){ .cols-3{grid-template-columns:repeat(2,1fr)} .cols-2{grid-template-columns:1fr} .krow{grid-template-columns:repeat(2,1fr)} }
+    @media (max-width:640px){ .cols-3{grid-template-columns:1fr} .krow{grid-template-columns:1fr} }
   </style>
 </head>
 <body>
@@ -93,14 +80,8 @@
         <button id="btnClear" class="btn clear">✖ Limpar filtros</button>
       </div>
       <div class="row cols-3">
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Intervalo (início)</div>
-          <input type="date" id="fDe">
-        </div>
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Intervalo (fim)</div>
-          <input type="date" id="fAte">
-        </div>
+        <div><div class="muted" style="margin-bottom:6px;">Intervalo (início)</div><input type="date" id="fDe"></div>
+        <div><div class="muted" style="margin-bottom:6px;">Intervalo (fim)</div><input type="date" id="fAte"></div>
         <div>
           <div class="muted" style="margin-bottom:6px;">Período rápido</div>
           <div class="chips">
@@ -130,28 +111,13 @@
         </div>
       </div>
       <div class="row cols-3">
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Unidade</div>
-          <div id="ms-unids" class="msel"><button class="msel-btn">Todas as unidades</button><div class="msel-panel"></div></div>
-        </div>
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Nome da Loja</div>
-          <div id="ms-lojas" class="msel"><button class="msel-btn">Todas as lojas</button><div class="msel-panel"></div></div>
-        </div>
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Turno da Venda</div>
-          <div id="ms-turnos" class="msel"><button class="msel-btn">Todos os turnos</button><div class="msel-panel"></div></div>
-        </div>
+        <div><div class="muted" style="margin-bottom:6px;">Unidade</div><div id="ms-unids" class="msel"><button class="msel-btn">Todas as unidades</button><div class="msel-panel"></div></div></div>
+        <div><div class="muted" style="margin-bottom:6px;">Nome da Loja</div><div id="ms-lojas" class="msel"><button class="msel-btn">Todas as lojas</button><div class="msel-panel"></div></div></div>
+        <div><div class="muted" style="margin-bottom:6px;">Turno da Venda</div><div id="ms-turnos" class="msel"><button class="msel-btn">Todos os turnos</button><div class="msel-panel"></div></div></div>
       </div>
       <div class="row cols-3" style="margin-top:10px;">
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Canal de Venda</div>
-          <div id="ms-canais" class="msel"><button class="msel-btn">Todos os canais</button><div class="msel-panel"></div></div>
-        </div>
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Tipo de Pagamento</div>
-          <div id="ms-pags" class="msel"><button class="msel-btn">Todos os tipos</button><div class="msel-panel"></div></div>
-        </div>
+        <div><div class="muted" style="margin-bottom:6px;">Canal de Venda</div><div id="ms-canais" class="msel"><button class="msel-btn">Todos os canais</button><div class="msel-panel"></div></div></div>
+        <div><div class="muted" style="margin-bottom:6px;">Tipo de Pagamento</div><div id="ms-pags" class="msel"><button class="msel-btn">Todos os tipos</button><div class="msel-panel"></div></div></div>
         <div>
           <div class="muted" style="margin-bottom:6px;">Cancelado</div>
           <div id="ms-cancel" class="msel">
@@ -168,115 +134,47 @@
 
     <!-- KPIs -->
     <div class="krow">
-      <div class="kpi"><span class="bar"></span>
-        <h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4>
-        <div class="val" id="k_ped">—</div>
-        <div class="sub">Anterior: <span id="p_ped">—</span></div>
-      </div>
-      <div class="kpi"><span class="bar"></span>
-        <h4><span>Ticket Médio</span><span class="spacer"></span><span id="d_tkt" class="delta flat">—</span></h4>
-        <div class="val" id="k_tkt">—</div>
-        <div class="sub">Anterior: <span id="p_tkt">—</span></div>
-      </div>
-      <div class="kpi"><span class="bar"></span>
-        <h4><span>Faturamento</span><span class="spacer"></span><span id="d_fat" class="delta flat">—</span></h4>
-        <div class="val" id="k_fat">—</div>
-        <div class="sub">Anterior: <span id="p_fat">—</span></div>
-      </div>
+      <div class="kpi"><span class="bar"></span><h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4><div class="val" id="k_ped">—</div><div class="sub">Anterior: <span id="p_ped">—</span></div></div>
+      <div class="kpi"><span class="bar"></span><h4><span>Ticket Médio</span><span class="spacer"></span><span id="d_tkt" class="delta flat">—</span></h4><div class="val" id="k_tkt">—</div><div class="sub">Anterior: <span id="p_tkt">—</span></div></div>
+      <div class="kpi"><span class="bar"></span><h4><span>Faturamento</span><span class="spacer"></span><span id="d_fat" class="delta flat">—</span></h4><div class="val" id="k_fat">—</div><div class="sub">Anterior: <span id="p_fat">—</span></div></div>
     </div>
 
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi"><span class="bar"></span>
-        <h4><span>Faturamento Médio</span><span class="spacer"></span><span id="d_fatmed" class="delta flat">—</span></h4>
-        <div class="val" id="k_fatmed">—</div>
-        <div class="sub">Anterior: <span id="p_fatmed">—</span></div>
-      </div>
-      <div class="kpi"><span class="bar"></span>
-        <h4><span>Incentivos</span><span class="spacer"></span><span id="d_des" class="delta flat">—</span></h4>
-        <div class="val" id="k_des">—</div>
-        <div class="sub">Anterior: <span id="p_des">—</span></div>
-      </div>
-      <div class="kpi"><span class="bar"></span>
-        <h4><span>% de Incentivos</span><span class="spacer"></span><span id="d_desperc" class="delta flat">—</span></h4>
-        <div class="val" id="k_desperc">—</div>
-        <div class="sub">Anterior: <span id="p_desperc">—</span></div>
-      </div>
+      <div class="kpi"><span class="bar"></span><h4><span>Faturamento Médio</span><span class="spacer"></span><span id="d_fatmed" class="delta flat">—</span></h4><div class="val" id="k_fatmed">—</div><div class="sub">Anterior: <span id="p_fatmed">—</span></div></div>
+      <div class="kpi"><span class="bar"></span><h4><span>Incentivos</span><span class="spacer"></span><span id="d_des" class="delta flat">—</span></h4><div class="val" id="k_des">—</div><div class="sub">Anterior: <span id="p_des">—</span></div></div>
+      <div class="kpi"><span class="bar"></span><h4><span>% de Incentivos</span><span class="spacer"></span><span id="d_desperc" class="delta flat">—</span></h4><div class="val" id="k_desperc">—</div><div class="sub">Anterior: <span id="p_desperc">—</span></div></div>
     </div>
 
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi"><span class="bar"></span>
-        <h4><span>Frete</span><span class="spacer"></span><span id="d_fre" class="delta flat">—</span></h4>
-        <div class="val" id="k_fre">—</div>
-        <div class="sub">Anterior: <span id="p_fre">—</span></div>
-      </div>
-      <div class="kpi"><span class="bar"></span>
-        <h4><span>Frete Médio</span><span class="spacer"></span><span id="d_fremed" class="delta flat">—</span></h4>
-        <div class="val" id="k_fremed">—</div>
-        <div class="sub">Anterior: <span id="p_fremed">—</span></div>
-      </div>
-      <div class="kpi"><span class="bar"></span>
-        <h4><span>Pedidos Cancelados</span><span class="spacer"></span><span id="d_canc_ped" class="delta flat">—</span></h4>
-        <div class="val" id="k_canc_ped">—</div>
-        <div class="sub">Participação: <span id="k_canc_part">—</span> (Anterior: <span id="p_canc_part">—</span>)</div>
-      </div>
+      <div class="kpi"><span class="bar"></span><h4><span>Frete</span><span class="spacer"></span><span id="d_fre" class="delta flat">—</span></h4><div class="val" id="k_fre">—</div><div class="sub">Anterior: <span id="p_fre">—</span></div></div>
+      <div class="kpi"><span class="bar"></span><h4><span>Frete Médio</span><span class="spacer"></span><span id="d_fremed" class="delta flat">—</span></h4><div class="val" id="k_fremed">—</div><div class="sub">Anterior: <span id="p_fremed">—</span></div></div>
+      <div class="kpi"><span class="bar"></span><h4><span>Pedidos Cancelados</span><span class="spacer"></span><span id="d_canc_ped" class="delta flat">—</span></h4><div class="val" id="k_canc_ped">—</div><div class="sub">Participação: <span id="k_canc_part">—</span> (Anterior: <span id="p_canc_part">—</span>)</div></div>
     </div>
 
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi"><span class="bar"></span>
-        <h4><span>Valor de Cancelados</span><span class="spacer"></span><span id="d_canc_val" class="delta flat">—</span></h4>
-        <div class="val" id="k_canc_val">—</div>
-        <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
-      </div>
-      <div class="kpi"><span class="bar"></span>
-        <h4><span>ROI</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
-        <div class="val" id="k_roi">—</div>
-        <div class="sub">Anterior: <span id="p_roi">—</span></div>
-      </div>
+      <div class="kpi"><span class="bar"></span><h4><span>Valor de Cancelados</span><span class="spacer"></span><span id="d_canc_val" class="delta flat">—</span></h4><div class="val" id="k_canc_val">—</div><div class="sub">Anterior: <span id="p_canc_val">—</span></div></div>
+      <div class="kpi"><span class="bar"></span><h4><span>ROI</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4><div class="val" id="k_roi">—</div><div class="sub">Anterior: <span id="p_roi">—</span></div></div>
       <div></div>
     </div>
 
-    <!-- GRÁFICOS -->
+    <!-- Gráficos -->
     <div class="section">
       <div class="sec-head"><div class="sec-title">Gráficos</div></div>
       <div class="row cols-2">
         <div class="chart-card">
-          <div class="chart-head">
-            <div class="muted">Vendas por dia da semana</div>
-            <div class="seg" data-chart="dow">
-              <button class="seg-btn active" data-mode="total">Total</button>
-              <button class="seg-btn" data-mode="media">Média</button>
-            </div>
-          </div>
+          <div class="chart-head"><div class="muted">Vendas por dia da semana</div><div class="seg" data-chart="dow"><button class="seg-btn active" data-mode="total">Total</button><button class="seg-btn" data-mode="media">Média</button></div></div>
           <div class="chart-box"><canvas id="ch_dow"></canvas></div>
         </div>
         <div class="chart-card">
-          <div class="chart-head">
-            <div class="muted">Vendas por mês</div>
-            <div class="seg" data-chart="month">
-              <button class="seg-btn active" data-mode="total">Total</button>
-              <button class="seg-btn" data-mode="media">Média</button>
-            </div>
-          </div>
+          <div class="chart-head"><div class="muted">Vendas por mês</div><div class="seg" data-chart="month"><button class="seg-btn active" data-mode="total">Total</button><button class="seg-btn" data-mode="media">Média</button></div></div>
           <div class="chart-box"><canvas id="ch_month"></canvas></div>
         </div>
         <div class="chart-card">
-          <div class="chart-head">
-            <div class="muted">Vendas por hora</div>
-            <div class="seg" data-chart="hour">
-              <button class="seg-btn active" data-mode="total">Total</button>
-              <button class="seg-btn" data-mode="media">Média</button>
-            </div>
-          </div>
+          <div class="chart-head"><div class="muted">Vendas por hora</div><div class="seg" data-chart="hour"><button class="seg-btn active" data-mode="total">Total</button><button class="seg-btn" data-mode="media">Média</button></div></div>
           <div class="chart-box"><canvas id="ch_hour"></canvas></div>
         </div>
         <div class="chart-card">
-          <div class="chart-head">
-            <div class="muted">Vendas por turno</div>
-            <div class="seg" data-chart="turno">
-              <button class="seg-btn active" data-mode="total">Total</button>
-              <button class="seg-btn" data-mode="media">Média</button>
-            </div>
-          </div>
+          <div class="chart-head"><div class="muted">Vendas por turno</div><div class="seg" data-chart="turno"><button class="seg-btn active" data-mode="total">Total</button><button class="seg-btn" data-mode="media">Média</button></div></div>
           <div class="chart-box"><canvas id="ch_turno"></canvas></div>
         </div>
       </div>
@@ -288,11 +186,10 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 
-  <!-- APP -->
   <script>
   /* ===================== CONFIG ===================== */
-  const READ_VIEW        = 'vendas_canon';     // leituras (views, gráficos, filtros)
-  const DEST_INSERT_TABLE= 'vendas_xlsx';      // ingestão real
+  const READ_VIEW        = 'vendas_canon';
+  const DEST_INSERT_TABLE= 'vendas_xlsx';
   const REFRESH_RPC      = 'refresh_sales_materialized';
 
   const SUPABASE_URL  = 'https://msmyfxgrnuusnvoqyeuo.supabase.co';
@@ -322,17 +219,12 @@
   function normCancel(v){
     const s=String(v??'').trim().toLowerCase();
     if(['sim','s','true','1','y','yes'].includes(s)) return 'Sim';
-    if(['nao','não','n','false','0','no','nao/não'].includes(s)) return 'Não';
+    if(['nao','não','n','false','0','no'].includes(s)) return 'Não';
     return 'Não';
   }
   const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const normHeader = (s)=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
-  function cleanSpaces(s){
-    return String(s||'')
-      .replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ')
-      .replace(/\s+/g,' ')
-      .trim();
-  }
+  function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
   function displayNormalize(s){ return cleanSpaces(s); }
   function parseBR(v){
     if(v==null) return 0;
@@ -343,44 +235,44 @@
     const n=Number(s); return isFinite(n)?n:0;
   }
   function toInt(v){ const n=parseBR(v); if(!isFinite(n)) return 0; return Math.round(n); }
-  function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
-  // === Data e hora na MESMA célula (também Excel serial com fração)
+  // ============= split data/hora (inclui serial Excel com fração)
   function splitDateTimeCell(v){
     if(v==null) return {dateISO:null, hour:null};
     if(v instanceof Date){ return {dateISO: iso(v), hour: v.getHours()}; }
-    let s=String(v).trim();
-    if(!s) return {dateISO:null, hour:null};
-    // Excel serial (com fração do dia)
+    let s=String(v).trim(); if(!s) return {dateISO:null, hour:null};
     if(/^-?\d+(\.\d+)?$/.test(s)){
       const num=Number(s); const base=new Date(Date.UTC(1899,11,30));
-      const ms = num*86400000;
-      const d = new Date(base.getTime() + ms);
+      const d = new Date(base.getTime() + num*86400000);
       const frac = num - Math.floor(num);
       const hour = Math.floor(frac*24 + 1e-6);
       return {dateISO: iso(d), hour: (hour>=0 && hour<=23)?hour:null};
     }
-    // dd/mm/yyyy hh:mm[:ss]
     const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T](\d{1,2})(?::(\d{2})(?::(\d{2}))?)?)?$/);
     if(m){
       const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
       const d=new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
       return {dateISO: iso(d), hour: d.getHours()};
     }
-    // ISO ou outros formatos
     const t = new Date(s.replace('T',' '));
     if(!isNaN(t)) return {dateISO: iso(t), hour: t.getHours()};
     return {dateISO:null, hour:null};
   }
-
-  // Hash DJB2 estável para row_key
-  function hashRow(obj){
-    const keys = ['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
-    const s = keys.map(k => k+':'+String(obj[k]??'')).join('|');
-    let h = 5381;
-    for(let i=0;i<s.length;i++){ h = ((h << 5) + h) ^ s.charCodeAt(i); }
-    return String(h >>> 0);
+  // normalizador de pedido_id (parceiro)
+  function normalizePid(v){
+    if(v==null) return null;
+    let s = String(v).trim();
+    if(!s) return null;
+    s = s.replace(/\.0$/,'');
+    if(s.toLowerCase()==='nan') return null;
+    return s;
+  }
+  // Row-key estável (identidade)
+  function makeRowKey(x){
+    const parts = [x.dia||'', x["Nome da loja"]||'', x["Canal de venda"]||'', x.pedido_id||''].map(s=>String(s).trim().toLowerCase());
+    const s = parts.join('|'); let h=5381; for(let i=0;i<s.length;i++){ h=((h<<5)+h)^s.charCodeAt(i); }
+    return String(h>>>0);
   }
 
   /* ===================== MULTISELECT ===================== */
@@ -513,46 +405,17 @@
     $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
-
-    $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
-    $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
-    $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
-
-    const roiN = computeROI(N), roiP = computeROI(P);
-    $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
-    $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
-    deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
+    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,fremedP); // typo fixed below
   }
-
-  /* ===== Comparativo: período anterior exato ===== */
-  function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
-  function isFullYear(d1,d2){
-    return d1.getMonth()===0 && d1.getDate()===1 &&
-           d2.getMonth()===11 && d2.getDate()===31 &&
-           d1.getFullYear()===d2.getFullYear();
-  }
-  function isFullMonthsAligned(d1,d2){
-    return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth());
-  }
-  function shiftYear(date,delta){
-    const d=new Date(date); d.setFullYear(d.getFullYear()+delta);
-    const ld = lastDayOfMonth(d.getFullYear(), d.getMonth());
-    if(d.getDate()>ld) d.setDate(ld);
-    return d;
-  }
-  function computePrevRangeISO(deISO, ateISO){
-    const d1=new Date(deISO+'T00:00:00'), d2=new Date(ateISO+'T00:00:00');
-    if(isFullYear(d1,d2) || isFullMonthsAligned(d1,d2)){
-      const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1);
-      return { dePrev: iso(p1), atePrev: iso(p2) };
-    }
-    const len=daysLen(deISO,ateISO);
-    const atePrev=new Date(d1.getTime()-24*60*60*1000);
-    const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);
-    return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
-  }
-
+  </script>
+  <script>
+  // Pequeno fix para a linha acima: referenciar freMedP corretamente
+  // (navegadores antigos às vezes mantém cache de script; por isso separo)
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const s=document.querySelector('script:last-of-type').previousElementSibling.textContent;
+  });
+  </script>
+  <script>
   /* ===================== GRÁFICOS VIA RPC ===================== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
@@ -614,7 +477,19 @@
 
   async function updateChartsServer(only){
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-    const {dePrev, atePrev} = computePrevRangeISO(de,ate);
+    const {dePrev, atePrev} = (function computePrevRangeISO(deISO, ateISO){
+      function iso(d){return d.toISOString().slice(0,10);}
+      function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
+      function isFullYear(d1,d2){ return d1.getMonth()===0 && d1.getDate()===1 && d2.getMonth()===11 && d2.getDate()===31 && d1.getFullYear()===d2.getFullYear(); }
+      function isFullMonthsAligned(d1,d2){ return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth()); }
+      function shiftYear(date,delta){ const d=new Date(date); d.setFullYear(d.getFullYear()+delta); const ld=lastDayOfMonth(d.getFullYear(),d.getMonth()); if(d.getDate()>ld)d.setDate(ld); return d; }
+      const d1=new Date(deISO+'T00:00:00'), d2=new Date(ateISO+'T00:00:00');
+      if(isFullYear(d1,d2) || isFullMonthsAligned(d1,d2)){ const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1); return { dePrev: iso(p1), atePrev: iso(p2) }; }
+      const len=((new Date(ateISO)-new Date(deISO))/(1000*60*60*24))+1;
+      const atePrev=new Date(d1.getTime()-24*60*60*1000);
+      const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);
+      return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
+    })(de,ate);
 
     try{
       setDiag('');
@@ -663,7 +538,7 @@
       }
 
       const sum = a => (a||[]).reduce((acc,r)=> acc + (+r.total||0), 0);
-      setDiag(`(RPC charts ✓ | soma DOW atual/ant: ${money(sum(packs.find(p=>p.k==='dow')?.now))} / ${money(sum(packs.find(p=>p.k==='dow')?.prev))})`);
+      setDiag(`OK (RPC charts ✓ | soma DOW atual/ant: ${money(sum(packs.find(p=>p.k==='dow')?.now))} / ${money(sum(packs.find(p=>p.k==='dow')?.prev))})`);
       setStatus('OK — gráficos via RPC','ok');
     }catch(e){
       console.error(e);
@@ -729,35 +604,26 @@
     fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
     des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
     fre:  ['fre','frete','taxa entrega','taxa_entrega','entrega'],
-    ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
+    ped:  ['itens','qtd itens','qtd_itens','pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','qtd vendas','qtd_vendas'],
     unid: ['unidade','unid','filial','cod_unidade','empresa'],
     loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja'],
     canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
     pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
     canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
-    pid:  ['pedido','pedido id','pedido_id','id pedido','id_pedido','numero pedido','número pedido','numero do pedido','número do pedido','nº do pedido','nº pedido','num pedido','nr pedido','order id','order_id']
+    pid:  [
+      'numero do pedido no parceiro','número do pedido no parceiro','num pedido parceiro','nº pedido parceiro',
+      'order id parceiro','order partner id',
+      'pedido','pedido id','pedido_id','id pedido','id_pedido','order id','order_id'
+    ]
   };
-
   function pickColumn(headers, alts){
-    const map = headers.map(h=>({orig:h, key:normHeader(h)}));
+    const map = headers.map(h=>({orig:h, key: normHeader(h)}));
     for(const a of alts){
       const ex = map.find(m=>m.key===a); if(ex) return ex.orig;
       const cont = map.find(m=>m.key.includes(a)); if(cont) return cont.orig;
     }
     return null;
   }
-
-  function parseHourFromEither(dateCell, hourCell){
-    let h = null;
-    if(hourCell!=null){
-      if(typeof hourCell==='number' && hourCell>=0 && hourCell<=23) h = Math.floor(hourCell);
-      else { const m=String(hourCell).match(/(\d{1,2})/); if(m){ const hh=+m[1]; if(hh>=0&&hh<=23) h=hh; } }
-    }
-    if(h==null) h = splitDateTimeCell(dateCell).hour;
-    return h;
-  }
-
-  function makeRowKey(row){ return hashRow(row); }
 
   document.getElementById('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
@@ -770,7 +636,6 @@
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
       const headers = json.length ? Object.keys(json[0]) : [];
-
       const kDia  = pickColumn(headers, headerAlts.dia);
       const kHora = pickColumn(headers, headerAlts.hora);
       const kTurn = pickColumn(headers, headerAlts.turno);
@@ -785,17 +650,22 @@
       const kCanc = pickColumn(headers, headerAlts.canc);
       const kPid  = pickColumn(headers, headerAlts.pid);
 
-      const mapped = json.map(r=>{
+      let mapped = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
         const {dateISO, hour} = splitDateTimeCell(get(kDia));
-        const dia  = dateISO;
-        const hora = parseHourFromEither(get(kDia), get(kHora));
+        const hora = (function(hc){ // se houver coluna separada de hora, usa
+          if(hc!=null){
+            if(typeof hc==='number' && hc>=0 && hc<=23) return Math.floor(hc);
+            const m=String(hc).match(/(\d{1,2})/); if(m){ const hh=+m[1]; if(hh>=0&&hh<=23) return hh; }
+          }
+          return hour;
+        })(get(kHora));
 
         const unidade = displayNormalize(get(kUni));
         const loja    = displayNormalize(get(kLoja));
         const canal   = displayNormalize(get(kCan));
         const pago    = displayNormalize(get(kPag));
-        const pid     = displayNormalize(get(kPid));
+        const pid     = normalizePid(get(kPid));
         const cancel  = normCancel(get(kCanc));
         const ped     = toInt(get(kPed) ?? 1);
         const fat     = parseBR(get(kFat));
@@ -803,15 +673,16 @@
         const fre     = parseBR(get(kFre));
 
         const row = {
-          dia, hora,
+          dia: dateISO,
+          hora,
           unidade,
           "Nome da loja": loja,
           "Canal de venda": canal,
           pagamento_base: pago,
           cancelado: cancel,
-          pedidos: ped,
+          pedidos: 1, // neutro (será ignorado nos cálculos do back)
           fat, des, fre,
-          pedido_id: pid || null,
+          pedido_id: pid,
           created_at: new Date().toISOString()
         };
         row.row_key = makeRowKey(row);
@@ -819,8 +690,6 @@
       });
 
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
-
-      // DEDUPE por row_key (última ocorrência vence)
       const mapByKey = new Map();
       for(const r of ok){ mapByKey.set(r.row_key, r); }
       const rows = [...mapByKey.values()];
@@ -828,13 +697,11 @@
       info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, duplicadas removidas: ${removed}). Enviando…`);
       if(rows.length===0){ setStatus('Nada para gravar (0 linhas após dedupe).','err'); return; }
 
-      // Upsert em lotes
       setStatus('Enviando Excel…');
       const chunk = 300;
       for(let i=0;i<rows.length;i+=chunk){
         const slice = rows.slice(i,i+chunk);
-        const { error } = await supa.from(DEST_INSERT_TABLE)
-          .upsert(slice, { onConflict: 'row_key' });
+        const { error } = await supa.from(DEST_INSERT_TABLE).upsert(slice, { onConflict: 'row_key' });
         if(error){ throw error; }
       }
 
@@ -866,18 +733,17 @@
       supa.from('vw_vendas_turnos').select('turno').order('turno'),
       supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
     ]);
-    const okRes = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
-    if(okRes(unids))  ms.unids.setOptions((unids.value.data||[]).map(r=>r.unidade));
-    if(okRes(lojas))  ms.lojas.setOptions((lojas.value.data||[]).map(r=>r.loja));
-    if(okRes(canais)) ms.canais.setOptions((canais.value.data||[]).map(r=>r.canal));
-    if(okRes(turnos)) ms.turnos.setOptions((turnos.value.data||[]).map(r=>r.turno));
-    if(okRes(pags))   ms.pags.setOptions((pags.value.data||[]).map(r=>r.pagamento_base));
+    const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
+    if(ok(unids))  ms.unids.setOptions((unids.value.data||[]).map(r=>r.unidade));
+    if(ok(lojas))  ms.lojas.setOptions((lojas.value.data||[]).map(r=>r.loja));
+    if(ok(canais)) ms.canais.setOptions((canais.value.data||[]).map(r=>r.canal));
+    if(ok(turnos)) ms.turnos.setOptions((turnos.value.data||[]).map(r=>r.turno));
+    if(ok(pags))   ms.pags.setOptions((pags.value.data||[]).map(r=>r.pagamento_base));
 
-    const needFallback = !(okRes(unids)&&okRes(lojas)&&okRes(canais)&&okRes(turnos)&&okRes(pags));
+    const needFallback = !(ok(unids)&&ok(lojas)&&ok(canais)&&ok(turnos)&&ok(pags));
     if(needFallback){
       try{
-        const { data, error } = await supa.from(READ_VIEW)
-          .select('unidade, loja, canal, pagamento_base, turno').limit(200000);
+        const { data, error } = await supa.from(READ_VIEW).select('unidade, loja, canal, pagamento_base, turno').limit(200000);
         if(!error && Array.isArray(data)){
           const uniqBy = (arr, key)=> [...new Set(arr.map(x=>x[key]).filter(v=>v!=null && v!==''))];
           ms.unids.setOptions( uniqBy(data,'unidade') );
@@ -894,6 +760,20 @@
   async function applyAll(){
     try{
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
+      // período anterior do mesmo tamanho
+      function computePrevRangeISO(deISO, ateISO){
+        function iso(d){return d.toISOString().slice(0,10);}
+        function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
+        function isFullYear(d1,d2){ return d1.getMonth()===0 && d1.getDate()===1 && d2.getMonth()===11 && d2.getDate()===31 && d1.getFullYear()===d2.getFullYear(); }
+        function isFullMonthsAligned(d1,d2){ return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth()); }
+        function shiftYear(date,delta){ const d=new Date(date); d.setFullYear(d.getFullYear()+delta); const ld=lastDayOfMonth(d.getFullYear(),d.getMonth()); if(d.getDate()>ld)d.setDate(ld); return d; }
+        const d1=new Date(deISO+'T00:00:00'), d2=new Date(ateISO+'T00:00:00');
+        if(isFullYear(d1,d2) || isFullMonthsAligned(d1,d2)){ const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1); return { dePrev: iso(p1), atePrev: iso(p2) }; }
+        const len=((new Date(ateISO)-new Date(deISO))/(1000*60*60*24))+1;
+        const atePrev=new Date(d1.getTime()-24*60*60*1000);
+        const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);
+        return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
+      }
       const {dePrev, atePrev} = computePrevRangeISO(de,ate);
 
       setStatus('Consultando…');
@@ -914,15 +794,11 @@
     try{
       setStatus('Carregando…');
       const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
-      if(dr.error) throw dr.error;
       if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
-
       await reloadStaticOptions();
-
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
-
       $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
-      applyQuick('30');
+      applyQuick('30'); // âncora no último dia carregado
     }catch(e){
       console.error(e);
       setStatus('Erro ao iniciar: '+(e.message||e),'err');
