@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v3.2.0 — KPIs sem sum(), filtros e gráficos)</title>
+  <title>DASHBOARD — CFO (v4.0.0 — KPIs & gráficos no cliente, sem RPC)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -23,7 +23,7 @@
     .row{display:grid;gap:12px}
     .cols-3{grid-template-columns:repeat(3,1fr)}
     .cols-2{grid-template-columns:repeat(2,1fr)}
-    input[type="date"], .msel-btn, .input{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+    input[type="date"], .msel-btn, .input, select{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
     .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
     .chip{padding:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:700}
     .chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
@@ -119,10 +119,7 @@
     <!-- Filtros -->
     <div class="section">
       <div class="sec-head">
-        <div class="sec-title">
-          <svg class="ico" viewBox="0 0 24 24" fill="none"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
-          Filtros
-        </div>
+        <div class="sec-title">Filtros</div>
         <div>
           <span id="status" class="muted">—</span>
           <span id="diag" class="diag"></span>
@@ -154,14 +151,11 @@
         </div>
         <div>
           <div class="muted" style="margin-bottom:6px;">Cancelado</div>
-          <div id="ms-cancel" class="msel">
-            <button class="msel-btn">Não</button>
-            <div class="msel-panel">
-              <div class="msel-opt"><input type="checkbox" value=""><label>Todos</label></div>
-              <div class="msel-opt"><input type="checkbox" value="Não" checked><label>Não</label></div>
-              <div class="msel-opt"><input type="checkbox" value="Sim"><label>Sim</label></div>
-            </div>
-          </div>
+          <select id="selCancel">
+            <option value="Não" selected>Não</option>
+            <option value="">Todos</option>
+            <option value="Sim">Sim</option>
+          </select>
         </div>
       </div>
     </div>
@@ -289,16 +283,14 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 
   <script>
-  /* ===================== CONFIG ===================== */
-  const READ_VIEW         = 'vendas_canon_front';   // leitura (views/gráficos/filtros)
-  const DEST_INSERT_TABLE = 'vendas_xlsx';          // ingestão (upsert) — opcional
-  const REFRESH_RPC       = 'refresh_sales_materialized'; // opcional (se existir)
-
+  /******************** CONFIG ********************/
+  const READ_VIEW         = 'vendas_canon_front';   // origem única
+  const DEST_INSERT_TABLE = 'vendas_xlsx';          // (opcional) ingestão
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  /* ===================== HELPERS ===================== */
+  /******************** HELPERS ********************/
   const $ = id => document.getElementById(id);
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
   const setDiag=(msg)=>{ $('diag').textContent = msg || ''; };
@@ -318,10 +310,10 @@
     el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
     el.className='delta '+(p>=0?'up':'down');
   }
+  function uniq(a){ return [...new Set((a||[]).filter(v=>v!=null && v!==''))]; }
   function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
-  function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
-  /* ===================== MULTISELECT ===================== */
+  /******************** MULTISELECT (unids/lojas/canais/turnos/pags) ********************/
   function MultiSelect(rootId, placeholder){
     const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
     let options=[], selected=new Set(), filtered=[];
@@ -357,18 +349,20 @@
     };
   }
 
-  /* ===================== ESTADO / PERÍODO ===================== */
+  /******************** ESTADO ********************/
   let firstDay='', lastDay='';
   const chips=[...document.querySelectorAll('.chip')];
   const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
+  const selCancel=$('selCancel');
+
   const ms={
     unids:  MultiSelect('ms-unids','Todas as unidades'),
     lojas:  MultiSelect('ms-lojas','Todas as lojas'),
     canais: MultiSelect('ms-canais','Todos os canais'),
     turnos: MultiSelect('ms-turnos','Todos os turnos'),
-    pags:   MultiSelect('ms-pags','Todos os tipos'),
-    cancel: MultiSelect('ms-cancel','Todos')
+    pags:   MultiSelect('ms-pags','Todos os tipos')
   };
+
   function setActiveChip(val){ chips.forEach(c=>c.classList.toggle('active', c.dataset.q===String(val))); }
   function applyQuick(val){
     setActiveChip(val);
@@ -380,124 +374,95 @@
   }
   $('btnClear').addEventListener('click', ()=>{
     ms.unids.set([]); ms.lojas.set([]); ms.canais.set([]); ms.turnos.set([]); ms.pags.set([]);
-    ms.cancel.set(['Não']);
+    selCancel.value='Não';
     applyQuick('30');
   });
   chips.forEach(b=> b.addEventListener('click', ()=>applyQuick(b.dataset.q)));
-  ;[fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{
+  ;[fDe,fAte,selCancel].forEach(inp=>inp.addEventListener('change', ()=>{
     chips.forEach(c=>c.classList.remove('active'));
     periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
     applyAll();
   }));
 
-  /* ===== Comparativo: período anterior exato ===== */
-  function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
-  function isFullYear(d1,d2){
-    return d1.getMonth()===0 && d1.getDate()===1 &&
-           d2.getMonth()===11 && d2.getDate()===31 &&
-           d1.getFullYear()===d2.getFullYear();
-  }
-  function isFullMonthsAligned(d1,d2){
-    return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth());
-  }
-  function shiftYear(date,delta){
-    const d=new Date(date); d.setFullYear(d.getFullYear()+delta);
-    const ld = lastDayOfMonth(d.getFullYear(), d.getMonth());
-    if(d.getDate()>ld) d.setDate(ld);
-    return d;
-  }
+  /******************** BUSCA & AGREGAÇÃO NO CLIENTE ********************/
   function computePrevRangeISO(deISO, ateISO){
     const d1=new Date(deISO+'T00:00:00'), d2=new Date(ateISO+'T00:00:00');
-    if(isFullYear(d1,d2) || isFullMonthsAligned(d1,d2)){
-      const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1);
-      return { dePrev: iso(p1), atePrev: iso(p2) };
-    }
+    const lastDayOfMonth=(y,m)=> new Date(y, m+1, 0).getDate();
+    const isFullYear= d1.getMonth()===0 && d1.getDate()===1 && d2.getMonth()===11 && d2.getDate()===31 && d1.getFullYear()===d2.getFullYear();
+    const isFullMonthsAligned= d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth());
+    const shiftYear=(date,delta)=>{ const d=new Date(date); d.setFullYear(d.getFullYear()+delta); const ld=lastDayOfMonth(d.getFullYear(), d.getMonth()); if(d.getDate()>ld)d.setDate(ld); return d; };
+    if(isFullYear || isFullMonthsAligned){ return { dePrev: iso(shiftYear(d1,-1)), atePrev: iso(shiftYear(d2,-1)) }; }
     const len=daysLen(deISO,ateISO);
     const atePrev=new Date(d1.getTime()-24*60*60*1000);
     const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);
     return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
   }
 
-  /* ===================== KPIs: SOMA NO CLIENTE ===================== */
-  function buildFilters(q, de, ate, overrideCancel=null){
-    q = q.select('dia,unidade,loja,canal,turno,pagamento_base,cancelado,pedidos,fat,des,fre')
-         .gte('dia', de).lte('dia', ate);
-
-    const u = ms.unids.get(), l = ms.lojas.get(), c = ms.canais.get(),
-          t = ms.turnos.get(), p = ms.pags.get();
-
+  function buildBaseQuery(de, ate){
+    let q = supa.from(READ_VIEW)
+      .select('dia,hora,turno,unidade,loja,canal,pagamento_base,cancelado,pedidos,fat,des,fre')
+      .gte('dia', de).lte('dia', ate);
+    const u=ms.unids.get(), l=ms.lojas.get(), c=ms.canais.get(), t=ms.turnos.get(), p=ms.pags.get();
     if (u.length) q = q.in('unidade', u);
     if (l.length) q = q.in('loja', l);
     if (c.length) q = q.in('canal', c);
     if (t.length) q = q.in('turno', t);
     if (p.length) q = q.in('pagamento_base', p);
+    const canc = selCancel.value;
+    if (canc === 'Sim' || canc === 'Não') q = q.eq('cancelado', canc);
+    return q.limit(200000);
+  }
 
-    if (overrideCancel != null) {
-      q = q.eq('cancelado', overrideCancel);
-    } else {
-      const canc = ms.cancel.get();
-      if (canc.length === 1 && (canc[0] === 'Sim' || canc[0] === 'Não')) q = q.eq('cancelado', canc[0]);
+  function sumKPIs(rows){
+    let ped=0,fat=0,des=0,fre=0;
+    for(const r of (rows||[])){ ped+= +r.pedidos||0; fat+= +r.fat||0; des+= +r.des||0; fre+= +r.fre||0; }
+    return {ped,fat,des,fre};
+  }
+
+  function groupBy(arr, keyFn){
+    const m=new Map();
+    for(const r of arr){ const k=keyFn(r); m.set(k,(m.get(k)||[]).concat([r])); }
+    return m;
+  }
+
+  function chartPack(rows, mode){
+    // mode: 'dow' | 'month' | 'hour' | 'turno'
+    if(mode==='dow'){
+      const lbl=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+      const totals=Array(7).fill(0); const counts=Array(7).fill(0);
+      for(const r of rows){
+        const dow=(new Date(r.dia+'T00:00:00')).getDay();
+        totals[dow]+= +r.fat||0; counts[dow]+=1;
+      }
+      return { labels: lbl, totals, medias: totals.map((v,i)=> counts[i]? v/counts[i] : 0) };
     }
-    return q;
-  }
-
-  async function aggKPI(de, ate, overrideCancel=null){
-    let q = supa.from(READ_VIEW);
-    q = buildFilters(q, de, ate, overrideCancel);
-    const { data, error } = await q.limit(200000);
-    if (error) throw error;
-
-    let ped=0, fat=0, des=0, fre=0;
-    for (const r of (data||[])) {
-      ped += +r.pedidos || 0;
-      fat += +r.fat || 0;
-      des += +r.des || 0;
-      fre += +r.fre || 0;
+    if(mode==='month'){
+      const ym = (s)=> s.slice(0,7);
+      const m=groupBy(rows, r=>ym(r.dia));
+      const all=[...m.keys()].sort();
+      const totals=all.map(k=> m.get(k).reduce((a,x)=>a+(+x.fat||0),0));
+      const dias=all.map(k=> m.get(k).reduce((a,_x)=>a+1,0));
+      const medias=totals.map((v,i)=> dias[i]? v/dias[i] : 0);
+      const names = all.map(y=>{ const [Y,M]=y.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[M-1]}/${String(Y).slice(-2)}`; });
+      return { labels:names, totals, medias };
     }
-    return { ped, fat, des, fre };
+    if(mode==='hour'){
+      const totals=Array(24).fill(0); const counts=Array(24).fill(0);
+      for(const r of rows){ const h=+r.hora||0; totals[h]+= +r.fat||0; counts[h]+=1; }
+      const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
+      return { labels, totals, medias: totals.map((v,i)=> counts[i]? v/counts[i] : 0) };
+    }
+    if(mode==='turno'){
+      const order=['Manhã','Tarde','Noite','Madrugada','Dia'];
+      const m=groupBy(rows, r=>r.turno||'');
+      const labels=order.filter(x=> m.has(x));
+      const totals=labels.map(k=> m.get(k).reduce((a,x)=>a+(+x.fat||0),0));
+      const medias=labels.map(k=>{ const g=m.get(k)||[]; return g.length? (g.reduce((a,x)=>a+(+x.fat||0),0)/g.length) : 0; });
+      return { labels, totals, medias };
+    }
+    return { labels:[], totals:[], medias:[] };
   }
 
-  async function updateKPIs(de, ate, dePrev, atePrev){
-    const [N, P, CN, CP] = await Promise.all([
-      aggKPI(de,ate,null),
-      aggKPI(dePrev,atePrev,null),
-      aggKPI(de,ate,'Sim'),
-      aggKPI(dePrev,atePrev,'Sim'),
-    ]);
-
-    const len=daysLen(de,ate);
-    const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
-    const fatMedN = len? (N.fat/len) : 0,    fatMedP = len? (P.fat/len) : 0;
-    const desPercN = N.fat? (N.des/N.fat) : 0, desPercP = P.fat? (P.des/P.fat) : 0;
-    const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/P.ped) : 0;
-    const partCancN = N.ped? (CN.ped/N.ped) : 0, partCancP = P.ped? (CP.ped/P.ped) : 0;
-
-    $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
-    $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
-    $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
-    $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
-    $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
-    $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
-    $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
-
-    $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
-    $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
-    $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
-
-    const roiN = computeROI(N), roiP = computeROI(P);
-    $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
-    $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
-    deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
-  }
-
-  /* ===================== GRÁFICOS VIA RPC (com fallback) ===================== */
-  function formatCurrencyTick(value){
-    const v=Number(value)||0;
-    if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
-    if(Math.abs(v)>=1_000)     return 'R$ '+(v/1_000).toFixed(1).replace('.',',')+' mil';
-    return 'R$ '+v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
-  }
   function ensureChart(canvasId, labels, nowArr, prevArr){
     const canvas=$(canvasId); if(!canvas) return;
     if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
@@ -510,7 +475,8 @@
       ]},
       options:{
         responsive:true, maintainAspectRatio:false, animation:false,
-        scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:formatCurrencyTick}}},
+        scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'},
+          ticks:{callback:(v)=>{const n=Number(v)||0; if(Math.abs(n)>=1e6)return'R$ '+(n/1e6).toFixed(1).replace('.',',')+' mi'; if(Math.abs(n)>=1e3)return'R$ '+(n/1e3).toFixed(1).replace('.',',')+' mil'; return 'R$ '+(n.toFixed(0)).replace(/\B(?=(\d{3})+(?!\d))/g,'.'); }}}},
         plugins:{ legend:{position:'top'}, tooltip:{mode:'index',intersect:false,callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${money(ctx.parsed.y||0)}`}}}
       }
     });
@@ -523,113 +489,11 @@
       const btn=e.target.closest('.seg-btn'); if(!btn) return;
       const key=seg.dataset.chart; chartMode[key]=btn.dataset.mode;
       seg.querySelectorAll('.seg-btn').forEach(b=> b.classList.toggle('active', b===btn));
-      updateChartsServer(key);
+      updateEverything(key); // re-render só o necessário
     });
   });
 
-  const RPC_FN = {
-    dow:   'chart_vendas_dow_v1',
-    month: 'chart_vendas_mes_v1',
-    hour:  'chart_vendas_hora_v1',
-    turno: 'chart_vendas_turno_v1',
-  };
-
-  async function fetchChartRPC(kind, de, ate){
-    const params = {
-      p_dini: de, p_dfim: ate,
-      p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
-      p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
-      p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
-      p_canais: ms.canais.get().length ? ms.canais.get() : null,
-      p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
-      p_cancelado: (ms.cancel.get().length===1 && (ms.cancel.get()[0]==='Sim' || ms.cancel.get()[0]==='Não')) ? ms.cancel.get()[0] : null
-    };
-    const { data, error } = await supa.rpc(RPC_FN[kind], params);
-    if(error){ throw error; }
-    return data||[];
-  }
-  function ymToLabel(ym){ const [y,m]=ym.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
-
-  async function updateChartsServer(only){
-    const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-    const {dePrev, atePrev} = computePrevRangeISO(de,ate);
-
-    try{
-      setDiag('');
-      const kinds = ['dow','month','hour','turno'];
-      const toDo = only ? [only] : kinds;
-
-      const packs = await Promise.all(toDo.map(async k=>{
-        const [now, prev] = await Promise.all([ fetchChartRPC(k,de,ate), fetchChartRPC(k,dePrev,atePrev) ]);
-        return {k, now, prev};
-      }));
-
-      const pD = packs.find(p=>p.k==='dow');
-      if(!only || only==='dow'){
-        const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-        const nArr = Array(7).fill(0), pArr = Array(7).fill(0), nMed=Array(7).fill(0), pMed=Array(7).fill(0);
-        (pD?.now||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; });
-        (pD?.prev||[]).forEach(r=>{ pArr[r.dow]=+r.total||0; pMed[r.dow]=+r.media||0; });
-        ensureChart('ch_dow', labels, (chartMode.dow==='media'?nMed:nArr), (chartMode.dow==='media'?pMed:pArr));
-      }
-
-      const pM = packs.find(p=>p.k==='month');
-      if(!only || only==='month'){
-        const n = pM?.now||[], p = pM?.prev||[];
-        const all = [...new Set([...n.map(r=>r.ym), ...p.map(r=>r.ym)])].sort();
-        const mapN=new Map(n.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
-        const mapP=new Map(p.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
-        ensureChart('ch_month', all.map(ymToLabel), all.map(x=>mapN.get(x)||0), all.map(x=>mapP.get(x)||0));
-      }
-
-      const pH = packs.find(p=>p.k==='hour');
-      if(!only || only==='hour'){
-        const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
-        const nArr = Array(24).fill(0), pArr = Array(24).fill(0), nMed=Array(24).fill(0), pMed=Array(24).fill(0);
-        (pH?.now||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; });
-        (pH?.prev||[]).forEach(r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; });
-        ensureChart('ch_hour', labels, (chartMode.hour==='media'?nMed:nArr), (chartMode.hour==='media'?pMed:pArr));
-      }
-
-      const pT = packs.find(p=>p.k==='turno');
-      if(!only || only==='turno'){
-        const order=['Manhã','Tarde','Noite','Madrugada','Dia'];
-        const n = new Map((pT?.now||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
-        const p = new Map((pT?.prev||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
-        const labels = order.filter(x=> n.has(x) || p.has(x));
-        ensureChart('ch_turno', labels, labels.map(l=>n.get(l)||0), labels.map(l=>p.get(l)||0));
-      }
-
-      const sum = a => (a||[]).reduce((acc,r)=> acc + (+r.total||0), 0);
-      setDiag(`(Charts via RPC ✓ | soma DOW atual/ant: ${money(sum(packs.find(p=>p.k==='dow')?.now))} / ${money(sum(packs.find(p=>p.k==='dow')?.prev))})`);
-      setStatus('OK','ok');
-    }catch(e){
-      console.warn('[charts rpc erro]', e?.message||e);
-      setStatus('OK (gráficos RPC indisponíveis — KPIs ok)','ok');
-      setDiag('');
-    }
-  }
-
-  /* ===================== CARREGAR VALORES FIXOS DOS FILTROS ===================== */
-  async function reloadStaticOptions(){
-    // traz colunas essenciais e deduplica no cliente
-    const { data, error } = await supa.from(READ_VIEW)
-      .select('unidade,loja,canal,turno,pagamento_base')
-      .limit(200000);
-
-    if (error) { console.error(error); setStatus('Erro ao atualizar','err'); return; }
-
-    const get = (k)=> uniq((data||[]).map(r=>r[k]).filter(v=>v!=null && v!==''));
-    ms.unids.setOptions(get('unidade'));
-    ms.lojas.setOptions(get('loja'));
-    ms.canais.setOptions(get('canal'));
-    ms.turnos.setOptions(get('turno'));
-    ms.pags.setOptions(get('pagamento_base'));
-
-    setStatus('OK','ok');
-  }
-
-  /* ===================== INICIALIZAÇÃO ===================== */
+  /******************** INICIALIZAÇÃO ********************/
   async function getMinMaxDay(){
     const last = await supa.from(READ_VIEW).select('dia').order('dia',{ascending:false}).limit(1);
     const first= await supa.from(READ_VIEW).select('dia').order('dia',{ascending:true}).limit(1);
@@ -640,16 +504,87 @@
     if(!fDe.value || !fAte.value){ fAte.value=lastDay; fDe.value=addDaysISO(lastDay,-29); }
   }
 
-  async function applyAll(){
+  async function reloadStaticOptions(){
+    const de = addDaysISO(lastDay, -120); // 120 dias para listar opções com performance
+    const { data, error } = await supa.from(READ_VIEW)
+      .select('unidade,loja,canal,turno,pagamento_base')
+      .gte('dia', de).lte('dia', lastDay).limit(200000);
+    if(error){ throw error; }
+    const get = (k)=> uniq((data||[]).map(r=>r[k]).filter(Boolean));
+    ms.unids.setOptions(get('unidade'));
+    ms.lojas.setOptions(get('loja'));
+    ms.canais.setOptions(get('canal'));
+    ms.turnos.setOptions(get('turno'));
+    ms.pags.setOptions(get('pagamento_base'));
+  }
+
+  async function updateEverything(onlyChartKey){
     try{
       setStatus('Atualizando…','');
       const de=fDe.value, ate=fAte.value;
       const { dePrev, atePrev } = computePrevRangeISO(de,ate);
-      await Promise.all([ updateKPIs(de,ate,dePrev,atePrev), updateChartsServer() ]);
+
+      const [nowQ, prevQ] = await Promise.all([ buildBaseQuery(de,ate), buildBaseQuery(dePrev,atePrev) ]);
+      const [{data:now, error:e1},{data:prev, error:e2}] = await Promise.all([ nowQ, prevQ ]);
+      if(e1||e2) throw (e1||e2);
+
+      // KPIs
+      const N=sumKPIs(now||[]), P=sumKPIs(prev||[]);
+      const len=daysLen(de,ate);
+      const tktN=N.ped?N.fat/N.ped:0, tktP=P.ped?P.fat/P.ped:0;
+      const fatMedN=len?N.fat/len:0, fatMedP=len?P.fat/len:0;
+      const desPercN=N.fat?N.des/N.fat:0, desPercP=P.fat?P.des/P.fat:0;
+      const freMedN=N.ped?N.fre/N.ped:0, freMedP=P.ped?P.fre/P.ped:0;
+
+      const CN=sumKPIs((now||[]).filter(r=> (r.cancelado||'')==='Sim'));
+      const CP=sumKPIs((prev||[]).filter(r=> (r.cancelado||'')==='Sim'));
+      const partCancN=N.ped? (CN.ped/N.ped) : 0, partCancP=P.ped? (CP.ped/P.ped) : 0;
+
+      $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
+      $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
+      $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
+      $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
+      $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
+      $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
+      $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
+      $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
+
+      $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
+      $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
+      $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
+
+      const roiN = computeROI(N), roiP = computeROI(P);
+      $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
+      $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
+      deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
+
+      // Gráficos (no cliente)
+      const maps = {
+        dow:   {now: chartPack(now||[], 'dow'),   prev: chartPack(prev||[], 'dow')},
+        month: {now: chartPack(now||[], 'month'), prev: chartPack(prev||[], 'month')},
+        hour:  {now: chartPack(now||[], 'hour'),  prev: chartPack(prev||[], 'hour')},
+        turno: {now: chartPack(now||[], 'turno'), prev: chartPack(prev||[], 'turno')},
+      };
+      const kinds = onlyChartKey ? [onlyChartKey] : ['dow','month','hour','turno'];
+      kinds.forEach(k=>{
+        const cur=maps[k];
+        const labels=cur.now.labels.length>=cur.prev.labels.length? cur.now.labels : cur.prev.labels;
+        const align=(pack,field)=>{
+          const idx=new Map(pack.labels.map((l,i)=>[l,i]));
+          return labels.map(l=> pack[field][ idx.get(l) ?? -1 ] || 0);
+        };
+        const nowArr = align({labels:cur.now.labels, totals:cur.now.totals, medias:cur.now.medias}, chartMode[k]==='media'?'medias':'totals');
+        const prevArr= align({labels:cur.prev.labels, totals:cur.prev.totals, medias:cur.prev.medias}, chartMode[k]==='media'?'medias':'totals');
+        const canvasId = k==='dow'?'ch_dow':k==='month'?'ch_month':k==='hour'?'ch_hour':'ch_turno';
+        ensureChart(canvasId, labels, nowArr, prevArr);
+      });
+
+      setDiag(`Linhas: atual ${now?.length||0} / anterior ${prev?.length||0} — fonte: ${READ_VIEW}`);
       setStatus('OK','ok');
     }catch(e){
       console.error(e);
       setStatus('Erro ao atualizar','err');
+      setDiag(e?.message||String(e));
     }
   }
 
@@ -657,15 +592,16 @@
     try{
       await getMinMaxDay();
       await reloadStaticOptions();
-      await applyAll();
+      await updateEverything();
     }catch(e){
       console.error(e);
       setStatus('Erro na inicialização','err');
+      setDiag(e?.message||String(e));
     }
   }
   init();
 
-  /* ===================== UPLOAD EXCEL (OPCIONAL) ===================== */
+  /******************** UPLOAD EXCEL (opcional) ********************/
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (e)=>{
     const file=e.target.files?.[0]; if(!file) return;
@@ -676,16 +612,10 @@
       const ws=wb.Sheets[wb.SheetNames[0]];
       const rows=XLSX.utils.sheet_to_json(ws,{defval:null, raw:true});
       if(!rows.length){ info('Nada para importar.'); return; }
-
-      // envia crú — o backend deve tratar/normalizar (ou use um edge function)
       const { error } = await supa.from(DEST_INSERT_TABLE).insert(rows, { returning:'minimal' });
       if(error) throw error;
-
-      // tenta chamar um RPC que atualiza as materialized views (se existir)
-      try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
-
       info(`Upload OK: ${rows.length} linhas.`);
-      await getMinMaxDay(); await reloadStaticOptions(); await applyAll();
+      await init();
       setStatus('OK','ok');
     }catch(err){
       console.error(err);
