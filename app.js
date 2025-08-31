@@ -12,6 +12,7 @@ const CHART_RPC = {
   hour:  ['chart_vendas_hora_front','chart_vendas_hora_v1','chart_vendas_hora'],
   turno: ['chart_vendas_turno_front','chart_vendas_turno_v1','chart_vendas_turno'],
 };
+
 let READ_VIEW = VIEW_CANDIDATES[0];
 
 /* ========= HELPERS ========= */
@@ -59,85 +60,168 @@ const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
 const ms={ unids:MultiSelect('ms-unids','Todas as unidades'), lojas:MultiSelect('ms-lojas','Todas as lojas'), canais:MultiSelect('ms-canais','Todos os canais'), turnos:MultiSelect('ms-turnos','Todos os turnos'), pags:MultiSelect('ms-pags','Todos os tipos') };
 function setActiveChip(v){ chips.forEach(c=>c.classList.toggle('active', c.dataset.q===String(v))); }
 function applyQuick(v){ setActiveChip(v); const ate=lastDay||iso(new Date()); const de=addDaysISO(ate, -(Number(v)-1)); fDe.value=de; fAte.value=ate; if(periodoInfo) periodoInfo.textContent=`Último dia carregado: ${lastDay}`; applyAll(); }
-$('btnClear').addEventListener('click',()=>{ ms.unids.set([]); ms.lojas.set([]); ms.canais.set([]); ms.turnos.set([]); ms.pags.set([]); const c=document.querySelector('#ms-cancel .msel-panel input[value="Não"]'); if(c){ c.checked=true; } const b=document.querySelector('#ms-cancel .msel-btn'); if(b) b.textContent='Não'; applyQuick('30'); });
+$('btnClear')?.addEventListener('click',()=>{ ms.unids.set([]); ms.lojas.set([]); ms.canais.set([]); ms.turnos.set([]); ms.pags.set([]); const c=document.querySelector('#ms-cancel .msel-panel input[value="Não"]'); if(c){ c.checked=true; } const b=document.querySelector('#ms-cancel .msel-btn'); if(b) b.textContent='Não'; applyQuick('30'); });
 chips.forEach(b=> b.addEventListener('click',()=>applyQuick(b.dataset.q)));
 [fDe,fAte].forEach(i=> i.addEventListener('change',()=>{ chips.forEach(c=>c.classList.remove('active')); if(periodoInfo) periodoInfo.textContent=`Último dia carregado: ${lastDay}`; applyAll(); }));
 function applyAll(){ updateEverything(); }
 
+/* ========= MAPEAMENTO DINÂMICO DE COLUNAS ========= */
+const ALT = {
+  dia:  ['dia','data','dt','date','data_venda','data_pedido','datahora'],
+  hora: ['hora','hr','hour','horario','time_hour','hora_venda'],
+  turno:['turno','periodo','shift'],
+  unidade:['unidade','unid','filial','empresa','cod_unidade'],
+  loja: ['loja','loja_nome','nome_loja','nome da loja','loja fantasia','loja_fantasia'],
+  canal:['canal','canal_venda','canal de venda','origem','meio'],
+  pagamento_base:['pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto'],
+  cancelado:['cancelado','canceled','is_cancel','st_cancelado','cancelada'],
+  pedidos:['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','qtd_vendas','itens'],
+  fat:['fat','faturamento','valor_total','valor','total','valor_venda','total_nota','faturamento_liquido','vl_faturamento'],
+  des:['des','desconto','incentivo','incentivos','vl_desconto'],
+  fre:['fre','frete','taxa_entrega','entrega'],
+};
+let COLS = null; // { dia:'real_name', ... }
+
+function findCol(keys, alts){
+  const norm = s=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const normKeys = new Map(keys.map(k=>[norm(k), k]));
+  for(const candidate of alts){
+    const k = normKeys.get(norm(candidate));
+    if(k) return k;
+    const fuzzy = [...normKeys.keys()].find(x=> x.includes(norm(candidate)));
+    if(fuzzy) return normKeys.get(fuzzy);
+  }
+  return null;
+}
+
+async function discoverColumns(){
+  const r = await supa.from(READ_VIEW).select('*').limit(1);
+  if(r.error) throw r.error;
+  const row = r.data?.[0] || {};
+  const keys = Object.keys(row);
+
+  COLS = {};
+  for(const [std, alts] of Object.entries(ALT)){
+    COLS[std] = findCol(keys, alts);
+  }
+  // dia é obrigatório; se não houver, aborta
+  if(!COLS.dia) throw new Error(`Não encontrei coluna de data em ${READ_VIEW}.`);
+}
+
 /* ========= DETECÇÃO DE VIEW / DATERANGE ========= */
 async function probeView(){
   for(const v of VIEW_CANDIDATES){
-    const r = await supa.from(v).select('dia').limit(1);
+    const r = await supa.from(v).select('*').limit(1);
     if(!r.error){ READ_VIEW = v; return; }
   }
   throw new Error('Nenhuma view acessível: '+VIEW_CANDIDATES.join(', '));
 }
 async function loadDateRange(){
-  // tenta a view vw_vendas_daterange; se 404, faz fallback
-  const r = await supa.from('vw_vendas_daterange').select('*').limit(1);
-  if(!r.error && r.data?.length){ firstDay=r.data[0].min_dia; lastDay=r.data[0].max_dia; return; }
-  const minq = await supa.from(READ_VIEW).select('dia').order('dia',{ascending:true}).limit(1);
-  const maxq = await supa.from(READ_VIEW).select('dia').order('dia',{ascending:false}).limit(1);
-  firstDay = (!minq.error && minq.data?.[0]?.dia) || iso(new Date());
-  lastDay  = (!maxq.error && maxq.data?.[0]?.dia) || iso(new Date());
+  const tryDR = await supa.from('vw_vendas_daterange').select('*').limit(1);
+  if(!tryDR.error && tryDR.data?.length){ firstDay=tryDR.data[0].min_dia; lastDay=tryDR.data[0].max_dia; return; }
+  // fallback usando mapeamento real
+  const minq = await supa.from(READ_VIEW).select(`${COLS.dia}`).order(COLS.dia,{ascending:true}).limit(1);
+  const maxq = await supa.from(READ_VIEW).select(`${COLS.dia}`).order(COLS.dia,{ascending:false}).limit(1);
+  firstDay = minq.data?.[0]?.[COLS.dia] || iso(new Date());
+  lastDay  = maxq.data?.[0]?.[COLS.dia] || iso(new Date());
 }
 
 /* ========= OPÇÕES ========= */
 async function loadStaticOptions(){
   const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-  async function distinct(col){
-    let q=supa.from(READ_VIEW).select(col,{distinct:true}).order(col,{ascending:true}).gte('dia',de).lte('dia',ate).limit(200000);
-    const {data,error}=await q; if(error){return [];} return [...new Set((data||[]).map(r=>r[col]))];
+  async function distinct(realCol){
+    if(!realCol) return [];
+    let q=supa.from(READ_VIEW).select(`val:${realCol}`,{distinct:true}).order(realCol,{ascending:true}).gte(COLS.dia,de).lte(COLS.dia,ate).limit(200000);
+    const {data,error}=await q; if(error){return [];} return [...new Set((data||[]).map(r=>r.val).filter(v=>v!=null && v!==''))];
   }
-  const [unids,lojas,canais,turnos,pags]=await Promise.all([distinct('unidade'),distinct('loja'),distinct('canal'),distinct('turno'),distinct('pagamento_base')]);
+  const [unids,lojas,canais,turnos,pags]=await Promise.all([
+    distinct(COLS.unidade), distinct(COLS.loja), distinct(COLS.canal), distinct(COLS.turno), distinct(COLS.pagamento_base)
+  ]);
   ms.unids.setOptions(unids); ms.lojas.setOptions(lojas); ms.canais.setOptions(canais); ms.turnos.setOptions(turnos); ms.pags.setOptions(pags);
 }
 
 /* ========= FILTROS ========= */
 function applyFilters(q,de,ate){
-  q.gte('dia',de).lte('dia',ate);
+  q.gte(COLS.dia, de).lte(COLS.dia, ate);
   const un=ms.unids.get(), lj=ms.lojas.get(), ca=ms.canais.get(), tu=ms.turnos.get(), pg=ms.pags.get();
-  if(un.length) q.in('unidade', un);
-  if(lj.length) q.in('loja', lj);
-  if(ca.length) q.in('canal', ca);
-  if(tu.length) q.in('turno', tu);
-  if(pg.length) q.in('pagamento_base', pg);
+  if(un.length && COLS.unidade) q.in(COLS.unidade, un);
+  if(lj.length && COLS.loja)    q.in(COLS.loja, lj);
+  if(ca.length && COLS.canal)   q.in(COLS.canal, ca);
+  if(tu.length && COLS.turno)   q.in(COLS.turno, tu);
+  if(pg.length && COLS.pagamento_base) q.in(COLS.pagamento_base, pg);
   const btn=document.querySelector('#ms-cancel .msel-btn'); const txt=btn?btn.textContent.trim():'Não';
-  if(txt==='Sim') q.eq('cancelado','Sim'); else if(txt==='Não') q.eq('cancelado','Não');
+  if(COLS.cancelado){
+    if(txt==='Sim') q.eq(COLS.cancelado,'Sim'); else if(txt==='Não') q.eq(COLS.cancelado,'Não');
+  }
 }
 
-/* ========= FETCH LOCAL (com paginação) ========= */
+/* ========= FETCH LOCAL ========= */
 async function countRows(de,ate){
-  let q=supa.from(READ_VIEW).select('fat',{count:'exact',head:true}); applyFilters(q,de,ate);
+  // usa "*" para evitar alias em HEAD
+  let q=supa.from(READ_VIEW).select('*',{count:'exact',head:true});
+  applyFilters(q,de,ate);
   const {count}=await q; return count||0;
 }
+
+function aliasSelect(list){
+  // "std:real" para receber nomes padronizados no front
+  return list.filter(Boolean).join(',');
+}
+
 async function fetchAllRows(de,ate){
   const total=await countRows(de,ate);
   const page=5000; let from=0, rows=[];
+  const sel = aliasSelect([
+    `dia:${COLS.dia}`,
+    COLS.hora ? `hora:${COLS.hora}` : null,
+    COLS.turno? `turno:${COLS.turno}`: null,
+    COLS.unidade? `unidade:${COLS.unidade}`: null,
+    COLS.loja? `loja:${COLS.loja}`: null,
+    COLS.canal? `canal:${COLS.canal}`: null,
+    COLS.pagamento_base? `pagamento_base:${COLS.pagamento_base}`: null,
+    COLS.cancelado? `cancelado:${COLS.cancelado}`: null,
+    COLS.pedidos? `pedidos:${COLS.pedidos}`: null,
+    COLS.fat? `fat:${COLS.fat}`: null,
+    COLS.des? `des:${COLS.des}`: null,
+    COLS.fre? `fre:${COLS.fre}`: null,
+  ]);
+
   while(from<total){
     let to=Math.min(from+page-1,total-1);
-    let q=supa.from(READ_VIEW).select('dia,hora,turno,unidade,loja,canal,pagamento_base,cancelado,pedidos,fat,des,fre').order('dia',{ascending:true}).range(from,to);
+    let q=supa.from(READ_VIEW).select(sel).order(COLS.dia,{ascending:true}).range(from,to);
     applyFilters(q,de,ate);
     const {data,error}=await q; if(error) break; rows=rows.concat(data||[]); from=to+1;
   }
   return rows;
 }
+
 const toNum=x=>+x||0;
 function sumKPIs(rows){
   let ped=0,fat=0,des=0,fre=0,cPed=0,cFat=0;
   for(const r of rows){
-    const p=toNum(r.pedidos)||1;
+    let p = 0;
+    if('pedidos' in r && r.pedidos!=null) p = toNum(r.pedidos);
+    if(!p && 'qtde' in r) p = toNum(r.qtde);
+    if(!p) p = 1; // último recurso
     ped+=p; fat+=toNum(r.fat); des+=toNum(r.des); fre+=toNum(r.fre);
-    if(String(r.cancelado).trim().toLowerCase()==='sim'){ cPed+=p; cFat+=toNum(r.fat); }
+    if(String(r.cancelado||'').trim().toLowerCase()==='sim'){ cPed+=p; cFat+=toNum(r.fat); }
   }
   return {ped,fat,des,fre,cPed,cFat};
 }
 
-/* ========= RPC HELPER ========= */
+/* ========= RPC HELPER (com bloqueio) ========= */
+const RPC_BLOCK = new Set();
 async function tryRPC(names,args){
   const list=Array.isArray(names)?names:[names];
   for(const n of list){
-    try{ const {data,error}=await supa.rpc(n,args); if(!error) return {name:n,data}; }catch(_e){}
+    if(RPC_BLOCK.has(n)) continue;
+    try{
+      const {data,error}=await supa.rpc(n,args);
+      if(!error) return {name:n,data};
+      RPC_BLOCK.add(n); // 400/404 → não tenta mais
+    }catch(_e){
+      RPC_BLOCK.add(n);
+    }
   }
   return null;
 }
@@ -180,10 +264,10 @@ async function ensureRows(de,ate,dePrev,atePrev){
   cacheKey=key;
 }
 
-function groupBy(rows, keyFn, valFn=(r)=>toNum(r.fat)){
+function groupSum(rows, keyFn, valFn=(r)=>toNum(r.fat)){
   const map=new Map(); for(const r of rows){ const k=keyFn(r), v=valFn(r); map.set(k,(map.get(k)||0)+v); } return map;
 }
-function avgBy(rows, keyFn, valFn=(r)=>toNum(r.fat)){
+function groupAvg(rows, keyFn, valFn=(r)=>toNum(r.fat)){
   const sum=new Map(), cnt=new Map();
   for(const r of rows){ const k=keyFn(r), v=valFn(r); sum.set(k,(sum.get(k)||0)+v); cnt.set(k,(cnt.get(k)||0)+1); }
   const out=new Map(); for(const [k,s] of sum){ out.set(k, s/(cnt.get(k)||1)); } return out;
@@ -204,7 +288,7 @@ async function updateChartsLocal(only){
 
   if(!only || only==='month'){
     const key=r=>(r.dia||'').slice(0,7);
-    const mN=groupBy(nRows,key), mP=groupBy(pRows,key);
+    const mN=groupSum(nRows,key), mP=groupSum(pRows,key);
     const all=[...new Set([...mN.keys(),...mP.keys()])].sort();
     ensureChart('ch_month', all.map(ymLabel), all.map(k=>mN.get(k)||0), all.map(k=>mP.get(k)||0));
   }
@@ -221,11 +305,11 @@ async function updateChartsLocal(only){
   if(!only || only==='turno'){
     const order=['Manhã','Tarde','Noite','Madrugada','Dia'];
     const label=r=>r.turno||'';
-    const sN=groupBy(nRows,label), sP=groupBy(pRows,label);
+    const sN=groupSum(nRows,label), sP=groupSum(pRows,label);
     const labels=order.filter(x=> sN.has(x)||sP.has(x));
     let nArr=labels.map(l=>sN.get(l)||0), pArr=labels.map(l=>sP.get(l)||0);
     if(chartMode.turno==='media'){
-      const aN=avgBy(nRows,label), aP=avgBy(pRows,label);
+      const aN=groupAvg(nRows,label), aP=groupAvg(pRows,label);
       nArr=labels.map(l=>aN.get(l)||0); pArr=labels.map(l=>aP.get(l)||0);
     }
     ensureChart('ch_turno', labels, nArr, pArr);
@@ -261,7 +345,7 @@ async function updateChartsRPC(only){
         const all=[...new Set([...n.map(r=>r.ym),...p.map(r=>r.ym)])].sort();
         const mapN=new Map(n.map(r=>[r.ym, chartMode.month==='media'? (+r.media||0):(+r.total||0)]));
         const mapP=new Map(p.map(r=>[r.ym, chartMode.month==='media'? (+r.media||0):(+r.total||0)]));
-        ensureChart('ch_month', all.map(ymToLabel), all.map(x=>mapN.get(x)||0), all.map(x=>mapP.get(x)||0));
+        ensureChart('ch_month', all.map(ymLabel), all.map(x=>mapN.get(x)||0), all.map(x=>mapP.get(x)||0));
       }
       if(k==='hour'){
         const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
@@ -312,7 +396,6 @@ function buildParams(de,ate){
 function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
 
 async function updateKPIs(de,ate,dePrev,atePrev){
-  // garantir cache de linhas para fallback
   await ensureRows(de,ate,dePrev,atePrev);
 
   const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
@@ -390,8 +473,6 @@ async function onUploadExcel(ev){
     const json=XLSX.utils.sheet_to_json(ws,{raw:false,defval:null});
     if(!json.length){ setStatus('Arquivo vazio','err'); return; }
 
-    // mapeia colunas pelos nomes padrões do seu schema
-    const pick=(obj,keys)=> keys.find(k=>Object.prototype.hasOwnProperty.call(obj,k));
     const rows=json.map(r=>{
       const dia = r['dia']||r['data']||r['data_venda'];
       const hora= r['hora']??null;
@@ -403,7 +484,7 @@ async function onUploadExcel(ev){
         canal:   (r['canal']??r['Canal de venda']??'')+'',
         pagamento_base: (r['pagamento_base']??r['tipo_pagamento']??'')+'',
         cancelado: normCancel(r['cancelado']),
-        pedidos: +r['pedidos']||1,
+        pedidos: +r['pedidos']||+r['qtd_pedidos']||+r['qtde']||+r['qtd']||1,
         fat: +br2num(r['fat']??r['faturamento']??0),
         des: +br2num(r['des']??0),
         fre: +br2num(r['fre']??0),
@@ -441,6 +522,7 @@ function normCancel(v){ const s=String(v??'').trim().toLowerCase(); if(['sim','s
   try{
     setStatus('Carregando…');
     await probeView();
+    await discoverColumns();
     await loadDateRange();
     if(periodoInfo) periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
     applyQuick('30');
@@ -449,4 +531,3 @@ function normCancel(v){ const s=String(v??'').trim().toLowerCase(); if(['sim','s
     setStatus('Erro ao iniciar: '+(e.message||e),'err');
   }
 })();
-function ymToLabel(ym){ const [y,m]=ym.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
