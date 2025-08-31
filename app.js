@@ -3,17 +3,12 @@ const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
 const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-/* Views & RPCs candidatos */
+/* Tente estas views nesta ordem */
 const VIEW_CANDIDATES = ['vendas_canon_front','mv_vendas_canon_front','vendas_canon'];
-const KPI_RPC_CANDIDATES = ['kpi_vendas_front','kpi_vendas','kpi_vendas_v2'];
-const CHART_RPC = {
-  dow:   ['chart_vendas_dow_front','chart_vendas_dow_v1','chart_vendas_dow'],
-  month: ['chart_vendas_mes_front','chart_vendas_mes_v1','chart_vendas_mes'],
-  hour:  ['chart_vendas_hora_front','chart_vendas_hora_v1','chart_vendas_hora'],
-  turno: ['chart_vendas_turno_front','chart_vendas_turno_v1','chart_vendas_turno'],
-};
-
 let READ_VIEW = VIEW_CANDIDATES[0];
+
+/* Desliga RPC para zerar 404/400 e usar apenas a view */
+const USE_RPC = false;
 
 /* ========= HELPERS ========= */
 const $=id=>document.getElementById(id);
@@ -65,7 +60,7 @@ chips.forEach(b=> b.addEventListener('click',()=>applyQuick(b.dataset.q)));
 [fDe,fAte].forEach(i=> i.addEventListener('change',()=>{ chips.forEach(c=>c.classList.remove('active')); if(periodoInfo) periodoInfo.textContent=`Último dia carregado: ${lastDay}`; applyAll(); }));
 function applyAll(){ updateEverything(); }
 
-/* ========= MAPEAMENTO DINÂMICO DE COLUNAS ========= */
+/* ========= MAPEAMENTO DINÂMICO ========= */
 const ALT = {
   dia:  ['dia','data','dt','date','data_venda','data_pedido','datahora'],
   hora: ['hora','hr','hour','horario','time_hour','hora_venda'],
@@ -75,12 +70,16 @@ const ALT = {
   canal:['canal','canal_venda','canal de venda','origem','meio'],
   pagamento_base:['pagamento_base','tipo_pagamento','pagamento','forma_pagamento','meio_pgto'],
   cancelado:['cancelado','canceled','is_cancel','st_cancelado','cancelada'],
-  pedidos:['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','qtd_vendas','itens'],
+  pedidos:[
+    'pedidos','qtd_pedidos','qtde','qtd','qtd_ped','qtd_vendas','itens',
+    'qtd_itens','qtd_item','quantidade','quantidade_pedidos','qtde_pedidos'
+  ],
   fat:['fat','faturamento','valor_total','valor','total','valor_venda','total_nota','faturamento_liquido','vl_faturamento'],
   des:['des','desconto','incentivo','incentivos','vl_desconto'],
   fre:['fre','frete','taxa_entrega','entrega'],
+  pid:['pedido_id','id_pedido','order_id','id do pedido','pedido id']
 };
-let COLS = null; // { dia:'real_name', ... }
+let COLS = null;
 
 function findCol(keys, alts){
   const norm = s=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
@@ -99,16 +98,13 @@ async function discoverColumns(){
   if(r.error) throw r.error;
   const row = r.data?.[0] || {};
   const keys = Object.keys(row);
-
   COLS = {};
-  for(const [std, alts] of Object.entries(ALT)){
-    COLS[std] = findCol(keys, alts);
-  }
-  // dia é obrigatório; se não houver, aborta
+  for(const [std, alts] of Object.entries(ALT)){ COLS[std] = findCol(keys, alts); }
   if(!COLS.dia) throw new Error(`Não encontrei coluna de data em ${READ_VIEW}.`);
+  setDiag(`View: ${READ_VIEW} | mapeado: ${Object.entries(COLS).filter(([,v])=>!!v).map(([k,v])=>k+'→'+v).join(', ')}`);
 }
 
-/* ========= DETECÇÃO DE VIEW / DATERANGE ========= */
+/* ========= PROBE VIEW & RANGE ========= */
 async function probeView(){
   for(const v of VIEW_CANDIDATES){
     const r = await supa.from(v).select('*').limit(1);
@@ -117,9 +113,7 @@ async function probeView(){
   throw new Error('Nenhuma view acessível: '+VIEW_CANDIDATES.join(', '));
 }
 async function loadDateRange(){
-  const tryDR = await supa.from('vw_vendas_daterange').select('*').limit(1);
-  if(!tryDR.error && tryDR.data?.length){ firstDay=tryDR.data[0].min_dia; lastDay=tryDR.data[0].max_dia; return; }
-  // fallback usando mapeamento real
+  // sem chamar vw_vendas_daterange (evita 404)
   const minq = await supa.from(READ_VIEW).select(`${COLS.dia}`).order(COLS.dia,{ascending:true}).limit(1);
   const maxq = await supa.from(READ_VIEW).select(`${COLS.dia}`).order(COLS.dia,{ascending:false}).limit(1);
   firstDay = minq.data?.[0]?.[COLS.dia] || iso(new Date());
@@ -132,7 +126,7 @@ async function loadStaticOptions(){
   async function distinct(realCol){
     if(!realCol) return [];
     let q=supa.from(READ_VIEW).select(`val:${realCol}`,{distinct:true}).order(realCol,{ascending:true}).gte(COLS.dia,de).lte(COLS.dia,ate).limit(200000);
-    const {data,error}=await q; if(error){return [];} return [...new Set((data||[]).map(r=>r.val).filter(v=>v!=null && v!==''))];
+    const {data}=await q; return [...new Set((data||[]).map(r=>r.val).filter(v=>v!=null && v!==''))];
   }
   const [unids,lojas,canais,turnos,pags]=await Promise.all([
     distinct(COLS.unidade), distinct(COLS.loja), distinct(COLS.canal), distinct(COLS.turno), distinct(COLS.pagamento_base)
@@ -157,16 +151,11 @@ function applyFilters(q,de,ate){
 
 /* ========= FETCH LOCAL ========= */
 async function countRows(de,ate){
-  // usa "*" para evitar alias em HEAD
   let q=supa.from(READ_VIEW).select('*',{count:'exact',head:true});
   applyFilters(q,de,ate);
   const {count}=await q; return count||0;
 }
-
-function aliasSelect(list){
-  // "std:real" para receber nomes padronizados no front
-  return list.filter(Boolean).join(',');
-}
+function aliasSelect(list){ return list.filter(Boolean).join(','); }
 
 async function fetchAllRows(de,ate){
   const total=await countRows(de,ate);
@@ -184,49 +173,64 @@ async function fetchAllRows(de,ate){
     COLS.fat? `fat:${COLS.fat}`: null,
     COLS.des? `des:${COLS.des}`: null,
     COLS.fre? `fre:${COLS.fre}`: null,
+    COLS.pid? `pid:${COLS.pid}`: null,
   ]);
 
   while(from<total){
     let to=Math.min(from+page-1,total-1);
     let q=supa.from(READ_VIEW).select(sel).order(COLS.dia,{ascending:true}).range(from,to);
     applyFilters(q,de,ate);
-    const {data,error}=await q; if(error) break; rows=rows.concat(data||[]); from=to+1;
+    const {data}=await q; rows=rows.concat(data||[]); from=to+1;
   }
   return rows;
 }
 
 const toNum=x=>+x||0;
+
+/* Conta pedidos com prioridade:
+   1) soma da coluna de quantidade (se existir)
+   2) DISTINCT pid (se existir)
+   3) 1 por linha (fallback final)  */
 function sumKPIs(rows){
-  let ped=0,fat=0,des=0,fre=0,cPed=0,cFat=0;
+  let hasQty=false, qtySum=0;
+  const pidAll=new Set(), pidCanc=new Set();
+  let fat=0,des=0,fre=0;
+
   for(const r of rows){
-    let p = 0;
-    if('pedidos' in r && r.pedidos!=null) p = toNum(r.pedidos);
-    if(!p && 'qtde' in r) p = toNum(r.qtde);
-    if(!p) p = 1; // último recurso
-    ped+=p; fat+=toNum(r.fat); des+=toNum(r.des); fre+=toNum(r.fre);
-    if(String(r.cancelado||'').trim().toLowerCase()==='sim'){ cPed+=p; cFat+=toNum(r.fat); }
+    const qty = (r.pedidos!=null) ? toNum(r.pedidos)
+              : (r.qtde!=null)    ? toNum(r.qtde)
+              : 0;
+    if(qty){ hasQty=true; qtySum+=qty; }
+    if(r.pid!=null){ pidAll.add(String(r.pid)); }
+    fat+=toNum(r.fat); des+=toNum(r.des); fre+=toNum(r.fre);
   }
-  return {ped,fat,des,fre,cPed,cFat};
+  // cancelados
+  for(const r of rows){
+    const isCanc = String(r.cancelado||'').trim().toLowerCase()==='sim';
+    if(!isCanc) continue;
+    if(r.pid!=null) pidCanc.add(String(r.pid));
+  }
+
+  let ped, cPed;
+  if(hasQty){
+    ped = qtySum;
+    // sem coluna de qtd para cancelado individual → aproxima por proporção de linhas
+    cPed = pidCanc.size ? pidCanc.size : rows.filter(r=>String(r.cancelado||'').trim().toLowerCase()==='sim').length;
+  }else if(pidAll.size){
+    ped = pidAll.size;
+    cPed = pidCanc.size;
+  }else{
+    ped = rows.length;
+    cPed = rows.filter(r=>String(r.cancelado||'').trim().toLowerCase()==='sim').length;
+  }
+
+  const cFat = rows.filter(r=>String(r.cancelado||'').trim().toLowerCase()==='sim')
+                   .reduce((acc,r)=>acc+toNum(r.fat),0);
+
+  return { ped, fat, des, fre, cPed, cFat };
 }
 
-/* ========= RPC HELPER (com bloqueio) ========= */
-const RPC_BLOCK = new Set();
-async function tryRPC(names,args){
-  const list=Array.isArray(names)?names:[names];
-  for(const n of list){
-    if(RPC_BLOCK.has(n)) continue;
-    try{
-      const {data,error}=await supa.rpc(n,args);
-      if(!error) return {name:n,data};
-      RPC_BLOCK.add(n); // 400/404 → não tenta mais
-    }catch(_e){
-      RPC_BLOCK.add(n);
-    }
-  }
-  return null;
-}
-
-/* ========= CHARTS ========= */
+/* ========= CHARTS (sempre por view) ========= */
 function formatCurrencyTick(value){
   const v=Number(value)||0;
   if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -250,11 +254,10 @@ function ensureChart(id,labels,nowArr,prevArr){
 }
 const chartMode={dow:'total',month:'total',hour:'total',turno:'total'};
 document.querySelectorAll('.seg').forEach(seg=>{
-  seg.addEventListener('click',(e)=>{const btn=e.target.closest('.seg-btn'); if(!btn) return; const key=seg.dataset.chart; chartMode[key]=btn.dataset.mode; seg.querySelectorAll('.seg-btn').forEach(b=>b.classList.toggle('active',b===btn)); updateChartsRPC(key);});
+  seg.addEventListener('click',(e)=>{const btn=e.target.closest('.seg-btn'); if(!btn) return; const key=seg.dataset.chart; chartMode[key]=btn.dataset.mode; seg.querySelectorAll('.seg-btn').forEach(b=>b.classList.toggle('active',b===btn)); updateChartsLocal(key);});
 });
 function ymLabel(ym){ const [y,m]=ym.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
 
-/* cache de linhas para fallback de gráficos */
 let cacheKey='', cacheNow=[], cachePrev=[];
 function currentFilterKey(de,ate){ const b=document.querySelector('#ms-cancel .msel-btn'); const canc=b?b.textContent.trim():'Não'; return JSON.stringify({de,ate,un:ms.unids.get(),lj:ms.lojas.get(),ca:ms.canais.get(),tu:ms.turnos.get(),pg:ms.pags.get(),canc}); }
 async function ensureRows(de,ate,dePrev,atePrev){
@@ -266,11 +269,6 @@ async function ensureRows(de,ate,dePrev,atePrev){
 
 function groupSum(rows, keyFn, valFn=(r)=>toNum(r.fat)){
   const map=new Map(); for(const r of rows){ const k=keyFn(r), v=valFn(r); map.set(k,(map.get(k)||0)+v); } return map;
-}
-function groupAvg(rows, keyFn, valFn=(r)=>toNum(r.fat)){
-  const sum=new Map(), cnt=new Map();
-  for(const r of rows){ const k=keyFn(r), v=valFn(r); sum.set(k,(sum.get(k)||0)+v); cnt.set(k,(cnt.get(k)||0)+1); }
-  const out=new Map(); for(const [k,s] of sum){ out.set(k, s/(cnt.get(k)||1)); } return out;
 }
 async function updateChartsLocal(only){
   const nRows=cacheNow, pRows=cachePrev;
@@ -307,71 +305,7 @@ async function updateChartsLocal(only){
     const label=r=>r.turno||'';
     const sN=groupSum(nRows,label), sP=groupSum(pRows,label);
     const labels=order.filter(x=> sN.has(x)||sP.has(x));
-    let nArr=labels.map(l=>sN.get(l)||0), pArr=labels.map(l=>sP.get(l)||0);
-    if(chartMode.turno==='media'){
-      const aN=groupAvg(nRows,label), aP=groupAvg(pRows,label);
-      nArr=labels.map(l=>aN.get(l)||0); pArr=labels.map(l=>aP.get(l)||0);
-    }
-    ensureChart('ch_turno', labels, nArr, pArr);
-  }
-}
-
-async function updateChartsRPC(only){
-  const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-  const {dePrev, atePrev} = computePrevRangeISO(de,ate);
-  await ensureRows(de,ate,dePrev,atePrev); // para fallback local
-
-  try{
-    const kinds = only ? [only] : ['dow','month','hour','turno'];
-    let hadRPC=false;
-
-    for(const k of kinds){
-      const paramsNow = buildParams(de,ate);
-      const paramsPrev= buildParams(dePrev,atePrev);
-      const rNow  = await tryRPC(CHART_RPC[k], paramsNow);
-      const rPrev = await tryRPC(CHART_RPC[k], paramsPrev);
-      if(!rNow || !rPrev){ continue; }
-      hadRPC=true;
-
-      if(k==='dow'){
-        const labels=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-        const nArr=Array(7).fill(0), pArr=Array(7).fill(0), nMed=Array(7).fill(0), pMed=Array(7).fill(0);
-        (rNow.data||[]).forEach(r=>{ nArr[r.dow]=+(r.total||0); nMed[r.dow]=+(r.media||0); });
-        (rPrev.data||[]).forEach(r=>{ pArr[r.dow]=+(r.total||0); pMed[r.dow]=+(r.media||0); });
-        ensureChart('ch_dow', labels, chartMode.dow==='media'?nMed:nArr, chartMode.dow==='media'?pMed:pArr);
-      }
-      if(k==='month'){
-        const n=rNow.data||[], p=rPrev.data||[];
-        const all=[...new Set([...n.map(r=>r.ym),...p.map(r=>r.ym)])].sort();
-        const mapN=new Map(n.map(r=>[r.ym, chartMode.month==='media'? (+r.media||0):(+r.total||0)]));
-        const mapP=new Map(p.map(r=>[r.ym, chartMode.month==='media'? (+r.media||0):(+r.total||0)]));
-        ensureChart('ch_month', all.map(ymLabel), all.map(x=>mapN.get(x)||0), all.map(x=>mapP.get(x)||0));
-      }
-      if(k==='hour'){
-        const labels=Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
-        const nArr=Array(24).fill(0), pArr=Array(24).fill(0), nMed=Array(24).fill(0), pMed=Array(24).fill(0);
-        (rNow.data||[]).forEach(r=>{ nArr[r.h]=+(r.total||0); nMed[r.h]=+(r.media||0); });
-        (rPrev.data||[]).forEach(r=>{ pArr[r.h]=+(r.total||0); pMed[r.h]=+(r.media||0); });
-        ensureChart('ch_hour', labels, chartMode.hour==='media'?nMed:nArr, chartMode.hour==='media'?pMed:pArr);
-      }
-      if(k==='turno'){
-        const order=['Manhã','Tarde','Noite','Madrugada','Dia'];
-        const n=new Map((rNow.data||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0):(+r.total||0)]));
-        const p=new Map((rPrev.data||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0):(+r.total||0)]));
-        const labels=order.filter(x=> n.has(x)||p.has(x));
-        ensureChart('ch_turno', labels, labels.map(l=>n.get(l)||0), labels.map(l=>p.get(l)||0));
-      }
-    }
-
-    if(!hadRPC){
-      setStatus('OK (gráficos via RPC indisponíveis, usando view)','ok');
-      await updateChartsLocal(only);
-    }else{
-      setStatus('OK','ok');
-    }
-  }catch(_e){
-    setStatus('OK (gráficos via RPC indisponíveis, usando view)','ok');
-    await updateChartsLocal(only);
+    ensureChart('ch_turno', labels, labels.map(l=>sN.get(l)||0), labels.map(l=>sP.get(l)||0));
   }
 }
 
@@ -381,41 +315,16 @@ function computePrevRangeISO(deISO,ateISO){
   const atePrev=new Date(d1.getTime()-86400000); const dePrev=new Date(atePrev.getTime()-(len-1)*86400000);
   return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
 }
-function buildParams(de,ate){
-  const btn=document.querySelector('#ms-cancel .msel-btn'); const canc=btn?btn.textContent.trim():'Não';
-  return {
-    p_dini:de,p_dfim:ate,
-    p_unids: ms.unids.get().length ? ms.unids.get():null,
-    p_lojas: ms.lojas.get().length ? ms.lojas.get():null,
-    p_turnos:ms.turnos.get().length? ms.turnos.get():null,
-    p_canais:ms.canais.get().length? ms.canais.get():null,
-    p_pags:  ms.pags.get().length  ? ms.pags.get()  :null,
-    p_cancelado: (canc==='Sim'||canc==='Não')?canc:null
-  };
-}
-function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
 
 async function updateKPIs(de,ate,dePrev,atePrev){
   await ensureRows(de,ate,dePrev,atePrev);
+  const sumN=sumKPIs(cacheNow), sumP=sumKPIs(cachePrev);
 
-  const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
-  const now=await tryRPC(KPI_RPC_CANDIDATES,pNow);
-  const prev=await tryRPC(KPI_RPC_CANDIDATES,pPrev);
-
-  let N,P,CN,CP;
-  if(now && prev){
-    N=agg(now.data||[]); P=agg(prev.data||[]);
-    const cNow=await tryRPC(KPI_RPC_CANDIDATES,{...pNow,p_cancelado:'Sim'});
-    const cPre=await tryRPC(KPI_RPC_CANDIDATES,{...pPrev,p_cancelado:'Sim'});
-    CN=agg((cNow?.data)||[]); CP=agg((cPre?.data)||[]);
-  }else{
-    const sumN=sumKPIs(cacheNow), sumP=sumKPIs(cachePrev);
-    N={ped:sumN.ped,fat:sumN.fat,des:sumN.des,fre:sumN.fre};
-    P={ped:sumP.ped,fat:sumP.fat,des:sumP.des,fre:sumP.fre};
-    CN={ped:sumN.cPed,fat:sumN.cFat,des:0,fre:0};
-    CP={ped:sumP.cPed,fat:sumP.cFat,des:0,fre:0};
-    setDiag(`Local agg ✓ — linhas atual: ${cacheNow.length} / anterior: ${cachePrev.length} — fonte: ${READ_VIEW}`);
-  }
+  const N={ped:sumN.ped,fat:sumN.fat,des:sumN.des,fre:sumN.fre};
+  const P={ped:sumP.ped,fat:sumP.fat,des:sumP.des,fre:sumP.fre};
+  const CN={ped:sumN.cPed,fat:sumN.cFat,des:0,fre:0};
+  const CP={ped:sumP.cPed,fat:sumP.cFat,des:0,fre:0};
+  setDiag(`Local agg ✓ — atual: ${cacheNow.length} linhas / anterior: ${cachePrev.length} — fonte: ${READ_VIEW}`);
 
   const len=daysLen(de,ate);
   const tktN=N.ped?N.fat/N.ped:0, tktP=P.ped?P.fat/P.ped:0;
@@ -451,7 +360,7 @@ async function updateEverything(){
     await loadStaticOptions();
     await ensureRows(de,ate,dePrev,atePrev);
     await updateKPIs(de,ate,dePrev,atePrev);
-    await updateChartsRPC();
+    await updateChartsLocal();
     setStatus('OK','ok');
   }catch(e){
     console.error(e);
@@ -460,7 +369,7 @@ async function updateEverything(){
   }
 }
 
-/* ========= UPLOAD EXCEL (opcional) ========= */
+/* ========= UPLOAD EXCEL (seu HTML já tem o botão) ========= */
 document.getElementById('btnUpload')?.addEventListener('click',()=>document.getElementById('fileExcel').click());
 document.getElementById('fileExcel')?.addEventListener('change', onUploadExcel);
 
@@ -484,7 +393,7 @@ async function onUploadExcel(ev){
         canal:   (r['canal']??r['Canal de venda']??'')+'',
         pagamento_base: (r['pagamento_base']??r['tipo_pagamento']??'')+'',
         cancelado: normCancel(r['cancelado']),
-        pedidos: +r['pedidos']||+r['qtd_pedidos']||+r['qtde']||+r['qtd']||1,
+        pedidos: +r['pedidos']||+r['qtd_pedidos']||+r['qtde']||+r['qtd']||+r['qtd_itens']||+r['itens']||1,
         fat: +br2num(r['fat']??r['faturamento']??0),
         des: +br2num(r['des']??0),
         fre: +br2num(r['fre']??0),
