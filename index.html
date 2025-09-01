@@ -3,30 +3,29 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.17.0 — KPIs wine + global mode + auto-close + upload fix)</title>
+  <title>DASHBOARD — CFO (v2.17.0 — KPI minimal + filtros auto + donut top6)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{
       --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444;
       --chip:#eef2ff; --bar:#334155;
-
-      /* Paleta gráficos (trocado para vinho escuro) */
-      --wine:#7b1e29;        /* vinho escuro */
-      --wine-soft:#d38a96;   /* vinho claro para gradiente */
-      --prev:#94a3b8;        /* slate-400 */
-      --prev-soft:#cbd5e1;   /* slate-300 */
+      --wine:#7b1e3a;               /* vinho escuro padrão */
+      /* Paleta gráficos (vinho) */
+      --c-now:#7b1e3a;
+      --c-now-soft:#9c3554;
+      --c-prev:#94a3b8;
+      --c-prev-soft:#cbd5e1;
     }
     *{box-sizing:border-box}
     html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
     .wrap{max-width:1200px;margin:28px auto;padding:0 16px}
     .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap}
     h1{margin:0;font-size:28px;letter-spacing:.2px}
-
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
     .btn.clear{gap:6px}
 
-    .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px}
-    .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap}
+    .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px;transition:max-height .25s ease}
+    .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap;cursor:default}
     .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
     .ico{width:16px;height:16px;color:#475569}
     .muted{color:var(--muted)}
@@ -38,7 +37,6 @@
     .chip{padding:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:700}
     .chip.active{background:var(--pri);border-color:var(--pri);color:#fff}
 
-    /* MultiSelect */
     .msel{position:relative}
     .msel-btn{cursor:pointer;text-align:left}
     .msel-btn:after{content:"▾";float:right;color:#475569}
@@ -48,11 +46,14 @@
     .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
     .msel-opt:hover{background:#f3f4f6}
 
-    /* KPIs – novo visual */
+    /* ===== KPI minimalista ===== */
     .krow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-    .kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05);cursor:pointer;transition:transform .08s ease}
-    .kpi:hover{transform:translateY(-1px)}
-    .kpi .bar{position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:14px 0 0 14px;background:var(--wine)}
+    .kpi{
+      position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;
+      padding:12px 14px 12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05);
+      border-top:2px solid var(--wine);     /* acento horizontal fino vinho */
+    }
+    /* removida a barra lateral antiga */
     .kpi h4{margin:0 0 6px;font-size:13px;color:#475569;display:flex;align-items:center}
     .kpi h4 .spacer{flex:1}
     .kpi .val{font-size:22px;font-weight:800}
@@ -63,28 +64,34 @@
     .delta.down{color:#ef4444;border-color:#fecaca}
     .delta.flat{color:#64748b}
 
-    /* Micro barra comparativa no KPI */
-    .mini{height:6px;background:#f1f5f9;border-radius:999px;margin-top:8px;overflow:hidden}
-    .mini .now{height:100%;background:linear-gradient(90deg, rgba(123,30,41,.95), rgba(211,138,150,.55))}
-
-    /* Cards de gráfico */
     .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
     .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
     .seg button{padding:6px 10px;border:0;background:#fff;cursor:pointer;font-weight:700}
-    .seg button.active{background:var(--wine);color:#fff;border-color:var(--wine)}
-    .chart-box{height:280px}
+    .seg button.active{background:var(--pri);color:#fff}
+    .chart-box{height:280px;position:relative}
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
 
     /* GRÁFICO LARGO (Vendas por mês) */
     .chart-card.wide{grid-column:span 2;}
     .chart-card.wide .chart-box{height:360px}
 
-    /* Esconde os toggles por gráfico (agora há um global) */
-    .chart-card .chart-head .seg[data-chart]{display:none}
+    /* Centro clicável do donut */
+    .center-link{
+      position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+      background:rgba(255,255,255,.9);border:1px solid var(--line);
+      padding:4px 10px;border-radius:999px;cursor:pointer;
+      font-weight:800;font-size:12px;color:#334155;white-space:nowrap;
+    }
+
+    /* Seção recolhida após inatividade */
+    .section.collapsed .row,
+    .section.collapsed #periodoInfo,
+    .section.collapsed .upload-info { display:none; }
+    .section.collapsed .sec-head{cursor:pointer}
 
     .diag{font-size:12px;color:#475569;margin-left:8px}
-    .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;position:relative}
+    .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .upload-info{margin-top:8px;font-size:12px;color:#475569}
 
     @media (max-width:1024px){
@@ -103,16 +110,14 @@
   <div class="wrap">
     <div class="top">
       <h1>DASHBOARD</h1>
-
-      <!-- Upload: label abre o file input nativamente (fix) -->
       <div class="upload-bar">
-        <label id="btnUpload" for="fileExcel" class="btn">📤 Carregar Excel</label>
-        <input id="fileExcel" type="file" accept=".xlsx,.xls,.csv" style="position:absolute;left:-9999px;">
+        <button id="btnUpload" class="btn">📤 Carregar Excel</button>
+        <input id="fileExcel" type="file" accept=".xlsx,.xls,.csv" style="display:none">
       </div>
     </div>
 
     <!-- Filtros de Data -->
-    <div class="section">
+    <div id="secDatas" class="section">
       <div class="sec-head">
         <div class="sec-title">
           <svg class="ico" viewBox="0 0 24 24" fill="none"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
@@ -145,7 +150,7 @@
     </div>
 
     <!-- Filtros -->
-    <div class="section" id="filtrosSection">
+    <div id="secFiltros" class="section">
       <div class="sec-head">
         <div class="sec-title">
           <svg class="ico" viewBox="0 0 24 24" fill="none"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
@@ -194,81 +199,70 @@
       </div>
     </div>
 
-    <!-- KPIs (clicáveis) -->
+    <!-- KPIs -->
     <div class="krow">
-      <div class="kpi" data-kpi="pedidos"><span class="bar"></span>
+      <div class="kpi">
         <h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4>
         <div class="val" id="k_ped">—</div>
-        <div class="mini"><div id="mini_ped" class="now" style="width:0%"></div></div>
         <div class="sub">Anterior: <span id="p_ped">—</span></div>
       </div>
-      <div class="kpi" data-kpi="ticket"><span class="bar"></span>
+      <div class="kpi">
         <h4><span>Ticket Médio</span><span class="spacer"></span><span id="d_tkt" class="delta flat">—</span></h4>
         <div class="val" id="k_tkt">—</div>
-        <div class="mini"><div id="mini_tkt" class="now" style="width:0%"></div></div>
         <div class="sub">Anterior: <span id="p_tkt">—</span></div>
       </div>
-      <div class="kpi" data-kpi="fat"><span class="bar"></span>
+      <div class="kpi">
         <h4><span>Faturamento</span><span class="spacer"></span><span id="d_fat" class="delta flat">—</span></h4>
         <div class="val" id="k_fat">—</div>
-        <div class="mini"><div id="mini_fat" class="now" style="width:0%"></div></div>
         <div class="sub">Anterior: <span id="p_fat">—</span></div>
       </div>
     </div>
 
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi" data-kpi="fatmed"><span class="bar"></span>
+      <div class="kpi">
         <h4><span>Faturamento Médio</span><span class="spacer"></span><span id="d_fatmed" class="delta flat">—</span></h4>
         <div class="val" id="k_fatmed">—</div>
-        <div class="mini"><div id="mini_fatmed" class="now" style="width:0%"></div></div>
         <div class="sub">Anterior: <span id="p_fatmed">—</span></div>
       </div>
-      <div class="kpi" data-kpi="des"><span class="bar"></span>
+      <div class="kpi">
         <h4><span>Incentivos</span><span class="spacer"></span><span id="d_des" class="delta flat">—</span></h4>
         <div class="val" id="k_des">—</div>
-        <div class="mini"><div id="mini_des" class="now" style="width:0%"></div></div>
         <div class="sub">Anterior: <span id="p_des">—</span></div>
       </div>
-      <div class="kpi" data-kpi="desperc"><span class="bar"></span>
+      <div class="kpi">
         <h4><span>% de Incentivos</span><span class="spacer"></span><span id="d_desperc" class="delta flat">—</span></h4>
         <div class="val" id="k_desperc">—</div>
-        <div class="mini"><div id="mini_desperc" class="now" style="width:0%"></div></div>
         <div class="sub">Anterior: <span id="p_desperc">—</span></div>
       </div>
     </div>
 
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi" data-kpi="fre"><span class="bar"></span>
+      <div class="kpi">
         <h4><span>Frete</span><span class="spacer"></span><span id="d_fre" class="delta flat">—</span></h4>
         <div class="val" id="k_fre">—</div>
-        <div class="mini"><div id="mini_fre" class="now" style="width:0%"></div></div>
         <div class="sub">Anterior: <span id="p_fre">—</span></div>
       </div>
-      <div class="kpi" data-kpi="fremed"><span class="bar"></span>
+      <div class="kpi">
         <h4><span>Frete Médio</span><span class="spacer"></span><span id="d_fremed" class="delta flat">—</span></h4>
         <div class="val" id="k_fremed">—</div>
-        <div class="mini"><div id="mini_fremed" class="now" style="width:0%"></div></div>
         <div class="sub">Anterior: <span id="p_fremed">—</span></div>
       </div>
-      <div class="kpi" data-kpi="canc_ped"><span class="bar"></span>
+      <div class="kpi">
         <h4><span>Pedidos Cancelados</span><span class="spacer"></span><span id="d_canc_ped" class="delta flat">—</span></h4>
         <div class="val" id="k_canc_ped">—</div>
-        <div class="mini"><div id="mini_canc_ped" class="now" style="width:0%"></div></div>
         <div class="sub">Participação: <span id="k_canc_part">—</span> (Anterior: <span id="p_canc_part">—</span>)</div>
       </div>
     </div>
 
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi" data-kpi="canc_val"><span class="bar"></span>
+      <div class="kpi">
         <h4><span>Valor de Cancelados</span><span class="spacer"></span><span id="d_canc_val" class="delta flat">—</span></h4>
         <div class="val" id="k_canc_val">—</div>
-        <div class="mini"><div id="mini_canc_val" class="now" style="width:0%"></div></div>
         <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
       </div>
-      <div class="kpi" data-kpi="roi"><span class="bar"></span>
+      <div class="kpi">
         <h4><span>ROI</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
         <div class="val" id="k_roi">—</div>
-        <div class="mini"><div id="mini_roi" class="now" style="width:0%"></div></div>
         <div class="sub">Anterior: <span id="p_roi">—</span></div>
       </div>
       <div></div>
@@ -276,23 +270,13 @@
 
     <!-- GRÁFICOS -->
     <div class="section">
-      <div class="sec-head">
-        <div class="sec-title">Gráficos</div>
-
-        <!-- Controle GLOBAL Atual/Média -->
-        <div class="seg" id="globalSeg" aria-label="Alternar modo de todos os gráficos">
-          <button class="seg-btn active" data-mode="total">Atual</button>
-          <button class="seg-btn" data-mode="media">Média</button>
-        </div>
-      </div>
-
+      <div class="sec-head"><div class="sec-title">Gráficos</div></div>
       <div class="row cols-2">
         <!-- VENDAS POR MÊS (LARGO) -->
         <div class="chart-card wide">
           <div class="chart-head">
             <div class="muted">Vendas por mês — últimos 12M vs. 12M anteriores</div>
-            <!-- (toggles por gráfico ocultos) -->
-            <div class="seg" data-chart="month" style="display:none">
+            <div class="seg" data-chart="month">
               <button class="seg-btn active" data-mode="total">Total</button>
               <button class="seg-btn" data-mode="media">Média</button>
             </div>
@@ -303,7 +287,7 @@
         <div class="chart-card">
           <div class="chart-head">
             <div class="muted">Vendas por dia da semana</div>
-            <div class="seg" data-chart="dow" style="display:none">
+            <div class="seg" data-chart="dow">
               <button class="seg-btn active" data-mode="total">Total</button>
               <button class="seg-btn" data-mode="media">Média</button>
             </div>
@@ -314,7 +298,7 @@
         <div class="chart-card">
           <div class="chart-head">
             <div class="muted">Vendas por hora</div>
-            <div class="seg" data-chart="hour" style="display:none">
+            <div class="seg" data-chart="hour">
               <button class="seg-btn active" data-mode="total">Total</button>
               <button class="seg-btn" data-mode="media">Média</button>
             </div>
@@ -325,12 +309,23 @@
         <div class="chart-card">
           <div class="chart-head">
             <div class="muted">Vendas por turno</div>
-            <div class="seg" data-chart="turno" style="display:none">
+            <div class="seg" data-chart="turno">
               <button class="seg-btn active" data-mode="total">Total</button>
               <button class="seg-btn" data-mode="media">Média</button>
             </div>
           </div>
           <div class="chart-box"><canvas id="ch_turno"></canvas></div>
+        </div>
+
+        <!-- DONUT TOP 6 LOJAS -->
+        <div class="chart-card">
+          <div class="chart-head">
+            <div class="muted">Participação por loja — Top 6</div>
+          </div>
+          <div class="chart-box">
+            <canvas id="ch_top6"></canvas>
+            <button id="top6Center" class="center-link">Total: R$ 0,00</button>
+          </div>
         </div>
       </div>
     </div>
@@ -351,7 +346,7 @@
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  /* ===================== CHART.JS — defaults/tema ===================== */
+  /* ===================== CHART.JS — tema vinho ===================== */
   Chart.defaults.font.family = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu';
   Chart.defaults.color = '#334155';
   Chart.defaults.plugins.legend.position = 'top';
@@ -366,8 +361,8 @@
 
   function gradNow(ctx){
     const g = ctx.createLinearGradient(0,0,0,240);
-    g.addColorStop(0,'rgba(123,30,41,0.95)');   // vinho
-    g.addColorStop(1,'rgba(211,138,150,0.55)'); // vinho claro
+    g.addColorStop(0,'rgba(123,30,58,0.95)');   // vinho escuro
+    g.addColorStop(1,'rgba(156,53,84,0.55)');  // vinho suave
     return g;
   }
   function gradPrev(ctx){
@@ -393,59 +388,17 @@
   function monthEndISO(isoStr){ const d=new Date(isoStr+'T00:00:00'); d.setMonth(d.getMonth()+1,0); return iso(d); }
   function addMonthsISO(isoStr, delta){ const d=new Date(isoStr+'T00:00:00'); const day=d.getDate(); d.setDate(1); d.setMonth(d.getMonth()+delta); const last=new Date(d.getFullYear(), d.getMonth()+1, 0).getDate(); d.setDate(Math.min(day,last)); return iso(d); }
   function formatYM(isoStr){ const d=new Date(isoStr+'T00:00:00'); const m=d.getMonth(); const y=String(d.getFullYear()).slice(-2); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m]}/${y}`; }
-
-  function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l5 6h-3v8H8V9H5l5-6z"/></svg>';}
-  function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 17l-5-6h3V3h4v8h3l-5 6z"/></svg>';}
-  function deltaBadge(el,curr,prev){
-    if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
-    const p=((curr-prev)/prev)*100;
-    el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
-    el.className='delta '+(p>=0?'up':'down');
-  }
-  function normCancel(v){
-    const s=String(v??'').trim().toLowerCase();
-    if(['sim','s','true','1','y','yes'].includes(s)) return 'Sim';
-    if(['nao','não','n','false','0','no','nao/não'].includes(s)) return 'Não';
-    return 'Não';
-  }
   const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const normHeader = (s)=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
   function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
   function displayNormalize(s){ return cleanSpaces(s); }
-  function parseBR(v){
-    if(v==null) return 0;
-    if(typeof v==='number' && isFinite(v)) return v;
-    let s=String(v).trim(); if(!s) return 0; s=s.replace(/[^\d,.\-]/g,'');
-    const lastC=s.lastIndexOf(','), lastD=s.lastIndexOf('.');
-    if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
-    const n=Number(s); return isFinite(n)?n:0;
-  }
-  function toInt(v){ const n=parseBR(v); if(!isFinite(n)) return 0; return Math.round(n); }
-  function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
-  function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
-  /* ===================== MULTISELECT (com auto-close 10s) ===================== */
+  /* ===================== MULTISELECT ===================== */
   function MultiSelect(rootId, placeholder){
     const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
     let options=[], selected=new Set(), filtered=[];
-    let lastInteraction=0, closeTimer=null;
-    const AUTO_MS = 10000;
-
-    function armAutoClose(){
-      clearTimeout(closeTimer);
-      closeTimer = setTimeout(()=>{
-        if(!root.classList.contains('open')) return;
-        const since = Date.now()-lastInteraction;
-        if(since>=AUTO_MS){ root.classList.remove('open'); }
-        else { armAutoClose(); }
-      }, AUTO_MS);
-    }
-    function touch(){ lastInteraction=Date.now(); }
-    function open(){ root.classList.add('open'); touch(); armAutoClose(); }
-    function close(){ root.classList.remove('open'); clearTimeout(closeTimer); }
-
     function render(){ panel.innerHTML=''; const q=document.createElement('input'); q.className='msel-search'; q.placeholder='Filtrar…';
-      q.addEventListener('input',()=>{touch(); filtered=options.filter(v=>v.toLowerCase().includes(q.value.toLowerCase())); draw();});
+      q.addEventListener('input',()=>{filtered=options.filter(v=>v.toLowerCase().includes(q.value.toLowerCase())); draw(); resetAutoCollapse();});
       panel.appendChild(q); draw();
     }
     function draw(){
@@ -454,20 +407,15 @@
         const row=document.createElement('div'); row.className='msel-opt';
         const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v; cb.checked=selected.has(v);
         const lb=document.createElement('label'); lb.textContent=v;
-        cb.addEventListener('change',()=>{touch(); cb.checked?selected.add(v):selected.delete(v); refresh(); applyAll();});
-        row.addEventListener('mouseenter',touch); row.addEventListener('click',touch);
+        cb.addEventListener('change',()=>{cb.checked?selected.add(v):selected.delete(v); refresh(); applyAll(); resetAutoCollapse();});
         row.appendChild(cb); row.appendChild(lb); box.appendChild(row);
       });
       panel.querySelectorAll('.msel-opt').forEach(n=>n.remove());
       panel.appendChild(box);
     }
     function refresh(){ btn.textContent = selected.size===0 ? placeholder : `${selected.size} selecionado(s)`; }
-    btn.addEventListener('click',()=>{ root.classList.contains('open')? close() : open(); });
-    document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) close(); });
-
-    panel.addEventListener('scroll',touch);
-    panel.addEventListener('mousemove',touch);
-
+    btn.addEventListener('click',()=>{ root.classList.toggle('open'); resetAutoCollapse(); });
+    document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
     return {
       setOptions(list, keepOrder=false){
         options=(list||[]).filter(v=>v!=null).map(String);
@@ -507,28 +455,14 @@
     ms.cancel.set(['Não']);
     applyQuick('30');
   });
-  chips.forEach(b=> b.addEventListener('click', ()=>applyQuick(b.dataset.q)));
+  chips.forEach(b=> b.addEventListener('click', ()=>{ applyQuick(b.dataset.q); resetAutoCollapse(); }));
   ;[fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{
     chips.forEach(c=>c.classList.remove('active'));
     periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
-    applyAll();
+    applyAll(); resetAutoCollapse();
   }));
 
-  /* ===================== CONTROLE GLOBAL (Atual/Média) ===================== */
-  const chartMode={dow:'total', month:'total', hour:'total', turno:'total'};
-  (function setupGlobalMode(){
-    const seg = $('globalSeg');
-    seg.addEventListener('click',(e)=>{
-      const btn=e.target.closest('.seg-btn'); if(!btn) return;
-      const mode=btn.dataset.mode;
-      seg.querySelectorAll('.seg-btn').forEach(b=> b.classList.toggle('active', b===btn));
-      chartMode.dow=mode; chartMode.month=mode; chartMode.hour=mode; chartMode.turno=mode;
-      updateChartsServer();    // dow/hour/turno
-      updateMonth12x12();      // mês
-    });
-  })();
-
-  /* ===================== KPIs ===================== */
+  /* ===================== KPIs (mesmo cálculo anterior) ===================== */
   function buildParams(de, ate, overrideCancel = null) {
     const canc = overrideCancel != null ? [overrideCancel] : ms.cancel.get();
     let p_cancelado = null;
@@ -546,7 +480,6 @@
   function rpcName(params){ return params.p_unids ? 'kpi_vendas_v2' : 'kpi_vendas'; }
   function prepareArgs(name, params){ if(name==='kpi_vendas'){ const {p_unids, ...rest}=params; return rest; } return params; }
   function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
-
   async function kpiCancelFallback(de,ate,dePrev,atePrev){
     const rowsNow = await fetchRowsLocal(de,ate,'Sim');
     const rowsPrev= await fetchRowsLocal(dePrev,atePrev,'Sim');
@@ -554,15 +487,6 @@
     const N=sum(rowsNow), P=sum(rowsPrev);
     return { CN:N, CP:P };
   }
-
-  function setMini(id, curr, prev){
-    const el=$(id);
-    let pct=0;
-    if(isFinite(prev) && prev>0) pct = Math.max(0, Math.min(100, ((curr/prev)*100)));
-    else if(isFinite(curr) && curr>0) pct = 100;
-    el.style.width = pct.toFixed(0)+'%';
-  }
-
   async function updateKPIs(de, ate, dePrev, atePrev){
     const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
     const nameNow=rpcName(pNow),     namePrev=rpcName(pPrev);
@@ -592,50 +516,44 @@
     const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/P.ped) : 0;
     const partCancN = N.ped? (CN.ped/N.ped) : 0, partCancP = P.ped? (CP.ped/P.ped) : 0;
 
-    $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped); setMini('mini_ped',N.ped,P.ped);
-    $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP); setMini('mini_tkt',tktN,tktP);
-    $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat); setMini('mini_fat',N.fat,P.fat);
-    $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP); setMini('mini_fatmed',fatMedN,fatMedP);
-    $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des); setMini('mini_des',N.des,P.des);
-    $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP); setMini('mini_desperc',desPercN,desPercP);
-    $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre); setMini('mini_fre',N.fre,P.fre);
-    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP); setMini('mini_fremed',freMedN,freMedP);
+    const upSVG=()=>'<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l5 6h-3v8H8V9H5l5-6z"/></svg>';
+    const downSVG=()=>'<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 17l-5-6h3V3h4v8h3l-5 6z"/></svg>';
+    function deltaBadge(el,curr,prev){
+      if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
+      const p=((curr-prev)/prev)*100;
+      el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
+      el.className='delta '+(p>=0?'up':'down');
+    }
 
-    $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped); setMini('mini_canc_ped',CN.ped,CP.ped);
-    $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat); setMini('mini_canc_val',CN.fat,CP.fat);
+    $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
+    $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
+    $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
+    $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
+    $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
+    $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
+    $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
+    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
 
-    const roiN = computeROI(N), roiP = computeROI(P);
+    $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
+    $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
+    $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
+
+    const roiN = (N.des>0)? (N.fat-N.des)/N.des : NaN;
+    const roiP = (P.des>0)? (P.fat-P.des)/P.des : NaN;
     $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
     $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
     deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
-    setMini('mini_roi', Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
   }
 
-  /* ===== Comparativo (p/ tooltips) ===== */
+  /* ===== Comparativo (para tooltips) ===== */
   function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
-  function isFullYear(d1,d2){
-    return d1.getMonth()===0 && d1.getDate()===1 &&
-           d2.getMonth()===11 && d2.getDate()===31 &&
-           d1.getFullYear()===d2.getFullYear();
-  }
-  function isFullMonthsAligned(d1,d2){
-    return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth());
-  }
-  function shiftYear(date,delta){
-    const d=new Date(date); d.setFullYear(d.getFullYear()+delta);
-    const ld = lastDayOfMonth(d.getFullYear(), d.getMonth());
-    if(d.getDate()>ld) d.setDate(ld);
-    return d;
-  }
+  function isFullYear(d1,d2){ return d1.getMonth()===0 && d1.getDate()===1 && d2.getMonth()===11 && d2.getDate()===31 && d1.getFullYear()===d2.getFullYear(); }
+  function isFullMonthsAligned(d1,d2){ return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth()); }
+  function shiftYear(date,delta){ const d=new Date(date); d.setFullYear(d.getFullYear()+delta); const ld=lastDayOfMonth(d.getFullYear(), d.getMonth()); if(d.getDate()>ld) d.setDate(ld); return d; }
   function computePrevRangeISO(deISO, ateISO){
     const d1=new Date(deISO+'T00:00:00'), d2=new Date(ateISO+'T00:00:00');
-    if(isFullYear(d1,d2) || isFullMonthsAligned(d1,d2)){
-      const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1);
-      return { dePrev: iso(p1), atePrev: iso(p2) };
-    }
-    const len=daysLen(deISO,ateISO);
-    const atePrev=new Date(d1.getTime()-24*60*60*1000);
-    const dePrev=new Date(atePrev.getTime()-(len-1)*24*60*60*1000);
+    if(isFullYear(d1,d2) || isFullMonthsAligned(d1,d2)){ const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1); return { dePrev: iso(p1), atePrev: iso(p2) }; }
+    const len=daysLen(deISO,ateISO); const atePrev=new Date(d1.getTime()-86400000); const dePrev=new Date(atePrev.getTime()-(len-1)*86400000);
     return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
   }
 
@@ -670,6 +588,17 @@
     canvas.__chart=chart;
   }
 
+  const chartMode={dow:'total', month:'total', hour:'total', turno:'total'};
+  document.querySelectorAll('.seg').forEach(seg=>{
+    seg.addEventListener('click',(e)=>{
+      const btn=e.target.closest('.seg-btn'); if(!btn) return;
+      const key=seg.dataset.chart; chartMode[key]=btn.dataset.mode;
+      seg.querySelectorAll('.seg-btn').forEach(b=> b.classList.toggle('active', b===btn));
+      if(key==='month') updateMonth12x12();
+      else updateChartsServer(key);
+    });
+  });
+
   const RPC_FN = {
     dow:   'chart_vendas_dow_v1',
     month: 'chart_vendas_mes_v1',
@@ -697,7 +626,6 @@
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
     const {dePrev, atePrev} = computePrevRangeISO(de,ate);
     lastPrevRange = {dePrev, atePrev};
-    const tip = `Período anterior: ${dePrev} → ${atePrev}`;
 
     try{
       setDiag('');
@@ -708,6 +636,8 @@
         const [now, prev] = await Promise.all([ fetchChartRPC(k,de,ate), fetchChartRPC(k,dePrev,atePrev) ]);
         return {k, now, prev};
       }));
+
+      const tip = `Período anterior: ${dePrev} → ${atePrev}`;
 
       const pD = packs.find(p=>p.k==='dow');
       if(!only || only==='dow'){
@@ -782,8 +712,8 @@
       const mNow = toMap(nData), mPrev= toMap(pData);
 
       const ymsNow = []; cur = last12Start;
-      for(let i=0;i<12;i++){ const d=new Date(cur+'T00:00:00'); ymsNow.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`); cur = addMonthsISO(cur, 1); }
-      const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const prev=new Date(yy,mm-1-12,1); return `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`; });
+      for(let i=0;i<12;i++){ const d=new Date(cur+'T00:00:00'); const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; ymsNow.push(ym); cur=addMonthsISO(cur,1); }
+      const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
 
       const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
       const prevArr = ymsPrev.map(ym => mPrev.get(ym)||0);
@@ -797,6 +727,56 @@
       setStatus('OK (mensal 12x12 indisponível)','ok');
     }
   }
+
+  /* ===================== DONUT TOP 6 LOJAS ===================== */
+  const wine = ["#7b1e3a","#8c2947","#9c3554","#ad4061","#bd4c6e","#ce577b"];
+  function ensureDonutTop6(labels, values){
+    const cvs = $('ch_top6'); if(!cvs) return;
+    if(cvs.__chart){ try{cvs.__chart.destroy();}catch(e){} cvs.__chart=null; }
+    const ctx = cvs.getContext('2d');
+    const total = (values||[]).reduce((a,b)=>a+(+b||0),0);
+    $('top6Center').textContent = 'Total: '+money(total);
+
+    const chart = new Chart(ctx,{
+      type:'doughnut',
+      data:{ labels, datasets:[{ data: values, backgroundColor: wine, hoverBackgroundColor: wine, borderColor:'#fff', borderWidth:1 }]},
+      options:{
+        responsive:true, maintainAspectRatio:false, cutout:'60%',
+        plugins:{
+          legend:{ position:'right', labels:{ usePointStyle:true, pointStyle:'circle', boxWidth:10, padding:16, color:'#334155' } },
+          tooltip:{ callbacks:{ label:(ctx)=>{ const label = ctx.label||''; const val = ctx.parsed||0; const total = ctx.chart._metasets[0].total || (ctx.dataset.data||[]).reduce((a,b)=>a+(+b||0),0); const perc = total ? ((val/total)*100).toFixed(1) : 0; return `${label}: ${money(val)} (${perc}%)`; } },
+            backgroundColor:'rgba(15,23,42,.95)', titleColor:'#e2e8f0', bodyColor:'#e2e8f0', borderColor:'rgba(148,163,184,.25)', borderWidth:1 }
+        }
+      }
+    });
+    cvs.__chart = chart;
+  }
+  async function updateTop6(){
+    try{
+      const de=fDe.value||firstDay, ate=fAte.value||lastDay;
+      let q = supa.from(READ_VIEW)
+        .select('loja, fat:sum(fat)')
+        .gte('dia', de).lte('dia', ate)
+        .order('fat', { ascending:false })
+        .limit(6);
+      const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
+      const lojas = ms.lojas.get(); if(lojas.length) q = q.in('loja', lojas);
+      const turns = ms.turnos.get(); if(turns.length) q = q.in('turno', turns);
+      const cans  = ms.canais.get(); if(cans.length)  q = q.in('canal', cans);
+      const pags  = ms.pags.get(); if(pags.length)   q = q.in('pagamento_base', pags);
+      const canc  = ms.cancel.get();
+      if(canc.length===1 && (canc[0]==='Sim' || canc[0]==='Não')) q = q.eq('cancelado', canc[0]);
+      const { data, error } = await q;
+      if(error) throw error;
+      const labels = (data||[]).map(r=>r.loja);
+      const values = (data||[]).map(r=>+r.fat||0);
+      ensureDonutTop6(labels, values);
+    }catch(e){
+      console.warn('top6', e.message||e);
+      ensureDonutTop6([], []);
+    }
+  }
+  $('top6Center').addEventListener('click', ()=>{ setStatus('Top 6 — total clicado','ok'); });
 
   /* ===================== FALLBACK LOCAL (cancelados) ===================== */
   async function discoverColumns(source){
@@ -818,17 +798,18 @@
   async function trySourceLocal(source, de, ate, onlyCancel){
     const map = await discoverColumns(source);
     if(!map) return null;
-    const sel = uniq([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys]).join(',');
+    const sel = [...new Set([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys])].join(',');
     const q = await supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
     if(q.error) return null;
     const rows = (q.data||[]).filter(x=>{
       if(!onlyCancel) return true;
       const k = map.cancKeys[0];
-      const norm = normCancel(x[k]);
-      return norm === 'Sim';
+      const s=String(x[k]??'').trim().toLowerCase();
+      const sim = ['sim','s','true','1','y','yes'].includes(s);
+      return sim;
     }).map(x=>{
-      const fat = (map.fatKeys.length)? parseBR(x[map.fatKeys[0]]) : 0;
-      const ped = (map.pedKeys.length)? toInt(x[map.pedKeys[0]]) : 1;
+      const fat = (map.fatKeys.length)? Number(String(x[map.fatKeys[0]]).replace(/[^\d,.-]/g,'').replace(/\./g,'').replace(',', '.'))||0 : 0;
+      const ped = (map.pedKeys.length)? Math.round(Number(String(x[map.pedKeys[0]]).replace(/[^\d.-]/g,''))||1) : 1;
       return { fat, pedidos: ped };
     });
     return rows;
@@ -846,72 +827,7 @@
   }
 
   /* ===================== EXCEL → DB (upsert) ===================== */
-  // Fallback JS (mantém compatibilidade mesmo tendo <label for>)
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
-
-  const headerAlts = {
-    dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
-    hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
-    turno:['turno','periodo','shift'],
-    fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
-    des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
-    fre:  ['fre','frete','taxa entrega','taxa_entrega','entrega'],
-    ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
-    unid: ['unidade','unid','filial','cod_unidade','empresa'],
-    loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja'],
-    canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
-    pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
-    canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
-    pid:  ['pedido','pedido id','pedido_id','id pedido','id_pedido','numero pedido','número pedido','order id','order_id']
-  };
-  function pickColumn(headers, alts){
-    const map = headers.map(h=>({orig:h, key:normHeader(h)}));
-    for(const a of alts){
-      const ex = map.find(m=>m.key===a); if(ex) return ex.orig;
-      const cont = map.find(m=>m.key.includes(a)); if(cont) return cont.orig;
-    }
-    return null;
-  }
-  function parseHourFromEither(dateCell, hourCell){
-    let h = null;
-    if(hourCell!=null){
-      if(typeof hourCell==='number' && hourCell>=0 && hourCell<=23) h = Math.floor(hourCell);
-      else { const m=String(hourCell).match(/(\d{1,2})/); if(m){ const hh=+m[1]; if(hh>=0&&hh<=23) h=hh; } }
-    }
-    if(h==null){ const {hour} = splitDateTimeCell(dateCell); h = hour; }
-    return h;
-  }
-  function splitDateTimeCell(v){
-    if(v==null) return {dateISO:null, hour:null};
-    if(v instanceof Date){ return {dateISO: iso(v), hour: v.getHours()}; }
-    let s=String(v).trim();
-    if(!s) return {dateISO:null, hour:null};
-    if(/^-?\d+(\.\d+)?$/.test(s)){
-      const num=Number(s); const base=new Date(Date.UTC(1899,11,30));
-      const d = new Date(base.getTime() + num*86400000);
-      const frac = num - Math.floor(num);
-      const hour = Math.floor(frac*24 + 1e-6);
-      return {dateISO: iso(d), hour: (hour>=0 && hour<=23)?hour:null};
-    }
-    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T](\d{1,2})(?::(\d{2})(?::(\d{2}))?)?)?$/);
-    if(m){
-      const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
-      const d=new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
-      return {dateISO: iso(d), hour: d.getHours()};
-    }
-    const t = new Date(s.replace('T',' '));
-    if(!isNaN(t)) return {dateISO: iso(t), hour: t.getHours()};
-    return {dateISO:null, hour:null};
-  }
-  function hashRow(obj){
-    const keys = ['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
-    const s = keys.map(k => k+':'+String(obj[k]??'')).join('|');
-    let h = 5381;
-    for(let i=0;i<s.length;i++){ h = ((h << 5) + h) ^ s.charCodeAt(i); }
-    return String(h >>> 0);
-  }
-  function makeRowKey(row){ return hashRow(row); }
-
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file){ info(''); return; }
@@ -923,6 +839,65 @@
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
       const headers = json.length ? Object.keys(json[0]) : [];
+
+      const headerAlts = {
+        dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
+        hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
+        fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
+        des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
+        fre:  ['fre','frete','taxa entrega','taxa_entrega','entrega'],
+        ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
+        unid: ['unidade','unid','filial','cod_unidade','empresa'],
+        loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja'],
+        canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
+        pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
+        canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
+        pid:  ['pedido','pedido id','pedido_id','id pedido','id_pedido','numero pedido','número pedido','order id','order_id']
+      };
+      const pickColumn = (headers, alts)=>{
+        const map = headers.map(h=>({orig:h, key:normHeader(h)}));
+        for(const a of alts){
+          const ex = map.find(m=>m.key===a); if(ex) return ex.orig;
+          const cont = map.find(m=>m.key.includes(a)); if(cont) return cont.orig;
+        }
+        return null;
+      };
+      const splitDateTimeCell=(v)=>{
+        if(v==null) return {dateISO:null, hour:null};
+        if(v instanceof Date){ return {dateISO: iso(v), hour: v.getHours()}; }
+        let s=String(v).trim();
+        if(!s) return {dateISO:null, hour:null};
+        if(/^-?\d+(\.\d+)?$/.test(s)){
+          const num=Number(s); const base=new Date(Date.UTC(1899,11,30));
+          const d = new Date(base.getTime() + num*86400000);
+          const frac = num - Math.floor(num);
+          const hour = Math.floor(frac*24 + 1e-6);
+          return {dateISO: iso(d), hour: (hour>=0 && hour<=23)?hour:null};
+        }
+        const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T](\d{1,2})(?::(\d{2})(?::(\d{2}))?)?)?$/);
+        if(m){ const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m; const d=new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS)); return {dateISO: iso(d), hour: d.getHours()}; }
+        const t = new Date(s.replace('T',' ')); if(!isNaN(t)) return {dateISO: iso(t), hour: t.getHours()};
+        return {dateISO:null, hour:null};
+      };
+      const parseBR=(v)=>{
+        if(v==null) return 0;
+        if(typeof v==='number' && isFinite(v)) return v;
+        let s=String(v).trim(); if(!s) return 0; s=s.replace(/[^\d,.\-]/g,'');
+        const lastC=s.lastIndexOf(','), lastD=s.lastIndexOf('.');
+        if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
+        const n=Number(s); return isFinite(n)?n:0;
+      };
+      const toInt=(v)=>{ const n=parseBR(v); return isFinite(n)?Math.round(n):0; };
+      const parseHourFromEither=(dateCell, hourCell)=>{
+        let h = null;
+        if(hourCell!=null){
+          if(typeof hourCell==='number' && hourCell>=0 && hourCell<=23) h = Math.floor(hourCell);
+          else { const m=String(hourCell).match(/(\d{1,2})/); if(m){ const hh=+m[1]; if(hh>=0&&hh<=23) h=hh; } }
+        }
+        if(h==null){ const {hour} = splitDateTimeCell(dateCell); h = hour; }
+        return h;
+      };
+      const hashRow=(obj)=>{ const keys = ['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id']; const s = keys.map(k => k+':'+String(obj[k]??'')).join('|'); let h = 5381; for(let i=0;i<s.length;i++){ h = ((h << 5) + h) ^ s.charCodeAt(i); } return String(h >>> 0); };
 
       const kDia  = pickColumn(headers, headerAlts.dia);
       const kHora = pickColumn(headers, headerAlts.hora);
@@ -942,14 +917,13 @@
         const dtSplit = splitDateTimeCell(get(kDia));
         const dia  = dtSplit.dateISO;
         const hora = parseHourFromEither(get(kDia), get(kHora));
-
         const row = {
           dia, hora,
           unidade: displayNormalize(get(kUni)),
           "Nome da loja": displayNormalize(get(kLoja)),
           "Canal de venda": displayNormalize(get(kCan)),
           pagamento_base: displayNormalize(get(kPag)),
-          cancelado: normCancel(get(kCanc)),
+          cancelado: String(get(kCanc)||'Não').trim().toLowerCase().startsWith('s')?'Sim':'Não',
           pedidos: toInt(get(kPed) ?? 1),
           fat: parseBR(get(kFat)),
           des: parseBR(get(kDes)),
@@ -957,7 +931,7 @@
           pedido_id: displayNormalize(get(kPid)) || null,
           created_at: new Date().toISOString()
         };
-        row.row_key = makeRowKey(row);
+        row.row_key = hashRow(row);
         return row;
       }).filter(x => x.dia!=null && String(x.dia).trim()!=='');
 
@@ -1039,16 +1013,24 @@
     ms.turnos.setOptions(['Dia','Noite'], true);
   }
 
-  /* ===================== KPI clicks (realçam seleção) ===================== */
-  let kpiFocus = null;
-  document.querySelectorAll('.kpi').forEach(card=>{
-    card.addEventListener('click',()=>{
-      document.querySelectorAll('.kpi').forEach(c=>c.classList.remove('active'));
-      card.classList.add('active');
-      kpiFocus = card.dataset.kpi || null;
-      // (no backend: mantém série de faturamento; highlight visual já aplicado)
-      updateChartsServer();
-      updateMonth12x12();
+  /* ===================== AUTO-COLLAPSE dos filtros (10s) ===================== */
+  const secs = [ $('secDatas'), $('secFiltros') ];
+  let collapseTimer = null;
+  function collapseAll(){ secs.forEach(s => s.classList.add('collapsed')); }
+  function expandAll(){ secs.forEach(s => s.classList.remove('collapsed')); }
+  function resetAutoCollapse(){
+    expandAll();
+    if(collapseTimer) clearTimeout(collapseTimer);
+    collapseTimer = setTimeout(()=> collapseAll(), 10000);
+  }
+  // qualquer interação nas seções reseta o timer
+  secs.forEach(sec=>{
+    sec.addEventListener('mousemove', resetAutoCollapse);
+    sec.addEventListener('click', resetAutoCollapse, true);
+    sec.addEventListener('keydown', resetAutoCollapse, true);
+    sec.querySelector('.sec-head').addEventListener('click', ()=>{
+      sec.classList.toggle('collapsed');
+      if(!sec.classList.contains('collapsed')) resetAutoCollapse();
     });
   });
 
@@ -1063,8 +1045,9 @@
 
       let kpiOk=true;
       await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
-      await updateChartsServer();   // dow/hour/turno respeitam data selecionada
-      await updateMonth12x12();     // mês ignora data selecionada (sempre 12x12)
+      await updateChartsServer();   // dow/hour/turno
+      await updateMonth12x12();     // mês 12x12
+      await updateTop6();           // donut top6
 
       if(!kpiOk) setStatus('OK (sem KPIs — RPC indisponível)');
       else setStatus('OK','ok');
@@ -1084,9 +1067,10 @@
       await reloadStaticOptions();
 
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
-
       $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
       applyQuick('30');
+
+      resetAutoCollapse(); // inicia relógio de recolher filtros
     }catch(e){
       console.error(e);
       setStatus('Erro ao iniciar: '+(e.message||e),'err');
