@@ -3,10 +3,18 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.15.0 — filtros ranqueados + tooltips período + horas limpas)</title>
+  <title>DASHBOARD — CFO (v2.16.0 — charts UI + mês 12x12)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
-    :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
+    :root{
+      --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444;
+      --chip:#eef2ff; --bar:#334155;
+      /* Paleta gráficos */
+      --c-now:#4f46e5;     /* indigo-600 */
+      --c-now-soft:#a78bfa;/* violet-400 */
+      --c-prev:#94a3b8;    /* slate-400 */
+      --c-prev-soft:#cbd5e1;/* slate-300 */
+    }
     *{box-sizing:border-box}
     html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
     .wrap{max-width:1200px;margin:28px auto;padding:0 16px}
@@ -57,8 +65,12 @@
     .seg button.active{background:var(--pri);color:#fff}
     .chart-box{height:280px}
     .chart-box canvas{display:block;width:100% !important;height:100% !important;}
-    .diag{font-size:12px;color:#475569;margin-left:8px}
 
+    /* GRÁFICO LARGO (Vendas por mês) */
+    .chart-card.wide{grid-column:span 2;}
+    .chart-card.wide .chart-box{height:360px}
+
+    .diag{font-size:12px;color:#475569;margin-left:8px}
     .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .upload-info{margin-top:8px;font-size:12px;color:#475569}
 
@@ -66,6 +78,7 @@
       .cols-3{grid-template-columns:repeat(2,1fr)}
       .cols-2{grid-template-columns:1fr}
       .krow{grid-template-columns:repeat(2,1fr)}
+      .chart-card.wide{grid-column:span 1;}
     }
     @media (max-width:640px){
       .cols-3{grid-template-columns:1fr}
@@ -203,7 +216,7 @@
       </div>
     </div>
 
-    <div class="krow" style="margin-top:12px%;">
+    <div class="krow" style="margin-top:12px;">
       <div class="kpi"><span class="bar"></span>
         <h4><span>Frete</span><span class="spacer"></span><span id="d_fre" class="delta flat">—</span></h4>
         <div class="val" id="k_fre">—</div>
@@ -221,24 +234,22 @@
       </div>
     </div>
 
-    <div class="krow" style="margin-top:12px;">
-      <div class="kpi"><span class="bar"></span>
-        <h4><span>Valor de Cancelados</span><span class="spacer"></span><span id="d_canc_val" class="delta flat">—</span></h4>
-        <div class="val" id="k_canc_val">—</div>
-        <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
-      </div>
-      <div class="kpi"><span class="bar"></span>
-        <h4><span>ROI</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
-        <div class="val" id="k_roi">—</div>
-        <div class="sub">Anterior: <span id="p_roi">—</span></div>
-      </div>
-      <div></div>
-    </div>
-
     <!-- GRÁFICOS -->
     <div class="section">
       <div class="sec-head"><div class="sec-title">Gráficos</div></div>
       <div class="row cols-2">
+        <!-- VENDAS POR MÊS (LARGO) -->
+        <div class="chart-card wide">
+          <div class="chart-head">
+            <div class="muted">Vendas por mês — últimos 12M vs. 12M anteriores</div>
+            <div class="seg" data-chart="month">
+              <button class="seg-btn active" data-mode="total">Total</button>
+              <button class="seg-btn" data-mode="media">Média</button>
+            </div>
+          </div>
+          <div class="chart-box"><canvas id="ch_month"></canvas></div>
+        </div>
+
         <div class="chart-card">
           <div class="chart-head">
             <div class="muted">Vendas por dia da semana</div>
@@ -249,16 +260,7 @@
           </div>
           <div class="chart-box"><canvas id="ch_dow"></canvas></div>
         </div>
-        <div class="chart-card">
-          <div class="chart-head">
-            <div class="muted">Vendas por mês</div>
-            <div class="seg" data-chart="month">
-              <button class="seg-btn active" data-mode="total">Total</button>
-              <button class="seg-btn" data-mode="media">Média</button>
-            </div>
-          </div>
-          <div class="chart-box"><canvas id="ch_month"></canvas></div>
-        </div>
+
         <div class="chart-card">
           <div class="chart-head">
             <div class="muted">Vendas por hora</div>
@@ -269,6 +271,7 @@
           </div>
           <div class="chart-box"><canvas id="ch_hour"></canvas></div>
         </div>
+
         <div class="chart-card">
           <div class="chart-head">
             <div class="muted">Vendas por turno</div>
@@ -298,6 +301,32 @@
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
+  /* ===================== CHART.JS — defaults/tema ===================== */
+  Chart.defaults.font.family = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu';
+  Chart.defaults.color = '#334155';
+  Chart.defaults.plugins.legend.position = 'top';
+  Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(15,23,42,.95)';
+  Chart.defaults.plugins.tooltip.titleColor = '#e2e8f0';
+  Chart.defaults.plugins.tooltip.bodyColor = '#e2e8f0';
+  Chart.defaults.plugins.tooltip.borderColor = 'rgba(148,163,184,.25)';
+  Chart.defaults.plugins.tooltip.borderWidth = 1;
+  Chart.defaults.datasets.bar.borderRadius = 6;
+  Chart.defaults.datasets.bar.borderSkipped = false;
+  Chart.defaults.datasets.bar.maxBarThickness = 42;
+
+  function gradNow(ctx){
+    const g = ctx.createLinearGradient(0,0,0,240);
+    g.addColorStop(0,'rgba(79,70,229,0.95)');   // var(--c-now)
+    g.addColorStop(1,'rgba(167,139,250,0.55)'); // var(--c-now-soft)
+    return g;
+  }
+  function gradPrev(ctx){
+    const g = ctx.createLinearGradient(0,0,0,240);
+    g.addColorStop(0,'rgba(148,163,184,0.85)'); // var(--c-prev)
+    g.addColorStop(1,'rgba(203,213,225,0.45)'); // var(--c-prev-soft)
+    return g;
+  }
+
   /* ===================== HELPERS ===================== */
   const $ = id => document.getElementById(id);
   const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
@@ -310,6 +339,11 @@
   function iso(d){return d.toISOString().slice(0,10);}
   function addDaysISO(isoStr,n){const d=new Date(isoStr+'T00:00:00'); d.setDate(d.getDate()+n); return iso(d);}
   function daysLen(de,ate){const d1=new Date(de+'T00:00:00'), d2=new Date(ate+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24))+1;}
+  function monthStartISO(isoStr){ const d=new Date(isoStr+'T00:00:00'); d.setDate(1); return iso(d); }
+  function monthEndISO(isoStr){ const d=new Date(isoStr+'T00:00:00'); d.setMonth(d.getMonth()+1,0); return iso(d); }
+  function addMonthsISO(isoStr, delta){ const d=new Date(isoStr+'T00:00:00'); const day=d.getDate(); d.setDate(1); d.setMonth(d.getMonth()+delta); const last=new Date(d.getFullYear(), d.getMonth()+1, 0).getDate(); d.setDate(Math.min(day,last)); return iso(d); }
+  function formatYM(isoStr){ const d=new Date(isoStr+'T00:00:00'); const m=d.getMonth(); const y=String(d.getFullYear()).slice(-2); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m]}/${y}`; }
+
   function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l5 6h-3v8H8V9H5l5-6z"/></svg>';}
   function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 17l-5-6h3V3h4v8h3l-5 6z"/></svg>';}
   function deltaBadge(el,curr,prev){
@@ -326,12 +360,7 @@
   }
   const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const normHeader = (s)=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
-  function cleanSpaces(s){
-    return String(s||'')
-      .replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ')
-      .replace(/\s+/g,' ')
-      .trim();
-  }
+  function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
   function displayNormalize(s){ return cleanSpaces(s); }
   function parseBR(v){
     if(v==null) return 0;
@@ -344,39 +373,6 @@
   function toInt(v){ const n=parseBR(v); if(!isFinite(n)) return 0; return Math.round(n); }
   function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
-
-  // === parse de data+hora na mesma célula (inclui serial Excel com fração)
-  function splitDateTimeCell(v){
-    if(v==null) return {dateISO:null, hour:null};
-    if(v instanceof Date){ return {dateISO: iso(v), hour: v.getHours()}; }
-    let s=String(v).trim();
-    if(!s) return {dateISO:null, hour:null};
-    if(/^-?\d+(\.\d+)?$/.test(s)){
-      const num=Number(s); const base=new Date(Date.UTC(1899,11,30));
-      const d = new Date(base.getTime() + num*86400000);
-      const frac = num - Math.floor(num);
-      const hour = Math.floor(frac*24 + 1e-6);
-      return {dateISO: iso(d), hour: (hour>=0 && hour<=23)?hour:null};
-    }
-    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T](\d{1,2})(?::(\d{2})(?::(\d{2}))?)?)?$/);
-    if(m){
-      const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
-      const d=new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
-      return {dateISO: iso(d), hour: d.getHours()};
-    }
-    const t = new Date(s.replace('T',' '));
-    if(!isNaN(t)) return {dateISO: iso(t), hour: t.getHours()};
-    return {dateISO:null, hour:null};
-  }
-
-  // hash DJB2 estável como row_key
-  function hashRow(obj){
-    const keys = ['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
-    const s = keys.map(k => k+':'+String(obj[k]??'')).join('|');
-    let h = 5381;
-    for(let i=0;i<s.length;i++){ h = ((h << 5) + h) ^ s.charCodeAt(i); }
-    return String(h >>> 0);
-  }
 
   /* ===================== MULTISELECT ===================== */
   function MultiSelect(rootId, placeholder){
@@ -415,7 +411,7 @@
 
   /* ===================== ESTADO / PERÍODO ===================== */
   let firstDay='', lastDay='';
-  let lastPrevRange = {dePrev:null, atePrev:null}; // para tooltips
+  let lastPrevRange = {dePrev:null, atePrev:null};
   const chips=[...document.querySelectorAll('.chip')];
   const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
   const ms={
@@ -522,7 +518,7 @@
     deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
   }
 
-  /* ===== Comparativo: período anterior exato ===== */
+  /* ===== Comparativo (p/ tooltips dos demais gráficos) ===== */
   function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
   function isFullYear(d1,d2){
     return d1.getMonth()===0 && d1.getDate()===1 &&
@@ -550,7 +546,7 @@
     return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
   }
 
-  /* ===================== GRÁFICOS VIA RPC ===================== */
+  /* ===================== GRÁFICOS (RPC) ===================== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -564,18 +560,18 @@
     const chart=new Chart(ctx,{
       type:'bar',
       data:{ labels, datasets:[
-        {label:'Atual', data:nowArr.map(v=>+v||0), backgroundColor:'rgba(47,110,247,0.85)'},
-        {label:'Anterior', data:prevArr.map(v=>+v||0), backgroundColor:'rgba(2,132,199,0.6)'}
+        {label:'Atual', data:nowArr.map(v=>+v||0), backgroundColor:gradNow(ctx)},
+        {label:'Anterior', data:prevArr.map(v=>+v||0), backgroundColor:gradPrev(ctx)}
       ]},
       options:{
         responsive:true, maintainAspectRatio:false, animation:false,
         scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:formatCurrencyTick}}},
-        plugins:{ legend:{position:'top'}, tooltip:{mode:'index',intersect:false,
-          callbacks:{
+        plugins:{ legend:{position:'top'},
+          tooltip:{mode:'index',intersect:false,callbacks:{
             label:(ctx)=>`${ctx.dataset.label}: ${money(ctx.parsed.y||0)}`,
             footer:()=> tooltipExtra
-          }
-        }}
+          }}
+        }
       }
     });
     canvas.__chart=chart;
@@ -587,7 +583,8 @@
       const btn=e.target.closest('.seg-btn'); if(!btn) return;
       const key=seg.dataset.chart; chartMode[key]=btn.dataset.mode;
       seg.querySelectorAll('.seg-btn').forEach(b=> b.classList.toggle('active', b===btn));
-      updateChartsServer(key);
+      if(key==='month') updateMonth12x12();
+      else updateChartsServer(key);
     });
   });
 
@@ -615,13 +612,14 @@
   function ymToLabel(ym){ const [y,m]=ym.split('-').map(Number); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${String(y).slice(-2)}`; }
 
   async function updateChartsServer(only){
+    // usa o intervalo selecionado SOMENTE para dow/hour/turno
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
     const {dePrev, atePrev} = computePrevRangeISO(de,ate);
     lastPrevRange = {dePrev, atePrev};
 
     try{
       setDiag('');
-      const kinds = ['dow','month','hour','turno'];
+      const kinds = ['dow','hour','turno'];
       const toDo = only ? [only] : kinds;
 
       const packs = await Promise.all(toDo.map(async k=>{
@@ -640,15 +638,6 @@
         ensureChart('ch_dow', labels, (chartMode.dow==='media'?nMed:nArr), (chartMode.dow==='media'?pMed:pArr), tip);
       }
 
-      const pM = packs.find(p=>p.k==='month');
-      if(!only || only==='month'){
-        const n = pM?.now||[], p = pM?.prev||[];
-        const all = [...new Set([...n.map(r=>r.ym), ...p.map(r=>r.ym)])].sort();
-        const mapN=new Map(n.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
-        const mapP=new Map(p.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
-        ensureChart('ch_month', all.map(ymToLabel), all.map(x=>mapN.get(x)||0), all.map(x=>mapP.get(x)||0), tip);
-      }
-
       const pH = packs.find(p=>p.k==='hour');
       if(!only || only==='hour'){
         const allHours = Array.from({length:24},(_,h)=>h);
@@ -665,7 +654,6 @@
 
       const pT = packs.find(p=>p.k==='turno');
       if(!only || only==='turno'){
-        // garante apenas Dia/Noite e nessa ordem
         const order=['Dia','Noite'];
         const n = new Map((pT?.now||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
         const p = new Map((pT?.prev||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
@@ -678,6 +666,72 @@
       console.error(e);
       setStatus('OK (sem gráficos — RPC indisponível)','ok');
       setDiag('');
+    }
+  }
+
+  /* ===================== GRÁFICO MÊS: 12x12 (ignora filtros de data) ===================== */
+  async function updateMonth12x12(){
+    try{
+      const end = lastDay || iso(new Date());        // último dia carregado
+      const endMonthStart = monthStartISO(end);
+      const last12Start = addMonthsISO(endMonthStart, -11);       // início janela atual (12 meses)
+      const prev12Start = addMonthsISO(endMonthStart, -23);       // início janela anterior
+      const last12End   = monthEndISO(end);                       // fim janela atual
+      const prev12End   = addMonthsISO(endMonthStart, -12);       // último dia mês anterior à janela atual
+      const prev12EndAdj= monthEndISO(addMonthsISO(endMonthStart, -12));
+
+      // chama o RPC duas vezes para os ranges fixos de 12 meses (respeitando demais filtros)
+      const paramsCommon = {
+        p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
+        p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
+        p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
+        p_canais: ms.canais.get().length ? ms.canais.get() : null,
+        p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
+        p_cancelado: (ms.cancel.get().length===1 && (ms.cancel.get()[0]==='Sim' || ms.cancel.get()[0]==='Não')) ? ms.cancel.get()[0] : null
+      };
+
+      const [{data:nData,error:nErr},{data:pData,error:pErr}] = await Promise.all([
+        supa.rpc('chart_vendas_mes_v1', { p_dini: last12Start, p_dfim: last12End, ...paramsCommon }),
+        supa.rpc('chart_vendas_mes_v1', { p_dini: prev12Start, p_dfim: prev12EndAdj, ...paramsCommon }),
+      ]);
+      if(nErr) throw nErr; if(pErr) throw pErr;
+
+      // monta as 12 labels cronológicas da janela atual
+      const labels = [];
+      let cur = last12Start;
+      for(let i=0;i<12;i++){ labels.push(formatYM(cur)); cur = addMonthsISO(cur, 1); }
+
+      // mapeia dados por ym (YYYY-MM)
+      const toMap = (arr, key)=> new Map((arr||[]).map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
+      const mNow = toMap(nData,'ym');
+      const mPrev= toMap(pData,'ym');
+
+      // para alinhar as barras, pegamos os yms exatos da janela atual e suas correspondentes -12 meses atrás para "anterior"
+      const ymsNow = [];
+      cur = last12Start;
+      for(let i=0;i<12;i++){
+        const d = new Date(cur+'T00:00:00'); const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        ymsNow.push(ym);
+        cur = addMonthsISO(cur, 1);
+      }
+      const ymsPrev = [];
+      for(const ym of ymsNow){
+        const [yy,mm] = ym.split('-').map(Number);
+        const prev = new Date(yy, mm-1-12, 1);
+        const ymPrev = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
+        ymsPrev.push(ymPrev);
+      }
+
+      const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
+      const prevArr = ymsPrev.map(ym => mPrev.get(ym)||0);
+
+      const tip = `Comparação fixa: Últimos 12M (${formatYM(last12Start)} → ${formatYM(endMonthStart)}) vs 12M anteriores (${formatYM(prev12Start)} → ${formatYM(addMonthsISO(endMonthStart,-1))})`;
+
+      ensureChart('ch_month', labels, nowArr, prevArr, tip);
+      setStatus('OK — gráfico mensal 12x12','ok');
+    }catch(e){
+      console.error(e);
+      setStatus('OK (mensal 12x12 indisponível)','ok');
     }
   }
 
@@ -763,8 +817,38 @@
     if(h==null){ const {hour} = splitDateTimeCell(dateCell); h = hour; }
     return h;
   }
+  function splitDateTimeCell(v){
+    if(v==null) return {dateISO:null, hour:null};
+    if(v instanceof Date){ return {dateISO: iso(v), hour: v.getHours()}; }
+    let s=String(v).trim();
+    if(!s) return {dateISO:null, hour:null};
+    if(/^-?\d+(\.\d+)?$/.test(s)){
+      const num=Number(s); const base=new Date(Date.UTC(1899,11,30));
+      const d = new Date(base.getTime() + num*86400000);
+      const frac = num - Math.floor(num);
+      const hour = Math.floor(frac*24 + 1e-6);
+      return {dateISO: iso(d), hour: (hour>=0 && hour<=23)?hour:null};
+    }
+    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T](\d{1,2})(?::(\d{2})(?::(\d{2}))?)?)?$/);
+    if(m){
+      const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
+      const d=new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
+      return {dateISO: iso(d), hour: d.getHours()};
+    }
+    const t = new Date(s.replace('T',' '));
+    if(!isNaN(t)) return {dateISO: iso(t), hour: t.getHours()};
+    return {dateISO:null, hour:null};
+  }
+  function hashRow(obj){
+    const keys = ['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
+    const s = keys.map(k => k+':'+String(obj[k]??'')).join('|');
+    let h = 5381;
+    for(let i=0;i<s.length;i++){ h = ((h << 5) + h) ^ s.charCodeAt(i); }
+    return String(h >>> 0);
+  }
   function makeRowKey(row){ return hashRow(row); }
 
+  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file){ info(''); return; }
@@ -779,7 +863,6 @@
 
       const kDia  = pickColumn(headers, headerAlts.dia);
       const kHora = pickColumn(headers, headerAlts.hora);
-      const kTurn = pickColumn(headers, headerAlts.turno);
       const kFat  = pickColumn(headers, headerAlts.fat);
       const kDes  = pickColumn(headers, headerAlts.des);
       const kFre  = pickColumn(headers, headerAlts.fre);
@@ -791,46 +874,33 @@
       const kCanc = pickColumn(headers, headerAlts.canc);
       const kPid  = pickColumn(headers, headerAlts.pid);
 
-      let mapped = json.map(r=>{
+      const mapped = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
-
         const dtSplit = splitDateTimeCell(get(kDia));
         const dia  = dtSplit.dateISO;
         const hora = parseHourFromEither(get(kDia), get(kHora));
 
-        const unidade = displayNormalize(get(kUni));
-        const loja    = displayNormalize(get(kLoja));
-        const canal   = displayNormalize(get(kCan));
-        const pago    = displayNormalize(get(kPag));
-        const pid     = displayNormalize(get(kPid));
-        const cancel  = normCancel(get(kCanc));
-        const ped     = toInt(get(kPed) ?? 1);
-        const fat     = parseBR(get(kFat));
-        const des     = parseBR(get(kDes));
-        const fre     = parseBR(get(kFre));
-
         const row = {
           dia, hora,
-          unidade,
-          "Nome da loja": loja,
-          "Canal de venda": canal,
-          pagamento_base: pago,
-          cancelado: cancel,
-          pedidos: ped,
-          fat, des, fre,
-          pedido_id: pid || null,
+          unidade: displayNormalize(get(kUni)),
+          "Nome da loja": displayNormalize(get(kLoja)),
+          "Canal de venda": displayNormalize(get(kCan)),
+          pagamento_base: displayNormalize(get(kPag)),
+          cancelado: normCancel(get(kCanc)),
+          pedidos: toInt(get(kPed) ?? 1),
+          fat: parseBR(get(kFat)),
+          des: parseBR(get(kDes)),
+          fre: parseBR(get(kFre)),
+          pedido_id: displayNormalize(get(kPid)) || null,
           created_at: new Date().toISOString()
         };
         row.row_key = makeRowKey(row);
         return row;
-      });
+      }).filter(x => x.dia!=null && String(x.dia).trim()!=='');
 
-      const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
-      const mapByKey = new Map();
-      for(const r of ok){ mapByKey.set(r.row_key, r); }
+      const mapByKey = new Map(); for(const r of mapped){ mapByKey.set(r.row_key, r); }
       const rows = [...mapByKey.values()];
-      const removed = ok.length - rows.length;
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, removidos duplicados por row_key: ${removed}). Enviando…`);
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${mapped.length}, removidas duplicadas: ${mapped.length-rows.length}). Enviando…`);
       if(rows.length===0){ setStatus('Nada para gravar (0 linhas após dedupe).','err'); return; }
 
       setStatus('Enviando Excel…');
@@ -842,14 +912,14 @@
       }
 
       setStatus('Upload concluído','ok');
-      info(`Gravado/atualizado: ${rows.length} linhas (duplicadas removidas: ${removed}).`);
+      info(`Gravado/atualizado: ${rows.length} linhas.`);
 
       try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
         if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`; }
       }catch(_e){}
-      await reloadStaticOptions(); // reidrata opções com ranking
+      await reloadStaticOptions();
       await applyAll();
     }catch(e){
       console.error(e);
@@ -871,13 +941,12 @@
     const de = firstDay || '1900-01-01';
     const ate= lastDay  || iso(new Date());
 
-    // 1) Pega RANQUEADOS (top-N) por pedidos (mais relevantes primeiro)
     const TOPN = 50;
     const [topUnids, topLojas, topPags, topCanais] = await Promise.allSettled([
-      supa.rpc('opt_unidades_ranked', { p_dini: de, p_dfim: ate, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
-      supa.rpc('opt_lojas_ranked',    { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
+      supa.rpc('opt_unidades_ranked',  { p_dini: de, p_dfim: ate, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
+      supa.rpc('opt_lojas_ranked',     { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
       supa.rpc('opt_pagamentos_ranked',{ p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_lojas:null, p_cancelado:null, p_limit: TOPN }),
-      supa.rpc('opt_canais_ranked',   { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_lojas:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
+      supa.rpc('opt_canais_ranked',    { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_lojas:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
     ]);
 
     const tUnids = (topUnids.status==='fulfilled' && !topUnids.value.error) ? (topUnids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
@@ -885,7 +954,6 @@
     const tPags  = (topPags.status==='fulfilled'   && !topPags.value.error)   ? (topPags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean): [];
     const tCanais= (topCanais.status==='fulfilled' && !topCanais.value.error) ? (topCanais.value.data||[]).map(r=>r.canal).filter(Boolean)      : [];
 
-    // 2) Pega a LISTA COMPLETA (views) para garantir TODAS as opções
     const [unids,lojas,canais,turnos,pags] = await Promise.allSettled([
       supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
       supa.from('vw_vendas_lojas').select('loja').order('loja'),
@@ -900,13 +968,11 @@
     const allCanais= ok(canais)? (canais.value.data||[]).map(r=>r.canal).filter(Boolean): [];
     const allPags  = ok(pags)  ? (pags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean) : [];
 
-    // 3) Merge ranqueado + completo (ranqueado primeiro), mantendo a ordem (keepOrder=true)
     ms.unids.setOptions( mergeRankedAll(tUnids, allUnids), true );
     ms.lojas.setOptions( mergeRankedAll(tLojas, allLojas), true );
     ms.canais.setOptions(mergeRankedAll(tCanais, allCanais), true );
     ms.pags.setOptions(  mergeRankedAll(tPags, allPags), true );
 
-    // 4) TURNOS: apenas Dia e Noite, nessa ordem
     ms.turnos.setOptions(['Dia','Noite'], true);
   }
 
@@ -921,7 +987,8 @@
 
       let kpiOk=true;
       await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
-      await updateChartsServer();
+      await updateChartsServer();   // dow/hour/turno respeitam data selecionada
+      await updateMonth12x12();     // mês ignora data selecionada (sempre 12x12)
 
       if(!kpiOk) setStatus('OK (sem KPIs — RPC indisponível)');
       else setStatus('OK','ok');
@@ -943,7 +1010,7 @@
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
 
       $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
-      applyQuick('30'); // período rápido começa do último dia
+      applyQuick('30');
     }catch(e){
       console.error(e);
       setStatus('Erro ao iniciar: '+(e.message||e),'err');
