@@ -521,13 +521,24 @@ function ensureChart(canvasId, labels, nowArr, prevArr, formatter, tip=''){
 
 /* ============ BUSCA DE DADOS (AGRUPADOR LOCAL) ============ */
 function buildFilters(query){
-  const selU = ms.unids.get(); if(selU.length) query = query.in('unidade',selU);
-  const selL = ms.lojas.get(); if(selL.length) query = query.in('loja',selL);
-  const selC = ms.canais.get(); if(selC.length) query = query.in('canal',selC);
-  const selP = ms.pags.get();  if(selP.length) query = query.in('pagamento_base',selP);
-  const selT = ms.turnos.get();if(selT.length) query = query.in('turno',selT);
+  const selU = ms.unids.get();  if(selU.length) query = query.in('unidade', selU);
+  const selL = ms.lojas.get();  if(selL.length) query = query.in('loja', selL);
+  const selC = ms.canais.get(); if(selC.length) query = query.in('canal', selC);
+  const selP = ms.pags.get();   if(selP.length) query = query.in('pagamento_base', selP);
+  const selT = ms.turnos.get(); if(selT.length) query = query.in('turno', selT);
+
+  // ⚠️ Fix do 400: usar filter('eq', …) para gerar 'eq.<valor>'
   const selCanc = ms.cancel.get();
-  if(selCanc.length===1 && (selCanc[0]==='Sim' || selCanc[0]==='Não')) query = query.eq('cancelado', selCanc[0]);
+  if (selCanc.length === 1 && (selCanc[0] === 'Sim' || selCanc[0] === 'Não')) {
+    const v = selCanc[0].normalize('NFC'); // garante codificação estável
+    query = query.filter('cancelado', 'eq', v);
+
+    // Fallback acento-insensível (se o backend tiver "Nao")
+    if (v === 'Não') {
+      // PostgREST .or aceita múltiplas condições
+      query = query.or('cancelado.eq.Não,cancelado.eq.Nao');
+    }
+  }
   return query;
 }
 
