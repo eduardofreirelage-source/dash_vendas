@@ -1,1105 +1,613 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.19.0 — filtros ok + donut ok + kpi line fixa)</title>
-  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
-  <style>
-    :root{
-      --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7;
-      --ok:#10b981; --down:#ef4444;
-      --chip:#f7e9ed;
-      --bar:#334155;
-      --wine:#7b1e3a; --wine-soft:#9c3554;
-      --c-now:#7b1e3a; --c-now-soft:#9c3554; --c-prev:#94a3b8; --c-prev-soft:#cbd5e1;
-    }
-    *{box-sizing:border-box}
-    html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
-    .wrap{max-width:1200px;margin:28px auto;padding:0 16px}
-    .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap}
-    h1{margin:0;font-size:28px;letter-spacing:.2px}
-    .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
-    .btn.clear{gap:6px}
-
-    .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px;transition:all .2s ease}
-    .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap}
-    .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
-    .ico{width:16px;height:16px;color:#475569}
-    .muted{color:var(--muted)}
-    .row{display:grid;gap:12px}
-    .cols-3{grid-template-columns:repeat(3,1fr)}
-    .cols-2{grid-template-columns:repeat(2,1fr)}
-
-    /* inputs */
-    input[type="date"], .msel-btn, .input{
-      width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;
-      min-height:44px;font-size:16px;
-    }
-    input[type="date"]::-webkit-calendar-picker-indicator{ transform:scale(1.2); }
-
-    /* chips (vinho) */
-    .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
-    .chip{padding:10px 0;border:1px solid #efd5db;border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:800;color:#7b1e3a}
-    .chip.active{background:var(--c-now);border-color:var(--c-now);color:#fff;box-shadow:0 1px 0 rgba(123,30,58,.06)}
-
-    /* multiselect */
-    .msel{position:relative}
-    .msel-btn{cursor:pointer;text-align:left}
-    .msel-btn:after{content:"▾";float:right;color:#475569}
-    .msel-panel{position:absolute;z-index:40;top:110%;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 24px rgba(0,0,0,.08);max-height:300px;overflow:auto;padding:8px;display:none}
-    .msel.open .msel-panel{display:block}
-    .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
-    .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
-    .msel-opt:hover{background:#f3f4f6}
-
-    /* KPI minimalista */
-    .krow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-    .kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
-    .kpi h4{margin:0 0 6px;font-size:13px;color:#475569;display:flex;align-items:center}
-    .kpi h4 .spacer{flex:1}
-    .kpi .val{font-size:22px;font-weight:800}
-    /* linha vinho: espessura fixa 2px em todos */
-    .kpi .accent{border-top:2px solid var(--wine);height:0;margin:6px 0}
-    .kpi .sub{font-size:12px;color:#667085;margin-top:2px}
-    .kpi[role="button"]{cursor:pointer}
-    .kpi:focus-visible{outline:2px solid #cbd5e1;outline-offset:2px}
-
-    /* delta estilo “chip” */
-    .delta{display:inline-flex;gap:6px;align-items:center;padding:2px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.35);font-weight:800;font-size:12px;margin-left:12px;background:rgba(148,163,184,.15);color:#64748b}
-    .delta svg{width:12px;height:12px}
-    .delta.up{background:rgba(123,30,58,.10);border-color:rgba(123,30,58,.25);color:var(--wine)}
-    .delta.down{background:rgba(148,163,184,.15);border-color:rgba(148,163,184,.35);color:#64748b}
-    .delta.flat{background:#f1f5f9;border-color:#e2e8f0;color:#64748b}
-
-    /* gráficos */
-    .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
-    .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
-    .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
-    .seg button{padding:6px 10px;border:0;background:#fff;cursor:pointer;font-weight:800}
-    .seg button.active{background:var(--c-now);color:#fff}
-    .chart-box{height:280px;position:relative}
-    .chart-box canvas{display:block;width:100% !important;height:100% !important;}
-    .chart-card.wide{grid-column:span 2;}
-    .chart-card.wide .chart-box{height:360px}
-
-    .center-link{
-      position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-      background:rgba(255,255,255,.92);border:1px solid var(--line);
-      padding:4px 10px;border-radius:999px;cursor:pointer;
-      font-weight:800;font-size:12px;color:#334155;white-space:nowrap;
-    }
-
-    /* recolhimento automático das seções */
-    .section.collapsed .row,
-    .section.collapsed #periodoInfo,
-    .section.collapsed .upload-info { display:none; }
-    .section.collapsed .sec-head{cursor:pointer}
-
-    .diag{font-size:12px;color:#475569;margin-left:8px}
-    .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    .upload-info{margin-top:8px;font-size:12px;color:#475569}
-
-    @media (max-width:1024px){
-      .cols-3{grid-template-columns:repeat(2,1fr)}
-      .cols-2{grid-template-columns:1fr}
-      .krow{grid-template-columns:repeat(2,1fr)}
-      .chart-card.wide{grid-column:span 1;}
-    }
-    @media (max-width:640px){
-      .cols-3{grid-template-columns:1fr}
-      .krow{grid-template-columns:1fr}
-    }
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>DASHBOARD — CFO (v2.20.0 — KPI⇢gráficos)</title>
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
+<style>
+:root{
+  --bg:#f6f8fb; --card:#fff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7;
+  --chip:#f7e9ed; --wine:#7b1e3a; --wine-soft:#9c3554; --ok:#10b981;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
+.wrap{max-width:1200px;margin:28px auto;padding:0 16px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap}
+h1{margin:0;font-size:28px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
+.btn.clear{gap:6px}
+.section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px;transition:all .2s ease}
+.sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap}
+.sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
+.ico{width:16px;height:16px;color:#475569}
+.muted{color:var(--muted)}
+.row{display:grid;gap:12px}
+.cols-3{grid-template-columns:repeat(3,1fr)}
+.cols-2{grid-template-columns:repeat(2,1fr)}
+/* inputs */
+input[type="date"], .msel-btn{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;min-height:44px;font-size:16px}
+input[type="date"]::-webkit-calendar-picker-indicator{transform:scale(1.2)}
+/* chips */
+.chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+.chip{padding:10px 0;border:1px solid #efd5db;border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:800;color:#7b1e3a}
+.chip.active{background:var(--wine);border-color:var(--wine);color:#fff}
+/* multiselect */
+.msel{position:relative}.msel-btn{text-align:left;cursor:pointer}.msel-btn:after{content:"▾";float:right;color:#475569}
+.msel-panel{position:absolute;z-index:40;top:110%;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 24px rgba(0,0,0,.08);max-height:300px;overflow:auto;padding:8px;display:none}
+.msel.open .msel-panel{display:block}
+.msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
+.msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
+.msel-opt:hover{background:#f3f4f6}
+/* KPIs */
+.krow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
+.kpi h4{margin:0 0 6px;font-size:13px;color:#475569;display:flex;align-items:center}
+.kpi h4 .spacer{flex:1}
+.kpi .val{font-size:22px;font-weight:800}
+.kpi .accent{border-top:2px solid var(--wine);height:0;margin:6px 0} /* espessura fixa */
+.kpi .sub{font-size:12px;color:#667085;margin-top:2px}
+.kpi[role="button"]{cursor:pointer}
+.kpi.active{box-shadow:0 0 0 3px rgba(123,30,58,.15)}
+/* delta chip */
+.delta{display:inline-flex;gap:6px;align-items:center;padding:2px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.35);font-weight:800;font-size:12px;margin-left:12px;background:#f1f5f9;color:#64748b}
+.delta.up{background:rgba(123,30,58,.1);border-color:rgba(123,30,58,.25);color:var(--wine)}
+.delta.down{background:rgba(148,163,184,.15);border-color:rgba(148,163,184,.35)}
+/* charts */
+.chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
+.chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{padding:6px 10px;border:0;background:#fff;cursor:pointer;font-weight:800}
+.seg button.active{background:var(--wine);color:#fff}
+.chart-box{height:280px;position:relative}
+.chart-box canvas{display:block;width:100% !important;height:100% !important;}
+.chart-card.wide{grid-column:span 2}.chart-card.wide .chart-box{height:360px}
+/* donut center clickable */
+.center-link{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(255,255,255,.92);border:1px solid var(--line);padding:4px 10px;border-radius:999px;cursor:pointer;font-weight:800;font-size:12px;color:#334155;white-space:nowrap}
+/* auto-collapse */
+.section.collapsed .row, .section.collapsed #periodoInfo{display:none}
+.section.collapsed .sec-head{cursor:pointer}
+.diag{font-size:12px;color:#475569;margin-left:8px}
+.upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.upload-info{margin-top:8px;font-size:12px;color:#475569}
+@media (max-width:1024px){.cols-3{grid-template-columns:repeat(2,1fr)}.cols-2{grid-template-columns:1fr}.krow{grid-template-columns:repeat(2,1fr)}.chart-card.wide{grid-column:span 1}}
+@media (max-width:640px){.cols-3,.krow{grid-template-columns:1fr}}
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="top">
-      <h1>DASHBOARD</h1>
-      <div class="upload-bar">
-        <button id="btnUpload" class="btn">📤 Carregar Excel</button>
-        <input id="fileExcel" type="file" accept=".xlsx,.xls,.csv" style="display:none">
+<div class="wrap">
+  <div class="top">
+    <h1>DASHBOARD</h1>
+    <div class="upload-bar">
+      <button id="btnUpload" class="btn">📤 Carregar Excel</button>
+      <input id="fileExcel" type="file" accept=".xlsx,.xls,.csv" style="display:none">
+    </div>
+  </div>
+
+  <!-- Filtros de Data -->
+  <div id="secDatas" class="section">
+    <div class="sec-head">
+      <div class="sec-title"><svg class="ico" viewBox="0 0 24 24" fill="none"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Filtros de Data</div>
+      <button id="btnClear" class="btn clear">✖ Limpar filtros</button>
+    </div>
+    <div class="row cols-3">
+      <div><div class="muted" style="margin-bottom:6px;">Intervalo (início)</div><input type="date" id="fDe"></div>
+      <div><div class="muted" style="margin-bottom:6px;">Intervalo (fim)</div><input type="date" id="fAte"></div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">Período rápido</div>
+        <div class="chips">
+          <button class="chip" data-q="7">07</button><button class="chip" data-q="15">15</button>
+          <button class="chip active" data-q="30">30</button><button class="chip" data-q="60">60</button>
+          <button class="chip" data-q="90">90</button><button class="chip" data-q="120">120</button>
+        </div>
+        <div id="periodoInfo" class="muted" style="margin-top:6px;font-size:12px;">—</div>
       </div>
     </div>
+  </div>
 
-    <!-- Filtros de Data -->
-    <div id="secDatas" class="section">
-      <div class="sec-head">
-        <div class="sec-title">
-          <svg class="ico" viewBox="0 0 24 24" fill="none"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
-          Filtros de Data
-        </div>
-        <button id="btnClear" class="btn clear">✖ Limpar filtros</button>
-      </div>
-      <div class="row cols-3">
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Intervalo (início)</div>
-          <input type="date" id="fDe">
-        </div>
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Intervalo (fim)</div>
-          <input type="date" id="fAte">
-        </div>
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Período rápido</div>
-          <div class="chips">
-            <button class="chip" data-q="7">07</button>
-            <button class="chip" data-q="15">15</button>
-            <button class="chip active" data-q="30">30</button>
-            <button class="chip" data-q="60">60</button>
-            <button class="chip" data-q="90">90</button>
-            <button class="chip" data-q="120">120</button>
-          </div>
-          <div id="periodoInfo" class="muted" style="margin-top:6px;font-size:12px;">—</div>
-        </div>
-      </div>
+  <!-- Filtros -->
+  <div id="secFiltros" class="section">
+    <div class="sec-head">
+      <div class="sec-title"><svg class="ico" viewBox="0 0 24 24" fill="none"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Filtros</div>
+      <div><span id="status" class="muted">—</span><span id="diag" class="diag"></span><div id="uploadInfo" class="upload-info"></div></div>
     </div>
-
-    <!-- Filtros -->
-    <div id="secFiltros" class="section">
-      <div class="sec-head">
-        <div class="sec-title">
-          <svg class="ico" viewBox="0 0 24 24" fill="none"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
-          Filtros
-        </div>
-        <div>
-          <span id="status" class="muted">—</span>
-          <span id="diag" class="diag"></span>
-          <div id="uploadInfo" class="upload-info"></div>
-        </div>
-      </div>
-      <div class="row cols-3">
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Unidade</div>
-          <div id="ms-unids" class="msel"><button class="msel-btn">Todas as unidades</button><div class="msel-panel"></div></div>
-        </div>
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Nome da Loja</div>
-          <div id="ms-lojas" class="msel"><button class="msel-btn">Todas as lojas</button><div class="msel-panel"></div></div>
-        </div>
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Turno da Venda</div>
-          <div id="ms-turnos" class="msel"><button class="msel-btn">Todos os turnos</button><div class="msel-panel"></div></div>
-        </div>
-      </div>
-      <div class="row cols-3" style="margin-top:10px;">
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Canal de Venda</div>
-          <div id="ms-canais" class="msel"><button class="msel-btn">Todos os canais</button><div class="msel-panel"></div></div>
-        </div>
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Tipo de Pagamento</div>
-          <div id="ms-pags" class="msel"><button class="msel-btn">Todos os tipos</button><div class="msel-panel"></div></div>
-        </div>
-        <div>
-          <div class="muted" style="margin-bottom:6px;">Cancelado</div>
-          <div id="ms-cancel" class="msel">
-            <button class="msel-btn">Não</button>
-            <div class="msel-panel">
-              <div class="msel-opt"><input type="checkbox" value=""><label>Todos</label></div>
-              <div class="msel-opt"><input type="checkbox" value="Não" checked><label>Não</label></div>
-              <div class="msel-opt"><input type="checkbox" value="Sim"><label>Sim</label></div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div class="row cols-3">
+      <div><div class="muted" style="margin-bottom:6px;">Unidade</div><div id="ms-unids" class="msel"><button class="msel-btn">Todas as unidades</button><div class="msel-panel"></div></div></div>
+      <div><div class="muted" style="margin-bottom:6px;">Nome da Loja</div><div id="ms-lojas" class="msel"><button class="msel-btn">Todas as lojas</button><div class="msel-panel"></div></div></div>
+      <div><div class="muted" style="margin-bottom:6px;">Turno da Venda</div><div id="ms-turnos" class="msel"><button class="msel-btn">Todos os turnos</button><div class="msel-panel"></div></div></div>
     </div>
-
-    <!-- KPIs -->
-    <div class="krow">
-      <div class="kpi" role="button" data-k="ped">
-        <h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4>
-        <div class="val" id="k_ped">—</div>
-        <div class="accent"></div>
-        <div class="sub">Anterior: <span id="p_ped">—</span></div>
-      </div>
-      <div class="kpi" role="button" data-k="tkt">
-        <h4><span>Ticket Médio</span><span class="spacer"></span><span id="d_tkt" class="delta flat">—</span></h4>
-        <div class="val" id="k_tkt">—</div>
-        <div class="accent"></div>
-        <div class="sub">Anterior: <span id="p_tkt">—</span></div>
-      </div>
-      <div class="kpi" role="button" data-k="fat">
-        <h4><span>Faturamento</span><span class="spacer"></span><span id="d_fat" class="delta flat">—</span></h4>
-        <div class="val" id="k_fat">—</div>
-        <div class="accent"></div>
-        <div class="sub">Anterior: <span id="p_fat">—</span></div>
-      </div>
-    </div>
-
-    <div class="krow" style="margin-top:12px;">
-      <div class="kpi" role="button" data-k="fatmed">
-        <h4><span>Faturamento Médio</span><span class="spacer"></span><span id="d_fatmed" class="delta flat">—</span></h4>
-        <div class="val" id="k_fatmed">—</div>
-        <div class="accent"></div>
-        <div class="sub">Anterior: <span id="p_fatmed">—</span></div>
-      </div>
-      <div class="kpi" role="button" data-k="des">
-        <h4><span>Incentivos</span><span class="spacer"></span><span id="d_des" class="delta flat">—</span></h4>
-        <div class="val" id="k_des">—</div>
-        <div class="accent"></div>
-        <div class="sub">Anterior: <span id="p_des">—</span></div>
-      </div>
-      <div class="kpi" role="button" data-k="desperc">
-        <h4><span>% de Incentivos</span><span class="spacer"></span><span id="d_desperc" class="delta flat">—</span></h4>
-        <div class="val" id="k_desperc">—</div>
-        <div class="accent"></div>
-        <div class="sub">Anterior: <span id="p_desperc">—</span></div>
-      </div>
-    </div>
-
-    <div class="krow" style="margin-top:12px;">
-      <div class="kpi" role="button" data-k="fre">
-        <h4><span>Frete</span><span class="spacer"></span><span id="d_fre" class="delta flat">—</span></h4>
-        <div class="val" id="k_fre">—</div>
-        <div class="accent"></div>
-        <div class="sub">Anterior: <span id="p_fre">—</span></div>
-      </div>
-      <div class="kpi" role="button" data-k="fremed">
-        <h4><span>Frete Médio</span><span class="spacer"></span><span id="d_fremed" class="delta flat">—</span></h4>
-        <div class="val" id="k_fremed">—</div>
-        <div class="accent"></div>
-        <div class="sub">Anterior: <span id="p_fremed">—</span></div>
-      </div>
-      <div class="kpi" role="button" data-k="canc_ped">
-        <h4><span>Pedidos Cancelados</span><span class="spacer"></span><span id="d_canc_ped" class="delta flat">—</span></h4>
-        <div class="val" id="k_canc_ped">—</div>
-        <div class="accent"></div>
-        <div class="sub">Participação: <span id="k_canc_part">—</span> (Anterior: <span id="p_canc_part">—</span>)</div>
-      </div>
-    </div>
-
-    <div class="krow" style="margin-top:12px;">
-      <div class="kpi" role="button" data-k="canc_val">
-        <h4><span>Valor de Cancelados</span><span class="spacer"></span><span id="d_canc_val" class="delta flat">—</span></h4>
-        <div class="val" id="k_canc_val">—</div>
-        <div class="accent"></div>
-        <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
-      </div>
-      <div class="kpi" role="button" data-k="roi">
-        <h4><span>ROI</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
-        <div class="val" id="k_roi">—</div>
-        <div class="accent"></div>
-        <div class="sub">Anterior: <span id="p_roi">—</span></div>
-      </div>
-      <div></div>
-    </div>
-
-    <!-- GRÁFICOS -->
-    <div class="section">
-      <div class="sec-head">
-        <div class="sec-title">Gráficos</div>
-        <div id="segGlobal" class="seg">
-          <button class="seg-btn active" data-mode="total">Total</button>
-          <button class="seg-btn" data-mode="media">Média</button>
-        </div>
-      </div>
-
-      <div class="row cols-2">
-        <div class="chart-card wide">
-          <div class="chart-head"><div class="muted">Vendas por mês — últimos 12M vs. 12M anteriores</div></div>
-          <div class="chart-box"><canvas id="ch_month"></canvas></div>
-        </div>
-
-        <div class="chart-card">
-          <div class="chart-head"><div class="muted">Vendas por dia da semana</div></div>
-          <div class="chart-box"><canvas id="ch_dow"></canvas></div>
-        </div>
-
-        <div class="chart-card">
-          <div class="chart-head"><div class="muted">Vendas por hora</div></div>
-          <div class="chart-box"><canvas id="ch_hour"></canvas></div>
-        </div>
-
-        <div class="chart-card">
-          <div class="chart-head"><div class="muted">Vendas por turno</div></div>
-          <div class="chart-box"><canvas id="ch_turno"></canvas></div>
-        </div>
-
-        <!-- DONUT TOP 6 LOJAS -->
-        <div class="chart-card">
-          <div class="chart-head"><div class="muted">Participação por loja — Top 6</div></div>
-          <div class="chart-box">
-            <canvas id="ch_top6"></canvas>
-            <button id="top6Center" class="center-link">Total: R$ 0,00</button>
+    <div class="row cols-3" style="margin-top:10px;">
+      <div><div class="muted" style="margin-bottom:6px;">Canal de Venda</div><div id="ms-canais" class="msel"><button class="msel-btn">Todos os canais</button><div class="msel-panel"></div></div></div>
+      <div><div class="muted" style="margin-bottom:6px;">Tipo de Pagamento</div><div id="ms-pags" class="msel"><button class="msel-btn">Todos os tipos</button><div class="msel-panel"></div></div></div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">Cancelado</div>
+        <div id="ms-cancel" class="msel">
+          <button class="msel-btn">Não</button>
+          <div class="msel-panel">
+            <div class="msel-opt"><input type="checkbox" value=""><label>Todos</label></div>
+            <div class="msel-opt"><input type="checkbox" value="Não" checked><label>Não</label></div>
+            <div class="msel-opt"><input type="checkbox" value="Sim"><label>Sim</label></div>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- libs -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
+  <!-- KPIs -->
+  <div class="krow">
+    <div class="kpi" role="button" data-k="ped"><h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta">—</span></h4><div class="val" id="k_ped">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_ped">—</span></div></div>
+    <div class="kpi" role="button" data-k="tkt"><h4><span>Ticket Médio</span><span class="spacer"></span><span id="d_tkt" class="delta">—</span></h4><div class="val" id="k_tkt">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_tkt">—</span></div></div>
+    <div class="kpi" role="button" data-k="fat"><h4><span>Faturamento</span><span class="spacer"></span><span id="d_fat" class="delta">—</span></h4><div class="val" id="k_fat">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_fat">—</span></div></div>
+  </div>
+  <div class="krow" style="margin-top:12px;">
+    <div class="kpi" role="button" data-k="fatmed"><h4><span>Faturamento Médio</span><span class="spacer"></span><span id="d_fatmed" class="delta">—</span></h4><div class="val" id="k_fatmed">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_fatmed">—</span></div></div>
+    <div class="kpi" role="button" data-k="des"><h4><span>Incentivos</span><span class="spacer"></span><span id="d_des" class="delta">—</span></h4><div class="val" id="k_des">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_des">—</span></div></div>
+    <div class="kpi" role="button" data-k="desperc"><h4><span>% de Incentivos</span><span class="spacer"></span><span id="d_desperc" class="delta">—</span></h4><div class="val" id="k_desperc">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_desperc">—</span></div></div>
+  </div>
+  <div class="krow" style="margin-top:12px;">
+    <div class="kpi" role="button" data-k="fre"><h4><span>Frete</span><span class="spacer"></span><span id="d_fre" class="delta">—</span></h4><div class="val" id="k_fre">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_fre">—</span></div></div>
+    <div class="kpi" role="button" data-k="fremed"><h4><span>Frete Médio</span><span class="spacer"></span><span id="d_fremed" class="delta">—</span></h4><div class="val" id="k_fremed">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_fremed">—</span></div></div>
+    <div class="kpi" role="button" data-k="canc_ped"><h4><span>Pedidos Cancelados</span><span class="spacer"></span><span id="d_canc_ped" class="delta">—</span></h4><div class="val" id="k_canc_ped">—</div><div class="accent"></div><div class="sub">Participação: <span id="k_canc_part">—</span> (Anterior: <span id="p_canc_part">—</span>)</div></div>
+  </div>
+  <div class="krow" style="margin-top:12px;">
+    <div class="kpi" role="button" data-k="canc_val"><h4><span>Valor de Cancelados</span><span class="spacer"></span><span id="d_canc_val" class="delta">—</span></h4><div class="val" id="k_canc_val">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_canc_val">—</span></div></div>
+    <div class="kpi" role="button" data-k="roi"><h4><span>ROI</span><span class="spacer"></span><span id="d_roi" class="delta">—</span></h4><div class="val" id="k_roi">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_roi">—</span></div></div>
+    <div></div>
+  </div>
 
-  <script>
-  /* ===================== CONFIG ===================== */
-  const READ_VIEW        = 'vendas_canon';
-  const DEST_INSERT_TABLE= 'vendas_xlsx';
-  const REFRESH_RPC      = 'refresh_sales_materialized';
+  <!-- GRÁFICOS -->
+  <div class="section">
+    <div class="sec-head">
+      <div class="sec-title">Gráficos</div>
+      <div id="segGlobal" class="seg"><button class="seg-btn active" data-mode="total">Total</button><button class="seg-btn" data-mode="media">Média</button></div>
+    </div>
+    <div class="row cols-2">
+      <div class="chart-card wide"><div class="chart-head"><div class="muted">Vendas por mês — últimos 12M vs. 12M anteriores</div></div><div class="chart-box"><canvas id="ch_month"></canvas></div></div>
+      <div class="chart-card"><div class="chart-head"><div class="muted">Vendas por dia da semana</div></div><div class="chart-box"><canvas id="ch_dow"></canvas></div></div>
+      <div class="chart-card"><div class="chart-head"><div class="muted">Vendas por hora</div></div><div class="chart-box"><canvas id="ch_hour"></canvas></div></div>
+      <div class="chart-card"><div class="chart-head"><div class="muted">Vendas por turno</div></div><div class="chart-box"><canvas id="ch_turno"></canvas></div></div>
+      <div class="chart-card">
+        <div class="chart-head"><div class="muted">Participação por loja — Top 6</div></div>
+        <div class="chart-box">
+          <canvas id="ch_top6"></canvas>
+          <button id="top6Center" class="center-link">Total: R$ 0,00</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-  const SUPABASE_URL  = 'https://msmyfxgrnuusnvoqyeuo.supabase.co';
-  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U';
-  const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+<!-- libs -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 
-  /* ===================== CHART.JS (vinho) ===================== */
-  Chart.defaults.font.family = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu';
-  Chart.defaults.color = '#334155';
-  Chart.defaults.plugins.legend.position = 'top';
-  Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(15,23,42,.95)';
-  Chart.defaults.plugins.tooltip.titleColor = '#e2e8f0';
-  Chart.defaults.plugins.tooltip.bodyColor = '#e2e8f0';
-  Chart.defaults.plugins.tooltip.borderColor = 'rgba(148,163,184,.25)';
-  Chart.defaults.plugins.tooltip.borderWidth = 1;
-  Chart.defaults.datasets.bar.borderRadius = 6;
-  Chart.defaults.datasets.bar.borderSkipped = false;
-  Chart.defaults.datasets.bar.maxBarThickness = 42;
+<script>
+/* ========= CONFIG ========= */
+const READ_VIEW='vendas_canon';
+const DEST_INSERT_TABLE='vendas_xlsx';
+const REFRESH_RPC='refresh_sales_materialized';
+const SUPABASE_URL='https://msmyfxgrnuusnvoqyeuo.supabase.co';
+const SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U';
+const supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
 
-  function gradNow(ctx){
-    const g = ctx.createLinearGradient(0,0,0,240);
-    g.addColorStop(0,'rgba(123,30,58,0.95)');
-    g.addColorStop(1,'rgba(156,53,84,0.55)');
-    return g;
-  }
-  function gradPrev(ctx){
-    const g = ctx.createLinearGradient(0,0,0,240);
-    g.addColorStop(0,'rgba(148,163,184,0.85)');
-    g.addColorStop(1,'rgba(203,213,225,0.45)');
-    return g;
-  }
+/* ========= Chart.js theme ========= */
+Chart.defaults.font.family='ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu';
+Chart.defaults.color='#334155';
+Chart.defaults.plugins.legend.position='top';
+Chart.defaults.plugins.tooltip.backgroundColor='rgba(15,23,42,.95)';
+Chart.defaults.plugins.tooltip.titleColor='#e2e8f0';
+Chart.defaults.plugins.tooltip.bodyColor='#e2e8f0';
+Chart.defaults.plugins.tooltip.borderColor='rgba(148,163,184,.25)';
+Chart.defaults.plugins.tooltip.borderWidth=1;
+Chart.defaults.datasets.bar.borderRadius=6;
+Chart.defaults.datasets.bar.borderSkipped=false;
+Chart.defaults.datasets.bar.maxBarThickness=42;
+function gradNow(ctx){const g=ctx.createLinearGradient(0,0,0,240);g.addColorStop(0,'rgba(123,30,58,0.95)');g.addColorStop(1,'rgba(156,53,84,0.55)');return g;}
+function gradPrev(ctx){const g=ctx.createLinearGradient(0,0,0,240);g.addColorStop(0,'rgba(148,163,184,0.85)');g.addColorStop(1,'rgba(203,213,225,0.45)');return g;}
 
-  /* ===================== HELPERS ===================== */
-  const $ = id => document.getElementById(id);
-  const setStatus=(t,k)=>{ const el=$('status'); el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); };
-  const setDiag=(msg)=>{ $('diag').textContent = msg || ''; };
-  const info=(msg)=>{ $('uploadInfo').textContent = msg || ''; };
+/* ========= Helpers ========= */
+const $=id=>document.getElementById(id);
+const setStatus=(t,k)=>{const el=$('status');el.textContent=t;el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085');};
+const setDiag=msg=>{$('diag').textContent=msg||'';};
+const info=msg=>{$('uploadInfo').textContent=msg||'';};
+const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const num=v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
+const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+const iso=d=>d.toISOString().slice(0,10);
+function addDaysISO(isoStr,n){const d=new Date(isoStr+'T00:00:00');d.setDate(d.getDate()+n);return iso(d);}
+function daysLen(de,ate){const d1=new Date(de+'T00:00:00'),d2=new Date(ate+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24))+1;}
+function monthStartISO(isoStr){const d=new Date(isoStr+'T00:00:00');d.setDate(1);return iso(d);}
+function monthEndISO(isoStr){const d=new Date(isoStr+'T00:00:00');d.setMonth(d.getMonth()+1,0);return iso(d);}
+function addMonthsISO(isoStr,delta){const d=new Date(isoStr+'T00:00:00');const day=d.getDate();d.setDate(1);d.setMonth(d.getMonth()+delta);const last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();d.setDate(Math.min(day,last));return iso(d);}
+function formatYM(isoStr){const d=new Date(isoStr+'T00:00:00');const m=d.getMonth();const y=String(d.getFullYear()).slice(-2);const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];return `${n[m]}/${y}`;}
+function rangeDaysCountPerDOW(de,ate){const n=[0,0,0,0,0,0,0];let d=new Date(de+'T00:00:00');const end=new Date(ate+'T00:00:00');for(;d<=end;d.setDate(d.getDate()+1)){n[d.getDay()]++;}return n;}
+function daysInMonth(y,m){return new Date(y,m+1,0).getDate();}
 
-  const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const num =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
-  const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
-  function iso(d){return d.toISOString().slice(0,10);}
-  function addDaysISO(isoStr,n){const d=new Date(isoStr+'T00:00:00'); d.setDate(d.getDate()+n); return iso(d);}
-  function daysLen(de,ate){const d1=new Date(de+'T00:00:00'), d2=new Date(ate+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24))+1;}
-  function monthStartISO(isoStr){ const d=new Date(isoStr+'T00:00:00'); d.setDate(1); return iso(d); }
-  function monthEndISO(isoStr){ const d=new Date(isoStr+'T00:00:00'); d.setMonth(d.getMonth()+1,0); return iso(d); }
-  function addMonthsISO(isoStr, delta){ const d=new Date(isoStr+'T00:00:00'); const day=d.getDate(); d.setDate(1); d.setMonth(d.getMonth()+delta); const last=new Date(d.getFullYear(), d.getMonth()+1, 0).getDate(); d.setDate(Math.min(day,last)); return iso(d); }
-  function formatYM(isoStr){ const d=new Date(isoStr+'T00:00:00'); const m=d.getMonth(); const y=String(d.getFullYear()).slice(-2); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m]}/${y}`; }
+/* ========= Multiselect ========= */
+function MultiSelect(rootId, placeholder){
+  const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
+  let options=[], selected=new Set(), filtered=[];
+  function render(){panel.innerHTML='';const q=document.createElement('input');q.className='msel-search';q.placeholder='Filtrar…';q.addEventListener('input',()=>{filtered=options.filter(v=>v.toLowerCase().includes(q.value.toLowerCase()));draw();resetAutoCollapse();});panel.appendChild(q);draw();}
+  function draw(){const box=document.createElement('div');(filtered.length?filtered:options).forEach(v=>{const row=document.createElement('div');row.className='msel-opt';const cb=document.createElement('input');cb.type='checkbox';cb.value=v;cb.checked=selected.has(v);const lb=document.createElement('label');lb.textContent=v;cb.addEventListener('change',()=>{cb.checked?selected.add(v):selected.delete(v);refresh();applyAll();resetAutoCollapse();});row.appendChild(cb);row.appendChild(lb);box.appendChild(row);});panel.querySelectorAll('.msel-opt').forEach(n=>n.remove());panel.appendChild(box);}
+  function refresh(){btn.textContent=selected.size===0?placeholder:`${selected.size} selecionado(s)`;}
+  btn.addEventListener('click',()=>{root.classList.toggle('open');resetAutoCollapse();});document.addEventListener('click',e=>{if(!root.contains(e.target)) root.classList.remove('open');});
+  return {setOptions(list, keepOrder=false){options=(list||[]).filter(v=>v!=null).map(String);if(!keepOrder) options.sort((a,b)=>a.localeCompare(b,'pt-BR'));filtered=options.slice();selected=new Set([...selected].filter(v=>options.includes(v)));render();refresh();},get(){return [...selected];},set(vals){selected=new Set((vals||[]).map(String));refresh();draw();}};
+}
 
-  const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  const normHeader = (s)=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
-  function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
-  function displayNormalize(s){ return cleanSpaces(s); }
+/* ========= Auto collapse ========= */
+const secDatas=$('secDatas'), secFiltros=$('secFiltros'); let autoCollapseTimer=null;
+function collapseFilters(){secDatas.classList.add('collapsed');secFiltros.classList.add('collapsed');}
+function expandFilters(){secDatas.classList.remove('collapsed');secFiltros.classList.remove('collapsed');}
+function resetAutoCollapse(){clearTimeout(autoCollapseTimer);expandFilters();autoCollapseTimer=setTimeout(collapseFilters,10000);}
+[secDatas,secFiltros].forEach(sec=>{sec.querySelector('.sec-head').addEventListener('click',()=>{if(sec.classList.contains('collapsed')){expandFilters();resetAutoCollapse();}});});
 
-  /* ===================== MULTISELECT ===================== */
-  function MultiSelect(rootId, placeholder){
-    const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
-    let options=[], selected=new Set(), filtered=[];
-    function render(){ panel.innerHTML=''; const q=document.createElement('input'); q.className='msel-search'; q.placeholder='Filtrar…';
-      q.addEventListener('input',()=>{filtered=options.filter(v=>v.toLowerCase().includes(q.value.toLowerCase())); draw(); resetAutoCollapse();});
-      panel.appendChild(q); draw();
-    }
-    function draw(){
-      const box=document.createElement('div');
-      (filtered.length?filtered:options).forEach((v)=>{
-        const row=document.createElement('div'); row.className='msel-opt';
-        const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v; cb.checked=selected.has(v);
-        const lb=document.createElement('label'); lb.textContent=v;
-        cb.addEventListener('change',()=>{cb.checked?selected.add(v):selected.delete(v); refresh(); applyAll(); resetAutoCollapse();});
-        row.appendChild(cb); row.appendChild(lb); box.appendChild(row);
-      });
-      panel.querySelectorAll('.msel-opt').forEach(n=>n.remove());
-      panel.appendChild(box);
-    }
-    function refresh(){ btn.textContent = selected.size===0 ? placeholder : `${selected.size} selecionado(s)`; }
-    btn.addEventListener('click',()=>{ root.classList.toggle('open'); resetAutoCollapse(); });
-    document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
-    return {
-      setOptions(list, keepOrder=false){
-        options=(list||[]).filter(v=>v!=null).map(String);
-        if(!keepOrder){ options.sort((a,b)=>a.localeCompare(b,'pt-BR')); }
-        filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v)));
-        render(); refresh();
-      },
-      get(){return [...selected];},
-      set(vals){selected=new Set((vals||[]).map(String)); refresh(); draw();}
-    };
-  }
+/* ========= Estado/Período ========= */
+let firstDay='', lastDay='';
+const chips=[...document.querySelectorAll('.chip')];
+const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
+const ms={unids:MultiSelect('ms-unids','Todas as unidades'), lojas:MultiSelect('ms-lojas','Todas as lojas'), canais:MultiSelect('ms-canais','Todos os canais'), turnos:MultiSelect('ms-turnos','Todos os turnos'), pags:MultiSelect('ms-pags','Todos os tipos'), cancel:MultiSelect('ms-cancel','Todos')};
+function setActiveChip(v){chips.forEach(c=>c.classList.toggle('active',c.dataset.q===String(v))); }
+function applyQuick(v){setActiveChip(v);const ate=lastDay||iso(new Date());const de=addDaysISO(ate,-(Number(v)-1));fDe.value=de;fAte.value=ate;periodoInfo.textContent=`Último dia carregado: ${lastDay}`;applyAll();}
+$('btnClear').addEventListener('click',()=>{ms.unids.set([]);ms.lojas.set([]);ms.canais.set([]);ms.turnos.set([]);ms.pags.set([]);ms.cancel.set(['Não']);applyQuick('30');});
+chips.forEach(b=>b.addEventListener('click',()=>{applyQuick(b.dataset.q);resetAutoCollapse();}));
+[fDe,fAte].forEach(inp=>inp.addEventListener('change',()=>{chips.forEach(c=>c.classList.remove('active'));periodoInfo.textContent=`Último dia carregado: ${lastDay}`;applyAll();resetAutoCollapse();}));
 
-  /* ===================== AUTO-COLLAPSE das seções ===================== */
-  const secDatas = $('secDatas'); const secFiltros = $('secFiltros');
-  let autoCollapseTimer=null;
-  function collapseFilters(){ secDatas.classList.add('collapsed'); secFiltros.classList.add('collapsed'); }
-  function expandFilters(){ secDatas.classList.remove('collapsed'); secFiltros.classList.remove('collapsed'); }
-  function resetAutoCollapse(){ clearTimeout(autoCollapseTimer); expandFilters(); autoCollapseTimer=setTimeout(collapseFilters, 10000); }
-  // Clique no cabeçalho reabre
-  [secDatas, secFiltros].forEach(sec=>{
-    sec.querySelector('.sec-head').addEventListener('click', (e)=>{
-      if(!sec.classList.contains('collapsed')) return; // só age se estiver recolhido
-      expandFilters(); resetAutoCollapse();
-    });
-  });
+/* ========= KPI calc (mesmo de antes) ========= */
+function buildParams(de,ate,overrideCancel=null){
+  const canc=overrideCancel!=null?[overrideCancel]:ms.cancel.get();
+  let p_cancelado=null; if(canc.length===1&&(canc[0]==='Não'||canc[0]==='Sim')) p_cancelado=canc[0];
+  return {p_dini:de,p_dfim:ate,p_unids:ms.unids.get().length?ms.unids.get():null,p_lojas:ms.lojas.get().length?ms.lojas.get():null,p_turnos:ms.turnos.get().length?ms.turnos.get():null,p_canais:ms.canais.get().length?ms.canais.get():null,p_pags:ms.pags.get().length?ms.pags.get():null,p_cancelado};
+}
+function rpcName(p){return p.p_unids?'kpi_vendas_v2':'kpi_vendas';}
+function prepareArgs(name,p){if(name==='kpi_vendas'){const{p_unids,...rest}=p;return rest;}return p;}
+function agg(rows){let ped=0,fat=0,des=0,fre=0;for(const r of (rows||[])){ped+=+r.pedidos||0;fat+=+r.fat||0;des+=+r.des||0;fre+=+r.fre||0;}return{ped,fat,des,fre};}
+function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4l5 6h-3v6H8v-6H5l5-6z"/></svg>'; }
+function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 16l-5-6h3V4h4v6h3l-5 6z"/></svg>'; }
+function deltaBadge(el,curr,prev){if(!isFinite(prev)||+prev===0){el.textContent='—';el.className='delta';return;}const p=((curr-prev)/prev)*100;el.innerHTML=(p>=0?upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';el.className='delta '+(p>=0?'up':'down');}
+async function updateKPIs(de,ate,dePrev,atePrev){
+  const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
+  const nameNow=rpcName(pNow), namePrev=rpcName(pPrev);
+  const [now,prev,cNow,cPrev]=await Promise.all([supa.rpc(nameNow,prepareArgs(nameNow,pNow)),supa.rpc(namePrev,prepareArgs(namePrev,pPrev)),supa.rpc(nameNow,prepareArgs(nameNow,{...pNow,p_cancelado:'Sim'})),supa.rpc(namePrev,prepareArgs(namePrev,{...pPrev,p_cancelado:'Sim'}))]);
+  if(now.error) throw now.error; if(prev.error) throw prev.error;
+  const N=agg(now.data||[]), P=agg(prev.data||[]); const CN=agg((cNow?.data)||[]), CP=agg((cPrev?.data)||[]);
+  const len=daysLen(de,ate);
+  const tktN=(N.ped>0)?(N.fat/N.ped):0, tktP=(P.ped>0)?(P.fat/P.ped):0;
+  const fatMedN=len?(N.fat/len):0, fatMedP=len?(P.fat/len):0;
+  const desPercN=N.fat?(N.des/N.fat):0, desPercP=P.fat?(P.des/P.fat):0;
+  const freMedN=N.ped?(N.fre/N.ped):0, freMedP=P.ped?(P.fre/P.ped):0;
+  const partCancN=N.ped?(CN.ped/N.ped):0, partCancP=P.ped?(CP.ped/P.ped):0;
+  $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
+  $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
+  $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
+  $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
+  $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
+  $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
+  $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
+  $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
+  $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
+  $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
+  const roiN=(N.des>0)?(N.fat-N.des)/N.des:NaN, roiP=(P.des>0)?(P.fat-P.des)/P.des:NaN;
+  $('k_roi').textContent=Number.isFinite(roiN)?pctf(roiN):'—'; $('p_roi').textContent=Number.isFinite(roiP)?pctf(roiP):'—'; deltaBadge($('d_roi'),Number.isFinite(roiN)?roiN:0,Number.isFinite(roiP)?roiP:0);
+}
 
-  /* ===================== ESTADO / PERÍODO ===================== */
-  let firstDay='', lastDay='';
-  let lastPrevRange = {dePrev:null, atePrev:null};
-  const chips=[...document.querySelectorAll('.chip')];
-  const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
-  const ms={
-    unids:  MultiSelect('ms-unids','Todas as unidades'),
-    lojas:  MultiSelect('ms-lojas','Todas as lojas'),
-    canais: MultiSelect('ms-canais','Todos os canais'),
-    turnos: MultiSelect('ms-turnos','Todos os turnos'),
-    pags:   MultiSelect('ms-pags','Todos os tipos'),
-    cancel: MultiSelect('ms-cancel','Todos')
-  };
-  function setActiveChip(val){ chips.forEach(c=>c.classList.toggle('active', c.dataset.q===String(val))); }
-  function applyQuick(val){
-    setActiveChip(val);
-    const ate=lastDay||iso(new Date());
-    const de=addDaysISO(ate, -(Number(val)-1));
-    fDe.value=de; fAte.value=ate;
-    periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
-    applyAll();
-  }
-  $('btnClear').addEventListener('click', ()=>{
-    ms.unids.set([]); ms.lojas.set([]); ms.canais.set([]); ms.turnos.set([]); ms.pags.set([]);
-    ms.cancel.set(['Não']);
-    applyQuick('30');
-  });
-  chips.forEach(b=> b.addEventListener('click', ()=>{ applyQuick(b.dataset.q); resetAutoCollapse(); }));
-  ;[fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{
-    chips.forEach(c=>c.classList.remove('active'));
-    periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
-    applyAll(); resetAutoCollapse();
+/* ========= KPI→gráficos (nova lógica) ========= */
+let chartModeGlobal='total';
+let selectedMetric='fat'; // padrão
+const KPI_MAP={
+  ped:{label:'Pedidos',kind:'sum',field:'pedidos'},
+  tkt:{label:'Ticket Médio',kind:'ratio',num:'fat',den:'pedidos'},
+  fat:{label:'Faturamento',kind:'sum',field:'fat'},
+  fatmed:{label:'Faturamento Médio',kind:'sum',field:'fat',forceMedia:true},
+  des:{label:'Incentivos',kind:'sum',field:'des'},
+  desperc:{label:'% de Incentivos',kind:'ratio',num:'des',den:'fat',isPercent:true},
+  fre:{label:'Frete',kind:'sum',field:'fre'},
+  fremed:{label:'Frete Médio',kind:'ratio',num:'fre',den:'pedidos'},
+  canc_ped:{label:'Pedidos Cancelados',kind:'sum',field:'pedidos',overrideCancel:'Sim'},
+  canc_val:{label:'Valor de Cancelados',kind:'sum',field:'fat',overrideCancel:'Sim'},
+  roi:{label:'ROI',kind:'ratio',num:'fatMinusDes',den:'des',isPercent:true}
+};
+function fmtMetric(metric,v){
+  const M=KPI_MAP[metric]||{};
+  if(M.isPercent) return pctf(v);
+  if(metric==='tkt' || metric==='fremed') return money(v);
+  if(metric==='ped' || metric==='canc_ped') return num(v);
+  return money(v);
+}
+function tickFormatter(metric){
+  if(KPI_MAP[metric]?.isPercent) return (value)=>((value*100).toLocaleString('pt-BR',{maximumFractionDigits:0})+'%');
+  if(metric==='ped'||metric==='canc_ped') return (v)=>num(v);
+  return (v)=>{const val=Number(v)||0; if(Math.abs(val)>=1_000_000) return 'R$ '+(val/1_000_000).toFixed(1).replace('.',',')+' mi'; if(Math.abs(val)>=1_000) return 'R$ '+(val/1_000).toFixed(1).replace('.',',')+' mil'; return 'R$ '+val.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,'.');};
+}
+
+/* ========= Fetch base rows (para qualquer métrica) ========= */
+async function fetchBaseRows(de,ate,overrideCancel=null){
+  let q=supa.from(READ_VIEW).select('dia,hora,turno,fat,des,fre,pedidos,cancelado,loja,unidade,canal,pagamento_base',{head:false}).gte('dia',de).lte('dia',ate).limit(200000);
+  const un=ms.unids.get(); if(un.length) q=q.in('unidade',un);
+  const lj=ms.lojas.get(); if(lj.length) q=q.in('loja',lj);
+  const tr=ms.turnos.get(); if(tr.length) q=q.in('turno',tr);
+  const cn=ms.canais.get(); if(cn.length) q=q.in('canal',cn);
+  const pg=ms.pags.get();  if(pg.length) q=q.in('pagamento_base',pg);
+  const cancSel=ms.cancel.get();
+  if(overrideCancel!=null) q=q.eq('cancelado',overrideCancel);
+  else if(cancSel.length===1 && (cancSel[0]==='Sim'||cancSel[0]==='Não')) q=q.eq('cancelado',cancSel[0]);
+  const {data,error}=await q; if(error) throw error;
+  return (data||[]).map(r=>({
+    dia:String(r.dia), hora:(r.hora==null?null:Number(r.hora)), turno:r.turno||((Number(r.hora)>=6&&Number(r.hora)<18)?'Dia':'Noite'),
+    fat:Number(r.fat)||0, des:Number(r.des)||0, fre:Number(r.fre)||0, pedidos:Number(r.pedidos)||0,
+    cancelado:r.cancelado==='Sim'?'Sim':'Não', loja:String(r.loja||''), unidade:String(r.unidade||''), canal:String(r.canal||''), pagamento_base:String(r.pagamento_base||'')
   }));
+}
 
-  /* ===================== KPI ===================== */
-  function buildParams(de, ate, overrideCancel = null) {
-    const canc = overrideCancel != null ? [overrideCancel] : ms.cancel.get();
-    let p_cancelado = null;
-    if (canc.length === 1 && (canc[0] === 'Não' || canc[0] === 'Sim')) p_cancelado = canc[0];
-    return {
-      p_dini: de, p_dfim: ate,
-      p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
-      p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
-      p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
-      p_canais: ms.canais.get().length ? ms.canais.get() : null,
-      p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
-      p_cancelado
-    };
+/* ========= Agregadores ========= */
+function getBucketKey(dim,row){
+  if(dim==='dow'){ return new Date(row.dia+'T00:00:00').getDay(); }
+  if(dim==='hour'){ return Number.isFinite(row.hora)?row.hora:null; }
+  if(dim==='turno'){ return row.turno||'Outro'; }
+  if(dim==='month'){ const d=new Date(row.dia+'T00:00:00'); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
+  return null;
+}
+function labelsFor(dim, context){
+  if(dim==='dow') return ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  if(dim==='hour') return Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
+  if(dim==='turno') return ['Dia','Noite'];
+  if(dim==='month' && context?.start){ // 12 labels
+    const labs=[]; let cur=context.start; for(let i=0;i<12;i++){ labs.push(formatYM(cur)); cur=addMonthsISO(cur,1); } return labs;
   }
-  function rpcName(params){ return params.p_unids ? 'kpi_vendas_v2' : 'kpi_vendas'; }
-  function prepareArgs(name, params){ if(name==='kpi_vendas'){ const {p_unids, ...rest}=params; return rest; } return params; }
-  function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
-  async function kpiCancelFallback(de,ate,dePrev,atePrev){
-    const rowsNow = await fetchRowsLocal(de,ate,'Sim');
-    const rowsPrev= await fetchRowsLocal(dePrev,atePrev,'Sim');
-    const sum = a => a.reduce((acc,x)=>({ ped:acc.ped+(+x.pedidos||0), fat:acc.fat+(+x.fat||0) }), {ped:0,fat:0});
-    const N=sum(rowsNow), P=sum(rowsPrev);
-    return { CN:N, CP:P };
-  }
-  function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4l5 6h-3v6H8v-6H5l5-6z"/></svg>';}
-  function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 16l-5-6h3V4h4v6h3l-5 6z"/></svg>';}
-  function deltaBadge(el,curr,prev){
-    if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
-    const p=((curr-prev)/prev)*100;
-    el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
-    el.className='delta '+(p>=0?'up':'down');
-  }
-  async function updateKPIs(de, ate, dePrev, atePrev){
-    const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
-    const nameNow=rpcName(pNow),     namePrev=rpcName(pPrev);
-    const [now,prev,cNow,cPrev] = await Promise.all([
-      supa.rpc(nameNow, prepareArgs(nameNow,pNow)),
-      supa.rpc(namePrev, prepareArgs(namePrev,pPrev)),
-      supa.rpc(nameNow, prepareArgs(nameNow,{...pNow, p_cancelado:'Sim'})),
-      supa.rpc(namePrev, prepareArgs(namePrev,{...pPrev, p_cancelado:'Sim'})),
-    ]);
-    if(now.error) throw now.error;
-    if(prev.error) throw prev.error;
+  return [];
+}
+function denominatorDays(dim, de, ate){
+  if(dim==='dow') return rangeDaysCountPerDOW(de,ate);
+  const len=daysLen(de,ate);
+  if(dim==='hour') return Array(24).fill(len);
+  if(dim==='turno') return ['Dia','Noite'].map(()=>len);
+  return [];
+}
+function sumPush(obj,a){obj.fat+=a.fat||0;obj.ped+=a.ped||0;obj.des+=a.des||0;obj.fre+=a.fre||0;}
+function metricFromSums(metric,s){
+  const M=KPI_MAP[metric]||{};
+  if(M.kind==='sum'){ return (s[M.field]||0); }
+  // ratios
+  let num=0, den=0;
+  if(M.num==='fatMinusDes'){ num=(s.fat||0)-(s.des||0); } else { num=s[M.num]||0; }
+  den=s[M.den]||0;
+  return den? (num/den) : 0;
+}
+function aggregateSeries(rows, metric, dim, mode, de, ate, opts={}){
+  const labels = labelsFor(dim, opts);
+  const idxMap = new Map(); labels.forEach((l,i)=>idxMap.set(l, i));
+  // For dow/hour use stable order arrays
+  let buckets=[], keys=[];
+  if(dim==='dow'){ keys=[0,1,2,3,4,5,6]; buckets=keys.map(()=>({fat:0,ped:0,des:0,fre:0})); }
+  else if(dim==='hour'){ keys=[...Array(24).keys()]; buckets=keys.map(()=>({fat:0,ped:0,des:0,fre:0})); }
+  else if(dim==='turno'){ keys=['Dia','Noite']; buckets=keys.map(()=>({fat:0,ped:0,des:0,fre:0})); }
+  else if(dim==='month'){ keys=opts.ymList||[]; buckets=keys.map(()=>({fat:0,ped:0,des:0,fre:0,days:opts.daysPerYM?.[i]||0})); }
 
-    const N=agg(now.data||[]), P=agg(prev.data||[]);
-    let CN=agg((cNow?.data)||[]), CP=agg((cPrev?.data)||[]);
+  const ymList = opts.ymList||[];
+  for(const r of rows){
+    const k=getBucketKey(dim,r);
+    if(k==null) continue;
+    let idx=-1;
+    if(dim==='dow'){ idx = keys.indexOf(k); }
+    else if(dim==='hour'){ idx = (k>=0&&k<24)?k:-1; }
+    else if(dim==='turno'){ idx = keys.indexOf(k); }
+    else if(dim==='month'){ const d=new Date(r.dia+'T00:00:00'); const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; idx = ymList.indexOf(ym); }
+    if(idx<0) continue;
+    sumPush(buckets[idx], {fat:r.fat, ped:r.pedidos, des:r.des, fre:r.fre});
+  }
 
-    if((!cNow || cNow.error || (!CN.ped && !CN.fat)) && (N.ped>0 || N.fat>0)){
-      try{ const fb = await kpiCancelFallback(de,ate,dePrev,atePrev);
-        CN = { ped: fb.CN.ped, fat: fb.CN.fat, des:0, fre:0 };
-        CP = { ped: fb.CP.ped, fat: fb.CP.fat, des:0, fre:0 };
-      }catch(_e){}
+  let values=keys.map((_,i)=>metricFromSums(metric,{fat:buckets[i].fat,ped:buckets[i].ped,des:buckets[i].des,fre:buckets[i].fre}));
+
+  // média (por dia) — para somas divide pelo nº de dias aplicável ao bucket
+  if(mode==='media' && KPI_MAP[metric]?.kind==='sum'){
+    if(dim==='month' && opts.daysPerYMArr){ values=values.map((v,i)=>opts.daysPerYMArr[i]? v/opts.daysPerYMArr[i] : v); }
+    else{
+      const den = denominatorDays(dim,de,ate);
+      values = values.map((v,i)=> den[i]? v/den[i]: v);
     }
-
-    const len=daysLen(de,ate);
-    const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
-    const fatMedN = len? (N.fat/len) : 0,    fatMedP = len? (P.fat/len) : 0;
-    const desPercN = N.fat? (N.des/N.fat) : 0, desPercP = P.fat? (P.des/P.fat) : 0;
-    const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/P.ped) : 0;
-    const partCancN = N.ped? (CN.ped/N.ped) : 0, partCancP = P.ped? (CP.ped/P.ped) : 0;
-
-    $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
-    $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
-    $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
-    $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
-    $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
-    $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
-    $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
-
-    $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
-    $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
-    $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
-
-    const roiN = (N.des>0)? (N.fat-N.des)/N.des : NaN;
-    const roiP = (P.des>0)? (P.fat-P.des)/P.des : NaN;
-    $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
-    $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
-    deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
   }
+  // para razões, manter direto (média de dia = razão de totais no período)
+  return {labels: (dim==='month'? labelsFor('month', opts): labels), values};
+}
 
-  /* ===== Comparativo ===== */
-  function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
-  function isFullYear(d1,d2){ return d1.getMonth()===0 && d1.getDate()===1 && d2.getMonth()===11 && d2.getDate()===31 && d1.getFullYear()===d2.getFullYear(); }
-  function isFullMonthsAligned(d1,d2){ return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth()); }
-  function shiftYear(date,delta){ const d=new Date(date); d.setFullYear(d.getFullYear()+delta); const ld=lastDayOfMonth(d.getFullYear(), d.getMonth()); if(d.getDate()>ld) d.setDate(ld); return d; }
-  function computePrevRangeISO(deISO, ateISO){
-    const d1=new Date(deISO+'T00:00:00'), d2=new Date(ateISO+'T00:00:00');
-    if(isFullYear(d1,d2) || isFullMonthsAligned(d1,d2)){ const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1); return { dePrev: iso(p1), atePrev: iso(p2) }; }
-    const len=daysLen(deISO,ateISO); const atePrev=new Date(d1.getTime()-86400000); const dePrev=new Date(atePrev.getTime()-(len-1)*86400000);
-    return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
-  }
-
-  /* ===================== Toggle global Total/Média ===================== */
-  let chartModeGlobal = 'total';
-  const segGlobal = $('segGlobal');
-  segGlobal.addEventListener('click',(e)=>{
-    const btn=e.target.closest('.seg-btn'); if(!btn) return;
-    chartModeGlobal = btn.dataset.mode;
-    segGlobal.querySelectorAll('.seg-btn').forEach(b=> b.classList.toggle('active', b===btn));
-    updateMonth12x12();
-    updateChartsServer();
-  });
-
-  /* ===================== GRÁFICOS (RPC) ===================== */
-  function formatCurrencyTick(value){
-    const v=Number(value)||0;
-    if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
-    if(Math.abs(v)>=1_000)     return 'R$ '+(v/1_000).toFixed(1).replace('.',',')+' mil';
-    return 'R$ '+v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
-  }
-  function ensureChart(canvasId, labels, nowArr, prevArr, tooltipExtra=''){
-    const canvas=$(canvasId); if(!canvas) return;
-    if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
-    const ctx=canvas.getContext('2d');
-    const chart=new Chart(ctx,{
-      type:'bar',
-      data:{ labels, datasets:[
-        {label:'Atual', data:nowArr.map(v=>+v||0), backgroundColor:gradNow(ctx)},
-        {label:'Anterior', data:prevArr.map(v=>+v||0), backgroundColor:gradPrev(ctx)}
-      ]},
-      options:{
-        responsive:true, maintainAspectRatio:false, animation:false,
-        scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:formatCurrencyTick}}},
-        plugins:{ legend:{position:'top'},
-          tooltip:{mode:'index',intersect:false,callbacks:{
-            label:(ctx)=>`${ctx.dataset.label}: ${money(ctx.parsed.y||0)}`,
-            footer:()=> tooltipExtra
-          }}
-        }
+/* ========= UI: Charts ========= */
+function ensureChart(canvasId, labels, nowArr, prevArr, metric, tooltipExtra=''){
+  const canvas=$(canvasId); if(!canvas) return;
+  if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
+  const ctx=canvas.getContext('2d');
+  const chart=new Chart(ctx,{type:'bar',
+    data:{labels, datasets:[
+      {label:'Atual', data:nowArr.map(v=>+v||0), backgroundColor:gradNow(ctx)},
+      {label:'Anterior', data:prevArr.map(v=>+v||0), backgroundColor:gradPrev(ctx)}
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false, animation:false,
+      scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,.05)'}, ticks:{callback:tickFormatter(metric)}}},
+      plugins:{ legend:{position:'top'},
+        tooltip:{mode:'index',intersect:false,callbacks:{
+          label:(c)=>`${c.dataset.label}: ${fmtMetric(metric, c.parsed.y||0)}`,
+          footer:()=> tooltipExtra
+        }}
       }
-    });
-    canvas.__chart=chart;
-  }
+    }
+  });
+  canvas.__chart=chart;
+}
 
-  const RPC_FN = { dow:'chart_vendas_dow_v1', month:'chart_vendas_mes_v1', hour:'chart_vendas_hora_v1', turno:'chart_vendas_turno_v1' };
+/* ========= Charts a partir do KPI selecionado ========= */
+async function updateChartsForMetric(){
+  const de=fDe.value||firstDay, ate=fAte.value||lastDay;
+  const {dePrev,atePrev}=computePrevRangeISO(de,ate);
+  const meta=KPI_MAP[selectedMetric]||{};
+  try{
+    const [rowsNow, rowsPrev] = await Promise.all([fetchBaseRows(de,ate,meta.overrideCancel||null), fetchBaseRows(dePrev,atePrev,meta.overrideCancel||null)]);
+    const tip=`Período anterior: ${dePrev} → ${atePrev}`;
 
-  async function fetchChartRPC(kind, de, ate){
-    const params = {
-      p_dini: de, p_dfim: ate,
-      p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
-      p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
-      p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
-      p_canais: ms.canais.get().length ? ms.canais.get() : null,
-      p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
-      p_cancelado: (ms.cancel.get().length===1 && (ms.cancel.get()[0]==='Sim' || ms.cancel.get()[0]==='Não')) ? ms.cancel.get()[0] : null
-    };
-    const { data, error } = await supa.rpc(RPC_FN[kind], params);
-    if(error){ console.warn('[chart rpc]', kind, error.message); throw error; }
-    return data||[];
-  }
+    // DOW
+    let a=aggregateSeries(rowsNow,selectedMetric,'dow',chartModeGlobal,de,ate);
+    let b=aggregateSeries(rowsPrev,selectedMetric,'dow',chartModeGlobal,dePrev,atePrev);
+    ensureChart('ch_dow', a.labels, a.values, b.values, selectedMetric, tip);
 
-  async function updateChartsServer(){
+    // HOUR (filtra zeros p/ limpar)
+    let ah=aggregateSeries(rowsNow,selectedMetric,'hour',chartModeGlobal,de,ate);
+    let bh=aggregateSeries(rowsPrev,selectedMetric,'hour',chartModeGlobal,dePrev,atePrev);
+    const keepIdx=ah.values.map((v,i)=> (v||bh.values[i])?i:null).filter(i=>i!=null);
+    ensureChart('ch_hour', keepIdx.map(i=>ah.labels[i]), keepIdx.map(i=>ah.values[i]), keepIdx.map(i=>bh.values[i]), selectedMetric, tip);
+
+    // TURNO
+    let at=aggregateSeries(rowsNow,selectedMetric,'turno',chartModeGlobal,de,ate);
+    let bt=aggregateSeries(rowsPrev,selectedMetric,'turno',chartModeGlobal,dePrev,atePrev);
+    ensureChart('ch_turno', at.labels, at.values, bt.values, selectedMetric, tip);
+
+    setStatus('OK — gráficos atualizados','ok');
+  }catch(e){ console.error(e); setStatus('OK (gráficos por KPI indisponíveis)','ok'); }
+}
+
+/* ========= Month 12×12 por KPI ========= */
+function computePrevRangeISO(deISO,ateISO){
+  const d1=new Date(deISO+'T00:00:00'), d2=new Date(ateISO+'T00:00:00');
+  const len=daysLen(deISO,ateISO); const atePrev=new Date(d1.getTime()-86400000); const dePrev=new Date(atePrev.getTime()-(len-1)*86400000);
+  return {dePrev: iso(dePrev), atePrev: iso(atePrev)};
+}
+async function updateMonth12x12ForMetric(){
+  try{
+    const end = lastDay || iso(new Date());
+    const endMonthStart=monthStartISO(end);
+    const last12Start=addMonthsISO(endMonthStart,-11);
+    const prev12Start=addMonthsISO(endMonthStart,-23);
+    const last12End  =monthEndISO(end);
+    const prev12End  =monthEndISO(addMonthsISO(endMonthStart,-12));
+    const meta=KPI_MAP[selectedMetric]||{};
+
+    const rows = await fetchBaseRows(prev12Start,last12End,meta.overrideCancel||null);
+
+    // separar em now (últimos 12 meses) e prev (12 anteriores)
+    const ymNow=[]; let cur=last12Start; for(let i=0;i<12;i++){ymNow.push(cur.slice(0,7)); cur=addMonthsISO(cur,1);}
+    const ymPrev=ymNow.map(ym=>{const [yy,mm]=ym.split('-').map(Number);const p=new Date(yy,mm-1-12,1);return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`;});
+    const daysPerYMArr = ymNow.map(ym=>{const [yy,mm]=ym.split('-').map(Number);return daysInMonth(yy,mm-1);});
+    const daysPerYMArrPrev = ymPrev.map(ym=>{const [yy,mm]=ym.split('-').map(Number);return daysInMonth(yy,mm-1);});
+
+    const an=aggregateSeries(rows.filter(r=>ymNow.includes(r.dia.slice(0,7))),selectedMetric,'month',chartModeGlobal,last12Start,last12End,{start:last12Start,ymList:ymNow,daysPerYMArr});
+    const ap=aggregateSeries(rows.filter(r=>ymPrev.includes(r.dia.slice(0,7))),selectedMetric,'month',chartModeGlobal,prev12Start,prev12End,{start:prev12Start,ymList:ymPrev,daysPerYMArr:daysPerYMArrPrev});
+    ensureChart('ch_month', an.labels, an.values, ap.values, selectedMetric, `Comparação 12M vs 12M anteriores`);
+  }catch(e){ console.error(e); setStatus('OK (mensal por KPI indisponível)','ok'); }
+}
+
+/* ========= Donut Top-6 por KPI ========= */
+const wine=["#7b1e3a","#8c2947","#9c3554","#ad4061","#bd4c6e","#ce577b"];
+function ensureDonutTop6(labels, values, metric){
+  const cvs=$('ch_top6'); if(!cvs) return;
+  if(cvs.__chart){ try{cvs.__chart.destroy();}catch(e){} cvs.__chart=null; }
+  const ctx=cvs.getContext('2d');
+  const total=(values||[]).reduce((a,b)=>a+(+b||0),0);
+  $('top6Center').textContent='Total: '+fmtMetric(metric,total);
+  const chart=new Chart(ctx,{type:'doughnut',
+    data:{labels, datasets:[{data:values, backgroundColor:wine, hoverBackgroundColor:wine, borderColor:'#fff', borderWidth:1}]},
+    options:{responsive:true, maintainAspectRatio:false, cutout:'60%',
+      plugins:{legend:{position:'right',labels:{usePointStyle:true,pointStyle:'circle',boxWidth:10,padding:16,color:'#334155'}},
+        tooltip:{callbacks:{label:(c)=>{const label=c.label||'';const val=c.parsed||0;const ds=c.chart.data.datasets[0];const tt=(ds.data||[]).reduce((a,b)=>a+(+b||0),0);const perc=tt?((val/tt)*100).toFixed(1):0;return `${label}: ${fmtMetric(metric,val)} (${perc}%)`;}}}
+    }});
+  cvs.__chart=chart;
+}
+async function updateTop6ForMetric(){
+  try{
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-    const {dePrev, atePrev} = computePrevRangeISO(de,ate);
-    lastPrevRange = {dePrev, atePrev};
-
-    try{
-      setDiag('');
-      const [nowD, prevD, nowH, prevH, nowT, prevT] = await Promise.all([
-        fetchChartRPC('dow',de,ate),   fetchChartRPC('dow',dePrev,atePrev),
-        fetchChartRPC('hour',de,ate),  fetchChartRPC('hour',dePrev,atePrev),
-        fetchChartRPC('turno',de,ate), fetchChartRPC('turno',dePrev,atePrev),
-      ]);
-
-      const tip = `Período anterior: ${dePrev} → ${atePrev}`;
-
-      // DOW
-      {
-        const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-        const nArr = Array(7).fill(0), pArr = Array(7).fill(0), nMed=Array(7).fill(0), pMed=Array(7).fill(0);
-        (nowD||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; });
-        (prevD||[]).forEach(r=>{ pArr[r.dow]=+r.total||0; pMed[r.dow]=+r.media||0; });
-        const useN = (chartModeGlobal==='media'?nMed:nArr);
-        const useP = (chartModeGlobal==='media'?pMed:pArr);
-        ensureChart('ch_dow', labels, useN, useP, tip);
-      }
-
-      // HOUR
-      {
-        const allHours = Array.from({length:24},(_,h)=>h);
-        const nArr = Array(24).fill(0), pArr = Array(24).fill(0), nMed=Array(24).fill(0), pMed=Array(24).fill(0);
-        (nowH||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; });
-        (prevH||[]).forEach(r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; });
-        const useN = (chartModeGlobal==='media'?nMed:nArr);
-        const useP = (chartModeGlobal==='media'?pMed:pArr);
-        const filtered = allHours.filter(h => (useN[h]||0)!==0 || (useP[h]||0)!==0);
-        const labels=filtered.map(h=>String(h).padStart(2,'0')+'h');
-        ensureChart('ch_hour', labels, filtered.map(h=>useN[h]||0), filtered.map(h=>useP[h]||0), tip);
-      }
-
-      // TURNO
-      {
-        const order=['Dia','Noite'];
-        const n = new Map((nowT||[]).map(r=>[r.turno, chartModeGlobal==='media'? (+r.media||0) : (+r.total||0)]));
-        const p = new Map((prevT||[]).map(r=>[r.turno, chartModeGlobal==='media'? (+r.media||0) : (+r.total||0)]));
-        const labels = order.filter(x=> n.has(x) || p.has(x));
-        ensureChart('ch_turno', labels, labels.map(l=>n.get(l)||0), labels.map(l=>p.get(l)||0), tip);
-      }
-
-      setStatus('OK — gráficos atualizados','ok');
-    }catch(e){
-      console.warn(e);
-      setStatus('OK (sem gráficos — RPC indisponível)','ok');
-      setDiag('');
+    const meta=KPI_MAP[selectedMetric]||{};
+    // traz somas necessárias por loja
+    let q=supa.from(READ_VIEW).select('loja, fat:fat.sum(), pedidos:pedidos.sum(), des:des.sum(), fre:fre.sum()', {head:false}).gte('dia',de).lte('dia',ate).order('fat',{ascending:false}).limit(200);
+    const un=ms.unids.get(); if(un.length) q=q.in('unidade',un);
+    const lj=ms.lojas.get(); if(lj.length) q=q.in('loja',lj);
+    const tr=ms.turnos.get(); if(tr.length) q=q.in('turno',tr);
+    const cn=ms.canais.get(); if(cn.length) q=q.in('canal',cn);
+    const pg=ms.pags.get();  if(pg.length) q=q.in('pagamento_base',pg);
+    const cancSel=ms.cancel.get();
+    if(meta.overrideCancel) q=q.eq('cancelado',meta.overrideCancel);
+    else if(cancSel.length===1 && (cancSel[0]==='Sim'||cancSel[0]==='Não')) q=q.eq('cancelado',cancSel[0]);
+    const {data,error}=await q; if(error) throw error;
+    const rows=(data||[]).map(r=>({loja:r.loja, fat:+r.fat||0, pedidos:+r.pedidos||0, des:+r.des||0, fre:+r.fre||0}));
+    function metricFromRow(m,r){
+      if(KPI_MAP[m].kind==='sum') return r[KPI_MAP[m].field]||0;
+      let num=0, den=0;
+      if(KPI_MAP[m].num==='fatMinusDes') num=(r.fat||0)-(r.des||0); else num=r[KPI_MAP[m].num]||0;
+      den=r[KPI_MAP[m].den]||0;
+      return den? num/den : 0;
     }
-  }
+    rows.forEach(r=>r.val=metricFromRow(selectedMetric,r));
+    rows.sort((a,b)=>b.val-a.val);
+    const top=rows.slice(0,6);
+    ensureDonutTop6(top.map(x=>x.loja), top.map(x=>x.val), selectedMetric);
+  }catch(e){ console.warn('top6',e.message||e); ensureDonutTop6([],[],selectedMetric); }
+}
+$('top6Center').addEventListener('click',()=>{ setStatus('Top 6 — total clicado','ok'); });
 
-  /* ===================== GRÁFICO MÊS: 12x12 ===================== */
-  async function updateMonth12x12(){
-    try{
-      const end = lastDay || iso(new Date());
-      const endMonthStart = monthStartISO(end);
-      const last12Start = addMonthsISO(endMonthStart, -11);
-      const prev12Start = addMonthsISO(endMonthStart, -23);
-      const last12End   = monthEndISO(end);
-      const prev12EndAdj= monthEndISO(addMonthsISO(endMonthStart, -12));
+/* ========= Options fallback ========= */
+async function fallbackDistinct(col){try{const {data,error}=await supa.from(READ_VIEW).select(col,{head:false}).neq(col,null).limit(5000);if(error) return [];const vals=(data||[]).map(r=>r[col]).filter(Boolean);return [...new Set(vals)].sort((a,b)=>String(a).localeCompare(String(b),'pt-BR'));}catch(_e){return[]}}
+async function reloadStaticOptions(){
+  const [unids,lojas,canais,pags]=await Promise.all([
+    (async()=>{const r=await supa.from('vw_vendas_unidades').select('unidade').order('unidade');return (!r.error?r.data:await fallbackDistinct('unidade'));})(),
+    (async()=>{const r=await supa.from('vw_vendas_lojas').select('loja').order('loja');return (!r.error?r.data:await fallbackDistinct('loja'));})(),
+    (async()=>{const r=await supa.from('vw_vendas_canais').select('canal').order('canal');return (!r.error?r.data:await fallbackDistinct('canal'));})(),
+    (async()=>{const r=await supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base');return (!r.error?r.data:await fallbackDistinct('pagamento_base'));})(),
+  ]);
+  const toArr=(rows,key)=> Array.isArray(rows) ? rows.map(r=> key?r[key]:r).filter(Boolean) : [];
+  ms.unids.setOptions(toArr(unids,'unidade'),true);
+  ms.lojas.setOptions(toArr(lojas,'loja'),true);
+  ms.canais.setOptions(toArr(canais,'canal'),true);
+  ms.pags.setOptions(toArr(pags,'pagamento_base'),true);
+  ms.turnos.setOptions(['Dia','Noite'],true);
+}
 
-      const paramsCommon = {
-        p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
-        p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
-        p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
-        p_canais: ms.canais.get().length ? ms.canais.get() : null,
-        p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
-        p_cancelado: (ms.cancel.get().length===1 && (ms.cancel.get()[0]==='Sim' || ms.cancel.get()[0]==='Não')) ? ms.cancel.get()[0] : null
-      };
+/* ========= Apply All ========= */
+async function applyAll(){
+  try{
+    const de=fDe.value||firstDay, ate=fAte.value||lastDay;
+    const {dePrev,atePrev}=computePrevRangeISO(de,ate);
+    setStatus('Consultando…');
+    let kpiOk=true;
+    await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{console.error(e);kpiOk=false;});
+    await updateMonth12x12ForMetric();
+    await updateChartsForMetric();
+    await updateTop6ForMetric();
+    setStatus(kpiOk?'OK':'OK (sem KPIs — RPC indisponível)','ok');
+    resetAutoCollapse();
+  }catch(e){ console.error(e); setStatus('Erro: '+(e.message||e),'err'); }
+}
+(async function init(){
+  try{
+    setStatus('Carregando…');
+    const dr=await supa.from('vw_vendas_daterange').select('*').limit(1);
+    if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
+    await reloadStaticOptions();
+    ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
+    $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
+    applyQuick('30');
+    resetAutoCollapse();
+  }catch(e){ console.error(e); setStatus('Erro ao iniciar: '+(e.message||e),'err'); }
+})();
 
-      const [{data:nData,error:nErr},{data:pData,error:pErr}] = await Promise.all([
-        supa.rpc('chart_vendas_mes_v1', { p_dini: last12Start, p_dfim: last12End, ...paramsCommon }),
-        supa.rpc('chart_vendas_mes_v1', { p_dini: prev12Start, p_dfim: prev12EndAdj, ...paramsCommon }),
-      ]);
-      if(nErr) throw nErr; if(pErr) throw pErr;
+/* ========= Toggle global total/média ========= */
+const segGlobal=$('segGlobal');
+segGlobal.addEventListener('click',(e)=>{
+  const btn=e.target.closest('.seg-btn'); if(!btn) return;
+  chartModeGlobal=btn.dataset.mode;
+  segGlobal.querySelectorAll('.seg-btn').forEach(b=>b.classList.toggle('active',b===btn));
+  updateMonth12x12ForMetric(); updateChartsForMetric();
+});
 
-      const labels = [];
-      let cur = last12Start;
-      for(let i=0;i<12;i++){ labels.push(formatYM(cur)); cur = addMonthsISO(cur, 1); }
-
-      const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, chartModeGlobal==='media' ? (+r.media||0) : (+r.total||0)]));
-      const mNow = toMap(nData), mPrev= toMap(pData);
-
-      const ymsNow = []; cur = last12Start;
-      for(let i=0;i<12;i++){ const d=new Date(cur+'T00:00:00'); const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; ymsNow.push(ym); cur=addMonthsISO(cur,1); }
-      const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
-
-      const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
-      const prevArr = ymsPrev.map(ym => mPrev.get(ym)||0);
-
-      const tip = `Comparação fixa: Últimos 12M (${formatYM(last12Start)} → ${formatYM(endMonthStart)}) vs 12M anteriores (${formatYM(prev12Start)} → ${formatYM(addMonthsISO(endMonthStart,-1))})`;
-
-      ensureChart('ch_month', labels, nowArr, prevArr, tip);
-      setStatus('OK — gráfico mensal 12x12','ok');
-    }catch(e){
-      console.warn(e);
-      setStatus('OK (mensal 12x12 indisponível)','ok');
+/* ========= Clique nos KPIs ========= */
+document.querySelectorAll('.kpi[role="button"]').forEach(el=>{
+  el.addEventListener('click', ()=>{
+    document.querySelectorAll('.kpi[role="button"]').forEach(x=>x.classList.remove('active'));
+    el.classList.add('active');
+    selectedMetric=el.dataset.k;
+    // se KPI for "médio", ativa modo Média
+    if(KPI_MAP[selectedMetric]?.forceMedia){
+      chartModeGlobal='media';
+      segGlobal.querySelectorAll('.seg-btn').forEach(b=>b.classList.toggle('active', b.dataset.mode==='media'));
     }
-  }
-
-  /* ===================== DONUT TOP 6 LOJAS ===================== */
-  const wine = ["#7b1e3a","#8c2947","#9c3554","#ad4061","#bd4c6e","#ce577b"];
-  function ensureDonutTop6(labels, values){
-    const cvs = $('ch_top6'); if(!cvs) return;
-    if(cvs.__chart){ try{cvs.__chart.destroy();}catch(e){} cvs.__chart=null; }
-    const ctx = cvs.getContext('2d');
-    const total = (values||[]).reduce((a,b)=>a+(+b||0),0);
-    $('top6Center').textContent = 'Total: '+money(total);
-
-    const chart = new Chart(ctx,{
-      type:'doughnut',
-      data:{ labels, datasets:[{ data: values, backgroundColor: wine, hoverBackgroundColor: wine, borderColor:'#fff', borderWidth:1 }]},
-      options:{
-        responsive:true, maintainAspectRatio:false, cutout:'60%',
-        plugins:{
-          legend:{ position:'right', labels:{ usePointStyle:true, pointStyle:'circle', boxWidth:10, padding:16, color:'#334155' } },
-          tooltip:{ callbacks:{ label:(ctx)=>{ const label = ctx.label||''; const val = ctx.parsed||0; const ds = ctx.chart.data.datasets[0]; const tt = (ds.data||[]).reduce((a,b)=>a+(+b||0),0); const perc = tt ? ((val/tt)*100).toFixed(1) : 0; return `${label}: ${money(val)} (${perc}%)`; } },
-            backgroundColor:'rgba(15,23,42,.95)', titleColor:'#e2e8f0', bodyColor:'#e2e8f0', borderColor:'rgba(148,163,184,.25)', borderWidth:1 }
-        }
-      }
-    });
-    cvs.__chart = chart;
-  }
-
-  async function updateTop6(){
-    try{
-      const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-      // Seleção com agregação PostgREST (sem .group())
-      let q = supa.from(READ_VIEW)
-        .select('loja, fat:fat.sum()', { head:false })
-        .gte('dia', de).lte('dia', ate)
-        .order('fat', { ascending:false })
-        .limit(6);
-
-      const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
-      const lojas = ms.lojas.get(); if(lojas.length) q = q.in('loja', lojas);
-      const turns = ms.turnos.get(); if(turns.length) q = q.in('turno', turns);
-      const cans  = ms.canais.get(); if(cans.length)  q = q.in('canal', cans);
-      const pags  = ms.pags.get(); if(pags.length)   q = q.in('pagamento_base', pags);
-      const canc  = ms.cancel.get();
-      if(canc.length===1 && (canc[0]==='Sim' || canc[0]==='Não')) q = q.eq('cancelado', canc[0]);
-
-      const { data, error } = await q;
-      if(error) throw error;
-
-      const labels = (data||[]).map(r=>r.loja);
-      const values = (data||[]).map(r=>+r.fat||0);
-      ensureDonutTop6(labels, values);
-    }catch(e){
-      console.warn('top6', e.message||e);
-      ensureDonutTop6([], []);
-    }
-  }
-  $('top6Center').addEventListener('click', ()=>{ setStatus('Top 6 — total clicado','ok'); });
-
-  /* ===================== FALLBACK LOCAL (cancelados) ===================== */
-  async function discoverColumns(source){
-    const r = await supa.from(source).select('*').limit(1);
-    if(r.error) return null;
-    const row = (r.data||[{}])[0];
-    const cols = Object.keys(row||{});
-    if (!cols.length) return null;
-    const has = c => cols.includes(c);
-    const dateKeys = ['dia','data','dt','date','data_venda','data_pedido','datahora'].filter(has);
-    if(!dateKeys.length) return null;
-    const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
-    const turnoKeys= ['turno','periodo','shift'].filter(has);
-    const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
-    const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
-    const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
-    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, cancKeys};
-  }
-  async function trySourceLocal(source, de, ate, onlyCancel){
-    const map = await discoverColumns(source);
-    if(!map) return null;
-    const sel = [...new Set([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys])].join(',');
-    const q = await supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
-    if(q.error) return null;
-    const rows = (q.data||[]).filter(x=>{
-      if(!onlyCancel) return true;
-      const k = map.cancKeys[0];
-      const s=String(x[k]??'').trim().toLowerCase();
-      const sim = ['sim','s','true','1','y','yes'].includes(s);
-      return sim;
-    }).map(x=>{
-      const v = String(x[map.fatKeys[0]]??'').replace(/[^\d,.-]/g,'');
-      const fat = Number(v.replace(/\./g,'').replace(',', '.'))||0;
-      const ped = Math.round(Number(String(x[map.pedKeys[0]]??'').replace(/[^\d.-]/g,''))||1);
-      return { fat, pedidos: ped };
-    });
-    return rows;
-  }
-  async function fetchRowsLocal(de, ate, onlyCancelValue){
-    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas', READ_VIEW];
-    const onlyCancel = (onlyCancelValue==='Sim');
-    for(const src of sources){
-      try{
-        const res = await trySourceLocal(src, de, ate, onlyCancel);
-        if(res) return res;
-      }catch(_e){}
-    }
-    return [];
-  }
-
-  /* ===================== EXCEL → DB (upsert) ===================== */
-  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
-  $('fileExcel').addEventListener('change', async (ev)=>{
-    const file = ev.target.files?.[0];
-    if(!file){ info(''); return; }
-    info('Lendo arquivo…');
-    try{
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type:'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
-
-      const headers = json.length ? Object.keys(json[0]) : [];
-
-      const headerAlts = {
-        dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
-        hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
-        fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
-        des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
-        fre:  ['fre','frete','taxa entrega','taxa_entrega','entrega'],
-        ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
-        unid: ['unidade','unid','filial','cod_unidade','empresa'],
-        loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja'],
-        canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
-        pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
-        canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
-        pid:  ['pedido','pedido id','pedido_id','id pedido','id_pedido','numero pedido','número pedido','order id','order_id']
-      };
-
-      const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-      const normHeader=(s)=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
-      const pickColumn=(headers, alts)=>{
-        const map = headers.map(h=>({orig:h, key:normHeader(h)}));
-        for(const a of alts){
-          const ex = map.find(m=>m.key===a); if(ex) return ex.orig;
-          const cont = map.find(m=>m.key.includes(a)); if(cont) return cont.orig;
-        }
-        return null;
-      };
-
-      const kDia  = pickColumn(headers, headerAlts.dia);
-      const kHora = pickColumn(headers, headerAlts.hora);
-      const kFat  = pickColumn(headers, headerAlts.fat);
-      const kDes  = pickColumn(headers, headerAlts.des);
-      const kFre  = pickColumn(headers, headerAlts.fre);
-      const kPed  = pickColumn(headers, headerAlts.ped);
-      const kUni  = pickColumn(headers, headerAlts.unid);
-      const kLoja = pickColumn(headers, headerAlts.loja);
-      const kCan  = pickColumn(headers, headerAlts.canal);
-      const kPag  = pickColumn(headers, headerAlts.pag);
-      const kCanc = pickColumn(headers, headerAlts.canc);
-      const kPid  = pickColumn(headers, headerAlts.pid);
-
-      function splitDateTimeCell(v){
-        if(v==null) return {dateISO:null, hour:null};
-        if(v instanceof Date){ return {dateISO: v.toISOString().slice(0,10), hour: v.getHours()}; }
-        let s=String(v).trim();
-        if(!s) return {dateISO:null, hour:null};
-        if(/^-?\d+(\.\d+)?$/.test(s)){
-          const num=Number(s); const base=new Date(Date.UTC(1899,11,30));
-          const d = new Date(base.getTime() + num*86400000);
-          const frac = num - Math.floor(num);
-          const hour = Math.floor(frac*24 + 1e-6);
-          return {dateISO: d.toISOString().slice(0,10), hour: (hour>=0 && hour<=23)?hour:null};
-        }
-        const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T](\d{1,2})(?::(\d{2})(?::(\d{2}))?)?)?$/);
-        if(m){
-          const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
-          const d=new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
-          return {dateISO: d.toISOString().slice(0,10), hour: d.getHours()};
-        }
-        const t = new Date(s.replace('T',' '));
-        if(!isNaN(t)) return {dateISO: t.toISOString().slice(0,10), hour: t.getHours()};
-        return {dateISO:null, hour:null};
-      }
-      function parseBR(v){
-        if(v==null) return 0;
-        if(typeof v==='number' && isFinite(v)) return v;
-        let s=String(v).trim(); if(!s) return 0; s=s.replace(/[^\d,.\-]/g,'');
-        const lastC=s.lastIndexOf(','), lastD=s.lastIndexOf('.');
-        if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
-        const n=Number(s); return isFinite(n)?n:0;
-      }
-      function toInt(v){ const n=parseBR(v); if(!isFinite(n)) return 0; return Math.round(n); }
-      function displayNormalize(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
-
-      function parseHourFromEither(dateCell, hourCell){
-        let h = null;
-        if(hourCell!=null){
-          if(typeof hourCell==='number' && hourCell>=0 && hourCell<=23) h = Math.floor(hourCell);
-          else { const m=String(hourCell).match(/(\d{1,2})/); if(m){ const hh=+m[1]; if(hh>=0&&hh<=23) h=hh; } }
-        }
-        if(h==null){ const {hour} = splitDateTimeCell(dateCell); h = hour; }
-        return h;
-      }
-
-      function hashRow(obj){
-        const keys = ['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
-        const s = keys.map(k => k+':'+String(obj[k]??'')).join('|');
-        let h = 5381;
-        for(let i=0;i<s.length;i++){ h = ((h << 5) + h) ^ s.charCodeAt(i); }
-        return String(h >>> 0);
-      }
-
-      const mapped = json.map(r=>{
-        const get = (k)=> (k? r[k] : null);
-        const dtSplit = splitDateTimeCell(get(kDia));
-        const dia  = dtSplit.dateISO;
-        const hora = parseHourFromEither(get(kDia), get(kHora));
-
-        const row = {
-          dia, hora,
-          unidade: displayNormalize(get(kUni)),
-          "Nome da loja": displayNormalize(get(kLoja)),
-          "Canal de venda": displayNormalize(get(kCan)),
-          pagamento_base: displayNormalize(get(kPag)),
-          cancelado: (String(get(kCanc)||'').trim().toLowerCase().startsWith('s')?'Sim':'Não'),
-          pedidos: toInt(get(kPed) ?? 1),
-          fat: parseBR(get(kFat)),
-          des: parseBR(get(kDes)),
-          fre: parseBR(get(kFre)),
-          pedido_id: displayNormalize(get(kPid)) || null,
-          created_at: new Date().toISOString()
-        };
-        row.row_key = hashRow(row);
-        return row;
-      }).filter(x => x.dia!=null && String(x.dia).trim()!=='');
-
-      const mapByKey = new Map(); for(const r of mapped){ mapByKey.set(r.row_key, r); }
-      const rows = [...mapByKey.values()];
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${mapped.length}, removidas duplicadas: ${mapped.length-rows.length}). Enviando…`);
-      if(rows.length===0){ setStatus('Nada para gravar (0 linhas após dedupe).','err'); return; }
-
-      setStatus('Enviando Excel…');
-      const chunk = 300;
-      for(let i=0;i<rows.length;i+=chunk){
-        const slice = rows.slice(i,i+chunk);
-        const { error } = await supa.from(DEST_INSERT_TABLE).upsert(slice, { onConflict: 'row_key' });
-        if(error){ throw error; }
-      }
-
-      setStatus('Upload concluído','ok');
-      info(`Gravado/atualizado: ${rows.length} linhas.`);
-
-      try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
-      try{
-        const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
-        if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`; }
-      }catch(_e){}
-      await reloadStaticOptions();
-      await applyAll();
-    }catch(e){
-      console.error(e);
-      setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
-      info('');
-    }finally{
-      $('fileExcel').value='';
-    }
+    updateMonth12x12ForMetric(); updateChartsForMetric(); updateTop6ForMetric();
   });
-
-  /* ===================== OPÇÕES (ranked + fallback) ===================== */
-  function mergeRankedAll(rankedList, allList){
-    const rset = new Set(rankedList);
-    const rest = allList.filter(x=>!rset.has(x));
-    return [...rankedList, ...rest];
-  }
-  async function fallbackDistinct(col){
-    try{
-      const { data, error } = await supa.from(READ_VIEW).select(col, { head:false }).neq(col, null).limit(5000);
-      if(error) return [];
-      const vals = (data||[]).map(r=>r[col]).filter(Boolean);
-      return [...new Set(vals)].sort((a,b)=> String(a).localeCompare(String(b),'pt-BR'));
-    }catch(_e){ return []; }
-  }
-  async function reloadStaticOptions(){
-    const de = firstDay || '1900-01-01';
-    const ate= lastDay  || iso(new Date());
-
-    const TOPN = 50;
-    const [topUnids, topLojas, topPags, topCanais] = await Promise.allSettled([
-      supa.rpc('opt_unidades_ranked',  { p_dini: de, p_dfim: ate, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
-      supa.rpc('opt_lojas_ranked',     { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
-      supa.rpc('opt_pagamentos_ranked',{ p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_lojas:null, p_cancelado:null, p_limit: TOPN }),
-      supa.rpc('opt_canais_ranked',    { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_lojas:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
-    ]);
-
-    const tUnids = (topUnids.status==='fulfilled' && !topUnids.value.error) ? (topUnids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
-    const tLojas = (topLojas.status==='fulfilled'  && !topLojas.value.error)  ? (topLojas.value.data||[]).map(r=>r.loja).filter(Boolean)       : [];
-    const tPags  = (topPags.status==='fulfilled'   && !topPags.value.error)   ? (topPags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean): [];
-    const tCanais= (topCanais.status==='fulfilled' && !topCanais.value.error) ? (topCanais.value.data||[]).map(r=>r.canal).filter(Boolean)      : [];
-
-    const [unids,lojas,canais,pags] = await Promise.all([
-      (async()=>{ const r=await supa.from('vw_vendas_unidades').select('unidade').order('unidade'); return (!r.error?r.data:await fallbackDistinct('unidade')); })(),
-      (async()=>{ const r=await supa.from('vw_vendas_lojas').select('loja').order('loja'); return (!r.error?r.data:await fallbackDistinct('loja')); })(),
-      (async()=>{ const r=await supa.from('vw_vendas_canais').select('canal').order('canal'); return (!r.error?r.data:await fallbackDistinct('canal')); })(),
-      (async()=>{ const r=await supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'); return (!r.error?r.data:await fallbackDistinct('pagamento_base')); })(),
-    ]);
-
-    const toArr=(rows,key)=> Array.isArray(rows) ? rows.map(r=> key?r[key]:r).filter(Boolean) : (Array.isArray(rows)?rows:[]);
-
-    const allUnids = toArr(unids,'unidade');
-    const allLojas = toArr(lojas,'loja');
-    const allCanais= toArr(canais,'canal');
-    const allPags  = toArr(pags,'pagamento_base');
-
-    ms.unids.setOptions( mergeRankedAll(tUnids, allUnids), true );
-    ms.lojas.setOptions( mergeRankedAll(tLojas, allLojas), true );
-    ms.canais.setOptions(mergeRankedAll(tCanais, allCanais), true );
-    ms.pags.setOptions(  mergeRankedAll(tPags, allPags), true );
-
-    ms.turnos.setOptions(['Dia','Noite'], true);
-  }
-
-  /* ===================== LOOP PRINCIPAL ===================== */
-  async function applyAll(){
-    try{
-      const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-      const {dePrev, atePrev} = computePrevRangeISO(de,ate);
-      lastPrevRange = {dePrev, atePrev};
-
-      setStatus('Consultando…');
-
-      let kpiOk=true;
-      await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
-      await updateChartsServer();
-      await updateMonth12x12();
-      await updateTop6();
-
-      if(!kpiOk) setStatus('OK (sem KPIs — RPC indisponível)');
-      else setStatus('OK','ok');
-
-      resetAutoCollapse();
-    }catch(e){
-      console.error(e);
-      setStatus('Erro: '+(e.message||e),'err');
-    }
-  }
-
-  (async function init(){
-    try{
-      setStatus('Carregando…');
-      const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
-      if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
-
-      await reloadStaticOptions();
-      ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
-      $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
-      applyQuick('30');
-      resetAutoCollapse();
-    }catch(e){
-      console.error(e);
-      setStatus('Erro ao iniciar: '+(e.message||e),'err');
-    }
-  })();
-
-  /* ===================== KPIs clicáveis (gatilho visual) ===================== */
-  document.querySelectorAll('.kpi[role="button"]').forEach(k=>{
-    k.addEventListener('click', ()=>{ 
-      document.querySelectorAll('.kpi[role="button"]').forEach(x=>x.style.boxShadow='0 8px 24px rgba(10,18,32,.05)');
-      k.style.boxShadow='0 0 0 3px rgba(123,30,58,.15)';
-      // Neste passo, mantemos os gráficos atuais (fat) — o clique serve como seleção visual.
-      // Se desejar que a seleção troque a métrica dos gráficos, me diga que métricas usar em cada gráfico que eu aplico.
-    });
-  });
-  </script>
+});
+</script>
 </body>
 </html>
