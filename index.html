@@ -692,43 +692,33 @@
       });
     });
   }
-// Busca paginada para evitar 400/416 quando o dataset é grande
-async function fetchAll(makeQuery, step = 10000, hardCap = 200000) {
-  let all = [], from = 0;
-  for (;;) {
-    const { data, error } = await makeQuery().range(from, from + step - 1);
-    if (error) throw error;
-    if (data?.length) all = all.concat(data);
-    if (!data || data.length < step) break;
-    from += step;
-    if (from >= hardCap) break; // sanidade: não varar 200k linhas num único load
-  }
-  return all;
-}
+
   /* ===================== Coleta base (REST) para client-side ===================== */
-async function baseQuery(de, ate){
-const makeQ = () => {
-  let q = supa.from(READ_VIEW)
-    .select('loja,fat,des,fre,pedidos,cancelado,dia')
-    .gte('dia', de).lte('dia', ate)
-    .order('loja', { ascending:true });
+  async function baseQuery(de, ate){
+    let q = supa.from(READ_VIEW)
+      .select('dia,hora,turno,fat,des,fre,pedidos,cancelado,loja,unidade,canal,pagamento_base')
+      .gte('dia', de).lte('dia', ate)
+      .order('dia', { ascending:true })
+      .range(0, 199999); // >>> (antes alguns lugares usavam .limit)
 
-  const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
-  const lojas = ms.lojas.get(); if(lojas.length) q = q.in('loja', lojas);
-  const turns = ms.turnos.get(); if(turns.length) q = q.in('turno', turns);
-  const cans  = ms.canais.get(); if(cans.length)  q = q.in('canal', cans);
-  const pags  = ms.pags.get(); if(pags.length)   q = q.in('pagamento_base', pags);
+    const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
+    const lojas = ms.lojas.get(); if(lojas.length) q = q.in('loja', lojas);
+    const turns = ms.turnos.get(); if(turns.length) q = q.in('turno', turns);
+    const cans  = ms.canais.get(); if(cans.length)  q = q.in('canal', cans);
+    const pags  = ms.pags.get(); if(pags.length)   q = q.in('pagamento_base', pags);
 
-  const forcedCancel = wantedCancelFilterForKPI();
-  if (forcedCancel) q = q.in('cancelado', [forcedCancel]);
-  else {
-    const canc = ms.cancel.get();
-    if (canc.length===1 && (canc[0]==='Sim' || canc[0]==='Não')) q = q.in('cancelado', [canc[0]]);
+    // >>> FIX do 400: usar .in em vez de .eq no cancelado; e permitir override por KPI
+    const forcedCancel = wantedCancelFilterForKPI();
+    if(forcedCancel){ q = q.in('cancelado', [forcedCancel]); }
+    else{
+      const canc = ms.cancel.get();
+      if(canc.length===1 && (canc[0]==='Sim' || canc[0]==='Não')) q = q.in('cancelado', [canc[0]]);
+    }
+
+    const { data, error } = await q;
+    if(error){ console.error('[REST baseQuery]', error); throw error; }
+    return data||[];
   }
-  return q;
-};
-
-const data = await fetchAll(makeQ, 10000);
 
   /* ===================== Agregadores client-side para métricas ===================== */
   function bucketKey(type, row){
@@ -794,187 +784,113 @@ const data = await fetchAll(makeQ, 10000);
     });
   }
 
-// === Helper: renderiza gráficos (DOW/HORA/TURNO) usando linhas REST ===
-function renderChartsFromRows(rowsNow, rowsPrev, meta, mode, dePrev, atePrev){
-  const tip = `Período anterior: ${dePrev} → ${atePrev}`;
-
-  // DOW
-  const lab = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const curD = computeByBucket(rowsNow,'dow',   selectedKPI, mode);
-  const prvD = computeByBucket(rowsPrev,'dow',  selectedKPI, mode);
-  const nArr = Array(7).fill(0), pArr = Array(7).fill(0);
-  curD.forEach(o => { if(o.key!=null) nArr[o.key]=o.value; });
-  prvD.forEach(o => { if(o.key!=null) pArr[o.key]=o.value; });
-  ensureChart('ch_dow', lab, nArr, pArr, tip, meta.fmt);
-
-  // HORA
-  const allH = Array.from({length:24},(_,h)=>h);
-  const curH = computeByBucket(rowsNow,'hour',  selectedKPI, mode);
-  const prvH = computeByBucket(rowsPrev,'hour', selectedKPI, mode);
-  const mN = new Map(curH.map(o=>[o.key,o.value]));
-  const mP = new Map(prvH.map(o=>[o.key,o.value]));
-  const hrs = allH.filter(h=> mN.has(h) || mP.has(h));
-  const lbl = hrs.map(h=>String(h).padStart(2,'0')+'h');
-  ensureChart('ch_hour', lbl, hrs.map(h=>mN.get(h)||0), hrs.map(h=>mP.get(h)||0), tip, meta.fmt);
-
-  // TURNO
-  const ord = ['Dia','Noite'];
-  const curT = computeByBucket(rowsNow,'turno',  selectedKPI, mode);
-  const prvT = computeByBucket(rowsPrev,'turno', selectedKPI, mode);
-  const mTN = new Map(curT.map(o=>[o.key,o.value]));
-  const mTP = new Map(prvT.map(o=>[o.key,o.value]));
-  const labs = ord.filter(k=> mTN.has(k) || mTP.has(k));
-  ensureChart('ch_turno', labs, labs.map(k=>mTN.get(k)||0), labs.map(k=>mTP.get(k)||0), tip, meta.fmt);
-}
   /* ===================== Atualização de gráficos ===================== */
- async function updateChartsServer(){
-  const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-  const {dePrev, atePrev} = computePrevRangeISO(de,ate);
-  lastPrevRange = {dePrev, atePrev};
-  const meta = KPI_META[selectedKPI]||KPI_META.fat;
-  const mode = effectiveMode();
-  setDiag('');
+  async function updateChartsServer(){
+    // usa o intervalo selecionado
+    const de=fDe.value||firstDay, ate=fAte.value||lastDay;
+    const {dePrev, atePrev} = computePrevRangeISO(de,ate);
+    lastPrevRange = {dePrev, atePrev};
+    const meta = KPI_META[selectedKPI]||KPI_META.fat;
+    const mode = effectiveMode();
 
-  const canUseRPC = (selectedKPI==='fat' && !wantedCancelFilterForKPI());
-
-  try{
-    if (canUseRPC){
-      // === TENTA RPC ===
-      const [nowD, prevD, nowH, prevH, nowT, prevT] = await Promise.all([
-        fetchChartRPC('dow',de,ate),   fetchChartRPC('dow',dePrev,atePrev),
-        fetchChartRPC('hour',de,ate),  fetchChartRPC('hour',dePrev,atePrev),
-        fetchChartRPC('turno',de,ate), fetchChartRPC('turno',dePrev,atePrev),
-      ]);
-      const tip = `Período anterior: ${dePrev} → ${atePrev}`;
-
-      // DOW (RPC)
-      {
-        const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-        const nArr = Array(7).fill(0), pArr = Array(7).fill(0), nMed=Array(7).fill(0), pMed=Array(7).fill(0);
-        (nowD||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; });
-        (prevD||[]).forEach(r=>{ pArr[r.dow]=+r.total||0; pMed[r.dow]=+r.media||0; });
-        const useN = (mode==='media'?nMed:nArr);
-        const useP = (mode==='media'?pMed:pArr);
-        ensureChart('ch_dow', labels, useN, useP, tip, meta.fmt);
-      }
-
-      // HOUR (RPC)
-      {
-        const allHours = Array.from({length:24},(_,h)=>h);
-        const nArr = Array(24).fill(0), pArr = Array(24).fill(0), nMed=Array(24).fill(0), pMed=Array(24).fill(0);
-        (nowH||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; });
-        (prevH||[]).forEach(r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; });
-        const useN = (mode==='media'?nMed:nArr);
-        const useP = (mode==='media'?pMed:pArr);
-        const filtered = allHours.filter(h => (useN[h]||0)!==0 || (useP[h]||0)!==0);
-        const labels=filtered.map(h=>String(h).padStart(2,'0')+'h');
-        ensureChart('ch_hour', labels, filtered.map(h=>useN[h]||0), filtered.map(h=>useP[h]||0), tip, meta.fmt);
-      }
-
-      // TURNO (RPC)
-      {
-        const order=['Dia','Noite'];
-        const n = new Map((nowT||[]).map(r=>[r.turno, mode==='media'? (+r.media||0) : (+r.total||0)]));
-        const p = new Map((prevT||[]).map(r=>[r.turno, mode==='media'? (+r.media||0) : (+r.total||0)]));
-        const labels = order.filter(x=> n.has(x) || p.has(x));
-        ensureChart('ch_turno', labels, labels.map(l=>n.get(l)||0), labels.map(l=>p.get(l)||0), tip, meta.fmt);
-      }
-    } else {
-      // === CAMINHO CLIENT-SIDE (SEM RPC) ===
-      const [rowsNow, rowsPrev] = await Promise.all([ baseQuery(de,ate), baseQuery(dePrev,atePrev) ]);
-      renderChartsFromRows(rowsNow, rowsPrev, meta, mode, dePrev, atePrev);
-    }
-
-    setStatus('OK — gráficos atualizados','ok');
-  }catch(e){
-    console.warn('RPC falhou; fallback REST', e);
     try{
-      const [rowsNow, rowsPrev] = await Promise.all([ baseQuery(de,ate), baseQuery(dePrev,atePrev) ]);
-      renderChartsFromRows(rowsNow, rowsPrev, meta, mode, dePrev, atePrev);
-      setStatus('OK — gráficos via REST','ok');
-    }catch(e2){
-      console.error(e2);
+      setDiag('');
+
+      // Para 'fat' sem override de cancelado, mantemos RPC (performance)
+      const canUseRPC = (selectedKPI==='fat' && !wantedCancelFilterForKPI());
+
+      if(canUseRPC){
+        const [nowD, prevD, nowH, prevH, nowT, prevT] = await Promise.all([
+          fetchChartRPC('dow',de,ate),   fetchChartRPC('dow',dePrev,atePrev),
+          fetchChartRPC('hour',de,ate),  fetchChartRPC('hour',dePrev,atePrev),
+          fetchChartRPC('turno',de,ate), fetchChartRPC('turno',dePrev,atePrev),
+        ]);
+        const tip = `Período anterior: ${dePrev} → ${atePrev}`;
+
+        // DOW
+        {
+          const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+          const nArr = Array(7).fill(0), pArr = Array(7).fill(0), nMed=Array(7).fill(0), pMed=Array(7).fill(0);
+          (nowD||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; });
+          (prevD||[]).forEach(r=>{ pArr[r.dow]=+r.total||0; pMed[r.dow]=+r.media||0; });
+          const useN = (mode==='media'?nMed:nArr);
+          const useP = (mode==='media'?pMed:pArr);
+          ensureChart('ch_dow', labels, useN, useP, tip, meta.fmt);
+        }
+
+        // HOUR
+        {
+          const allHours = Array.from({length:24},(_,h)=>h);
+          const nArr = Array(24).fill(0), pArr = Array(24).fill(0), nMed=Array(24).fill(0), pMed=Array(24).fill(0);
+          (nowH||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; });
+          (prevH||[]).forEach(r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; });
+          const useN = (mode==='media'?nMed:nArr);
+          const useP = (mode==='media'?pMed:pArr);
+          const filtered = allHours.filter(h => (useN[h]||0)!==0 || (useP[h]||0)!==0);
+          const labels=filtered.map(h=>String(h).padStart(2,'0')+'h');
+          ensureChart('ch_hour', labels, filtered.map(h=>useN[h]||0), filtered.map(h=>useP[h]||0), tip, meta.fmt);
+        }
+
+        // TURNO
+        {
+          const order=['Dia','Noite'];
+          const n = new Map((nowT||[]).map(r=>[r.turno, mode==='media'? (+r.media||0) : (+r.total||0)]));
+          const p = new Map((prevT||[]).map(r=>[r.turno, mode==='media'? (+r.media||0) : (+r.total||0)]));
+          const labels = order.filter(x=> n.has(x) || p.has(x));
+          ensureChart('ch_turno', labels, labels.map(l=>n.get(l)||0), labels.map(l=>p.get(l)||0), tip, meta.fmt);
+        }
+      }else{
+        // Client-side para demais KPIs
+        const [rowsNow, rowsPrev] = await Promise.all([
+          baseQuery(de,ate),
+          baseQuery(dePrev,atePrev)
+        ]);
+        const tip = `Período anterior: ${dePrev} → ${atePrev}`;
+
+        // DOW
+        {
+          const lab = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+          const cur = computeByBucket(rowsNow,'dow', selectedKPI, mode);
+          const prv = computeByBucket(rowsPrev,'dow', selectedKPI, mode);
+          const nArr = Array(7).fill(0), pArr=Array(7).fill(0);
+          cur.forEach(o=>{ nArr[o.key]=o.value; });
+          prv.forEach(o=>{ pArr[o.key]=o.value; });
+          ensureChart('ch_dow', lab, nArr, pArr, tip, meta.fmt);
+        }
+        // HOUR
+        {
+          const all=Array.from({length:24},(_,h)=>h);
+          const cur = computeByBucket(rowsNow,'hour', selectedKPI, mode);
+          const prv = computeByBucket(rowsPrev,'hour', selectedKPI, mode);
+          const mNow = new Map(cur.map(o=>[o.key,o.value]));
+          const mPrv = new Map(prv.map(o=>[o.key,o.value]));
+          const labels = all.filter(h => mNow.has(h)||mPrv.has(h)).map(h=>String(h).padStart(2,'0')+'h');
+          const nArr = all.filter(h => mNow.has(h)||mPrv.has(h)).map(h=>mNow.get(h)||0);
+          const pArr = all.filter(h => mNow.has(h)||mPrv.has(h)).map(h=>mPrv.get(h)||0);
+          ensureChart('ch_hour', labels, nArr, pArr, tip, meta.fmt);
+        }
+        // TURNO
+        {
+          const ord=['Dia','Noite'];
+          const cur = computeByBucket(rowsNow,'turno', selectedKPI, mode);
+          const prv = computeByBucket(rowsPrev,'turno', selectedKPI, mode);
+          const mNow = new Map(cur.map(o=>[o.key,o.value]));
+          const mPrv = new Map(prv.map(o=>[o.key,o.value]));
+          const labels = ord.filter(k=> mNow.has(k)||mPrv.has(k));
+          ensureChart('ch_turno', labels, labels.map(k=>mNow.get(k)||0), labels.map(k=>mPrv.get(k)||0), tip, meta.fmt);
+        }
+      }
+
+      setStatus('OK — gráficos atualizados','ok');
+    }catch(e){
+      console.error(e);
       setStatus('OK (sem gráficos — RPC/REST indisponível)','ok');
       setDiag('');
     }
   }
-}
+
   /* ===================== GRÁFICO MÊS: 12x12 ===================== */
   async function updateMonth12x12(){
-  try{
-    const end = lastDay || iso(new Date());
-    const endMonthStart = monthStartISO(end);
-    const last12Start = addMonthsISO(endMonthStart, -11);
-    const prev12Start = addMonthsISO(endMonthStart, -23);
-    const last12End   = monthEndISO(end);
-    const prev12EndAdj= monthEndISO(addMonthsISO(endMonthStart, -12));
-
-    const meta = KPI_META[selectedKPI]||KPI_META.fat;
-    const mode = effectiveMode();
-    const canUseRPC = (selectedKPI==='fat' && !wantedCancelFilterForKPI());
-
-    // labels (meses) do período atual
-    let labels = [];
-    let cur = last12Start;
-    for(let i=0;i<12;i++){ labels.push(formatYM(cur)); cur = addMonthsISO(cur, 1); }
-
-    if(canUseRPC){
-      // === TENTA RPC ===
-      const paramsCommon = {
-        p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
-        p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
-        p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
-        p_canais: ms.canais.get().length ? ms.canais.get() : null,
-        p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
-        p_cancelado: (ms.cancel.get().length===1 && (ms.cancel.get()[0]==='Sim' || ms.cancel.get()[0]==='Não')) ? ms.cancel.get()[0] : null
-      };
-
-      const [{data:nData,error:nErr},{data:pData,error:pErr}] = await Promise.all([
-        supa.rpc('chart_vendas_mes_v1', { p_dini: last12Start, p_dfim: last12End,    ...paramsCommon }),
-        supa.rpc('chart_vendas_mes_v1', { p_dini: prev12Start, p_dfim: prev12EndAdj, ...paramsCommon }),
-      ]);
-      if(nErr) throw nErr; if(pErr) throw pErr;
-
-      const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, mode==='media' ? (+r.media||0) : (+r.total||0)]));
-      const mNow = toMap(nData), mPrev= toMap(pData);
-
-      const ymsNow = []; cur = last12Start;
-      for(let i=0;i<12;i++){ const d=new Date(cur+'T00:00:00'); const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; ymsNow.push(ym); cur=addMonthsISO(cur,1); }
-      const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
-
-      const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
-      const prevArr = ymsPrev.map(ym => mPrev.get(ym)||0);
-
-      const tip = `Comparação fixa: Últimos 12M (${formatYM(last12Start)} → ${formatYM(endMonthStart)}) vs 12M anteriores (${formatYM(prev12Start)} → ${formatYM(addMonthsISO(endMonthStart,-1))})`;
-
-      ensureChart('ch_month', labels, nowArr, prevArr, tip, meta.fmt);
-      setStatus('OK — gráfico mensal 12x12','ok');
-    }else{
-      // === CAMINHO CLIENT-SIDE (SEM RPC) ===
-      const [rowsNow, rowsPrev] = await Promise.all([
-        baseQuery(last12Start,last12End),
-        baseQuery(prev12Start,prev12EndAdj)
-      ]);
-      const curNow = computeByBucket(rowsNow,'month', selectedKPI, mode);
-      const curPrv = computeByBucket(rowsPrev,'month', selectedKPI, mode);
-
-      const mNow = new Map(curNow.map(o=>[o.key,o.value]));
-      const mPrv = new Map(curPrv.map(o=>[o.key,o.value]));
-
-      const ymsNow = []; cur = last12Start;
-      for(let i=0;i<12;i++){ const d=new Date(cur+'T00:00:00'); const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; ymsNow.push(ym); cur=addMonthsISO(cur,1); }
-      const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
-
-      const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
-      const prevArr = ymsPrev.map(ym => mPrv.get(ym)||0);
-
-      const tip = `Comparação fixa: Últimos 12M (${formatYM(last12Start)} → ${formatYM(endMonthStart)}) vs 12M anteriores (${formatYM(prev12Start)} → ${formatYM(addMonthsISO(endMonthStart,-1))})`;
-      ensureChart('ch_month', labels, nowArr, prevArr, tip, meta.fmt);
-      setStatus('OK — gráfico mensal 12x12','ok');
-    }
-  }catch(e){
-    console.warn('Mensal RPC falhou; fallback REST', e);
-    // Fallback final: tenta REST mesmo se o bloco acima falhar inteiro
     try{
       const end = lastDay || iso(new Date());
       const endMonthStart = monthStartISO(end);
@@ -985,36 +901,71 @@ function renderChartsFromRows(rowsNow, rowsPrev, meta, mode, dePrev, atePrev){
 
       const meta = KPI_META[selectedKPI]||KPI_META.fat;
       const mode = effectiveMode();
+      const canUseRPC = (selectedKPI==='fat' && !wantedCancelFilterForKPI());
 
-      let labels = []; let cur = last12Start;
+      let labels = [];
+      let cur = last12Start;
       for(let i=0;i<12;i++){ labels.push(formatYM(cur)); cur = addMonthsISO(cur, 1); }
 
-      const [rowsNow, rowsPrev] = await Promise.all([
-        baseQuery(last12Start,last12End),
-        baseQuery(prev12Start,prev12EndAdj)
-      ]);
+      if(canUseRPC){
+        const paramsCommon = {
+          p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
+          p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
+          p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
+          p_canais: ms.canais.get().length ? ms.canais.get() : null,
+          p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
+          p_cancelado: (ms.cancel.get().length===1 && (ms.cancel.get()[0]==='Sim' || ms.cancel.get()[0]==='Não')) ? ms.cancel.get()[0] : null
+        };
 
-      const curNow = computeByBucket(rowsNow,'month', selectedKPI, mode);
-      const curPrv = computeByBucket(rowsPrev,'month', selectedKPI, mode);
-      const mNow = new Map(curNow.map(o=>[o.key,o.value]));
-      const mPrv = new Map(curPrv.map(o=>[o.key,o.value]));
+        const [{data:nData,error:nErr},{data:pData,error:pErr}] = await Promise.all([
+          supa.rpc('chart_vendas_mes_v1', { p_dini: last12Start, p_dfim: last12End, ...paramsCommon }),
+          supa.rpc('chart_vendas_mes_v1', { p_dini: prev12Start, p_dfim: prev12EndAdj, ...paramsCommon }),
+        ]);
+        if(nErr) throw nErr; if(pErr) throw pErr;
 
-      const ymsNow = []; cur = last12Start;
-      for(let i=0;i<12;i++){ const d=new Date(cur+'T00:00:00'); const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; ymsNow.push(ym); cur=addMonthsISO(cur,1); }
-      const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
+        const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, mode==='media' ? (+r.media||0) : (+r.total||0)]));
+        const mNow = toMap(nData), mPrev= toMap(pData);
 
-      const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
-      const prevArr = ymsPrev.map(ym => mPrv.get(ym)||0);
+        const ymsNow = []; cur = last12Start;
+        for(let i=0;i<12;i++){ const d=new Date(cur+'T00:00:00'); const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; ymsNow.push(ym); cur=addMonthsISO(cur,1); }
+        const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
 
-      const tip = `Comparação fixa: Últimos 12M (${formatYM(last12Start)} → ${formatYM(endMonthStart)}) vs 12M anteriores (${formatYM(prev12Start)} → ${formatYM(addMonthsISO(endMonthStart,-1))})`;
-      ensureChart('ch_month', labels, nowArr, prevArr, tip, meta.fmt);
-      setStatus('OK — gráfico mensal via REST','ok');
-    }catch(e2){
-      console.error(e2);
+        const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
+        const prevArr = ymsPrev.map(ym => mPrev.get(ym)||0);
+
+        const tip = `Comparação fixa: Últimos 12M (${formatYM(last12Start)} → ${formatYM(endMonthStart)}) vs 12M anteriores (${formatYM(prev12Start)} → ${formatYM(addMonthsISO(endMonthStart,-1))})`;
+
+        ensureChart('ch_month', labels, nowArr, prevArr, tip, meta.fmt);
+        setStatus('OK — gráfico mensal 12x12','ok');
+      }else{
+        // Client-side para demais KPIs
+        const [rowsNow, rowsPrev] = await Promise.all([
+          baseQuery(last12Start,last12End),
+          baseQuery(prev12Start,prev12EndAdj)
+        ]);
+        const curNow = computeByBucket(rowsNow,'month', selectedKPI, mode);
+        const curPrv = computeByBucket(rowsPrev,'month', selectedKPI, mode);
+
+        const mNow = new Map(curNow.map(o=>[o.key,o.value]));
+        const mPrv = new Map(curPrv.map(o=>[o.key,o.value]));
+
+        const ymsNow = []; cur = last12Start;
+        for(let i=0;i<12;i++){ const d=new Date(cur+'T00:00:00'); const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; ymsNow.push(ym); cur=addMonthsISO(cur,1); }
+        const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
+
+        const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
+        const prevArr = ymsPrev.map(ym => mPrv.get(ym)||0);
+
+        const tip = `Comparação fixa: Últimos 12M (${formatYM(last12Start)} → ${formatYM(endMonthStart)}) vs 12M anteriores (${formatYM(prev12Start)} → ${formatYM(addMonthsISO(endMonthStart,-1))})`;
+        ensureChart('ch_month', labels, nowArr, prevArr, tip, meta.fmt);
+        setStatus('OK — gráfico mensal 12x12','ok');
+      }
+    }catch(e){
+      console.error(e);
       setStatus('OK (mensal 12x12 indisponível)','ok');
     }
   }
-}
+
   /* ===================== DONUT TOP 6 LOJAS ===================== */
   const wine = ["#7b1e3a","#8c2947","#9c3554","#ad4061","#bd4c6e","#ce577b"];
   function ensureDonutTop6(labels, values, centerText, fmt='money'){
@@ -1260,9 +1211,10 @@ function renderChartsFromRows(rowsNow, rowsPrev, meta, mode, dePrev, atePrev){
 
       const mapped = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
-       const dtSplit = splitDateTimeCell(get(kDia));
-const dia  = dtSplit.dateISO;
-const hora = parseHourFromEither(get(kDia), get(kHora));
+        const dtSplit = splitDateTimeCell(get(kDia));
+        const dia  = dtSplit.dateISO;
+        theHora = parseHourFromEither(get(kDia), get(kHora));
+        const hora = theHora;
 
         const row = {
           dia, hora,
@@ -1316,15 +1268,7 @@ const hora = parseHourFromEither(get(kDia), get(kHora));
       $('fileExcel').value='';
     }
   });
-/* === DEBUG VISÍVEL (cole aqui, logo depois de setStatus/setDiag/info) === */
-window.addEventListener('error', (e) => {
-  try { setStatus('Erro de JavaScript', 'err'); setDiag(e.message || ''); } catch(_) {}
-  console.error('[onerror]', e.error || e.message || e);
-});
-window.addEventListener('unhandledrejection', (e) => {
-  try { setStatus('Erro (promise rejeitada)', 'err'); setDiag((e.reason && (e.reason.message||e.reason)) || ''); } catch(_) {}
-  console.error('[unhandledrejection]', e.reason);
-});
+
   /* ===================== OPÇÕES (ranqueadas + completas) ===================== */
   function mergeRankedAll(rankedList, allList){
     const rset = new Set(rankedList);
