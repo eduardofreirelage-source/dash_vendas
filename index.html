@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.15.0 — turno Dia/Noite + dt split + tooltips período)</title>
+  <title>DASHBOARD — CFO (v2.15.0 — filtros ranqueados + tooltips período + horas limpas)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7; --ok:#10b981; --down:#ef4444; --chip:#eef2ff; --bar:#334155; }
@@ -31,7 +31,7 @@
     .msel{position:relative}
     .msel-btn{cursor:pointer;text-align:left}
     .msel-btn:after{content:"▾";float:right;color:#475569}
-    .msel-panel{position:absolute;z-index:40;top:110%;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 24px rgba(0,0,0,.08);max-height:260px;overflow:auto;padding:8px;display:none}
+    .msel-panel{position:absolute;z-index:40;top:110%;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 24px rgba(0,0,0,.08);max-height:300px;overflow:auto;padding:8px;display:none}
     .msel.open .msel-panel{display:block}
     .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
     .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
@@ -203,7 +203,7 @@
       </div>
     </div>
 
-    <div class="krow" style="margin-top:12px;">
+    <div class="krow" style="margin-top:12px%;">
       <div class="kpi"><span class="bar"></span>
         <h4><span>Frete</span><span class="spacer"></span><span id="d_fre" class="delta flat">—</span></h4>
         <div class="val" id="k_fre">—</div>
@@ -290,8 +290,8 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  const READ_VIEW        = 'vendas_canon';     // leituras
-  const DEST_INSERT_TABLE= 'vendas_xlsx';      // ingestão
+  const READ_VIEW        = 'vendas_canon';
+  const DEST_INSERT_TABLE= 'vendas_xlsx';
   const REFRESH_RPC      = 'refresh_sales_materialized';
 
   const SUPABASE_URL  = 'https://msmyfxgrnuusnvoqyeuo.supabase.co';
@@ -345,13 +345,12 @@
   function computeROI(fr){ if(!fr || !isFinite(fr.des) || fr.des<=0) return NaN; return (fr.fat - fr.des) / fr.des; }
   function uniq(arr){ return [...new Set((arr||[]).filter(v=>v!=null && v!==''))]; }
 
-  // === parse de data+hora na MESMA célula (inclui serial Excel com fração)
+  // === parse de data+hora na mesma célula (inclui serial Excel com fração)
   function splitDateTimeCell(v){
     if(v==null) return {dateISO:null, hour:null};
     if(v instanceof Date){ return {dateISO: iso(v), hour: v.getHours()}; }
     let s=String(v).trim();
     if(!s) return {dateISO:null, hour:null};
-    // Excel serial (com fração de dia)
     if(/^-?\d+(\.\d+)?$/.test(s)){
       const num=Number(s); const base=new Date(Date.UTC(1899,11,30));
       const d = new Date(base.getTime() + num*86400000);
@@ -359,20 +358,18 @@
       const hour = Math.floor(frac*24 + 1e-6);
       return {dateISO: iso(d), hour: (hour>=0 && hour<=23)?hour:null};
     }
-    // dd/mm/yyyy hh:mm[:ss]
     const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T](\d{1,2})(?::(\d{2})(?::(\d{2}))?)?)?$/);
     if(m){
       const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
       const d=new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
       return {dateISO: iso(d), hour: d.getHours()};
     }
-    // ISO ou outros parseáveis
     const t = new Date(s.replace('T',' '));
     if(!isNaN(t)) return {dateISO: iso(t), hour: t.getHours()};
     return {dateISO:null, hour:null};
   }
 
-  // === hash DJB2 estável como row_key
+  // hash DJB2 estável como row_key
   function hashRow(obj){
     const keys = ['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
     const s = keys.map(k => k+':'+String(obj[k]??'')).join('|');
@@ -405,8 +402,9 @@
     btn.addEventListener('click',()=>root.classList.toggle('open'));
     document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
     return {
-      setOptions(list){
-        options=(list||[]).filter(v=>v!=null).map(String).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+      setOptions(list, keepOrder=false){
+        options=(list||[]).filter(v=>v!=null).map(String);
+        if(!keepOrder){ options.sort((a,b)=>a.localeCompare(b,'pt-BR')); }
         filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v)));
         render(); refresh();
       },
@@ -417,7 +415,7 @@
 
   /* ===================== ESTADO / PERÍODO ===================== */
   let firstDay='', lastDay='';
-  let currPeriodStr='', prevPeriodStr='';
+  let lastPrevRange = {dePrev:null, atePrev:null}; // para tooltips
   const chips=[...document.querySelectorAll('.chip')];
   const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
   const ms={
@@ -477,9 +475,6 @@
   }
 
   async function updateKPIs(de, ate, dePrev, atePrev){
-    currPeriodStr = `${de} → ${ate}`;
-    prevPeriodStr = `${dePrev} → ${atePrev}`;
-
     const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
     const nameNow=rpcName(pNow),     namePrev=rpcName(pPrev);
     const [now,prev,cNow,cPrev] = await Promise.all([
@@ -525,8 +520,6 @@
     $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
     $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
     deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
-
-    setDiag(`Período: ${currPeriodStr} vs ${prevPeriodStr}`);
   }
 
   /* ===== Comparativo: período anterior exato ===== */
@@ -564,7 +557,7 @@
     if(Math.abs(v)>=1_000)     return 'R$ '+(v/1_000).toFixed(1).replace('.',',')+' mil';
     return 'R$ '+v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
   }
-  function ensureChart(canvasId, labels, nowArr, prevArr){
+  function ensureChart(canvasId, labels, nowArr, prevArr, tooltipExtra=''){
     const canvas=$(canvasId); if(!canvas) return;
     if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
     const ctx=canvas.getContext('2d');
@@ -577,15 +570,11 @@
       options:{
         responsive:true, maintainAspectRatio:false, animation:false,
         scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:formatCurrencyTick}}},
-        plugins:{ legend:{position:'top'},
-          tooltip:{mode:'index',intersect:false,
-            callbacks:{
-              title:(items)=>items?.[0]?.label ?? '',
-              label:(ctx)=>{
-                const p = ctx.dataset.label==='Atual' ? currPeriodStr : prevPeriodStr;
-                return `${ctx.dataset.label} [${p}]: ${money(ctx.parsed.y||0)}`;
-              }
-            }
+        plugins:{ legend:{position:'top'}, tooltip:{mode:'index',intersect:false,
+          callbacks:{
+            label:(ctx)=>`${ctx.dataset.label}: ${money(ctx.parsed.y||0)}`,
+            footer:()=> tooltipExtra
+          }
         }}
       }
     });
@@ -628,11 +617,10 @@
   async function updateChartsServer(only){
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
     const {dePrev, atePrev} = computePrevRangeISO(de,ate);
-    currPeriodStr = `${de} → ${ate}`;
-    prevPeriodStr = `${dePrev} → ${atePrev}`;
+    lastPrevRange = {dePrev, atePrev};
 
     try{
-      setDiag(`Período: ${currPeriodStr} | Anterior: ${prevPeriodStr}`);
+      setDiag('');
       const kinds = ['dow','month','hour','turno'];
       const toDo = only ? [only] : kinds;
 
@@ -641,13 +629,15 @@
         return {k, now, prev};
       }));
 
+      const tip = `Período anterior: ${dePrev} → ${atePrev}`;
+
       const pD = packs.find(p=>p.k==='dow');
       if(!only || only==='dow'){
         const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
         const nArr = Array(7).fill(0), pArr = Array(7).fill(0), nMed=Array(7).fill(0), pMed=Array(7).fill(0);
         (pD?.now||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; });
         (pD?.prev||[]).forEach(r=>{ pArr[r.dow]=+r.total||0; pMed[r.dow]=+r.media||0; });
-        ensureChart('ch_dow', labels, (chartMode.dow==='media'?nMed:nArr), (chartMode.dow==='media'?pMed:pArr));
+        ensureChart('ch_dow', labels, (chartMode.dow==='media'?nMed:nArr), (chartMode.dow==='media'?pMed:pArr), tip);
       }
 
       const pM = packs.find(p=>p.k==='month');
@@ -656,37 +646,38 @@
         const all = [...new Set([...n.map(r=>r.ym), ...p.map(r=>r.ym)])].sort();
         const mapN=new Map(n.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
         const mapP=new Map(p.map(r=>[r.ym, chartMode.month==='media' ? (+r.media||0) : (+r.total||0)]));
-        ensureChart('ch_month', all.map(ymToLabel), all.map(x=>mapN.get(x)||0), all.map(x=>mapP.get(x)||0));
+        ensureChart('ch_month', all.map(ymToLabel), all.map(x=>mapN.get(x)||0), all.map(x=>mapP.get(x)||0), tip);
       }
 
       const pH = packs.find(p=>p.k==='hour');
       if(!only || only==='hour'){
-        const labels=[];
-        const nArr=[], pArr=[], nMed=[], pMed=[];
-        // O RPC já filtra horas sem venda. Mantemos r.h como label “HHh”.
-        (pH?.now||[]).forEach(r=>{ labels.push(String(r.h).padStart(2,'0')+'h'); nArr.push(+r.total||0); nMed.push(+r.media||0); });
-        const mapPrev=new Map((pH?.prev||[]).map(r=>[r.h, +r.total||0]));
-        const prevSeries = labels.map(lb=>{
-          const h = parseInt(lb,10);
-          return mapPrev.get(h)||0;
-        });
-        ensureChart('ch_hour', labels, (chartMode.hour==='media'?nMed:nArr), (chartMode.hour==='media'?prevSeries:prevSeries));
+        const allHours = Array.from({length:24},(_,h)=>h);
+        const nArr = Array(24).fill(0), pArr = Array(24).fill(0), nMed=Array(24).fill(0), pMed=Array(24).fill(0);
+        (pH?.now||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; });
+        (pH?.prev||[]).forEach(r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; });
+        const useMed = (chartMode.hour==='media');
+        const nowUse = useMed ? nMed : nArr;
+        const prevUse= useMed ? pMed : pArr;
+        const filtered = allHours.filter(h => (nowUse[h]||0)!==0 || (prevUse[h]||0)!==0);
+        const labels=filtered.map(h=>String(h).padStart(2,'0')+'h');
+        ensureChart('ch_hour', labels, filtered.map(h=>nowUse[h]||0), filtered.map(h=>prevUse[h]||0), tip);
       }
 
       const pT = packs.find(p=>p.k==='turno');
       if(!only || only==='turno'){
+        // garante apenas Dia/Noite e nessa ordem
         const order=['Dia','Noite'];
         const n = new Map((pT?.now||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
         const p = new Map((pT?.prev||[]).map(r=>[r.turno, chartMode.turno==='media'? (+r.media||0) : (+r.total||0)]));
         const labels = order.filter(x=> n.has(x) || p.has(x));
-        ensureChart('ch_turno', labels, labels.map(l=>n.get(l)||0), labels.map(l=>p.get(l)||0));
+        ensureChart('ch_turno', labels, labels.map(l=>n.get(l)||0), labels.map(l=>p.get(l)||0), tip);
       }
 
-      setStatus('OK — gráficos via RPC','ok');
+      setStatus('OK — gráficos atualizados','ok');
     }catch(e){
       console.error(e);
       setStatus('OK (sem gráficos — RPC indisponível)','ok');
-      setDiag(`Período: ${currPeriodStr} vs ${prevPeriodStr}`);
+      setDiag('');
     }
   }
 
@@ -726,7 +717,7 @@
     return rows;
   }
   async function fetchRowsLocal(de, ate, onlyCancelValue){
-    const sources = ['vw_vendas_canon', READ_VIEW];
+    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas', READ_VIEW];
     const onlyCancel = (onlyCancelValue==='Sim');
     for(const src of sources){
       try{
@@ -737,7 +728,7 @@
     return [];
   }
 
-  /* ===================== EXCEL → DB (sempre upsert) ===================== */
+  /* ===================== EXCEL → DB (upsert) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
 
   const headerAlts = {
@@ -753,7 +744,7 @@
     canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
     pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
     canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
-    pid:  ['pedido','pedido id','pedido_id','id pedido','id_pedido','numero pedido','número pedido','numero do pedido','número do pedido','nº do pedido','nº pedido','num pedido','nr pedido','order id','order_id','numero do pedido parceiro','número do pedido parceiro']
+    pid:  ['pedido','pedido id','pedido_id','id pedido','id_pedido','numero pedido','número pedido','order id','order_id']
   };
   function pickColumn(headers, alts){
     const map = headers.map(h=>({orig:h, key:normHeader(h)}));
@@ -763,6 +754,16 @@
     }
     return null;
   }
+  function parseHourFromEither(dateCell, hourCell){
+    let h = null;
+    if(hourCell!=null){
+      if(typeof hourCell==='number' && hourCell>=0 && hourCell<=23) h = Math.floor(hourCell);
+      else { const m=String(hourCell).match(/(\d{1,2})/); if(m){ const hh=+m[1]; if(hh>=0&&hh<=23) h=hh; } }
+    }
+    if(h==null){ const {hour} = splitDateTimeCell(dateCell); h = hour; }
+    return h;
+  }
+  function makeRowKey(row){ return hashRow(row); }
 
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
@@ -793,14 +794,9 @@
       let mapped = json.map(r=>{
         const get = (k)=> (k? r[k] : null);
 
-        const dt = splitDateTimeCell(get(kDia));
-        const dia  = dt.dateISO;
-        let   hora = dt.hour;
-        if(hora==null && kHora!=null){
-          const v=get(kHora);
-          if(typeof v==='number' && v>=0 && v<=23) hora = Math.floor(v);
-          else { const m=String(v??'').match(/(\d{1,2})/); if(m){ const hh=+m[1]; if(hh>=0&&hh<=23) hora=hh; } }
-        }
+        const dtSplit = splitDateTimeCell(get(kDia));
+        const dia  = dtSplit.dateISO;
+        const hora = parseHourFromEither(get(kDia), get(kHora));
 
         const unidade = displayNormalize(get(kUni));
         const loja    = displayNormalize(get(kLoja));
@@ -825,22 +821,18 @@
           pedido_id: pid || null,
           created_at: new Date().toISOString()
         };
-        row.row_key = hashRow(row);
+        row.row_key = makeRowKey(row);
         return row;
       });
 
-      // válidas (dia preenchido)
       const ok = mapped.filter(x => x.dia!=null && String(x.dia).trim()!=='');
-      // dedupe por row_key (última ocorrência vence)
       const mapByKey = new Map();
       for(const r of ok){ mapByKey.set(r.row_key, r); }
       const rows = [...mapByKey.values()];
       const removed = ok.length - rows.length;
-
-      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, removidas duplicadas: ${removed}). Enviando…`);
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${ok.length}, removidos duplicados por row_key: ${removed}). Enviando…`);
       if(rows.length===0){ setStatus('Nada para gravar (0 linhas após dedupe).','err'); return; }
 
-      // upsert em lotes
       setStatus('Enviando Excel…');
       const chunk = 300;
       for(let i=0;i<rows.length;i+=chunk){
@@ -857,7 +849,7 @@
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
         if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`; }
       }catch(_e){}
-      await reloadStaticOptions();
+      await reloadStaticOptions(); // reidrata opções com ranking
       await applyAll();
     }catch(e){
       console.error(e);
@@ -868,9 +860,32 @@
     }
   });
 
-  /* ===================== OPÇÕES (com fallback) ===================== */
+  /* ===================== OPÇÕES (ranqueadas + completas) ===================== */
+  function mergeRankedAll(rankedList, allList){
+    const rset = new Set(rankedList);
+    const rest = allList.filter(x=>!rset.has(x));
+    return [...rankedList, ...rest];
+  }
+
   async function reloadStaticOptions(){
-    // Preferir as views dedicadas (garantem DIA/NOITE e completude)
+    const de = firstDay || '1900-01-01';
+    const ate= lastDay  || iso(new Date());
+
+    // 1) Pega RANQUEADOS (top-N) por pedidos (mais relevantes primeiro)
+    const TOPN = 50;
+    const [topUnids, topLojas, topPags, topCanais] = await Promise.allSettled([
+      supa.rpc('opt_unidades_ranked', { p_dini: de, p_dfim: ate, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
+      supa.rpc('opt_lojas_ranked',    { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
+      supa.rpc('opt_pagamentos_ranked',{ p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_lojas:null, p_cancelado:null, p_limit: TOPN }),
+      supa.rpc('opt_canais_ranked',   { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_lojas:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
+    ]);
+
+    const tUnids = (topUnids.status==='fulfilled' && !topUnids.value.error) ? (topUnids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
+    const tLojas = (topLojas.status==='fulfilled'  && !topLojas.value.error)  ? (topLojas.value.data||[]).map(r=>r.loja).filter(Boolean)       : [];
+    const tPags  = (topPags.status==='fulfilled'   && !topPags.value.error)   ? (topPags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean): [];
+    const tCanais= (topCanais.status==='fulfilled' && !topCanais.value.error) ? (topCanais.value.data||[]).map(r=>r.canal).filter(Boolean)      : [];
+
+    // 2) Pega a LISTA COMPLETA (views) para garantir TODAS as opções
     const [unids,lojas,canais,turnos,pags] = await Promise.allSettled([
       supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
       supa.from('vw_vendas_lojas').select('loja').order('loja'),
@@ -880,29 +895,19 @@
     ]);
     const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
 
-    if(ok(unids))  ms.unids.setOptions((unids.value.data||[]).map(r=>r.unidade));
-    if(ok(lojas))  ms.lojas.setOptions((lojas.value.data||[]).map(r=>r.loja));
-    if(ok(canais)) ms.canais.setOptions((canais.value.data||[]).map(r=>r.canal));
-    if(ok(turnos)) ms.turnos.setOptions((turnos.value.data||[]).map(r=>r.turno));
-    if(ok(pags))   ms.pags.setOptions((pags.value.data||[]).map(r=>r.pagamento_base));
+    const allUnids = ok(unids) ? (unids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
+    const allLojas = ok(lojas) ? (lojas.value.data||[]).map(r=>r.loja).filter(Boolean) : [];
+    const allCanais= ok(canais)? (canais.value.data||[]).map(r=>r.canal).filter(Boolean): [];
+    const allPags  = ok(pags)  ? (pags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean) : [];
 
-    // Fallback direto na view principal se alguma der erro
-    const needFallback = !(ok(unids)&&ok(lojas)&&ok(canais)&&ok(turnos)&&ok(pags));
-    if(needFallback){
-      try{
-        const { data, error } = await supa.from(READ_VIEW)
-          .select('unidade, loja, canal, pagamento_base, turno').limit(200000);
-        if(!error && Array.isArray(data)){
-          const uniqBy = (arr, key)=> [...new Set(arr.map(x=>x[key]).filter(v=>v!=null && v!==''))];
-          ms.unids.setOptions( uniqBy(data,'unidade') );
-          ms.lojas.setOptions( uniqBy(data,'loja') );
-          ms.canais.setOptions( uniqBy(data,'canal') );
-          ms.pags.setOptions( uniqBy(data,'pagamento_base') );
-          // Garante só Dia/Noite
-          ms.turnos.setOptions( uniqBy(data,'turno').filter(t=>t==='Dia'||t==='Noite') );
-        }
-      }catch(e){ console.warn('fallback options error', e?.message||e); }
-    }
+    // 3) Merge ranqueado + completo (ranqueado primeiro), mantendo a ordem (keepOrder=true)
+    ms.unids.setOptions( mergeRankedAll(tUnids, allUnids), true );
+    ms.lojas.setOptions( mergeRankedAll(tLojas, allLojas), true );
+    ms.canais.setOptions(mergeRankedAll(tCanais, allCanais), true );
+    ms.pags.setOptions(  mergeRankedAll(tPags, allPags), true );
+
+    // 4) TURNOS: apenas Dia e Noite, nessa ordem
+    ms.turnos.setOptions(['Dia','Noite'], true);
   }
 
   /* ===================== LOOP PRINCIPAL ===================== */
@@ -910,9 +915,7 @@
     try{
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
       const {dePrev, atePrev} = computePrevRangeISO(de,ate);
-
-      currPeriodStr = `${de} → ${ate}`;
-      prevPeriodStr = `${dePrev} → ${atePrev}`;
+      lastPrevRange = {dePrev, atePrev};
 
       setStatus('Consultando…');
 
@@ -940,7 +943,7 @@
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
 
       $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
-      applyQuick('30');
+      applyQuick('30'); // período rápido começa do último dia
     }catch(e){
       console.error(e);
       setStatus('Erro ao iniciar: '+(e.message||e),'err');
