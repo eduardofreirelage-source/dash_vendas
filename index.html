@@ -520,6 +520,7 @@ function ensureChart(canvasId, labels, nowArr, prevArr, formatter, tip=''){
 }
 
 /* ============ BUSCA DE DADOS (AGRUPADOR LOCAL) ============ */
+// ⚙️ Filtros robustos (sem 400 no "Cancelado")
 function buildFilters(query){
   const selU = ms.unids.get();  if (selU.length) query = query.in('unidade', selU);
   const selL = ms.lojas.get();  if (selL.length) query = query.in('loja', selL);
@@ -527,20 +528,22 @@ function buildFilters(query){
   const selP = ms.pags.get();   if (selP.length) query = query.in('pagamento_base', selP);
   const selT = ms.turnos.get(); if (selT.length) query = query.in('turno', selT);
 
-  // ⚠️ CANCELADO: nunca use .or() aqui (gera 400 em alguns casos).
-  // Use .in() para cobrir 'Não' e 'Nao' (variação sem acento), e .eq('Sim').
+  // CANCELADO:
+  // - "Não" precisa ir ASPADO na expressão in.
+  // - Cobrir variação "Nao" (sem acento).
   const selCanc = ms.cancel.get();
   if (selCanc.length === 1) {
     const v = selCanc[0];
     if (v === 'Não') {
-      // cobre registros salvos com ou sem acento, evitando 400
-      query = query.in('cancelado', ['Não','Nao']);
+      // Gera: cancelado=in.("Não","Nao")
+      query = query.filter('cancelado', 'in', '("Não","Nao")');
     } else if (v === 'Sim') {
       query = query.eq('cancelado', 'Sim');
     }
-    // se o usuário marcar "Todos" (array vazio) não aplica filtro algum
+    // Se "Todos" (ou vazio), não aplica filtro.
   }
   return query;
+}
 }
 
 async function fetchCanonRange(de,ate){
