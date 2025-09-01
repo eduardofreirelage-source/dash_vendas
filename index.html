@@ -3,16 +3,22 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.19.2 — v2.19.0 + KPIs→gráficos)</title>
+  <title>DASHBOARD — CFO (v2.20.0 — KPI clicável + gráficos dinâmicos)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{
       --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7;
       --ok:#10b981; --down:#ef4444;
-      --chip:#f7e9ed;
+      --chip:#f7e9ed;                        /* fundo claro vinho */
       --bar:#334155;
-      --wine:#7b1e3a; --wine-soft:#9c3554;
-      --c-now:#7b1e3a; --c-now-soft:#9c3554; --c-prev:#94a3b8; --c-prev-soft:#cbd5e1;
+      --wine:#7b1e3a;                        /* vinho escuro */
+      --wine-soft:#9c3554;
+
+      /* Paleta gráficos (vinho) */
+      --c-now:#7b1e3a;
+      --c-now-soft:#9c3554;
+      --c-prev:#94a3b8;
+      --c-prev-soft:#cbd5e1;
     }
     *{box-sizing:border-box}
     html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
@@ -22,7 +28,7 @@
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
     .btn.clear{gap:6px}
 
-    .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px;transition:all .2s ease}
+    .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px;transition:max-height .25s ease}
     .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap}
     .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
     .ico{width:16px;height:16px;color:#475569}
@@ -31,13 +37,19 @@
     .cols-3{grid-template-columns:repeat(3,1fr)}
     .cols-2{grid-template-columns:repeat(2,1fr)}
 
-    input[type="date"], .msel-btn, .input{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;min-height:44px;font-size:16px}
+    /* ============ inputs ============ */
+    input[type="date"], .msel-btn, .input{
+      width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;
+      min-height:44px;font-size:16px;
+    }
     input[type="date"]::-webkit-calendar-picker-indicator{ transform:scale(1.2); }
 
+    /* chips no tema vinho */
     .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
     .chip{padding:10px 0;border:1px solid #efd5db;border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:800;color:#7b1e3a}
     .chip.active{background:var(--c-now);border-color:var(--c-now);color:#fff;box-shadow:0 1px 0 rgba(123,30,58,.06)}
 
+    /* multiselect */
     .msel{position:relative}
     .msel-btn{cursor:pointer;text-align:left}
     .msel-btn:after{content:"▾";float:right;color:#475569}
@@ -47,23 +59,27 @@
     .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
     .msel-opt:hover{background:#f3f4f6}
 
+    /* ============ KPI minimalista ============ */
     .krow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-    .kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
+    .kpi{
+      position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;
+      padding:12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05);cursor:pointer;
+      transition:border-color .15s ease, box-shadow .15s ease, transform .02s ease;
+    }
+    .kpi:active{ transform:scale(.995); }
+    .kpi.active{ border-color:var(--c-now); box-shadow:0 0 0 4px rgba(123,30,58,.06); }
     .kpi h4{margin:0 0 6px;font-size:13px;color:#475569;display:flex;align-items:center}
     .kpi h4 .spacer{flex:1}
     .kpi .val{font-size:22px;font-weight:800}
-    /* linha vinho fixa 2px */
-    .kpi .accent{border-top:2px solid var(--wine);height:0;margin:6px 0}
+    .kpi .accent{height:2px;background:var(--wine);border-radius:999px;margin:6px 0 6px 0;opacity:.95}
     .kpi .sub{font-size:12px;color:#667085;margin-top:2px}
-    .kpi[role="button"]{cursor:pointer}
-    .kpi:focus-visible{outline:2px solid #cbd5e1;outline-offset:2px}
-
     .delta{display:inline-flex;gap:6px;align-items:center;padding:2px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.35);font-weight:800;font-size:12px;margin-left:12px;background:rgba(148,163,184,.15);color:#64748b}
     .delta svg{width:12px;height:12px}
     .delta.up{background:rgba(123,30,58,.10);border-color:rgba(123,30,58,.25);color:var(--wine)}
     .delta.down{background:rgba(148,163,184,.15);border-color:rgba(148,163,184,.35);color:#64748b}
     .delta.flat{background:#f1f5f9;border-color:#e2e8f0;color:#64748b}
 
+    /* ============ Gráficos ============ */
     .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
     .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
@@ -74,17 +90,34 @@
     .chart-card.wide{grid-column:span 2;}
     .chart-card.wide .chart-box{height:360px}
 
-    .center-link{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(255,255,255,.92);border:1px solid var(--line);padding:4px 10px;border-radius:999px;cursor:pointer;font-weight:800;font-size:12px;color:#334155;white-space:nowrap}
+    /* Centro clicável do donut */
+    .center-link{
+      position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+      background:rgba(255,255,255,.92);border:1px solid var(--line);
+      padding:4px 10px;border-radius:999px;cursor:pointer;
+      font-weight:800;font-size:12px;color:#334155;white-space:nowrap;
+    }
 
-    .section.collapsed .row,.section.collapsed #periodoInfo,.section.collapsed .upload-info{display:none}
+    /* Seção recolhida após inatividade */
+    .section.collapsed .row,
+    .section.collapsed #periodoInfo,
+    .section.collapsed .upload-info { display:none; }
     .section.collapsed .sec-head{cursor:pointer}
 
     .diag{font-size:12px;color:#475569;margin-left:8px}
     .upload-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .upload-info{margin-top:8px;font-size:12px;color:#475569}
 
-    @media (max-width:1024px){.cols-3{grid-template-columns:repeat(2,1fr)}.cols-2{grid-template-columns:1fr}.krow{grid-template-columns:repeat(2,1fr)}.chart-card.wide{grid-column:span 1}}
-    @media (max-width:640px){.cols-3{grid-template-columns:1fr}.krow{grid-template-columns:1fr}}
+    @media (max-width:1024px){
+      .cols-3{grid-template-columns:repeat(2,1fr)}
+      .cols-2{grid-template-columns:1fr}
+      .krow{grid-template-columns:repeat(2,1fr)}
+      .chart-card.wide{grid-column:span 1;}
+    }
+    @media (max-width:640px){
+      .cols-3{grid-template-columns:1fr}
+      .krow{grid-template-columns:1fr}
+    }
   </style>
 </head>
 <body>
@@ -180,21 +213,21 @@
       </div>
     </div>
 
-    <!-- KPIs -->
+    <!-- KPIs (agora clicáveis) -->
     <div class="krow">
-      <div class="kpi" role="button" data-k="ped">
+      <div class="kpi" data-kpi="ped">
         <h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4>
         <div class="val" id="k_ped">—</div>
         <div class="accent"></div>
         <div class="sub">Anterior: <span id="p_ped">—</span></div>
       </div>
-      <div class="kpi" role="button" data-k="tkt">
+      <div class="kpi" data-kpi="tkt">
         <h4><span>Ticket Médio</span><span class="spacer"></span><span id="d_tkt" class="delta flat">—</span></h4>
         <div class="val" id="k_tkt">—</div>
         <div class="accent"></div>
         <div class="sub">Anterior: <span id="p_tkt">—</span></div>
       </div>
-      <div class="kpi" role="button" data-k="fat">
+      <div class="kpi" data-kpi="fat">
         <h4><span>Faturamento</span><span class="spacer"></span><span id="d_fat" class="delta flat">—</span></h4>
         <div class="val" id="k_fat">—</div>
         <div class="accent"></div>
@@ -203,19 +236,19 @@
     </div>
 
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi" role="button" data-k="fatmed">
+      <div class="kpi" data-kpi="fatmed">
         <h4><span>Faturamento Médio</span><span class="spacer"></span><span id="d_fatmed" class="delta flat">—</span></h4>
         <div class="val" id="k_fatmed">—</div>
         <div class="accent"></div>
         <div class="sub">Anterior: <span id="p_fatmed">—</span></div>
       </div>
-      <div class="kpi" role="button" data-k="des">
+      <div class="kpi" data-kpi="des">
         <h4><span>Incentivos</span><span class="spacer"></span><span id="d_des" class="delta flat">—</span></h4>
         <div class="val" id="k_des">—</div>
         <div class="accent"></div>
         <div class="sub">Anterior: <span id="p_des">—</span></div>
       </div>
-      <div class="kpi" role="button" data-k="desperc">
+      <div class="kpi" data-kpi="desperc">
         <h4><span>% de Incentivos</span><span class="spacer"></span><span id="d_desperc" class="delta flat">—</span></h4>
         <div class="val" id="k_desperc">—</div>
         <div class="accent"></div>
@@ -224,19 +257,19 @@
     </div>
 
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi" role="button" data-k="fre">
+      <div class="kpi" data-kpi="fre">
         <h4><span>Frete</span><span class="spacer"></span><span id="d_fre" class="delta flat">—</span></h4>
         <div class="val" id="k_fre">—</div>
         <div class="accent"></div>
         <div class="sub">Anterior: <span id="p_fre">—</span></div>
       </div>
-      <div class="kpi" role="button" data-k="fremed">
+      <div class="kpi" data-kpi="fremed">
         <h4><span>Frete Médio</span><span class="spacer"></span><span id="d_fremed" class="delta flat">—</span></h4>
         <div class="val" id="k_fremed">—</div>
         <div class="accent"></div>
         <div class="sub">Anterior: <span id="p_fremed">—</span></div>
       </div>
-      <div class="kpi" role="button" data-k="canc_ped">
+      <div class="kpi" data-kpi="canc_ped">
         <h4><span>Pedidos Cancelados</span><span class="spacer"></span><span id="d_canc_ped" class="delta flat">—</span></h4>
         <div class="val" id="k_canc_ped">—</div>
         <div class="accent"></div>
@@ -245,13 +278,13 @@
     </div>
 
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi" role="button" data-k="canc_val">
+      <div class="kpi" data-kpi="canc_val">
         <h4><span>Valor de Cancelados</span><span class="spacer"></span><span id="d_canc_val" class="delta flat">—</span></h4>
         <div class="val" id="k_canc_val">—</div>
         <div class="accent"></div>
         <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
       </div>
-      <div class="kpi" role="button" data-k="roi">
+      <div class="kpi" data-kpi="roi">
         <h4><span>ROI</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
         <div class="val" id="k_roi">—</div>
         <div class="accent"></div>
@@ -264,6 +297,7 @@
     <div class="section">
       <div class="sec-head">
         <div class="sec-title">Gráficos</div>
+        <!-- Toggle GLOBAL Total/Média -->
         <div id="segGlobal" class="seg">
           <button class="seg-btn active" data-mode="total">Total</button>
           <button class="seg-btn" data-mode="media">Média</button>
@@ -271,28 +305,30 @@
       </div>
 
       <div class="row cols-2">
+        <!-- VENDAS POR MÊS (LARGO) -->
         <div class="chart-card wide">
-          <div class="chart-head"><div class="muted">Vendas por mês — últimos 12M vs. 12M anteriores</div></div>
+          <div class="chart-head"><div class="muted" id="title_month">Vendas por mês — últimos 12M vs. 12M anteriores</div></div>
           <div class="chart-box"><canvas id="ch_month"></canvas></div>
         </div>
 
         <div class="chart-card">
-          <div class="chart-head"><div class="muted">Vendas por dia da semana</div></div>
+          <div class="chart-head"><div class="muted" id="title_dow">Vendas por dia da semana</div></div>
           <div class="chart-box"><canvas id="ch_dow"></canvas></div>
         </div>
 
         <div class="chart-card">
-          <div class="chart-head"><div class="muted">Vendas por hora</div></div>
+          <div class="chart-head"><div class="muted" id="title_hour">Vendas por hora</div></div>
           <div class="chart-box"><canvas id="ch_hour"></canvas></div>
         </div>
 
         <div class="chart-card">
-          <div class="chart-head"><div class="muted">Vendas por turno</div></div>
+          <div class="chart-head"><div class="muted" id="title_turno">Vendas por turno</div></div>
           <div class="chart-box"><canvas id="ch_turno"></canvas></div>
         </div>
 
+        <!-- DONUT TOP 6 LOJAS -->
         <div class="chart-card">
-          <div class="chart-head"><div class="muted">Participação por loja — Top 6</div></div>
+          <div class="chart-head"><div class="muted" id="title_top6">Participação por loja — Top 6</div></div>
           <div class="chart-box">
             <canvas id="ch_top6"></canvas>
             <button id="top6Center" class="center-link">Total: R$ 0,00</button>
@@ -317,7 +353,7 @@
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  /* ===================== CHART.JS (vinho) ===================== */
+  /* ===================== CHART.JS — tema vinho ===================== */
   Chart.defaults.font.family = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu';
   Chart.defaults.color = '#334155';
   Chart.defaults.plugins.legend.position = 'top';
@@ -330,8 +366,18 @@
   Chart.defaults.datasets.bar.borderSkipped = false;
   Chart.defaults.datasets.bar.maxBarThickness = 42;
 
-  function gradNow(ctx){ const g=ctx.createLinearGradient(0,0,0,240); g.addColorStop(0,'rgba(123,30,58,0.95)'); g.addColorStop(1,'rgba(156,53,84,0.55)'); return g; }
-  function gradPrev(ctx){ const g=ctx.createLinearGradient(0,0,0,240); g.addColorStop(0,'rgba(148,163,184,0.85)'); g.addColorStop(1,'rgba(203,213,225,0.45)'); return g; }
+  function gradNow(ctx){
+    const g = ctx.createLinearGradient(0,0,0,240);
+    g.addColorStop(0,'rgba(123,30,58,0.95)');
+    g.addColorStop(1,'rgba(156,53,84,0.55)');
+    return g;
+  }
+  function gradPrev(ctx){
+    const g = ctx.createLinearGradient(0,0,0,240);
+    g.addColorStop(0,'rgba(148,163,184,0.85)');
+    g.addColorStop(1,'rgba(203,213,225,0.45)');
+    return g;
+  }
 
   /* ===================== HELPERS ===================== */
   const $ = id => document.getElementById(id);
@@ -378,35 +424,100 @@
     function refresh(){ btn.textContent = selected.size===0 ? placeholder : `${selected.size} selecionado(s)`; }
     btn.addEventListener('click',()=>{ root.classList.toggle('open'); resetAutoCollapse(); });
     document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
-    return { setOptions(list,keepOrder=false){ options=(list||[]).filter(v=>v!=null).map(String); if(!keepOrder){ options.sort((a,b)=>a.localeCompare(b,'pt-BR')); } filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh(); }, get(){return [...selected];}, set(vals){selected=new Set((vals||[]).map(String)); refresh(); draw();} };
+    return {
+      setOptions(list, keepOrder=false){
+        options=(list||[]).filter(v=>v!=null).map(String);
+        if(!keepOrder){ options.sort((a,b)=>a.localeCompare(b,'pt-BR')); }
+        filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v)));
+        render(); refresh();
+      },
+      get(){return [...selected];},
+      set(vals){selected=new Set((vals||[]).map(String)); refresh(); draw();}
+    };
   }
 
-  /* ===================== AUTO-COLLAPSE ===================== */
-  const secDatas = $('secDatas'); const secFiltros = $('secFiltros');
-  let autoCollapseTimer=null;
-  function collapseFilters(){ secDatas.classList.add('collapsed'); secFiltros.classList.add('collapsed'); }
-  function expandFilters(){ secDatas.classList.remove('collapsed'); secFiltros.classList.remove('collapsed'); }
-  function resetAutoCollapse(){ clearTimeout(autoCollapseTimer); expandFilters(); autoCollapseTimer=setTimeout(collapseFilters, 10000); }
-  [secDatas, secFiltros].forEach(sec=>{ sec.querySelector('.sec-head').addEventListener('click', (e)=>{ if(!sec.classList.contains('collapsed')) return; expandFilters(); resetAutoCollapse(); }); });
+  /* ===================== KPI CLICÁVEL ===================== */
+  const KPI_META = {
+    ped:      { label:'Pedidos',                unit:'int',     additive:true,  pct:false },
+    tkt:      { label:'Ticket Médio',           unit:'money',   additive:false, pct:false, compute:'ticket' },
+    fat:      { label:'Faturamento',            unit:'money',   additive:true,  pct:false },
+    fatmed:   { label:'Faturamento Médio',      unit:'money',   additive:false, pct:false, compute:'fat_per_day' },
+    des:      { label:'Incentivos',             unit:'money',   additive:true,  pct:false },
+    desperc:  { label:'% de Incentivos',        unit:'percent', additive:false, pct:true,  compute:'desperc' },
+    fre:      { label:'Frete',                  unit:'money',   additive:true,  pct:false },
+    fremed:   { label:'Frete Médio',            unit:'money',   additive:false, pct:false, compute:'fre_per_ped' },
+    canc_ped: { label:'Pedidos Cancelados',     unit:'int',     additive:true,  pct:false, filterCancel:'Sim', metric:'ped' },
+    canc_val: { label:'Valor de Cancelados',    unit:'money',   additive:true,  pct:false, filterCancel:'Sim', metric:'fat' },
+    roi:      { label:'ROI',                    unit:'percent', additive:false, pct:true,  compute:'roi' },
+  };
+  let selectedKPI = 'fat';
+
+  function setSelectedKPI(k){
+    selectedKPI = k in KPI_META ? k : 'fat';
+    document.querySelectorAll('.kpi').forEach(div=> div.classList.toggle('active', div.dataset.kpi===selectedKPI));
+    updateChartTitles();
+    // Apenas gráficos mudam; os cartões KPI (valores) permanecem
+    Promise.all([ updateMonth12x12(), updateChartsServer(), updateTop6() ]).catch(()=>{});
+  }
+
+  function updateChartTitles(){
+    const meta=KPI_META[selectedKPI]||KPI_META.fat;
+    const modeLabel = chartModeGlobal==='media' ? ' (média)' : '';
+    $('title_month').textContent = `${meta.label} por mês${chartModeGlobal==='media' && meta.additive ? ' (média diária)' : ''} — últimos 12M vs. 12M anteriores`;
+    $('title_dow').textContent   = `${meta.label} por dia da semana${modeLabel}`;
+    $('title_hour').textContent  = `${meta.label} por hora${modeLabel}`;
+    $('title_turno').textContent = `${meta.label} por turno${modeLabel}`;
+    $('title_top6').textContent  = `Top 6 por ${meta.label}`;
+  }
 
   /* ===================== ESTADO / PERÍODO ===================== */
   let firstDay='', lastDay='';
   let lastPrevRange = {dePrev:null, atePrev:null};
   const chips=[...document.querySelectorAll('.chip')];
   const fDe=$('fDe'), fAte=$('fAte'), periodoInfo=$('periodoInfo');
-  const ms={ unids:MultiSelect('ms-unids','Todas as unidades'), lojas:MultiSelect('ms-lojas','Todas as lojas'), canais:MultiSelect('ms-canais','Todos os canais'), turnos:MultiSelect('ms-turnos','Todos os turnos'), pags:MultiSelect('ms-pags','Todos os tipos'), cancel:MultiSelect('ms-cancel','Todos') };
+  const ms={
+    unids:  MultiSelect('ms-unids','Todas as unidades'),
+    lojas:  MultiSelect('ms-lojas','Todas as lojas'),
+    canais: MultiSelect('ms-canais','Todos os canais'),
+    turnos: MultiSelect('ms-turnos','Todos os turnos'),
+    pags:   MultiSelect('ms-pags','Todos os tipos'),
+    cancel: MultiSelect('ms-cancel','Todos')
+  };
   function setActiveChip(val){ chips.forEach(c=>c.classList.toggle('active', c.dataset.q===String(val))); }
-  function applyQuick(val){ setActiveChip(val); const ate=lastDay||iso(new Date()); const de=addDaysISO(ate, -(Number(val)-1)); fDe.value=de; fAte.value=ate; periodoInfo.textContent=`Último dia carregado: ${lastDay}`; applyAll(); }
-  $('btnClear').addEventListener('click', ()=>{ ms.unids.set([]); ms.lojas.set([]); ms.canais.set([]); ms.turnos.set([]); ms.pags.set([]); ms.cancel.set(['Não']); applyQuick('30'); });
+  function applyQuick(val){
+    setActiveChip(val);
+    const ate=lastDay||iso(new Date());
+    const de=addDaysISO(ate, -(Number(val)-1));
+    fDe.value=de; fAte.value=ate;
+    periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
+    applyAll();
+  }
+  $('btnClear').addEventListener('click', ()=>{
+    ms.unids.set([]); ms.lojas.set([]); ms.canais.set([]); ms.turnos.set([]); ms.pags.set([]);
+    ms.cancel.set(['Não']);
+    applyQuick('30');
+  });
   chips.forEach(b=> b.addEventListener('click', ()=>{ applyQuick(b.dataset.q); resetAutoCollapse(); }));
-  ;[fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{ chips.forEach(c=>c.classList.remove('active')); periodoInfo.textContent=`Último dia carregado: ${lastDay}`; applyAll(); resetAutoCollapse(); }));
+  ;[fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{
+    chips.forEach(c=>c.classList.remove('active'));
+    periodoInfo.textContent=`Último dia carregado: ${lastDay}`;
+    applyAll(); resetAutoCollapse();
+  }));
 
-  /* ===================== KPI (originais) ===================== */
+  /* ===================== KPI (cálculos) — SEM MUDANÇAS ===================== */
   function buildParams(de, ate, overrideCancel = null) {
     const canc = overrideCancel != null ? [overrideCancel] : ms.cancel.get();
     let p_cancelado = null;
     if (canc.length === 1 && (canc[0] === 'Não' || canc[0] === 'Sim')) p_cancelado = canc[0];
-    return { p_dini: de, p_dfim: ate, p_unids:ms.unids.get().length?ms.unids.get():null, p_lojas:ms.lojas.get().length?ms.lojas.get():null, p_turnos:ms.turnos.get().length?ms.turnos.get():null, p_canais:ms.canais.get().length?ms.canais.get():null, p_pags:ms.pags.get().length?ms.pags.get():null, p_cancelado };
+    return {
+      p_dini: de, p_dfim: ate,
+      p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
+      p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
+      p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
+      p_canais: ms.canais.get().length ? ms.canais.get() : null,
+      p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
+      p_cancelado
+    };
   }
   function rpcName(params){ return params.p_unids ? 'kpi_vendas_v2' : 'kpi_vendas'; }
   function prepareArgs(name, params){ if(name==='kpi_vendas'){ const {p_unids, ...rest}=params; return rest; } return params; }
@@ -420,7 +531,12 @@
   }
   function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4l5 6h-3v6H8v-6H5l5-6z"/></svg>';}
   function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 16l-5-6h3V4h4v6h3l-5 6z"/></svg>';}
-  function deltaBadge(el,curr,prev){ if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; } const p=((curr-prev)/prev)*100; el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%'; el.className='delta '+(p>=0?'up':'down'); }
+  function deltaBadge(el,curr,prev){
+    if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
+    const p=((curr-prev)/prev)*100;
+    el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
+    el.className='delta '+(p>=0?'up':'down');
+  }
   async function updateKPIs(de, ate, dePrev, atePrev){
     const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
     const nameNow=rpcName(pNow),     namePrev=rpcName(pPrev);
@@ -430,7 +546,9 @@
       supa.rpc(nameNow, prepareArgs(nameNow,{...pNow, p_cancelado:'Sim'})),
       supa.rpc(namePrev, prepareArgs(namePrev,{...pPrev, p_cancelado:'Sim'})),
     ]);
-    if(now.error) throw now.error; if(prev.error) throw prev.error;
+    if(now.error) throw now.error;
+    if(prev.error) throw prev.error;
+
     const N=agg(now.data||[]), P=agg(prev.data||[]);
     let CN=agg((cNow?.data)||[]), CP=agg((cPrev?.data)||[]);
 
@@ -487,54 +605,275 @@
     const btn=e.target.closest('.seg-btn'); if(!btn) return;
     chartModeGlobal = btn.dataset.mode;
     segGlobal.querySelectorAll('.seg-btn').forEach(b=> b.classList.toggle('active', b===btn));
-    updateMonth12x12Hybrid();   // <<—— usa híbrido
-    updateChartsHybrid();       // <<—— usa híbrido
-    updateTop6Hybrid();         // <<—— usa híbrido
+    updateChartTitles();
+    // Atualiza todos com o KPI selecionado
+    updateMonth12x12();
+    updateChartsServer();
+    updateTop6();
   });
 
-  /* ===================== GRÁFICOS (RPC originais p/ Faturamento) ===================== */
+  /* ===================== FORMATADORES DE EIXO/TOOLTIP ===================== */
+  function formatTickBy(fmt, value){
+    if(fmt==='percent'){ const v=Number(value)||0; return (v*100).toFixed(0).replace('.',',')+'%'; }
+    if(fmt==='int'){ return (Number(value)||0).toLocaleString('pt-BR'); }
+    return formatCurrencyTick(value);
+  }
+  function formatValueBy(fmt, v){
+    if(fmt==='percent') return pctf(v);
+    if(fmt==='int') return num(v);
+    return money(v);
+  }
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
     if(Math.abs(v)>=1_000)     return 'R$ '+(v/1_000).toFixed(1).replace('.',',')+' mil';
     return 'R$ '+v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
   }
-  function ensureChart(canvasId, labels, nowArr, prevArr, tooltipExtra=''){
+
+  function ensureChart(canvasId, labels, nowArr, prevArr, tooltipExtra='', fmt='money'){
     const canvas=$(canvasId); if(!canvas) return;
     if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
     const ctx=canvas.getContext('2d');
-    const chart=new Chart(ctx,{ type:'bar', data:{ labels, datasets:[ {label:'Atual', data:nowArr.map(v=>+v||0), backgroundColor:gradNow(ctx)}, {label:'Anterior', data:prevArr.map(v=>+v||0), backgroundColor:gradPrev(ctx)} ]},
-      options:{ responsive:true, maintainAspectRatio:false, animation:false,
-        scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:formatCurrencyTick}}},
-        plugins:{ legend:{position:'top'}, tooltip:{mode:'index',intersect:false,callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${money(ctx.parsed.y||0)}`, footer:()=> tooltipExtra}}}}); canvas.__chart=chart;
+    const chart=new Chart(ctx,{
+      type:'bar',
+      data:{ labels, datasets:[
+        {label:'Atual', data:nowArr.map(v=>+v||0), backgroundColor:gradNow(ctx)},
+        {label:'Anterior', data:prevArr.map(v=>+v||0), backgroundColor:gradPrev(ctx)}
+      ]},
+      options:{
+        responsive:true, maintainAspectRatio:false, animation:false,
+        scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:(v)=>formatTickBy(fmt,v)}}},
+        plugins:{ legend:{position:'top'},
+          tooltip:{mode:'index',intersect:false,callbacks:{
+            label:(ctx)=>`${ctx.dataset.label}: ${formatValueBy(fmt, ctx.parsed.y||0)}`,
+            footer:()=> tooltipExtra
+          }}
+        }
+      }
+    });
+    canvas.__chart=chart;
   }
-  const RPC_FN = { dow:'chart_vendas_dow_v1', month:'chart_vendas_mes_v1', hour:'chart_vendas_hora_v1', turno:'chart_vendas_turno_v1' };
+
+  /* ===================== RPC originais ===================== */
+  const RPC_FN = {
+    dow:   'chart_vendas_dow_v1',
+    month: 'chart_vendas_mes_v1',
+    hour:  'chart_vendas_hora_v1',
+    turno: 'chart_vendas_turno_v1',
+  };
   async function fetchChartRPC(kind, de, ate){
-    const params = { p_dini: de, p_dfim: ate, p_unids:ms.unids.get().length?ms.unids.get():null, p_lojas:ms.lojas.get().length?ms.lojas.get():null, p_turnos:ms.turnos.get().length?ms.turnos.get():null, p_canais:ms.canais.get().length?ms.canais.get():null, p_pags:ms.pags.get().length?ms.pags.get():null, p_cancelado:(ms.cancel.get().length===1 && (ms.cancel.get()[0]==='Sim' || ms.cancel.get()[0]==='Não')) ? ms.cancel.get()[0] : null };
+    const params = {
+      p_dini: de, p_dfim: ate,
+      p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
+      p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
+      p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
+      p_canais: ms.canais.get().length ? ms.canais.get() : null,
+      p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
+      p_cancelado: (ms.cancel.get().length===1 && (ms.cancel.get()[0]==='Sim' || ms.cancel.get()[0]==='Não')) ? ms.cancel.get()[0] : null
+    };
     const { data, error } = await supa.rpc(RPC_FN[kind], params);
-    if(error){ console.warn('[chart rpc]', kind, error.message); throw error; }
+    if(error){ throw error; }
     return data||[];
   }
+
+  /* ===================== AGREGADOR CLIENT-SIDE (blindado) ===================== */
+  function parseNum(n){ const v=Number(n); return isFinite(v)?v:0; }
+  function asDateISO(s){ return String(s||''); }
+
+  function wantedCancelFilterForKPI(){
+    const meta = KPI_META[selectedKPI]||{};
+    if(meta.filterCancel) return meta.filterCancel; // força "Sim" para KPIs de cancelamento
+    // caso contrário, usa seleção atual do filtro Cancelado (se 1 valor)
+    const canc = ms.cancel.get();
+    if(canc.length===1 && (canc[0]==='Sim' || canc[0]==='Não')) return canc[0];
+    return null;
+  }
+
+  async function baseQuery(de, ate){
+    let q = supa.from(READ_VIEW)
+      .select('dia,hora,turno,fat,des,fre,pedidos,cancelado,loja,unidade,canal,pagamento_base')
+      .gte('dia', de).lte('dia', ate).limit(200000);
+    const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
+    const lojas = ms.lojas.get(); if(lojas.length) q = q.in('loja', lojas);
+    const turns = ms.turnos.get(); if(turns.length) q = q.in('turno', turns);
+    const cans  = ms.canais.get(); if(cans.length)  q = q.in('canal', cans);
+    const pags  = ms.pags.get(); if(pags.length)   q = q.in('pagamento_base', pags);
+
+    const forcedCancel = wantedCancelFilterForKPI();
+    if(forcedCancel) q = q.eq('cancelado', forcedCancel);
+
+    const { data, error } = await q;
+    if(error) throw error;
+    return data||[];
+  }
+
+  function groupKey(kind, row){
+    if(kind==='dow'){
+      const d=new Date(asDateISO(row.dia)+'T00:00:00'); return d.getDay(); // 0=Dom
+    }
+    if(kind==='hour'){
+      const h=parseInt(row.hora,10); return (isFinite(h)&&h>=0&&h<=23)?h:null;
+    }
+    if(kind==='turno'){
+      const t=String(row.turno||'').trim(); return t||null;
+    }
+    return null;
+  }
+
+  function computeValueForKPI(rowsAgg, mode){
+    // rowsAgg = { sum_fat,sum_des,sum_fre,sum_ped, days:Set }
+    const meta = KPI_META[selectedKPI]||KPI_META.fat;
+    const sf=rowsAgg.sum_fat||0, sd=rowsAgg.sum_des||0, sfre=rowsAgg.sum_fre||0, sp=rowsAgg.sum_ped||0;
+    const daysCount = rowsAgg.days ? rowsAgg.days.size : 0;
+
+    if(meta.additive){
+      if(mode==='media'){
+        // média diária (ou por ocorrência) para métricas aditivas
+        const base = (selectedKPI==='ped') ? sp : (selectedKPI==='fre' ? sfre : (selectedKPI==='des' ? sd : (selectedKPI==='canc_val'? sf : (selectedKPI==='canc_ped'? sp : sf))));
+        return daysCount ? (base/daysCount) : 0;
+      }else{
+        if(selectedKPI==='ped') return sp;
+        if(selectedKPI==='fre') return sfre;
+        if(selectedKPI==='des') return sd;
+        if(selectedKPI==='canc_val') return sf;   // já filtrado por cancelado
+        if(selectedKPI==='canc_ped') return sp;   // já filtrado por cancelado
+        return sf; // fat padrão
+      }
+    }else{
+      // métricas de razão
+      if(meta.compute==='ticket'){ return sp>0 ? sf/sp : 0; }
+      if(meta.compute==='fre_per_ped'){ return sp>0 ? sfre/sp : 0; }
+      if(meta.compute==='fat_per_day'){ return daysCount ? sf/daysCount : 0; }
+      if(meta.compute==='desperc'){ return sf>0 ? sd/sf : 0; }
+      if(meta.compute==='roi'){ return sd>0 ? (sf-sd)/sd : NaN; }
+      return 0;
+    }
+  }
+
+  async function clientAgg(kind, de, ate){
+    const data = await baseQuery(de, ate);
+    const m = new Map();
+    for(const r of data){
+      const key = groupKey(kind, r);
+      if(key==null) continue;
+      if(!m.has(key)) m.set(key, { sum_fat:0, sum_des:0, sum_fre:0, sum_ped:0, days:new Set() });
+      const g = m.get(key);
+      g.sum_fat += parseNum(r.fat);
+      g.sum_des += parseNum(r.des);
+      g.sum_fre += parseNum(r.fre);
+      g.sum_ped += parseNum(r.pedidos||0);
+      if(r.dia) g.days.add(String(r.dia));
+    }
+    const mode = chartModeGlobal;
+    let labels=[], nowArr=[], fmt=(KPI_META[selectedKPI]||KPI_META.fat).unit;
+
+    if(kind==='dow'){
+      labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+      const arr = Array(7).fill(0).map((_,i)=> computeValueForKPI(m.get(i)||{}, mode));
+      nowArr = arr;
+      return { labels, nowArr, fmt };
+    }
+    if(kind==='hour'){
+      labels = Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h');
+      const arr = Array(24).fill(0).map((_,h)=> computeValueForKPI(m.get(h)||{}, mode));
+      // filtra horas vazias para manter seu comportamento
+      const filteredIdx = arr.map((v,i)=>({v,i})).filter(o=> (o.v||0)!==0).map(o=>o.i);
+      const flabels = filteredIdx.map(i=>labels[i]);
+      const fvals   = filteredIdx.map(i=>arr[i]);
+      return { labels: flabels, nowArr: fvals, fmt };
+    }
+    if(kind==='turno'){
+      const order=['Dia','Noite'];
+      labels = order.filter(x=> m.has(x));
+      nowArr = labels.map(l => computeValueForKPI(m.get(l)||{}, mode));
+      return { labels, nowArr, fmt };
+    }
+    return { labels:[], nowArr:[], fmt };
+  }
+
+  /* ===================== GRÁFICOS DOW/HOUR/TURNO ===================== */
   async function updateChartsServer(){
     const de=fDe.value||firstDay, ate=fAte.value||lastDay;
     const {dePrev, atePrev} = computePrevRangeISO(de,ate);
     lastPrevRange = {dePrev, atePrev};
+    const tip = `Período anterior: ${dePrev} → ${atePrev}`;
     try{
       setDiag('');
-      const [nowD, prevD, nowH, prevH, nowT, prevT] = await Promise.all([
-        fetchChartRPC('dow',de,ate),   fetchChartRPC('dow',dePrev,atePrev),
-        fetchChartRPC('hour',de,ate),  fetchChartRPC('hour',dePrev,atePrev),
-        fetchChartRPC('turno',de,ate), fetchChartRPC('turno',dePrev,atePrev),
-      ]);
-      const tip = `Período anterior: ${dePrev} → ${atePrev}`;
-      { const labels=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']; const nArr=Array(7).fill(0), pArr=Array(7).fill(0), nMed=Array(7).fill(0), pMed=Array(7).fill(0); (nowD||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; }); (prevD||[]).forEach(r=>{ pArr[r.dow]=+r.total||0; pMed[r.dow]=+r.media||0; }); const useN=(chartModeGlobal==='media'?nMed:nArr), useP=(chartModeGlobal==='media'?pMed:pArr); ensureChart('ch_dow', labels, useN, useP, tip); }
-      { const allHours=Array.from({length:24},(_,h)=>h); const nArr=Array(24).fill(0), pArr=Array(24).fill(0), nMed=Array(24).fill(0), pMed=Array(24).fill(0); (nowH||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; }); (prevH||[]).forEach(r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; }); const useN=(chartModeGlobal==='media'?nMed:nArr), useP=(chartModeGlobal==='media'?pMed:pArr); const filtered=allHours.filter(h => (useN[h]||0)!==0 || (useP[h]||0)!==0); const labels=filtered.map(h=>String(h).padStart(2,'0')+'h'); ensureChart('ch_hour', labels, filtered.map(h=>useN[h]||0), filtered.map(h=>useP[h]||0), tip); }
-      { const order=['Dia','Noite']; const n=new Map((nowT||[]).map(r=>[r.turno, chartModeGlobal==='media'? (+r.media||0) : (+r.total||0)])); const p=new Map((prevT||[]).map(r=>[r.turno, chartModeGlobal==='media'? (+r.media||0) : (+r.total||0)])); const labels=order.filter(x=> n.has(x) || p.has(x)); ensureChart('ch_turno', labels, labels.map(l=>n.get(l)||0), labels.map(l=>p.get(l)||0), tip); }
+
+      // Para FAT usamos RPC + fallback; para demais KPIs usamos clientAgg (blindado)
+      const useRPC = (selectedKPI==='fat');
+
+      // DOW
+      {
+        let labels, nowArr, prevArr, fmt;
+        if(useRPC){
+          const [nowD, prevD] = await Promise.all([ fetchChartRPC('dow',de,ate), fetchChartRPC('dow',dePrev,atePrev) ]);
+          labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+          const nArr = Array(7).fill(0), pArr = Array(7).fill(0), nMed=Array(7).fill(0), pMed=Array(7).fill(0);
+          (nowD||[]).forEach(r=>{ nArr[r.dow]=+r.total||0; nMed[r.dow]=+r.media||0; });
+          (prevD||[]).forEach(r=>{ pArr[r.dow]=+r.total||0; pMed[r.dow]=+r.media||0; });
+          const meta = KPI_META[selectedKPI]; fmt = meta.unit;
+          nowArr = (chartModeGlobal==='media'?nMed:nArr);
+          prevArr = (chartModeGlobal==='media'?pMed:pArr);
+        }else{
+          const [now, prev] = await Promise.all([ clientAgg('dow',de,ate), clientAgg('dow',dePrev,atePrev) ]);
+          labels = now.labels;
+          nowArr = now.nowArr; prevArr = prev.nowArr; fmt = now.fmt;
+        }
+        ensureChart('ch_dow', labels, nowArr, prevArr, tip, fmt);
+      }
+
+      // HOUR
+      {
+        let labels, nowArr, prevArr, fmt;
+        if(useRPC){
+          const [nowH, prevH] = await Promise.all([ fetchChartRPC('hour',de,ate), fetchChartRPC('hour',dePrev,atePrev) ]);
+          const allHours = Array.from({length:24},(_,h)=>h);
+          const nArr = Array(24).fill(0), pArr = Array(24).fill(0), nMed=Array(24).fill(0), pMed=Array(24).fill(0);
+          (nowH||[]).forEach(r=>{ nArr[r.h]=+r.total||0; nMed[r.h]=+r.media||0; });
+          (prevH||[]).forEach(r=>{ pArr[r.h]=+r.total||0; pMed[r.h]=+r.media||0; });
+          const useN = (chartModeGlobal==='media'?nMed:nArr);
+          const useP = (chartModeGlobal==='media'?pMed:pArr);
+          const filtered = allHours.filter(h => (useN[h]||0)!==0 || (useP[h]||0)!==0);
+          labels = filtered.map(h=>String(h).padStart(2,'0')+'h');
+          nowArr = filtered.map(h=>useN[h]||0);
+          prevArr= filtered.map(h=>useP[h]||0);
+          fmt = (KPI_META[selectedKPI]||KPI_META.fat).unit;
+        }else{
+          const [now, prev] = await Promise.all([ clientAgg('hour',de,ate), clientAgg('hour',dePrev,atePrev) ]);
+          labels = now.labels; nowArr = now.nowArr; prevArr = prev.nowArr; fmt = now.fmt;
+        }
+        ensureChart('ch_hour', labels, nowArr, prevArr, tip, fmt);
+      }
+
+      // TURNO
+      {
+        let labels, nowArr, prevArr, fmt;
+        if(useRPC){
+          const [nowT, prevT] = await Promise.all([ fetchChartRPC('turno',de,ate), fetchChartRPC('turno',dePrev,atePrev) ]);
+          const order=['Dia','Noite'];
+          const meta = KPI_META[selectedKPI]; fmt = meta.unit;
+          const n = new Map((nowT||[]).map(r=>[''+r.turno, chartModeGlobal==='media'? (+r.media||0) : (+r.total||0)]));
+          const p = new Map((prevT||[]).map(r=>[''+r.turno, chartModeGlobal==='media'? (+r.media||0) : (+r.total||0)]));
+          labels = order.filter(x=> n.has(x) || p.has(x));
+          nowArr = labels.map(l=>n.get(l)||0);
+          prevArr = labels.map(l=>p.get(l)||0);
+        }else{
+          const [now, prev] = await Promise.all([ clientAgg('turno',de,ate), clientAgg('turno',dePrev,atePrev) ]);
+          labels = now.labels; nowArr = now.nowArr; prevArr = prev.nowArr; fmt = now.fmt;
+        }
+        ensureChart('ch_turno', labels, nowArr, prevArr, tip, fmt);
+      }
+
       setStatus('OK — gráficos atualizados','ok');
-    }catch(e){ console.warn(e); setStatus('OK (sem gráficos — RPC indisponível)','ok'); setDiag(''); }
+    }catch(e){
+      console.error(e);
+      setStatus('OK (sem gráficos — RPC indisponível)','ok');
+      setDiag('');
+    }
   }
 
-  /* ===================== GRÁFICO MÊS 12x12 (RPC p/ Faturamento) ===================== */
+  /* ===================== GRÁFICO MÊS: 12x12 (com KPI) ===================== */
   async function updateMonth12x12(){
     try{
       const end = lastDay || iso(new Date());
@@ -544,73 +883,479 @@
       const last12End   = monthEndISO(end);
       const prev12EndAdj= monthEndISO(addMonthsISO(endMonthStart, -12));
 
-      const paramsCommon = { p_unids:ms.unids.get().length?ms.unids.get():null, p_lojas:ms.lojas.get().length?ms.lojas.get():null, p_turnos:ms.turnos.get().length?ms.turnos.get():null, p_canais:ms.canais.get().length?ms.canais.get():null, p_pags:ms.pags.get().length?ms.pags.get():null, p_cancelado:(ms.cancel.get().length===1 && (ms.cancel.get()[0]==='Sim' || ms.cancel.get()[0]==='Não')) ? ms.cancel.get()[0] : null };
+      const paramsCommon = {
+        p_unids:  ms.unids.get().length  ? ms.unids.get()  : null,
+        p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : null,
+        p_turnos: ms.turnos.get().length ? ms.turnos.get() : null,
+        p_canais: ms.canais.get().length ? ms.canais.get() : null,
+        p_pags:   ms.pags.get().length   ? ms.pags.get()   : null,
+        p_cancelado: (ms.cancel.get().length===1 && (ms.cancel.get()[0]==='Sim' || ms.cancel.get()[0]==='Não')) ? ms.cancel.get()[0] : null
+      };
 
-      const [{data:nData,error:nErr},{data:pData,error:pErr}] = await Promise.all([
-        supa.rpc('chart_vendas_mes_v1', { p_dini: last12Start, p_dfim: last12End, ...paramsCommon }),
-        supa.rpc('chart_vendas_mes_v1', { p_dini: prev12Start, p_dfim: prev12EndAdj, ...paramsCommon }),
+      let labels = [];
+      let cur = last12Start;
+      for(let i=0;i<12;i++){ labels.push(formatYM(cur)); cur = addMonthsISO(cur, 1); }
+
+      const fmt = (KPI_META[selectedKPI]||KPI_META.fat).unit;
+
+      if(selectedKPI==='fat'){
+        // mantém RPC original para desempenho
+        const [{data:nData,error:nErr},{data:pData,error:pErr}] = await Promise.all([
+          supa.rpc('chart_vendas_mes_v1', { p_dini: last12Start, p_dfim: last12End, ...paramsCommon }),
+          supa.rpc('chart_vendas_mes_v1', { p_dini: prev12Start, p_dfim: prev12EndAdj, ...paramsCommon }),
+        ]);
+        if(nErr) throw nErr; if(pErr) throw pErr;
+
+        const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, chartModeGlobal==='media' ? (+r.media||0) : (+r.total||0)]));
+        const mNow = toMap(nData), mPrev= toMap(pData);
+
+        const ymsNow = []; cur = last12Start;
+        for(let i=0;i<12;i++){ const d=new Date(cur+'T00:00:00'); const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; ymsNow.push(ym); cur=addMonthsISO(cur,1); }
+        const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
+
+        const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
+        const prevArr = ymsPrev.map(ym => mPrev.get(ym)||0);
+
+        const tip = `Comparação fixa: Últimos 12M (${formatYM(last12Start)} → ${formatYM(endMonthStart)}) vs 12M anteriores (${formatYM(prev12Start)} → ${formatYM(addMonthsISO(endMonthStart,-1))})`;
+        ensureChart('ch_month', labels, nowArr, prevArr, tip, fmt);
+        setStatus('OK — gráfico mensal 12x12','ok');
+        return;
+      }
+
+      // CLIENT-SIDE para demais KPIs
+      const [dataNow, dataPrev] = await Promise.all([
+        baseQuery(last12Start, last12End),
+        baseQuery(prev12Start, prev12EndAdj)
       ]);
-      if(nErr) throw nErr; if(pErr) throw pErr;
 
-      const labels = []; let cur = last12Start; for(let i=0;i<12;i++){ labels.push(formatYM(cur)); cur = addMonthsISO(cur, 1); }
-      const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, chartModeGlobal==='media' ? (+r.media||0) : (+r.total||0)]));
-      const mNow = toMap(nData), mPrev= toMap(pData);
-      const ymsNow = []; cur = last12Start; for(let i=0;i<12;i++){ const d=new Date(cur+'T00:00:00'); const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; ymsNow.push(ym); cur=addMonthsISO(cur,1); }
+      function buildYMMap(rows){
+        const map = new Map(); // ym -> agg
+        for(const r of rows){
+          const d=new Date(asDateISO(r.dia)+'T00:00:00');
+          const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+          if(!map.has(ym)) map.set(ym, { sum_fat:0, sum_des:0, sum_fre:0, sum_ped:0, days:new Set() });
+          const g=map.get(ym);
+          g.sum_fat += parseNum(r.fat);
+          g.sum_des += parseNum(r.des);
+          g.sum_fre += parseNum(r.fre);
+          g.sum_ped += parseNum(r.pedidos||0);
+          g.days.add(String(r.dia));
+        }
+        return map;
+      }
+
+      const mNow  = buildYMMap(dataNow);
+      const mPrev = buildYMMap(dataPrev);
+
+      cur = last12Start;
+      const ymsNow = [];
+      for(let i=0;i<12;i++){ const d=new Date(cur+'T00:00:00'); const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; ymsNow.push(ym); cur=addMonthsISO(cur,1); }
       const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
-      const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
-      const prevArr = ymsPrev.map(ym => mPrev.get(ym)||0);
-      const tip = `Comparação fixa: Últimos 12M (${formatYM(last12Start)} → ${formatYM(endMonthStart)}) vs 12M anteriores (${formatYM(prev12Start)} → ${formatYM(addMonthsISO(endMonthStart,-1))})`;
-      ensureChart('ch_month', labels, nowArr, prevArr, tip);
+
+      const meta = KPI_META[selectedKPI];
+      const nowArr  = ymsNow.map(ym  => computeValueForKPI(mNow.get(ym)||{}, meta.additive?chartModeGlobal:'media'));
+      const prevArr = ymsPrev.map(ym => computeValueForKPI(mPrev.get(ym)||{}, meta.additive?chartModeGlobal:'media'));
+
+      const tip = `Comparação fixa (KPI ${meta.label}): Últimos 12M vs 12M anteriores`;
+      ensureChart('ch_month', labels, nowArr, prevArr, tip, fmt);
       setStatus('OK — gráfico mensal 12x12','ok');
-    }catch(e){ console.warn(e); setStatus('OK (mensal 12x12 indisponível)','ok'); }
+    }catch(e){
+      console.error(e);
+      setStatus('OK (mensal 12x12 indisponível)','ok');
+    }
   }
 
-  /* ===================== DONUT TOP-6 (original: faturamento) ===================== */
+  /* ===================== DONUT TOP 6 LOJAS (dinâmico por KPI) ===================== */
   const wine = ["#7b1e3a","#8c2947","#9c3554","#ad4061","#bd4c6e","#ce577b"];
-  function ensureDonutTop6(labels, values, labelFmt=money){
+  function ensureDonutTop6(labels, values, centerText, fmt, extraTooltipByIndex){
     const cvs = $('ch_top6'); if(!cvs) return;
     if(cvs.__chart){ try{cvs.__chart.destroy();}catch(e){} cvs.__chart=null; }
     const ctx = cvs.getContext('2d');
-    const total = (values||[]).reduce((a,b)=>a+(+b||0),0);
-    $('top6Center').textContent = 'Total: '+labelFmt(total);
-    const chart = new Chart(ctx,{ type:'doughnut',
+    $('top6Center').textContent = centerText;
+
+    const chart = new Chart(ctx,{
+      type:'doughnut',
       data:{ labels, datasets:[{ data: values, backgroundColor: wine, hoverBackgroundColor: wine, borderColor:'#fff', borderWidth:1 }]},
-      options:{ responsive:true, maintainAspectRatio:false, cutout:'60%',
-        plugins:{ legend:{ position:'right', labels:{ usePointStyle:true, pointStyle:'circle', boxWidth:10, padding:16, color:'#334155' } },
-          tooltip:{ callbacks:{ label:(ctx)=>{ const label = ctx.label||''; const val = ctx.parsed||0; const ds = ctx.chart.data.datasets[0]; const tt = (ds.data||[]).reduce((a,b)=>a+(+b||0),0); const perc = tt ? ((val/tt)*100).toFixed(1) : 0; return `${label}: ${labelFmt(val)} (${perc}%)`; } },
-            backgroundColor:'rgba(15,23,42,.95)', titleColor:'#e2e8f0', bodyColor:'#e2e8f0', borderColor:'rgba(148,163,184,.25)', borderWidth:1 } }});
+      options:{
+        responsive:true, maintainAspectRatio:false, cutout:'60%',
+        plugins:{
+          legend:{ position:'right', labels:{ usePointStyle:true, pointStyle:'circle', boxWidth:10, padding:16, color:'#334155' } },
+          tooltip:{ callbacks:{ 
+            label:(ctx)=>{
+              const i=ctx.dataIndex;
+              const label = ctx.label||'';
+              const val = ctx.parsed||0;
+              const extra = extraTooltipByIndex ? extraTooltipByIndex[i] : null;
+              const base = `${label}: ${formatValueBy(fmt, val)}`;
+              return extra ? `${base} — ${extra}` : base;
+            } 
+          },
+            backgroundColor:'rgba(15,23,42,.95)', titleColor:'#e2e8f0', bodyColor:'#e2e8f0', borderColor:'rgba(148,163,184,.25)', borderWidth:1 }
+        }
+      }
+    });
     cvs.__chart = chart;
   }
+
   async function updateTop6(){
     try{
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-      let q = supa.from(READ_VIEW).select('loja, fat:fat.sum()', { head:false }).gte('dia', de).lte('dia', ate).order('fat', { ascending:false }).limit(6);
+      const meta = KPI_META[selectedKPI]||KPI_META.fat;
+      let q = supa.from(READ_VIEW)
+        .select('loja,fat,des,fre,pedidos,cancelado,dia')
+        .gte('dia', de).lte('dia', ate).limit(120000);
+
       const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
       const lojas = ms.lojas.get(); if(lojas.length) q = q.in('loja', lojas);
       const turns = ms.turnos.get(); if(turns.length) q = q.in('turno', turns);
       const cans  = ms.canais.get(); if(cans.length)  q = q.in('canal', cans);
       const pags  = ms.pags.get(); if(pags.length)   q = q.in('pagamento_base', pags);
-      const canc  = ms.cancel.get(); if(canc.length===1 && (canc[0]==='Sim' || canc[0]==='Não')) q = q.eq('cancelado', canc[0]);
-      const { data, error } = await q; if(error) throw error;
-      const labels = (data||[]).map(r=>r.loja); const values = (data||[]).map(r=>+r.fat||0);
-      ensureDonutTop6(labels, values);
-    }catch(e){ console.warn('top6', e.message||e); ensureDonutTop6([], []); }
+      const forcedCancel = wantedCancelFilterForKPI();
+      if(forcedCancel) q = q.eq('cancelado', forcedCancel);
+
+      const { data, error } = await q;
+      if(error) throw error;
+
+      const map = new Map(); // loja -> agg
+      (data||[]).forEach(r=>{
+        const k=r.loja||'—';
+        if(!map.has(k)) map.set(k,{sum_fat:0,sum_des:0,sum_fre:0,sum_ped:0, days:new Set()});
+        const g=map.get(k);
+        g.sum_fat += parseNum(r.fat);
+        g.sum_des += parseNum(r.des);
+        g.sum_fre += parseNum(r.fre);
+        g.sum_ped += parseNum(r.pedidos||0);
+        if(r.dia) g.days.add(String(r.dia));
+      });
+
+      const arr = [...map.entries()].map(([loja,agg])=>{
+        // valor representado no slice
+        let v;
+        if(meta.additive){
+          if(selectedKPI==='ped' || selectedKPI==='canc_ped') v = agg.sum_ped;
+          else if(selectedKPI==='fre') v = agg.sum_fre;
+          else if(selectedKPI==='des') v = agg.sum_des;
+          else if(selectedKPI==='canc_val') v = agg.sum_fat;
+          else v = agg.sum_fat; // fat
+        }else{
+          // razão — usamos a medida do KPI como "peso" visual do slice
+          if(meta.compute==='ticket') v = agg.sum_ped>0 ? agg.sum_fat/agg.sum_ped : 0;
+          else if(meta.compute==='fre_per_ped') v = agg.sum_ped>0 ? agg.sum_fre/agg.sum_ped : 0;
+          else if(meta.compute==='fat_per_day') v = agg.days.size ? agg.sum_fat/agg.days.size : 0;
+          else if(meta.compute==='desperc') v = agg.sum_fat>0 ? agg.sum_des/agg.sum_fat : 0;
+          else if(meta.compute==='roi') v = agg.sum_des>0 ? (agg.sum_fat-agg.sum_des)/agg.sum_des : 0;
+          else v=0;
+        }
+        // extra para tooltip (exibe média quando for razão)
+        let extra='';
+        if(!meta.additive){
+          extra = KPI_META[selectedKPI].unit==='percent' ? `média: ${pctf(v)}` : `média: ${formatValueBy(meta.unit,v)}`;
+        }
+        return { loja, v, extra };
+      }).filter(x=> isFinite(x.v) && x.v!==0);
+
+      arr.sort((a,b)=> b.v - a.v);
+      const top = arr.slice(0,6);
+      const labels = top.map(x=>x.loja);
+      const values = top.map(x=>x.v);
+      const extras  = top.map(x=>x.extra);
+
+      let centerText='';
+      if(meta.additive){
+        // total do KPI no top6
+        const total = values.reduce((a,b)=>a+(+b||0),0);
+        centerText = (meta.unit==='money') ? ('Total: '+money(total)) :
+                     (meta.unit==='percent') ? ('Média: '+pctf(total/(values.length||1))) :
+                     ('Total: '+num(total));
+      }else{
+        // média dos valores no top6
+        const avg = values.length ? (values.reduce((a,b)=>a+(+b||0),0)/values.length) : 0;
+        centerText = (meta.unit==='percent') ? ('Média (Top6): '+pctf(avg)) : ('Média (Top6): '+formatValueBy(meta.unit, avg));
+      }
+
+      ensureDonutTop6(labels, values, centerText, meta.unit, extras);
+      setStatus('OK — Top 6','ok');
+    }catch(e){
+      console.warn('top6 erro:', e.message||e);
+      ensureDonutTop6([],[], 'Total: R$ 0,00','money');
+    }
   }
-  $('top6Center').addEventListener('click', ()=>{ setStatus('Top 6 — total clicado','ok'); });
+  $('top6Center').addEventListener('click', ()=>{ setStatus('Top 6 — centro clicado','ok'); });
 
-  /* ===================== FALLBACK LOCAL (já existia p/ Excel/cancelados) ===================== */
-  async function discoverColumns(source){ const r = await supa.from(source).select('*').limit(1); if(r.error) return null; const row = (r.data||[{}])[0]; const cols = Object.keys(row||{}); if (!cols.length) return null; const has = c => cols.includes(c); const dateKeys = ['dia','data','dt','date','data_venda','data_pedido','datahora'].filter(has); if(!dateKeys.length) return null; const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has); const turnoKeys= ['turno','periodo','shift'].filter(has); const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has); const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has); const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has); return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, cancKeys}; }
-  async function trySourceLocal(source, de, ate, onlyCancel){ const map = await discoverColumns(source); if(!map) return null; const sel = [...new Set([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys])].join(','); const q = await supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000); if(q.error) return null; const rows = (q.data||[]).filter(x=>{ if(!onlyCancel) return true; const k = map.cancKeys[0]; const s=String(x[k]??'').trim().toLowerCase(); const sim = ['sim','s','true','1','y','yes'].includes(s); return sim; }).map(x=>{ const v = String(x[map.fatKeys[0]]??'').replace(/[^\d,.-]/g,''); const fat = Number(v.replace(/\./g,'').replace(',', '.'))||0; const ped = Math.round(Number(String(x[map.pedKeys[0]]??'').replace(/[^\d.-]/g,''))||1); return { fat, pedidos: ped }; }); return rows; }
-  async function fetchRowsLocal(de, ate, onlyCancelValue){ const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas', READ_VIEW]; const onlyCancel = (onlyCancelValue==='Sim'); for(const src of sources){ try{ const res = await trySourceLocal(src, de, ate, onlyCancel); if(res) return res; }catch(_e){} } return []; }
+  /* ===================== FALLBACK LOCAL (cancelados) — SEM MUDANÇAS ===================== */
+  async function discoverColumns(source){
+    const r = await supa.from(source).select('*').limit(1);
+    if(r.error) return null;
+    const row = (r.data||[{}])[0];
+    const cols = Object.keys(row||{});
+    if (!cols.length) return null;
+    const has = c => cols.includes(c);
+    const dateKeys = ['dia','data','dt','date','data_venda','data_pedido','datahora'].filter(has);
+    if(!dateKeys.length) return null;
+    const hourKeys = ['hora','hr','hour','horario','time_hour','hora_venda'].filter(has);
+    const turnoKeys= ['turno','periodo','shift'].filter(has);
+    const fatKeys = ['fat','faturamento','valor_total','valor','total','vl_total','vlr_total','receita','valor_liquido','faturamento_liquido','fat_liq','fat_total','vl_faturamento','vl_liquido','valor_venda','vl_venda','total_nota'].filter(has);
+    const pedKeys = ['pedidos','qtd_pedidos','qtde','qtd','qtd_ped','quantidade','qtd_pedido','itens','qtd_itens','qtd_vendas'].filter(has);
+    const cancKeys = ['cancelado','canceled','is_cancel','cancel','st_cancelado','cancelada'].filter(has);
+    return {dateKeys, hourKeys, turnoKeys, fatKeys, pedKeys, cancKeys};
+  }
+  async function trySourceLocal(source, de, ate, onlyCancel){
+    const map = await discoverColumns(source);
+    if(!map) return null;
+    const sel = [...new Set([...map.dateKeys, ...map.hourKeys, ...map.turnoKeys, ...map.fatKeys, ...map.pedKeys, ...map.cancKeys])].join(',');
+    const q = await supa.from(source).select(sel).gte(map.dateKeys[0], de).lte(map.dateKeys[0], ate).limit(120000);
+    if(q.error) return null;
+    const rows = (q.data||[]).filter(x=>{
+      if(!onlyCancel) return true;
+      const k = map.cancKeys[0];
+      const s=String(x[k]??'').trim().toLowerCase();
+      const sim = ['sim','s','true','1','y','yes'].includes(s);
+      return sim;
+    }).map(x=>{
+      const v = String(x[map.fatKeys[0]]??'').replace(/[^\d,.-]/g,'');
+      const fat = Number(v.replace(/\./g,'').replace(',', '.'))||0;
+      const ped = Math.round(Number(String(x[map.pedKeys[0]]??'').replace(/[^\d.-]/g,''))||1);
+      return { fat, pedidos: ped };
+    });
+    return rows;
+  }
+  async function fetchRowsLocal(de, ate, onlyCancelValue){
+    const sources = ['mv_vendas_canon','vw_vendas_canon','vw_vendas', READ_VIEW];
+    const onlyCancel = (onlyCancelValue==='Sim');
+    for(const src of sources){
+      try{
+        const res = await trySourceLocal(src, de, ate, onlyCancel);
+        if(res) return res;
+      }catch(_e){}
+    }
+    return [];
+  }
 
-  /* ===================== EXCEL → DB (original) ===================== */
+  /* ===================== EXCEL → DB (upsert) — SEM MUDANÇAS FUNCIONAIS ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
-  $('fileExcel').addEventListener('change', async (ev)=>{ /* (…sem alterações — mantém seu fluxo de upload) */ });
+  $('fileExcel').addEventListener('change', async (ev)=>{
+    const file = ev.target.files?.[0];
+    if(!file){ info(''); return; }
+    info('Lendo arquivo…');
+    try{
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type:'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
-  /* ===================== OPÇÕES (originais) ===================== */
-  function mergeRankedAll(rankedList, allList){ const rset = new Set(rankedList); const rest = allList.filter(x=>!rset.has(x)); return [...rankedList, ...rest]; }
-  async function fallbackDistinct(col){ try{ const { data, error } = await supa.from(READ_VIEW).select(col, { head:false }).neq(col, null).limit(5000); if(error) return []; const vals = (data||[]).map(r=>r[col]).filter(Boolean); return [...new Set(vals)].sort((a,b)=> String(a).localeCompare(String(b),'pt-BR')); }catch(_e){ return []; } }
-  async function reloadStaticOptions(){ /* (…idêntico ao seu — mantido) */ }
+      const headers = json.length ? Object.keys(json[0]) : [];
+
+      const headerAlts = {
+        dia:  ['dia','data','dt','date','data venda','data_venda','data pedido','data_pedido','datahora','data hora'],
+        hora: ['hora','hr','hour','horario','time_hour','hora venda','hora_venda'],
+        fat:  ['fat','faturamento','valor total','valor_total','valor','total','vl total','vl_total','vlr total','vlr_total','valor liquido','valor_liquido','faturamento liquido','faturamento_liquido','fat_liq','fat total','fat_total','vl faturamento','vl_faturamento','vl liquido','vl_liquido','valor venda','valor_venda','vl venda','vl_venda','total nota','total_nota'],
+        des:  ['des','desconto','incentivo','incentivos','vl desconto','vl_desconto'],
+        fre:  ['fre','frete','taxa entrega','taxa_entrega','entrega'],
+        ped:  ['pedidos','qtd pedidos','qtd_pedidos','qtde','qtd','qtd ped','qtd_ped','quantidade','qtd pedido','qtd_pedido','itens','qtd itens','qtd_itens','qtd vendas','qtd_vendas'],
+        unid: ['unidade','unid','filial','cod_unidade','empresa'],
+        loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja'],
+        canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
+        pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
+        canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
+        pid:  ['pedido','pedido id','pedido_id','id pedido','id_pedido','numero pedido','número pedido','order id','order_id']
+      };
+
+      const normCancel = (v)=>{
+        const s=String(v??'').trim().toLowerCase();
+        if(['sim','s','true','1','y','yes'].includes(s)) return 'Sim';
+        if(['nao','não','n','false','0','no'].includes(s)) return 'Não';
+        return 'Não';
+      };
+
+      function pickColumn(headers, alts){
+        const map = headers.map(h=>({orig:h, key: normHeader(h)}));
+        for(const a of alts){
+          const exact = map.find(m=>m.key===a); if(exact) return exact.orig;
+          const part  = map.find(m=>m.key.includes(a)); if(part) return part.orig;
+        }
+        return null;
+      }
+      function splitDateTimeCell(v){
+        if(v==null) return {dateISO:null, hour:null};
+        if(v instanceof Date){ return {dateISO: v.toISOString().slice(0,10), hour: v.getHours()}; }
+        let s=String(v).trim(); if(!s) return {dateISO:null, hour:null};
+        if(/^-?\d+(\.\d+)?$/.test(s)){ // Excel serial
+          const num=Number(s); const base=new Date(Date.UTC(1899,11,30));
+          const d=new Date(base.getTime()+num*86400000);
+          const frac = num - Math.floor(num);
+          const hour = Math.floor(frac*24 + 1e-6);
+          return {dateISO: d.toISOString().slice(0,10), hour:(hour>=0&&hour<=23)?hour:null};
+        }
+        const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T](\d{1,2})(?::(\d{2})(?::(\d{2}))?)?)?$/);
+        if(m){
+          const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
+          const d=new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
+          return {dateISO: d.toISOString().slice(0,10), hour:d.getHours()};
+        }
+        const t=new Date(s.replace('T',' '));
+        if(!isNaN(t)) return {dateISO:t.toISOString().slice(0,10), hour:t.getHours()};
+        return {dateISO:null, hour:null};
+      }
+      function parseHourFromEither(dateCell, hourCell){
+        let h = null;
+        if(hourCell!=null){
+          if(typeof hourCell==='number' && hourCell>=0 && hourCell<=23) h = Math.floor(hourCell);
+          else { const m=String(hourCell).match(/(\d{1,2})/); if(m){ const hh=+m[1]; if(hh>=0&&hh<=23) h=hh; } }
+        }
+        if(h==null){ const {hour} = splitDateTimeCell(dateCell); h = hour; }
+        return h;
+      }
+      function parseBR(v){
+        if(v==null) return 0;
+        if(typeof v==='number' && isFinite(v)) return v;
+        let s=String(v).trim(); if(!s) return 0;
+        s=s.replace(/[^\d,.\-]/g,'');
+        const lastC=s.lastIndexOf(','), lastD=s.lastIndexOf('.');
+        if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
+        const n=Number(s); return isFinite(n)?n:0;
+      }
+      function toInt(v){ const n=parseBR(v); return isFinite(n)?Math.round(n):0; }
+      function hashRow(obj){
+        const keys=['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
+        const s = keys.map(k=>k+':'+String(obj[k]??'')).join('|');
+        let h=5381; for(let i=0;i<s.length;i++){ h=((h<<5)+h) ^ s.charCodeAt(i); }
+        return String(h>>>0);
+      }
+      function makeRowKey(row){ return hashRow(row); }
+
+      // ==== mapear colunas detectadas ====
+      const kDia  = pickColumn(headers, headerAlts.dia);
+      const kHora = pickColumn(headers, headerAlts.hora);
+      const kFat  = pickColumn(headers, headerAlts.fat);
+      const kDes  = pickColumn(headers, headerAlts.des);
+      const kFre  = pickColumn(headers, headerAlts.fre);
+      const kPed  = pickColumn(headers, headerAlts.ped);
+      const kUni  = pickColumn(headers, headerAlts.unid);
+      const kLoja = pickColumn(headers, headerAlts.loja);
+      const kCan  = pickColumn(headers, headerAlts.canal);
+      const kPag  = pickColumn(headers, headerAlts.pag);
+      const kCanc = pickColumn(headers, headerAlts.canc);
+      const kPid  = pickColumn(headers, headerAlts.pid);
+
+      const mapped = json.map(r=>{
+        const get = (k)=> (k? r[k] : null);
+        const dtSplit = splitDateTimeCell(get(kDia));
+        const dia  = dtSplit.dateISO;
+        const hora = parseHourFromEither(get(kDia), get(kHora));
+        const row = {
+          dia, hora,
+          unidade: displayNormalize(get(kUni)),
+          "Nome da loja": displayNormalize(get(kLoja)),
+          "Canal de venda": displayNormalize(get(kCan)),
+          pagamento_base: displayNormalize(get(kPag)),
+          cancelado: normCancel(get(kCanc)),
+          pedidos: toInt(get(kPed) ?? 1),
+          fat: parseBR(get(kFat)),
+          des: parseBR(get(kDes)),
+          fre: parseBR(get(kFre)),
+          pedido_id: displayNormalize(get(kPid)) || null,
+          created_at: new Date().toISOString()
+        };
+        row.row_key = makeRowKey(row);
+        return row;
+      }).filter(x => x.dia!=null && String(x.dia).trim()!=='');
+
+      // Dedupe por row_key
+      const mapByKey = new Map(); for(const r of mapped){ mapByKey.set(r.row_key, r); }
+      const rows = [...mapByKey.values()];
+      info(`Excel lido: ${json.length} linhas (mapeadas: ${mapped.length}, removidas duplicadas: ${mapped.length-rows.length}). Enviando…`);
+      if(rows.length===0){ setStatus('Nada para gravar (0 linhas após dedupe).','err'); return; }
+
+      setStatus('Enviando Excel…');
+      const chunk = 300;
+      for(let i=0;i<rows.length;i+=chunk){
+        const slice = rows.slice(i,i+chunk);
+        const { error } = await supa.from(DEST_INSERT_TABLE).upsert(slice, { onConflict: 'row_key' });
+        if(error){ throw error; }
+      }
+
+      setStatus('Upload concluído','ok');
+      info(`Gravado/atualizado: ${rows.length} linhas.`);
+
+      try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
+
+      try{
+        const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
+        if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`; }
+      }catch(_e){}
+
+      await reloadStaticOptions();
+      await applyAll();
+    }catch(e){
+      console.error(e);
+      setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
+      info('');
+    }finally{
+      $('fileExcel').value='';
+    }
+  });
+
+  /* ===================== OPÇÕES (sem mudanças) ===================== */
+  function mergeRankedAll(rankedList, allList){
+    const rset = new Set(rankedList);
+    const rest = allList.filter(x=>!rset.has(x));
+    return [...rankedList, ...rest];
+  }
+  async function reloadStaticOptions(){
+    const de = firstDay || '1900-01-01';
+    const ate= lastDay  || iso(new Date());
+
+    const TOPN = 50;
+    const [topUnids, topLojas, topPags, topCanais] = await Promise.allSettled([
+      supa.rpc('opt_unidades_ranked',  { p_dini: de, p_dfim: ate, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
+      supa.rpc('opt_lojas_ranked',     { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
+      supa.rpc('opt_pagamentos_ranked',{ p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_lojas:null, p_cancelado:null, p_limit: TOPN }),
+      supa.rpc('opt_canais_ranked',    { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_lojas:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
+    ]);
+
+    const tUnids = (topUnids.status==='fulfilled' && !topUnids.value.error) ? (topUnids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
+    const tLojas = (topLojas.status==='fulfilled'  && !topLojas.value.error)  ? (topLojas.value.data||[]).map(r=>r.loja).filter(Boolean)       : [];
+    const tPags  = (topPags.status==='fulfilled'   && !topPags.value.error)   ? (topPags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean): [];
+    const tCanais= (topCanais.status==='fulfilled' && !topCanais.value.error) ? (topCanais.value.data||[]).map(r=>r.canal).filter(Boolean)      : [];
+
+    const [unids,lojas,canais,pags] = await Promise.allSettled([
+      supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
+      supa.from('vw_vendas_lojas').select('loja').order('loja'),
+      supa.from('vw_vendas_canais').select('canal').order('canal'),
+      supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
+    ]);
+    const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
+
+    const allUnids = ok(unids) ? (unids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
+    const allLojas = ok(lojas) ? (lojas.value.data||[]).map(r=>r.loja).filter(Boolean) : [];
+    const allCanais= ok(canais)? (canais.value.data||[]).map(r=>r.canal).filter(Boolean): [];
+    const allPags  = ok(pags)  ? (pags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean) : [];
+
+    ms.unids.setOptions( mergeRankedAll(tUnids, allUnids), true );
+    ms.lojas.setOptions( mergeRankedAll(tLojas, allLojas), true );
+    ms.canais.setOptions(mergeRankedAll(tCanais, allCanais), true );
+    ms.pags.setOptions(  mergeRankedAll(tPags, allPags), true );
+
+    ms.turnos.setOptions(['Dia','Noite'], true);
+  }
+
+  /* ===================== AUTO-COLLAPSE (igual) ===================== */
+  let __collapseTimer = null;
+  function resetAutoCollapse(){
+    const secs = [ $('secDatas'), $('secFiltros') ].filter(Boolean);
+    secs.forEach(s=> s.classList.remove('collapsed'));
+    clearTimeout(__collapseTimer);
+    __collapseTimer = setTimeout(()=>{ secs.forEach(s=> s.classList.add('collapsed')); }, 10000);
+  }
+  document.querySelectorAll('.section .sec-head').forEach(head=>{
+    head.addEventListener('click', ()=>{
+      const sec = head.parentElement;
+      if(sec.classList.contains('collapsed')){ sec.classList.remove('collapsed'); resetAutoCollapse(); }
+    });
+  });
+  ['click','input','change','keydown','mousemove','wheel','touchstart'].forEach(ev=>{
+    document.addEventListener(ev, ()=>resetAutoCollapse(), {passive:true});
+  });
 
   /* ===================== LOOP PRINCIPAL ===================== */
   async function applyAll(){
@@ -618,146 +1363,51 @@
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
       const {dePrev, atePrev} = computePrevRangeISO(de,ate);
       lastPrevRange = {dePrev, atePrev};
+
       setStatus('Consultando…');
+
       let kpiOk=true;
       await updateKPIs(de,ate,dePrev,atePrev).catch(e=>{ console.error(e); kpiOk=false; });
+      await Promise.all([
+        updateChartsServer(),   // dow/hour/turno (usa KPI selecionado)
+        updateMonth12x12(),     // mês (12x12) (usa KPI selecionado)
+        updateTop6()            // donut Top 6 (usa KPI selecionado)
+      ]);
 
-      // >>> HÍBRIDO: usa RPC quando o KPI selecionado for 'fat'; senão, agrega no cliente
-      await updateMonth12x12Hybrid();
-      await updateChartsHybrid();
-      await updateTop6Hybrid();
-
-      if(!kpiOk) setStatus('OK (sem KPIs — RPC indisponível)'); else setStatus('OK','ok');
+      if(!kpiOk) setStatus('OK (sem KPIs — RPC indisponível)');
+      else setStatus('OK','ok');
       resetAutoCollapse();
-    }catch(e){ console.error(e); setStatus('Erro: '+(e.message||e),'err'); }
+    }catch(e){
+      console.error(e);
+      setStatus('Erro: '+(e.message||e),'err');
+    }
   }
 
   (async function init(){
     try{
       setStatus('Carregando…');
       const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
-      if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
+      if(dr.error) throw dr.error;
+      if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
+
       await reloadStaticOptions();
+
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
+
       $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
+      // Inicia com KPI padrão "fat" e marca visualmente
+      document.querySelectorAll('.kpi').forEach(div=>{
+        div.addEventListener('click', ()=> setSelectedKPI(div.dataset.kpi));
+      });
+      setSelectedKPI('fat'); // aplica títulos e marca ativo
+
       applyQuick('30');
       resetAutoCollapse();
-    }catch(e){ console.error(e); setStatus('Erro ao iniciar: '+(e.message||e),'err'); }
+    }catch(e){
+      console.error(e);
+      setStatus('Erro ao iniciar: '+(e.message||e),'err');
+    }
   })();
-
-  /* ===================== ★ ADIÇÃO: KPIs → GRÁFICOS (híbrido) ===================== */
-  let selectedMetric='fat';
-  const KPI_MAP={
-    ped:{kind:'sum',field:'pedidos',fmt:'num'},
-    tkt:{kind:'ratio',num:'fat',den:'pedidos',fmt:'money'},
-    fat:{kind:'sum',field:'fat',fmt:'money'},
-    fatmed:{kind:'sum',field:'fat',forceMedia:true,fmt:'money'},
-    des:{kind:'sum',field:'des',fmt:'money'},
-    desperc:{kind:'ratio',num:'des',den:'fat',fmt:'pct'},
-    fre:{kind:'sum',field:'fre',fmt:'money'},
-    fremed:{kind:'ratio',num:'fre',den:'pedidos',fmt:'money'},
-    canc_ped:{kind:'sum',field:'pedidos',cancel:'Sim',fmt:'num'},
-    canc_val:{kind:'sum',field:'fat',cancel:'Sim',fmt:'money'},
-    roi:{kind:'ratio',num:'fatMinusDes',den:'des',fmt:'pct'}
-  };
-  function fmtMetric(metric,v){ const t=KPI_MAP[metric]?.fmt; if(t==='pct') return pctf(v); if(t==='num') return num(v); return money(v); }
-  function tickFormatter(metric){ const t=KPI_MAP[metric]?.fmt; if(t==='pct') return v=>((v*100).toLocaleString('pt-BR',{maximumFractionDigits:0})+'%'); if(t==='num') return v=>num(v); return v=>formatCurrencyTick(v); }
-
-  // leitura base para agregação local
-  async function fetchBaseRows(de,ate,overrideCancel=null){
-    let q=supa.from(READ_VIEW).select('dia,hora,turno,fat,des,fre,pedidos,cancelado,loja,unidade,canal,pagamento_base',{head:false}).gte('dia',de).lte('dia',ate).limit(200000);
-    const un=ms.unids.get(); if(un.length) q=q.in('unidade',un);
-    const lj=ms.lojas.get(); if(lj.length) q=q.in('loja',lj);
-    const tr=ms.turnos.get(); if(tr.length) q=q.in('turno',tr);
-    const cn=ms.canais.get(); if(cn.length) q=q.in('canal',cn);
-    const pg=ms.pags.get();  if(pg.length) q=q.in('pagamento_base',pg);
-    const cancSel=ms.cancel.get();
-    if(overrideCancel!=null) q=q.eq('cancelado',overrideCancel);
-    else if(cancSel.length===1 && (cancSel[0]==='Sim'||cancSel[0]==='Não')) q=q.eq('cancelado',cancSel[0]);
-    const {data,error}=await q; if(error) throw error;
-    return (data||[]).map(r=>({ dia:String(r.dia), hora:(r.hora==null?null:Number(r.hora)), turno:r.turno||((Number(r.hora)>=6&&Number(r.hora)<18)?'Dia':'Noite'), fat:Number(r.fat)||0, des:Number(r.des)||0, fre:Number(r.fre)||0, pedidos:Number(r.pedidos)||0, cancelado:r.cancelado==='Sim'?'Sim':'Não', loja:String(r.loja||'') }));
-  }
-  function metricFromTotals(metric,tot){ const M=KPI_MAP[metric]||{}; if(M.kind==='sum') return tot[M.field]||0; let numv=0,den=0; if(M.num==='fatMinusDes') numv=(tot.fat||0)-(tot.des||0); else numv=tot[M.num]||0; den=tot[M.den]||0; return den? numv/den : 0; }
-  function aggregateSeries(rows, metric, dim, mode, de, ate, opts={}){ const keys=(dim==='dow')?[0,1,2,3,4,5,6]:(dim==='hour')?[...Array(24).keys()]:(dim==='turno')?['Dia','Noite']:(dim==='month')?(opts.ymList||[]):[]; const buckets=keys.map(()=>({fat:0,des:0,fre:0,pedidos:0})); const getKey=(r)=>{ if(dim==='dow'){ return new Date(r.dia+'T00:00:00').getDay(); } if(dim==='hour'){ return Number.isFinite(r.hora)?r.hora:null; } if(dim==='turno'){ return r.turno||'Dia'; } if(dim==='month'){ const d=new Date(r.dia+'T00:00:00'); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; } return null; };
-    for(const r of rows){ const k=getKey(r); const idx=keys.indexOf(k); if(idx<0) continue; buckets[idx].fat+=r.fat; buckets[idx].des+=r.des; buckets[idx].fre+=r.fre; buckets[idx].pedidos+=r.pedidos; }
-    let values = keys.map((_,i)=> metricFromTotals(metric,buckets[i]));
-    if(mode==='media' && KPI_MAP[metric]?.kind==='sum'){ if(dim==='month' && opts.daysPerYMArr){ values = values.map((v,i)=> opts.daysPerYMArr[i]? v/opts.daysPerYMArr[i] : v); } else { const den=(dim==='dow')? (function(de,ate){const n=[0,0,0,0,0,0,0];let d=new Date(de+'T00:00:00');const end=new Date(ate+'T00:00:00');for(;d<=end;d.setDate(d.getDate()+1)){n[d.getDay()]++;}return n;})(de,ate):(dim==='hour')? Array(24).fill(daysLen(de,ate)):(dim==='turno')? ['Dia','Noite'].map(()=>daysLen(de,ate)) :[]; values=values.map((v,i)=> den[i]? v/den[i] : v); } }
-    const labels=(dim==='dow')? ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']:(dim==='hour')? Array.from({length:24},(_,h)=>String(h).padStart(2,'0')+'h'):(dim==='turno')? ['Dia','Noite']:(dim==='month')? (opts.labels||[]):[]; return {labels, values}; }
-  function ensureChartKPI(canvasId, labels, nowArr, prevArr, metric, tip=''){ const canvas=$(canvasId); if(!canvas) return; if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; } const ctx=canvas.getContext('2d'); const chart=new Chart(ctx,{type:'bar', data:{labels, datasets:[{label:'Atual', data:nowArr.map(v=>+v||0), backgroundColor:gradNow(ctx)},{label:'Anterior', data:prevArr.map(v=>+v||0), backgroundColor:gradPrev(ctx)}]}, options:{responsive:true, maintainAspectRatio:false, animation:false, scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,.05)'}, ticks:{callback:tickFormatter(metric)}}}, plugins:{ legend:{position:'top'}, tooltip:{mode:'index',intersect:false,callbacks:{label:(c)=>`${c.dataset.label}: ${fmtMetric(metric, c.parsed.y||0)}`, footer:()=> tip}}}}); canvas.__chart=chart; }
-
-  async function updateChartsHybrid(){
-    if(selectedMetric==='fat'){ return updateChartsServer(); } // usa seu RPC original
-    const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-    const {dePrev, atePrev}=computePrevRangeISO(de,ate);
-    const meta=KPI_MAP[selectedMetric]||{};
-    try{
-      const rowsNow = await fetchBaseRows(de,ate,meta.cancel||null);
-      const rowsPrev= await fetchBaseRows(dePrev,atePrev,meta.cancel||null);
-      const tip=`Período anterior: ${dePrev} → ${atePrev}`;
-      let A=aggregateSeries(rowsNow,selectedMetric,'dow',chartModeGlobal,de,ate);
-      let B=aggregateSeries(rowsPrev,selectedMetric,'dow',chartModeGlobal,dePrev,atePrev);
-      ensureChartKPI('ch_dow', A.labels, A.values, B.values, selectedMetric, tip);
-      let AH=aggregateSeries(rowsNow,selectedMetric,'hour',chartModeGlobal,de,ate);
-      let BH=aggregateSeries(rowsPrev,selectedMetric,'hour',chartModeGlobal,dePrev,atePrev);
-      const keep=AH.values.map((v,i)=> (v||BH.values[i])?i:null).filter(i=>i!=null);
-      ensureChartKPI('ch_hour', keep.map(i=>AH.labels[i]), keep.map(i=>AH.values[i]), keep.map(i=>BH.values[i]), selectedMetric, tip);
-      let AT=aggregateSeries(rowsNow,selectedMetric,'turno',chartModeGlobal,de,ate);
-      let BT=aggregateSeries(rowsPrev,selectedMetric,'turno',chartModeGlobal,dePrev,atePrev);
-      ensureChartKPI('ch_turno', AT.labels, AT.values, BT.values, selectedMetric, tip);
-      setStatus('OK — gráficos por KPI','ok');
-    }catch(e){ console.warn(e); setStatus('OK (gráficos indisponíveis para KPI)','ok'); }
-  }
-
-  async function updateMonth12x12Hybrid(){
-    if(selectedMetric==='fat'){ return updateMonth12x12(); } // mantém seu RPC
-    try{
-      const end=lastDay||iso(new Date());
-      const endMonthStart=monthStartISO(end);
-      const last12Start=addMonthsISO(endMonthStart,-11);
-      const last12End=monthEndISO(end);
-      const prev12Start=addMonthsISO(endMonthStart,-23);
-      const prev12End=monthEndISO(addMonthsISO(endMonthStart,-12));
-      const meta=KPI_MAP[selectedMetric]||{};
-      const rows=await fetchBaseRows(prev12Start,last12End,meta.cancel||null);
-      const ymNow=[]; let cur=last12Start; for(let i=0;i<12;i++){ymNow.push(cur.slice(0,7)); cur=addMonthsISO(cur,1);}
-      const ymPrev=ymNow.map(ym=>{const [yy,mm]=ym.split('-').map(Number);const p=new Date(yy,mm-1-12,1);return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`;});
-      const labels=[]; cur=last12Start; for(let i=0;i<12;i++){labels.push(formatYM(cur)); cur=addMonthsISO(cur,1);}
-      const nowRows=rows.filter(r=>ymNow.includes(r.dia.slice(0,7)));
-      const prevRows=rows.filter(r=>ymPrev.includes(r.dia.slice(0,7)));
-      const A=aggregateSeries(nowRows,selectedMetric,'month',chartModeGlobal,last12Start,last12End,{ymList:ymNow,labels});
-      const B=aggregateSeries(prevRows,selectedMetric,'month',chartModeGlobal,prev12Start,prev12End,{ymList:ymPrev,labels});
-      ensureChartKPI('ch_month', A.labels, A.values, B.values, selectedMetric, 'Comparação 12M vs. 12M anteriores');
-    }catch(e){ console.warn(e); setStatus('OK (mensal por KPI indisponível)','ok'); }
-  }
-
-  async function updateTop6Hybrid(){
-    if(selectedMetric==='fat'){ return updateTop6(); } // donut original
-    try{
-      const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-      const meta=KPI_MAP[selectedMetric]||{};
-      const rows=await fetchBaseRows(de,ate,meta.cancel||null);
-      const byLoja=new Map();
-      for(const r of rows){ const tot = byLoja.get(r.loja) || {fat:0,des:0,fre:0,pedidos:0}; tot.fat+=r.fat; tot.des+=r.des; tot.fre+=r.fre; tot.pedidos+=r.pedidos; byLoja.set(r.loja, tot); }
-      const itens=[...byLoja.entries()].map(([loja,tot])=>({loja,val:metricFromTotals(selectedMetric,tot)}));
-      itens.sort((a,b)=>b.val-a.val);
-      const top=itens.slice(0,6);
-      const labelFmt=(KPI_MAP[selectedMetric]?.fmt==='pct')? (v=>pctf(v)) : (KPI_MAP[selectedMetric]?.fmt==='num'? (v=>num(v)) : (v=>money(v)));
-      ensureDonutTop6(top.map(x=>x.loja), top.map(x=>x.val), labelFmt);
-    }catch(e){ console.warn(e); ensureDonutTop6([],[], v=>v); }
-  }
-
-  // seleção visual + troca real dos gráficos
-  document.querySelectorAll('.kpi[role="button"]').forEach(k=>{
-    k.addEventListener('click', ()=>{
-      document.querySelectorAll('.kpi[role="button"]').forEach(x=>x.style.boxShadow='0 8px 24px rgba(10,18,32,.05)');
-      k.style.boxShadow='0 0 0 3px rgba(123,30,58,.15)';
-      selectedMetric=k.dataset.k;
-      if(KPI_MAP[selectedMetric]?.forceMedia){ chartModeGlobal='media'; segGlobal.querySelectorAll('.seg-btn').forEach(b=> b.classList.toggle('active', b.dataset.mode==='media')); }
-      updateMonth12x12Hybrid();
-      updateChartsHybrid();
-      updateTop6Hybrid();
-    });
-  });
   </script>
 </body>
 </html>
