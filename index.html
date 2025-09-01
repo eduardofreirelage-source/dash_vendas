@@ -3,13 +3,14 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.18.2 — 400 fix + auto-collapse + donut ok)</title>
+  <title>DASHBOARD — CFO (v2.19.0 — filtros ok + donut ok + kpi line fixa)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{
       --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7;
       --ok:#10b981; --down:#ef4444;
       --chip:#f7e9ed;
+      --bar:#334155;
       --wine:#7b1e3a; --wine-soft:#9c3554;
       --c-now:#7b1e3a; --c-now-soft:#9c3554; --c-prev:#94a3b8; --c-prev-soft:#cbd5e1;
     }
@@ -21,7 +22,7 @@
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
     .btn.clear{gap:6px}
 
-    .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px;transition:all .25s ease}
+    .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px;transition:all .2s ease}
     .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap}
     .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
     .ico{width:16px;height:16px;color:#475569}
@@ -37,7 +38,7 @@
     }
     input[type="date"]::-webkit-calendar-picker-indicator{ transform:scale(1.2); }
 
-    /* chips */
+    /* chips (vinho) */
     .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
     .chip{padding:10px 0;border:1px solid #efd5db;border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:800;color:#7b1e3a}
     .chip.active{background:var(--c-now);border-color:var(--c-now);color:#fff;box-shadow:0 1px 0 rgba(123,30,58,.06)}
@@ -58,18 +59,20 @@
     .kpi h4{margin:0 0 6px;font-size:13px;color:#475569;display:flex;align-items:center}
     .kpi h4 .spacer{flex:1}
     .kpi .val{font-size:22px;font-weight:800}
-    .kpi .accent{height:2px;background:var(--wine);border-radius:999px;margin:6px 0 6px 0;opacity:.95}
+    /* linha vinho: espessura fixa 2px em todos */
+    .kpi .accent{border-top:2px solid var(--wine);height:0;margin:6px 0}
     .kpi .sub{font-size:12px;color:#667085;margin-top:2px}
-    .kpi.clickable{cursor:pointer}
-    .kpi.active{outline:2px solid rgba(123,30,58,.25);box-shadow:0 0 0 4px rgba(123,30,58,.06)}
+    .kpi[role="button"]{cursor:pointer}
+    .kpi:focus-visible{outline:2px solid #cbd5e1;outline-offset:2px}
 
+    /* delta estilo “chip” */
     .delta{display:inline-flex;gap:6px;align-items:center;padding:2px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.35);font-weight:800;font-size:12px;margin-left:12px;background:rgba(148,163,184,.15);color:#64748b}
     .delta svg{width:12px;height:12px}
     .delta.up{background:rgba(123,30,58,.10);border-color:rgba(123,30,58,.25);color:var(--wine)}
     .delta.down{background:rgba(148,163,184,.15);border-color:rgba(148,163,184,.35);color:#64748b}
     .delta.flat{background:#f1f5f9;border-color:#e2e8f0;color:#64748b}
 
-    /* Gráficos */
+    /* gráficos */
     .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
     .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
@@ -87,7 +90,7 @@
       font-weight:800;font-size:12px;color:#334155;white-space:nowrap;
     }
 
-    /* recolher filtros */
+    /* recolhimento automático das seções */
     .section.collapsed .row,
     .section.collapsed #periodoInfo,
     .section.collapsed .upload-info { display:none; }
@@ -204,23 +207,81 @@
 
     <!-- KPIs -->
     <div class="krow">
-      <div class="kpi clickable" data-k="ped"><h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4><div class="val" id="k_ped">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_ped">—</span></div></div>
-      <div class="kpi clickable" data-k="tkt"><h4><span>Ticket Médio</span><span class="spacer"></span><span id="d_tkt" class="delta flat">—</span></h4><div class="val" id="k_tkt">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_tkt">—</span></div></div>
-      <div class="kpi clickable" data-k="fat"><h4><span>Faturamento</span><span class="spacer"></span><span id="d_fat" class="delta flat">—</span></h4><div class="val" id="k_fat">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_fat">—</span></div></div>
+      <div class="kpi" role="button" data-k="ped">
+        <h4><span>Pedidos</span><span class="spacer"></span><span id="d_ped" class="delta flat">—</span></h4>
+        <div class="val" id="k_ped">—</div>
+        <div class="accent"></div>
+        <div class="sub">Anterior: <span id="p_ped">—</span></div>
+      </div>
+      <div class="kpi" role="button" data-k="tkt">
+        <h4><span>Ticket Médio</span><span class="spacer"></span><span id="d_tkt" class="delta flat">—</span></h4>
+        <div class="val" id="k_tkt">—</div>
+        <div class="accent"></div>
+        <div class="sub">Anterior: <span id="p_tkt">—</span></div>
+      </div>
+      <div class="kpi" role="button" data-k="fat">
+        <h4><span>Faturamento</span><span class="spacer"></span><span id="d_fat" class="delta flat">—</span></h4>
+        <div class="val" id="k_fat">—</div>
+        <div class="accent"></div>
+        <div class="sub">Anterior: <span id="p_fat">—</span></div>
+      </div>
     </div>
+
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi clickable" data-k="fatmed"><h4><span>Faturamento Médio</span><span class="spacer"></span><span id="d_fatmed" class="delta flat">—</span></h4><div class="val" id="k_fatmed">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_fatmed">—</span></div></div>
-      <div class="kpi clickable" data-k="des"><h4><span>Incentivos</span><span class="spacer"></span><span id="d_des" class="delta flat">—</span></h4><div class="val" id="k_des">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_des">—</span></div></div>
-      <div class="kpi clickable" data-k="desperc"><h4><span>% de Incentivos</span><span class="spacer"></span><span id="d_desperc" class="delta flat">—</span></h4><div class="val" id="k_desperc">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_desperc">—</span></div></div>
+      <div class="kpi" role="button" data-k="fatmed">
+        <h4><span>Faturamento Médio</span><span class="spacer"></span><span id="d_fatmed" class="delta flat">—</span></h4>
+        <div class="val" id="k_fatmed">—</div>
+        <div class="accent"></div>
+        <div class="sub">Anterior: <span id="p_fatmed">—</span></div>
+      </div>
+      <div class="kpi" role="button" data-k="des">
+        <h4><span>Incentivos</span><span class="spacer"></span><span id="d_des" class="delta flat">—</span></h4>
+        <div class="val" id="k_des">—</div>
+        <div class="accent"></div>
+        <div class="sub">Anterior: <span id="p_des">—</span></div>
+      </div>
+      <div class="kpi" role="button" data-k="desperc">
+        <h4><span>% de Incentivos</span><span class="spacer"></span><span id="d_desperc" class="delta flat">—</span></h4>
+        <div class="val" id="k_desperc">—</div>
+        <div class="accent"></div>
+        <div class="sub">Anterior: <span id="p_desperc">—</span></div>
+      </div>
     </div>
+
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi clickable" data-k="fre"><h4><span>Frete</span><span class="spacer"></span><span id="d_fre" class="delta flat">—</span></h4><div class="val" id="k_fre">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_fre">—</span></div></div>
-      <div class="kpi clickable" data-k="fremed"><h4><span>Frete Médio</span><span class="spacer"></span><span id="d_fremed" class="delta flat">—</span></h4><div class="val" id="k_fremed">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_fremed">—</span></div></div>
-      <div class="kpi clickable" data-k="canc_ped"><h4><span>Pedidos Cancelados</span><span class="spacer"></span><span id="d_canc_ped" class="delta flat">—</span></h4><div class="val" id="k_canc_ped">—</div><div class="accent"></div><div class="sub">Participação: <span id="k_canc_part">—</span> (Anterior: <span id="p_canc_part">—</span>)</div></div>
+      <div class="kpi" role="button" data-k="fre">
+        <h4><span>Frete</span><span class="spacer"></span><span id="d_fre" class="delta flat">—</span></h4>
+        <div class="val" id="k_fre">—</div>
+        <div class="accent"></div>
+        <div class="sub">Anterior: <span id="p_fre">—</span></div>
+      </div>
+      <div class="kpi" role="button" data-k="fremed">
+        <h4><span>Frete Médio</span><span class="spacer"></span><span id="d_fremed" class="delta flat">—</span></h4>
+        <div class="val" id="k_fremed">—</div>
+        <div class="accent"></div>
+        <div class="sub">Anterior: <span id="p_fremed">—</span></div>
+      </div>
+      <div class="kpi" role="button" data-k="canc_ped">
+        <h4><span>Pedidos Cancelados</span><span class="spacer"></span><span id="d_canc_ped" class="delta flat">—</span></h4>
+        <div class="val" id="k_canc_ped">—</div>
+        <div class="accent"></div>
+        <div class="sub">Participação: <span id="k_canc_part">—</span> (Anterior: <span id="p_canc_part">—</span>)</div>
+      </div>
     </div>
+
     <div class="krow" style="margin-top:12px;">
-      <div class="kpi clickable" data-k="canc_val"><h4><span>Valor de Cancelados</span><span class="spacer"></span><span id="d_canc_val" class="delta flat">—</span></h4><div class="val" id="k_canc_val">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_canc_val">—</span></div></div>
-      <div class="kpi clickable" data-k="roi"><h4><span>ROI</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4><div class="val" id="k_roi">—</div><div class="accent"></div><div class="sub">Anterior: <span id="p_roi">—</span></div></div>
+      <div class="kpi" role="button" data-k="canc_val">
+        <h4><span>Valor de Cancelados</span><span class="spacer"></span><span id="d_canc_val" class="delta flat">—</span></h4>
+        <div class="val" id="k_canc_val">—</div>
+        <div class="accent"></div>
+        <div class="sub">Anterior: <span id="p_canc_val">—</span></div>
+      </div>
+      <div class="kpi" role="button" data-k="roi">
+        <h4><span>ROI</span><span class="spacer"></span><span id="d_roi" class="delta flat">—</span></h4>
+        <div class="val" id="k_roi">—</div>
+        <div class="accent"></div>
+        <div class="sub">Anterior: <span id="p_roi">—</span></div>
+      </div>
       <div></div>
     </div>
 
@@ -233,23 +294,29 @@
           <button class="seg-btn" data-mode="media">Média</button>
         </div>
       </div>
+
       <div class="row cols-2">
         <div class="chart-card wide">
           <div class="chart-head"><div class="muted">Vendas por mês — últimos 12M vs. 12M anteriores</div></div>
           <div class="chart-box"><canvas id="ch_month"></canvas></div>
         </div>
+
         <div class="chart-card">
           <div class="chart-head"><div class="muted">Vendas por dia da semana</div></div>
           <div class="chart-box"><canvas id="ch_dow"></canvas></div>
         </div>
+
         <div class="chart-card">
           <div class="chart-head"><div class="muted">Vendas por hora</div></div>
           <div class="chart-box"><canvas id="ch_hour"></canvas></div>
         </div>
+
         <div class="chart-card">
           <div class="chart-head"><div class="muted">Vendas por turno</div></div>
           <div class="chart-box"><canvas id="ch_turno"></canvas></div>
         </div>
+
+        <!-- DONUT TOP 6 LOJAS -->
         <div class="chart-card">
           <div class="chart-head"><div class="muted">Participação por loja — Top 6</div></div>
           <div class="chart-box">
@@ -276,7 +343,7 @@
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  /* ===================== CHART.JS — tema ===================== */
+  /* ===================== CHART.JS (vinho) ===================== */
   Chart.defaults.font.family = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu';
   Chart.defaults.color = '#334155';
   Chart.defaults.plugins.legend.position = 'top';
@@ -289,8 +356,18 @@
   Chart.defaults.datasets.bar.borderSkipped = false;
   Chart.defaults.datasets.bar.maxBarThickness = 42;
 
-  function gradNow(ctx){ const g = ctx.createLinearGradient(0,0,0,240); g.addColorStop(0,'rgba(123,30,58,0.95)'); g.addColorStop(1,'rgba(156,53,84,0.55)'); return g; }
-  function gradPrev(ctx){ const g = ctx.createLinearGradient(0,0,0,240); g.addColorStop(0,'rgba(148,163,184,0.85)'); g.addColorStop(1,'rgba(203,213,225,0.45)'); return g; }
+  function gradNow(ctx){
+    const g = ctx.createLinearGradient(0,0,0,240);
+    g.addColorStop(0,'rgba(123,30,58,0.95)');
+    g.addColorStop(1,'rgba(156,53,84,0.55)');
+    return g;
+  }
+  function gradPrev(ctx){
+    const g = ctx.createLinearGradient(0,0,0,240);
+    g.addColorStop(0,'rgba(148,163,184,0.85)');
+    g.addColorStop(1,'rgba(203,213,225,0.45)');
+    return g;
+  }
 
   /* ===================== HELPERS ===================== */
   const $ = id => document.getElementById(id);
@@ -349,23 +426,18 @@
     };
   }
 
-  /* ===================== AUTO-COLLAPSE FILTROS (10s) ===================== */
-  const COLLAPSE_MS = 10000;
-  let collapseTimer = null;
-  function setSectionCollapsed(id, collapsed){ const sec=$(id); if(!sec) return; sec.classList.toggle('collapsed', collapsed); }
-  function resetAutoCollapse(){
-    clearTimeout(collapseTimer);
-    setSectionCollapsed('secDatas', false);
-    setSectionCollapsed('secFiltros', false);
-    collapseTimer = setTimeout(()=>{ setSectionCollapsed('secDatas', true); setSectionCollapsed('secFiltros', true); }, COLLAPSE_MS);
-  }
-  ['secDatas','secFiltros'].forEach(id=>{
-    document.addEventListener('click',(e)=>{
-      const sec=$(id); if(!sec) return;
-      if(sec.contains(e.target)) resetAutoCollapse();
+  /* ===================== AUTO-COLLAPSE das seções ===================== */
+  const secDatas = $('secDatas'); const secFiltros = $('secFiltros');
+  let autoCollapseTimer=null;
+  function collapseFilters(){ secDatas.classList.add('collapsed'); secFiltros.classList.add('collapsed'); }
+  function expandFilters(){ secDatas.classList.remove('collapsed'); secFiltros.classList.remove('collapsed'); }
+  function resetAutoCollapse(){ clearTimeout(autoCollapseTimer); expandFilters(); autoCollapseTimer=setTimeout(collapseFilters, 10000); }
+  // Clique no cabeçalho reabre
+  [secDatas, secFiltros].forEach(sec=>{
+    sec.querySelector('.sec-head').addEventListener('click', (e)=>{
+      if(!sec.classList.contains('collapsed')) return; // só age se estiver recolhido
+      expandFilters(); resetAutoCollapse();
     });
-    const head = document.querySelector(`#${id} .sec-head`);
-    head?.addEventListener('click',()=>{ const sec=$(id); if(sec?.classList.contains('collapsed')){ sec.classList.remove('collapsed'); resetAutoCollapse(); } });
   });
 
   /* ===================== ESTADO / PERÍODO ===================== */
@@ -484,7 +556,7 @@
     deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
   }
 
-  /* ===================== Comparativo ===================== */
+  /* ===== Comparativo ===== */
   function lastDayOfMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
   function isFullYear(d1,d2){ return d1.getMonth()===0 && d1.getDate()===1 && d2.getMonth()===11 && d2.getDate()===31 && d1.getFullYear()===d2.getFullYear(); }
   function isFullMonthsAligned(d1,d2){ return d1.getDate()===1 && d2.getDate()=== lastDayOfMonth(d2.getFullYear(), d2.getMonth()); }
@@ -505,10 +577,9 @@
     segGlobal.querySelectorAll('.seg-btn').forEach(b=> b.classList.toggle('active', b===btn));
     updateMonth12x12();
     updateChartsServer();
-    updateTop6();
   });
 
-  /* ===================== Gráficos (RPC) ===================== */
+  /* ===================== GRÁFICOS (RPC) ===================== */
   function formatCurrencyTick(value){
     const v=Number(value)||0;
     if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
@@ -606,13 +677,13 @@
 
       setStatus('OK — gráficos atualizados','ok');
     }catch(e){
-      console.error(e);
+      console.warn(e);
       setStatus('OK (sem gráficos — RPC indisponível)','ok');
       setDiag('');
     }
   }
 
-  /* ===================== Gráfico Mês 12x12 ===================== */
+  /* ===================== GRÁFICO MÊS: 12x12 ===================== */
   async function updateMonth12x12(){
     try{
       const end = lastDay || iso(new Date());
@@ -656,12 +727,12 @@
       ensureChart('ch_month', labels, nowArr, prevArr, tip);
       setStatus('OK — gráfico mensal 12x12','ok');
     }catch(e){
-      console.error(e);
+      console.warn(e);
       setStatus('OK (mensal 12x12 indisponível)','ok');
     }
   }
 
-  /* ===================== DONUT TOP 6 LOJAS (com fallback boolean) ===================== */
+  /* ===================== DONUT TOP 6 LOJAS ===================== */
   const wine = ["#7b1e3a","#8c2947","#9c3554","#ad4061","#bd4c6e","#ce577b"];
   function ensureDonutTop6(labels, values){
     const cvs = $('ch_top6'); if(!cvs) return;
@@ -685,61 +756,27 @@
     cvs.__chart = chart;
   }
 
-  async function fetchTop6Data(de, ate){
-    // monta consulta base
-    const baseSelect = 'loja, fat:sum(fat)';
-    const build = ()=> supa.from(READ_VIEW).select(baseSelect).gte('dia', de).lte('dia', ate).group('loja').order('fat',{ascending:false}).limit(6);
+  async function updateTop6(){
+    try{
+      const de=fDe.value||firstDay, ate=fAte.value||lastDay;
+      // Seleção com agregação PostgREST (sem .group())
+      let q = supa.from(READ_VIEW)
+        .select('loja, fat:fat.sum()', { head:false })
+        .gte('dia', de).lte('dia', ate)
+        .order('fat', { ascending:false })
+        .limit(6);
 
-    // aplica filtros comuns
-    async function execWithCancel(cancelValue){
-      let q = build();
       const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
       const lojas = ms.lojas.get(); if(lojas.length) q = q.in('loja', lojas);
       const turns = ms.turnos.get(); if(turns.length) q = q.in('turno', turns);
       const cans  = ms.canais.get(); if(cans.length)  q = q.in('canal', cans);
       const pags  = ms.pags.get(); if(pags.length)   q = q.in('pagamento_base', pags);
-      if(cancelValue !== undefined) q = q.eq('cancelado', cancelValue);
-      return q;
-    }
+      const canc  = ms.cancel.get();
+      if(canc.length===1 && (canc[0]==='Sim' || canc[0]==='Não')) q = q.eq('cancelado', canc[0]);
 
-    const canc = ms.cancel.get();
-    const wantCancel = (canc.length===1 && (canc[0]==='Sim' || canc[0]==='Não')) ? canc[0] : null;
-
-    // 1) tenta como texto (views que guardam 'Sim/Não')
-    try{
-      const { data, error } = await execWithCancel(wantCancel ?? undefined);
+      const { data, error } = await q;
       if(error) throw error;
-      return data||[];
-    }catch(e1){
-      // 2) se der erro e houver filtro, tenta como boolean
-      if(wantCancel!=null){
-        try{
-          const boolVal = (wantCancel==='Sim');
-          const { data, error } = await execWithCancel(boolVal);
-          if(error) throw error;
-          return data||[];
-        }catch(e2){
-          // 3) por último, sem filtro de cancelado
-          try{
-            const { data, error } = await execWithCancel(undefined);
-            if(error) throw error;
-            return data||[];
-          }catch(e3){
-            console.warn('top6 all attempts failed:', e3.message||e3);
-            return [];
-          }
-        }
-      }else{
-        console.warn('top6 error:', e1.message||e1);
-        return [];
-      }
-    }
-  }
 
-  async function updateTop6(){
-    try{
-      const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-      const data = await fetchTop6Data(de,ate);
       const labels = (data||[]).map(r=>r.loja);
       const values = (data||[]).map(r=>+r.fat||0);
       ensureDonutTop6(labels, values);
@@ -828,9 +865,14 @@
         pid:  ['pedido','pedido id','pedido_id','id pedido','id_pedido','numero pedido','número pedido','order id','order_id']
       };
 
+      const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      const normHeader=(s)=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
       const pickColumn=(headers, alts)=>{
-        const map = headers.map(h=>({orig:h, key: String(h||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()}));
-        for(const a of alts){ const ex = map.find(m=>m.key===a); if(ex) return ex.orig; const cont = map.find(m=>m.key.includes(a)); if(cont) return cont.orig; }
+        const map = headers.map(h=>({orig:h, key:normHeader(h)}));
+        for(const a of alts){
+          const ex = map.find(m=>m.key===a); if(ex) return ex.orig;
+          const cont = map.find(m=>m.key.includes(a)); if(cont) return cont.orig;
+        }
         return null;
       };
 
@@ -847,21 +889,26 @@
       const kCanc = pickColumn(headers, headerAlts.canc);
       const kPid  = pickColumn(headers, headerAlts.pid);
 
-      function iso(d){return d.toISOString().slice(0,10);}
       function splitDateTimeCell(v){
         if(v==null) return {dateISO:null, hour:null};
-        if(v instanceof Date){ return {dateISO: iso(v), hour: v.getHours()}; }
-        let s=String(v).trim(); if(!s) return {dateISO:null, hour:null};
+        if(v instanceof Date){ return {dateISO: v.toISOString().slice(0,10), hour: v.getHours()}; }
+        let s=String(v).trim();
+        if(!s) return {dateISO:null, hour:null};
         if(/^-?\d+(\.\d+)?$/.test(s)){
           const num=Number(s); const base=new Date(Date.UTC(1899,11,30));
           const d = new Date(base.getTime() + num*86400000);
           const frac = num - Math.floor(num);
           const hour = Math.floor(frac*24 + 1e-6);
-          return {dateISO: iso(d), hour: (hour>=0 && hour<=23)?hour:null};
+          return {dateISO: d.toISOString().slice(0,10), hour: (hour>=0 && hour<=23)?hour:null};
         }
         const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T](\d{1,2})(?::(\d{2})(?::(\d{2}))?)?)?$/);
-        if(m){ const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m; const d=new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS)); return {dateISO: iso(d), hour: d.getHours()}; }
-        const t = new Date(s.replace('T',' ')); if(!isNaN(t)) return {dateISO: iso(t), hour: t.getHours()};
+        if(m){
+          const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
+          const d=new Date(Number(yy), Number(mm)-1, Number(dd), Number(HH), Number(MM), Number(SS));
+          return {dateISO: d.toISOString().slice(0,10), hour: d.getHours()};
+        }
+        const t = new Date(s.replace('T',' '));
+        if(!isNaN(t)) return {dateISO: t.toISOString().slice(0,10), hour: t.getHours()};
         return {dateISO:null, hour:null};
       }
       function parseBR(v){
@@ -872,28 +919,48 @@
         if(lastD>lastC){ s=s.replace(/,/g,''); } else { s=s.replace(/\./g,''); s=s.replace(',', '.'); }
         const n=Number(s); return isFinite(n)?n:0;
       }
-      const toInt=v=>{ const n=parseBR(v); return isFinite(n)?Math.round(n):0; };
-      const normCancel=v=>{ const s=String(v??'').trim().toLowerCase(); if(['sim','s','true','1','y','yes'].includes(s)) return 'Sim'; if(['nao','não','n','false','0','no','nao/não'].includes(s)) return 'Não'; return 'Não'; }
+      function toInt(v){ const n=parseBR(v); if(!isFinite(n)) return 0; return Math.round(n); }
+      function displayNormalize(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
 
-      const get=(r,k)=> (k? r[k] : null);
+      function parseHourFromEither(dateCell, hourCell){
+        let h = null;
+        if(hourCell!=null){
+          if(typeof hourCell==='number' && hourCell>=0 && hourCell<=23) h = Math.floor(hourCell);
+          else { const m=String(hourCell).match(/(\d{1,2})/); if(m){ const hh=+m[1]; if(hh>=0&&hh<=23) h=hh; } }
+        }
+        if(h==null){ const {hour} = splitDateTimeCell(dateCell); h = hour; }
+        return h;
+      }
+
+      function hashRow(obj){
+        const keys = ['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
+        const s = keys.map(k => k+':'+String(obj[k]??'')).join('|');
+        let h = 5381;
+        for(let i=0;i<s.length;i++){ h = ((h << 5) + h) ^ s.charCodeAt(i); }
+        return String(h >>> 0);
+      }
 
       const mapped = json.map(r=>{
-        const dt = splitDateTimeCell(get(r,kDia));
+        const get = (k)=> (k? r[k] : null);
+        const dtSplit = splitDateTimeCell(get(kDia));
+        const dia  = dtSplit.dateISO;
+        const hora = parseHourFromEither(get(kDia), get(kHora));
+
         const row = {
-          dia: dt.dateISO, hora: dt.hour,
-          unidade: displayNormalize(get(r,kUni)),
-          "Nome da loja": displayNormalize(get(r,kLoja)),
-          "Canal de venda": displayNormalize(get(r,kCan)),
-          pagamento_base: displayNormalize(get(r,kPag)),
-          cancelado: normCancel(get(r,kCanc)),
-          pedidos: toInt(get(r,kPed) ?? 1),
-          fat: parseBR(get(r,kFat)),
-          des: parseBR(get(r,kDes)),
-          fre: parseBR(get(r,kFre)),
-          pedido_id: displayNormalize(get(r,kPid)) || null,
+          dia, hora,
+          unidade: displayNormalize(get(kUni)),
+          "Nome da loja": displayNormalize(get(kLoja)),
+          "Canal de venda": displayNormalize(get(kCan)),
+          pagamento_base: displayNormalize(get(kPag)),
+          cancelado: (String(get(kCanc)||'').trim().toLowerCase().startsWith('s')?'Sim':'Não'),
+          pedidos: toInt(get(kPed) ?? 1),
+          fat: parseBR(get(kFat)),
+          des: parseBR(get(kDes)),
+          fre: parseBR(get(kFre)),
+          pedido_id: displayNormalize(get(kPid)) || null,
           created_at: new Date().toISOString()
         };
-        row.row_key = JSON.stringify(row).length.toString(36); // simplificado
+        row.row_key = hashRow(row);
         return row;
       }).filter(x => x.dia!=null && String(x.dia).trim()!=='');
 
@@ -912,8 +979,8 @@
 
       setStatus('Upload concluído','ok');
       info(`Gravado/atualizado: ${rows.length} linhas.`);
-      try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
 
+      try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
         if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`; }
@@ -929,15 +996,24 @@
     }
   });
 
-  /* ===================== OPÇÕES ===================== */
+  /* ===================== OPÇÕES (ranked + fallback) ===================== */
   function mergeRankedAll(rankedList, allList){
     const rset = new Set(rankedList);
     const rest = allList.filter(x=>!rset.has(x));
     return [...rankedList, ...rest];
   }
+  async function fallbackDistinct(col){
+    try{
+      const { data, error } = await supa.from(READ_VIEW).select(col, { head:false }).neq(col, null).limit(5000);
+      if(error) return [];
+      const vals = (data||[]).map(r=>r[col]).filter(Boolean);
+      return [...new Set(vals)].sort((a,b)=> String(a).localeCompare(String(b),'pt-BR'));
+    }catch(_e){ return []; }
+  }
   async function reloadStaticOptions(){
     const de = firstDay || '1900-01-01';
     const ate= lastDay  || iso(new Date());
+
     const TOPN = 50;
     const [topUnids, topLojas, topPags, topCanais] = await Promise.allSettled([
       supa.rpc('opt_unidades_ranked',  { p_dini: de, p_dfim: ate, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
@@ -945,55 +1021,33 @@
       supa.rpc('opt_pagamentos_ranked',{ p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_lojas:null, p_cancelado:null, p_limit: TOPN }),
       supa.rpc('opt_canais_ranked',    { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_lojas:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
     ]);
+
     const tUnids = (topUnids.status==='fulfilled' && !topUnids.value.error) ? (topUnids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
     const tLojas = (topLojas.status==='fulfilled'  && !topLojas.value.error)  ? (topLojas.value.data||[]).map(r=>r.loja).filter(Boolean)       : [];
     const tPags  = (topPags.status==='fulfilled'   && !topPags.value.error)   ? (topPags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean): [];
     const tCanais= (topCanais.status==='fulfilled' && !topCanais.value.error) ? (topCanais.value.data||[]).map(r=>r.canal).filter(Boolean)      : [];
 
-    const [unids,lojas,canais,turnos,pags] = await Promise.allSettled([
-      supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
-      supa.from('vw_vendas_lojas').select('loja').order('loja'),
-      supa.from('vw_vendas_canais').select('canal').order('canal'),
-      supa.from('vw_vendas_turnos').select('turno').order('turno'),
-      supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
+    const [unids,lojas,canais,pags] = await Promise.all([
+      (async()=>{ const r=await supa.from('vw_vendas_unidades').select('unidade').order('unidade'); return (!r.error?r.data:await fallbackDistinct('unidade')); })(),
+      (async()=>{ const r=await supa.from('vw_vendas_lojas').select('loja').order('loja'); return (!r.error?r.data:await fallbackDistinct('loja')); })(),
+      (async()=>{ const r=await supa.from('vw_vendas_canais').select('canal').order('canal'); return (!r.error?r.data:await fallbackDistinct('canal')); })(),
+      (async()=>{ const r=await supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'); return (!r.error?r.data:await fallbackDistinct('pagamento_base')); })(),
     ]);
-    const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
-    const allUnids = ok(unids) ? (unids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
-    const allLojas = ok(lojas) ? (lojas.value.data||[]).map(r=>r.loja).filter(Boolean) : [];
-    const allCanais= ok(canais)? (canais.value.data||[]).map(r=>r.canal).filter(Boolean): [];
-    const allPags  = ok(pags)  ? (pags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean) : [];
+
+    const toArr=(rows,key)=> Array.isArray(rows) ? rows.map(r=> key?r[key]:r).filter(Boolean) : (Array.isArray(rows)?rows:[]);
+
+    const allUnids = toArr(unids,'unidade');
+    const allLojas = toArr(lojas,'loja');
+    const allCanais= toArr(canais,'canal');
+    const allPags  = toArr(pags,'pagamento_base');
+
     ms.unids.setOptions( mergeRankedAll(tUnids, allUnids), true );
     ms.lojas.setOptions( mergeRankedAll(tLojas, allLojas), true );
     ms.canais.setOptions(mergeRankedAll(tCanais, allCanais), true );
     ms.pags.setOptions(  mergeRankedAll(tPags, allPags), true );
+
     ms.turnos.setOptions(['Dia','Noite'], true);
   }
-
-  /* ===================== KPI click → foco nos gráficos ===================== */
-  const kpiFilters = {
-    ped:   {}, // total geral
-    tkt:   {}, // ticket médio (usa total mesmo; foco é resumo)
-    fat:   {},
-    fatmed:{},
-    des:   {},
-    desperc:{},
-    fre:   {},
-    fremed:{},
-    canc_ped:{ p_cancelado: 'Sim' },
-    canc_val:{ p_cancelado: 'Sim' },
-    roi:   {}
-  };
-  function handleKpiClick(k){
-    document.querySelectorAll('.kpi').forEach(el=>el.classList.toggle('active', el.dataset.k===k));
-    // aplica atalho: se kpi de cancelados, força filtro cancelado=Sim
-    if(k==='canc_ped' || k==='canc_val'){
-      ms.cancel.set(['Sim']);
-    }
-    applyAll();
-  }
-  document.querySelectorAll('.kpi.clickable').forEach(el=>{
-    el.addEventListener('click', ()=> handleKpiClick(el.dataset.k));
-  });
 
   /* ===================== LOOP PRINCIPAL ===================== */
   async function applyAll(){
@@ -1012,33 +1066,40 @@
 
       if(!kpiOk) setStatus('OK (sem KPIs — RPC indisponível)');
       else setStatus('OK','ok');
+
+      resetAutoCollapse();
     }catch(e){
       console.error(e);
       setStatus('Erro: '+(e.message||e),'err');
     }
   }
 
-  async function reloadStaticOptions(){
-    /* já declarada acima - deixada aqui por ordem do arquivo */
-  }
-
-  /* ===================== INIT ===================== */
   (async function init(){
     try{
       setStatus('Carregando…');
       const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
-      if(dr.error) throw dr.error;
-      if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
+      if(!dr.error && dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
+
       await reloadStaticOptions();
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
       $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
-      resetAutoCollapse();
       applyQuick('30');
+      resetAutoCollapse();
     }catch(e){
       console.error(e);
       setStatus('Erro ao iniciar: '+(e.message||e),'err');
     }
   })();
+
+  /* ===================== KPIs clicáveis (gatilho visual) ===================== */
+  document.querySelectorAll('.kpi[role="button"]').forEach(k=>{
+    k.addEventListener('click', ()=>{ 
+      document.querySelectorAll('.kpi[role="button"]').forEach(x=>x.style.boxShadow='0 8px 24px rgba(10,18,32,.05)');
+      k.style.boxShadow='0 0 0 3px rgba(123,30,58,.15)';
+      // Neste passo, mantemos os gráficos atuais (fat) — o clique serve como seleção visual.
+      // Se desejar que a seleção troque a métrica dos gráficos, me diga que métricas usar em cada gráfico que eu aplico.
+    });
+  });
   </script>
 </body>
 </html>
