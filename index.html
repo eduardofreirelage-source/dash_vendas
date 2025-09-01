@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.18.0 — fixes + toggle global + donut ok)</title>
+  <title>DASHBOARD — CFO (v2.19.0 — vinho + KPI minimal + toggle global + auto-collapse + donut)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{
@@ -42,7 +42,6 @@
       width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;
       min-height:44px;font-size:16px; /* melhora usabilidade do calendário */
     }
-    /* aumenta ícone do calendário (webkit) */
     input[type="date"]::-webkit-calendar-picker-indicator{ transform:scale(1.2); }
 
     /* chips no tema vinho */
@@ -69,7 +68,7 @@
     .kpi h4{margin:0 0 6px;font-size:13px;color:#475569;display:flex;align-items:center}
     .kpi h4 .spacer{flex:1}
     .kpi .val{font-size:22px;font-weight:800}
-    .kpi .accent{height:2px;background:var(--wine);border-radius:999px;margin:6px 0 6px 0;opacity:.95}
+    .kpi .accent{height:2px;background:var(--wine);border-radius:999px;margin:6px 0 6px 0;opacity:.95} /* espessura fixa */
     .kpi .sub{font-size:12px;color:#667085;margin-top:2px}
 
     /* delta estilo “chip” como nos gráficos */
@@ -394,7 +393,7 @@
   function monthStartISO(isoStr){ const d=new Date(isoStr+'T00:00:00'); d.setDate(1); return iso(d); }
   function monthEndISO(isoStr){ const d=new Date(isoStr+'T00:00:00'); d.setMonth(d.getMonth()+1,0); return iso(d); }
   function addMonthsISO(isoStr, delta){ const d=new Date(isoStr+'T00:00:00'); const day=d.getDate(); d.setDate(1); d.setMonth(d.getMonth()+delta); const last=new Date(d.getFullYear(), d.getMonth()+1, 0).getDate(); d.setDate(Math.min(day,last)); return iso(d); }
-  function formatYM(isoStr){ const d=new Date(isoStr+'T00:00:00'); const m=d.getMonth(); const y=String(d.getFullYear()).slice(-2); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m-1]}/${y}`; }
+  function formatYM(isoStr){ const d=new Date(isoStr+'T00:00:00'); const m=d.getMonth(); const y=String(d.getFullYear()).slice(-2); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m]}/${y}`; }
 
   const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const normHeader = (s)=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
@@ -539,7 +538,7 @@
     $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
     $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
     $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,fremedP=fatMedP);
+    $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
 
     $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
     $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
@@ -574,6 +573,7 @@
     // atualiza todos
     updateMonth12x12();
     updateChartsServer();
+    updateTop6();
   });
 
   /* ===================== GRÁFICOS (RPC) ===================== */
@@ -759,12 +759,13 @@
     cvs.__chart = chart;
   }
   async function updateTop6(){
+    // tenta no server; se falhar (ex.: 400/agrupamento), usa fallback client-side
     try{
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
       let q = supa.from(READ_VIEW)
         .select('loja, fat:sum(fat)')
         .gte('dia', de).lte('dia', ate)
-        .group('loja')                              // << essencial p/ agregação
+        .group('loja')                              // agrega por loja
         .order('fat', { ascending:false })
         .limit(6);
       const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
@@ -777,13 +778,37 @@
 
       const { data, error } = await q;
       if(error) throw error;
+      if(!data || !data.length || data[0].fat==null) throw new Error('aggregate-missing');
 
-      const labels = (data||[]).map(r=>r.loja);
-      const values = (data||[]).map(r=>+r.fat||0);
+      const labels = data.map(r=>r.loja);
+      const values = data.map(r=>+r.fat||0);
       ensureDonutTop6(labels, values);
     }catch(e){
-      console.warn('top6', e.message||e);
-      ensureDonutTop6([], []);
+      // Fallback client-side
+      try{
+        const de=fDe.value||firstDay, ate=fAte.value||lastDay;
+        let q = supa.from(READ_VIEW)
+          .select('loja,fat,dia,unidade,turno,canal,pagamento_base,cancelado')
+          .gte('dia', de).lte('dia', ate).limit(100000);
+        const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
+        const lojas = ms.lojas.get(); if(lojas.length) q = q.in('loja', lojas);
+        const turns = ms.turnos.get(); if(turns.length) q = q.in('turno', turns);
+        const cans  = ms.canais.get(); if(cans.length)  q = q.in('canal', cans);
+        const pags  = ms.pags.get(); if(pags.length)   q = q.in('pagamento_base', pags);
+        const canc  = ms.cancel.get();
+        if(canc.length===1 && (canc[0]==='Sim' || canc[0]==='Não')) q = q.eq('cancelado', canc[0]);
+
+        const { data, error } = await q;
+        if(error) throw error;
+
+        const m = new Map();
+        (data||[]).forEach(r=>{ const k=r.loja||'—'; m.set(k, (m.get(k)||0) + (+r.fat||0)); });
+        const arr = [...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6);
+        ensureDonutTop6(arr.map(a=>a[0]), arr.map(a=>a[1]));
+      }catch(e2){
+        console.warn('top6 fallback erro:', e2.message||e2);
+        ensureDonutTop6([],[]);
+      }
     }
   }
   $('top6Center').addEventListener('click', ()=>{ setStatus('Top 6 — total clicado','ok'); });
@@ -861,7 +886,7 @@
         unid: ['unidade','unid','filial','cod_unidade','empresa'],
         loja: ['loja','loja nome','loja_nome','nome loja','nome_loja','loja fantasia','loja_fantasia','nome da loja'],
         canal:['canal','canal venda','canal_venda','origem','meio','canal vendas','canal_vendas','canal de venda'],
-                pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
+        pag:  ['pagamento base','pagamento_base','tipo pagamento','tipo_pagamento','pagamento','forma pagamento','forma_pagamento','meio pgto','meio_pgto'],
         canc: ['cancelado','canceled','is cancel','is_cancel','cancel','st cancelado','st_cancelado','cancelada'],
         pid:  ['pedido','pedido id','pedido_id','id pedido','id_pedido','numero pedido','número pedido','order id','order_id']
       };
@@ -885,15 +910,13 @@
         if(v==null) return {dateISO:null, hour:null};
         if(v instanceof Date){ return {dateISO: v.toISOString().slice(0,10), hour: v.getHours()}; }
         let s=String(v).trim(); if(!s) return {dateISO:null, hour:null};
-        // Excel serial
-        if(/^-?\d+(\.\d+)?$/.test(s)){
+        if(/^-?\d+(\.\d+)?$/.test(s)){ // Excel serial
           const num=Number(s); const base=new Date(Date.UTC(1899,11,30));
           const d=new Date(base.getTime()+num*86400000);
           const frac = num - Math.floor(num);
           const hour = Math.floor(frac*24 + 1e-6);
           return {dateISO: d.toISOString().slice(0,10), hour:(hour>=0&&hour<=23)?hour:null};
         }
-        // dd/mm/yyyy [hh:mm[:ss]]
         const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T](\d{1,2})(?::(\d{2})(?::(\d{2}))?)?)?$/);
         if(m){
           const [_,dd,mm,yy,HH='0',MM='0',SS='0']=m;
@@ -949,7 +972,8 @@
         const get = (k)=> (k? r[k] : null);
         const dtSplit = splitDateTimeCell(get(kDia));
         const dia  = dtSplit.dateISO;
-        const hora = parseHourFromEither(get(kDia), get(kHora));
+        theHora = parseHourFromEither(get(kDia), get(kHora));
+        const hora = theHora;
 
         const row = {
           dia, hora,
@@ -1067,68 +1091,6 @@
     document.addEventListener(ev, ()=>resetAutoCollapse(), {passive:true});
   });
 
-  /* ===================== Donut Top6 — fallback client-side (se necessário) ===================== */
-  async function updateTop6_fallbackClient(){
-    try{
-      const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-      let q = supa.from(READ_VIEW)
-        .select('loja,fat,dia,unidade,turno,canal,pagamento_base,cancelado')
-        .gte('dia', de).lte('dia', ate).limit(100000); // segurança
-
-      const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
-      const lojas = ms.lojas.get(); if(lojas.length) q = q.in('loja', lojas);
-      const turns = ms.turnos.get(); if(turns.length) q = q.in('turno', turns);
-      const cans  = ms.canais.get(); if(cans.length)  q = q.in('canal', cans);
-      const pags  = ms.pags.get(); if(pags.length)   q = q.in('pagamento_base', pags);
-      const canc  = ms.cancel.get();
-      if(canc.length===1 && (canc[0]==='Sim' || canc[0]==='Não')) q = q.eq('cancelado', canc[0]);
-
-      const { data, error } = await q;
-      if(error) throw error;
-
-      const m = new Map();
-      (data||[]).forEach(r=>{ const k=r.loja||'—'; m.set(k, (m.get(k)||0) + (+r.fat||0)); });
-      const arr = [...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6);
-      ensureDonutTop6(arr.map(a=>a[0]), arr.map(a=>a[1]));
-    }catch(e){
-      console.error('fallback top6', e.message||e);
-      ensureDonutTop6([],[]);
-    }
-  }
-  // sobrescreve implementação anterior: tenta server, cai no fallback em caso de erro 400
-  updateTop6 = async function(){
-    try{
-      const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-      let q = supa.from(READ_VIEW)
-        .select('loja, fat:sum(fat)')
-        .gte('dia', de).lte('dia', ate)
-        .order('fat', { ascending:false })
-        .limit(6);
-
-      const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
-      const lojas = ms.lojas.get(); if(lojas.length) q = q.in('loja', lojas);
-      const turns = ms.turnos.get(); if(turns.length) q = q.in('turno', turns);
-      const cans  = ms.canais.get(); if(cans.length)  q = q.in('canal', cans);
-      const pags  = ms.pags.get(); if(pags.length)   q = q.in('pagamento_base', pags);
-      const canc  = ms.cancel.get();
-      if(canc.length===1 && (canc[0]==='Sim' || canc[0]==='Não')) q = q.eq('cancelado', canc[0]);
-
-      // Alguns ambientes exigem "group" explícito; se falhar, vamos para o fallback
-      const { data, error } = await q;
-      if(error) throw error;
-
-      // Se o backend não agregou, tentamos detectar e cair no fallback
-      if(data && data.length && data[0] && data[0].fat == null){ throw new Error('aggregate-not-available'); }
-
-      const labels = (data||[]).map(r=>r.loja);
-      const values = (data||[]).map(r=>+r.fat||0);
-      ensureDonutTop6(labels, values);
-    }catch(e){
-      console.warn('top6 (server) falhou, usando fallback:', e.message||e);
-      await updateTop6_fallbackClient();
-    }
-  };
-
   /* ===================== LOOP PRINCIPAL ===================== */
   async function applyAll(){
     try{
@@ -1174,3 +1136,6 @@
       setStatus('Erro ao iniciar: '+(e.message||e),'err');
     }
   })();
+  </script>
+</body>
+</html>
