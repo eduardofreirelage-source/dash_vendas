@@ -485,7 +485,10 @@
   }
   function rpcName(params){ return params.p_unids ? 'kpi_vendas_v2' : 'kpi_vendas'; }
   function prepareArgs(name, params){ if(name==='kpi_vendas'){ const {p_unids, ...rest}=params; return rest; } return params; }
-  function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
+  // ***** INÍCIO DA CORREÇÃO *****
+  // A propriedade 'pedidos' foi trocada para 'qtd_pedidos' para corresponder ao nome correto da coluna no Supabase.
+  function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.qtd_pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
+  // ***** FIM DA CORREÇÃO *****
   async function kpiCancelFallback(de,ate,dePrev,atePrev){
     const rowsNow = await fetchRowsLocal(de,ate,'Sim');
     const rowsPrev= await fetchRowsLocal(dePrev,atePrev,'Sim');
@@ -687,11 +690,14 @@
 
   /* ===================== Coleta base (REST) para client-side ===================== */
   async function baseQuery(de, ate){
+    // ***** INÍCIO DA CORREÇÃO *****
+    // A coluna 'pedidos' foi trocada para 'qtd_pedidos' para corresponder ao nome correto no Supabase.
     let q = supa.from(READ_VIEW)
-      .select('dia,hora,turno,fat,des,fre,pedidos,cancelado,loja,unidade,canal,pagamento_base')
+      .select('dia,hora,turno,fat,des,fre,qtd_pedidos,cancelado,loja,unidade,canal,pagamento_base')
       .gte('dia', de).lte('dia', ate)
       .order('dia', { ascending:true })
       .range(0, 199999); // >>> (antes alguns lugares usavam .limit)
+    // ***** FIM DA CORREÇÃO *****
 
     const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
     const lojas = ms.lojas.get(); if(lojas.length) q = q.in('loja', lojas);
@@ -739,7 +745,10 @@
       acc.fat += +r.fat||0;
       acc.des += +r.des||0;
       acc.fre += +r.fre||0;
-      acc.ped += +r.pedidos||0;
+      // ***** INÍCIO DA CORREÇÃO *****
+      // A propriedade 'pedidos' foi trocada para 'qtd_pedidos' para corresponder ao nome correto da coluna.
+      acc.ped += +r.qtd_pedidos||0;
+      // ***** FIM DA CORREÇÃO *****
 
       // dias únicos para médias por dia
       if(!daySetByKey.has(key)) daySetByKey.set(key, new Set());
@@ -756,11 +765,8 @@
         case 'fre':     return mode==='media' ? (acc.fre / Math.max(1, acc.days)) : acc.fre;
         case 'fremed':  return (acc.ped>0) ? (acc.fre/acc.ped) : 0;
         case 'fatmed':  return acc.fat / Math.max(1, acc.days);
-        // ***** INÍCIO DA CORREÇÃO *****
-        // Adicionadas as métricas de cancelamento que estavam ausentes.
         case 'canc_ped': return mode==='media' ? (acc.ped / Math.max(1, acc.days)) : acc.ped;
         case 'canc_val': return mode==='media' ? (acc.fat / Math.max(1, acc.days)) : acc.fat;
-        // ***** FIM DA CORREÇÃO *****
         case 'roi':     return (acc.des>0) ? ((acc.fat-acc.des)/acc.des) : 0;
         default:        return acc.fat;
       }
@@ -992,11 +998,14 @@
       const meta = KPI_META[selectedKPI]||KPI_META.fat;
 
       // Buscar linhas (com filtros) e agregar por loja conforme KPI
+      // ***** INÍCIO DA CORREÇÃO *****
+      // A coluna 'pedidos' foi trocada para 'qtd_pedidos' para corresponder ao nome correto no Supabase.
       let q = supa.from(READ_VIEW)
-        .select('loja,fat,des,fre,pedidos,cancelado,dia')
+        .select('loja,fat,des,fre,qtd_pedidos,cancelado,dia')
         .gte('dia', de).lte('dia', ate)
         .order('loja', { ascending:true })
         .range(0, 119999); // >>> (antes .limit)
+      // ***** FIM DA CORREÇÃO *****
 
       const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
       const lojas = ms.lojas.get(); if(lojas.length) q = q.in('loja', lojas);
@@ -1022,7 +1031,10 @@
         a.fat += +r.fat||0;
         a.des += +r.des||0;
         a.fre += +r.fre||0;
-        a.ped += +r.pedidos||0;
+        // ***** INÍCIO DA CORREÇÃO *****
+        // A propriedade 'pedidos' foi trocada para 'qtd_pedidos' para corresponder ao nome correto da coluna.
+        a.ped += +r.qtd_pedidos||0;
+        // ***** FIM DA CORREÇÃO *****
         a.days.add(r.dia);
       });
 
@@ -1036,11 +1048,8 @@
           case 'fre':     return (effectiveMode()==='media') ? (a.fre/Math.max(1,a.days.size)) : a.fre;
           case 'fremed':  return a.ped>0 ? (a.fre/a.ped) : 0;
           case 'fatmed':  return a.fat/Math.max(1,a.days.size);
-          // ***** INÍCIO DA CORREÇÃO *****
-          // Adicionadas as métricas de cancelamento que estavam ausentes.
           case 'canc_ped': return (effectiveMode()==='media') ? (a.ped/Math.max(1,a.days.size)) : a.ped;
           case 'canc_val': return (effectiveMode()==='media') ? (a.fat/Math.max(1,a.days.size)) : a.fat;
-          // ***** FIM DA CORREÇÃO *****
           case 'roi':     return a.des>0 ? ((a.fat-a.des)/a.des) : 0;
           default:        return a.fat;
         }
@@ -1190,7 +1199,10 @@
       }
       function toInt(v){ const n=parseBR(v); return isFinite(n)?Math.round(n):0; }
       function hashRow(obj){
-        const keys=['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
+        // ***** INÍCIO DA CORREÇÃO *****
+        // A chave 'pedidos' foi trocada para 'qtd_pedidos' no hash para garantir consistência.
+        const keys=['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','qtd_pedidos','fat','des','fre','pedido_id'];
+        // ***** FIM DA CORREÇÃO *****
         const s = keys.map(k=>k+':'+String(obj[k]??'')).join('|');
         let h=5381; for(let i=0;i<s.length;i++){ h=((h<<5)+h) ^ s.charCodeAt(i); }
         return String(h>>>0);
@@ -1225,7 +1237,10 @@
           "Canal de venda": displayNormalize(get(kCan)),
           pagamento_base: displayNormalize(get(kPag)),
           cancelado: normCancel(get(kCanc)),
-          pedidos: toInt(get(kPed) ?? 1),
+          // ***** INÍCIO DA CORREÇÃO *****
+          // A propriedade 'pedidos' foi trocada para 'qtd_pedidos' para corresponder ao nome correto da coluna.
+          qtd_pedidos: toInt(get(kPed) ?? 1),
+          // ***** FIM DA CORREÇÃO *****
           fat: parseBR(get(kFat)),
           des: parseBR(get(kDes)),
           fre: parseBR(get(kFre)),
