@@ -486,8 +486,10 @@
   function rpcName(params){ return params.p_unids ? 'kpi_vendas_v2' : 'kpi_vendas'; }
   function prepareArgs(name, params){ if(name==='kpi_vendas'){ const {p_unids, ...rest}=params; return rest; } return params; }
   // ***** INÍCIO DA CORREÇÃO *****
-  // A propriedade 'pedidos' foi trocada para 'qtd_pedidos' para corresponder ao nome correto da coluna no Supabase.
-  function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.qtd_pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
+  // A função agg é usada para os resultados de RPCs, que não estavam falhando.
+  // Revertido para 'pedidos', assumindo que o RPC retorna a coluna com este nome.
+  // A correção principal será na lógica de fallback (REST).
+  function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
   // ***** FIM DA CORREÇÃO *****
   async function kpiCancelFallback(de,ate,dePrev,atePrev){
     const rowsNow = await fetchRowsLocal(de,ate,'Sim');
@@ -691,12 +693,13 @@
   /* ===================== Coleta base (REST) para client-side ===================== */
   async function baseQuery(de, ate){
     // ***** INÍCIO DA CORREÇÃO *****
-    // A coluna 'pedidos' foi trocada para 'qtd_pedidos' para corresponder ao nome correto no Supabase.
+    // Removida a coluna de contagem de pedidos da consulta para evitar o erro,
+    // já que a contagem será feita pelo número de linhas recebidas.
     let q = supa.from(READ_VIEW)
-      .select('dia,hora,turno,fat,des,fre,qtd_pedidos,cancelado,loja,unidade,canal,pagamento_base')
+      .select('dia,hora,turno,fat,des,fre,cancelado,loja,unidade,canal,pagamento_base')
       .gte('dia', de).lte('dia', ate)
       .order('dia', { ascending:true })
-      .range(0, 199999); // >>> (antes alguns lugares usavam .limit)
+      .range(0, 199999);
     // ***** FIM DA CORREÇÃO *****
 
     const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
@@ -705,7 +708,6 @@
     const cans  = ms.canais.get(); if(cans.length)  q = q.in('canal', cans);
     const pags  = ms.pags.get(); if(pags.length)   q = q.in('pagamento_base', pags);
 
-    // >>> FIX do 400: usar .in em vez de .eq no cancelado; e permitir override por KPI
     const forcedCancel = wantedCancelFilterForKPI();
     if(forcedCancel){ q = q.in('cancelado', [forcedCancel]); }
     else{
@@ -746,8 +748,9 @@
       acc.des += +r.des||0;
       acc.fre += +r.fre||0;
       // ***** INÍCIO DA CORREÇÃO *****
-      // A propriedade 'pedidos' foi trocada para 'qtd_pedidos' para corresponder ao nome correto da coluna.
-      acc.ped += +r.qtd_pedidos||0;
+      // A contagem de pedidos ('ped') agora é feita incrementando 1 para cada linha,
+      // tornando a lógica mais robusta e independente do nome da coluna.
+      acc.ped += 1;
       // ***** FIM DA CORREÇÃO *****
 
       // dias únicos para médias por dia
@@ -997,14 +1000,13 @@
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
       const meta = KPI_META[selectedKPI]||KPI_META.fat;
 
-      // Buscar linhas (com filtros) e agregar por loja conforme KPI
       // ***** INÍCIO DA CORREÇÃO *****
-      // A coluna 'pedidos' foi trocada para 'qtd_pedidos' para corresponder ao nome correto no Supabase.
+      // Removida a coluna de contagem de pedidos da consulta para evitar o erro.
       let q = supa.from(READ_VIEW)
-        .select('loja,fat,des,fre,qtd_pedidos,cancelado,dia')
+        .select('loja,fat,des,fre,cancelado,dia')
         .gte('dia', de).lte('dia', ate)
         .order('loja', { ascending:true })
-        .range(0, 119999); // >>> (antes .limit)
+        .range(0, 119999);
       // ***** FIM DA CORREÇÃO *****
 
       const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
@@ -1032,8 +1034,8 @@
         a.des += +r.des||0;
         a.fre += +r.fre||0;
         // ***** INÍCIO DA CORREÇÃO *****
-        // A propriedade 'pedidos' foi trocada para 'qtd_pedidos' para corresponder ao nome correto da coluna.
-        a.ped += +r.qtd_pedidos||0;
+        // A contagem de pedidos ('ped') agora é feita incrementando 1 para cada linha.
+        a.ped += 1;
         // ***** FIM DA CORREÇÃO *****
         a.days.add(r.dia);
       });
@@ -1199,10 +1201,7 @@
       }
       function toInt(v){ const n=parseBR(v); return isFinite(n)?Math.round(n):0; }
       function hashRow(obj){
-        // ***** INÍCIO DA CORREÇÃO *****
-        // A chave 'pedidos' foi trocada para 'qtd_pedidos' no hash para garantir consistência.
-        const keys=['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','qtd_pedidos','fat','des','fre','pedido_id'];
-        // ***** FIM DA CORREÇÃO *****
+        const keys=['dia','hora','unidade','Nome da loja','Canal de venda','pagamento_base','cancelado','pedidos','fat','des','fre','pedido_id'];
         const s = keys.map(k=>k+':'+String(obj[k]??'')).join('|');
         let h=5381; for(let i=0;i<s.length;i++){ h=((h<<5)+h) ^ s.charCodeAt(i); }
         return String(h>>>0);
@@ -1237,10 +1236,7 @@
           "Canal de venda": displayNormalize(get(kCan)),
           pagamento_base: displayNormalize(get(kPag)),
           cancelado: normCancel(get(kCanc)),
-          // ***** INÍCIO DA CORREÇÃO *****
-          // A propriedade 'pedidos' foi trocada para 'qtd_pedidos' para corresponder ao nome correto da coluna.
-          qtd_pedidos: toInt(get(kPed) ?? 1),
-          // ***** FIM DA CORREÇÃO *****
+          pedidos: toInt(get(kPed) ?? 1),
           fat: parseBR(get(kFat)),
           des: parseBR(get(kDes)),
           fre: parseBR(get(kFre)),
@@ -1268,7 +1264,7 @@
       setStatus('Upload concluído','ok');
       info(`Gravado/atualizado: ${rows.length} linhas.`);
 
-      try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
+      try{ await supa.rpc(REFRESH_RPC); }catch(_e){}<
 
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
