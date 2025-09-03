@@ -485,12 +485,7 @@
   }
   function rpcName(params){ return params.p_unids ? 'kpi_vendas_v2' : 'kpi_vendas'; }
   function prepareArgs(name, params){ if(name==='kpi_vendas'){ const {p_unids, ...rest}=params; return rest; } return params; }
-  // ***** INÍCIO DA CORREÇÃO *****
-  // A função agg é usada para os resultados de RPCs, que não estavam falhando.
-  // Revertido para 'pedidos', assumindo que o RPC retorna a coluna com este nome.
-  // A correção principal será na lógica de fallback (REST).
   function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
-  // ***** FIM DA CORREÇÃO *****
   async function kpiCancelFallback(de,ate,dePrev,atePrev){
     const rowsNow = await fetchRowsLocal(de,ate,'Sim');
     const rowsPrev= await fetchRowsLocal(dePrev,atePrev,'Sim');
@@ -693,7 +688,7 @@
   /* ===================== Coleta base (REST) para client-side ===================== */
   async function baseQuery(de, ate){
     // ***** INÍCIO DA CORREÇÃO *****
-    // Removida a coluna de contagem de pedidos da consulta para evitar o erro,
+    // A coluna de contagem de pedidos foi removida da consulta para evitar o erro,
     // já que a contagem será feita pelo número de linhas recebidas.
     let q = supa.from(READ_VIEW)
       .select('dia,hora,turno,fat,des,fre,cancelado,loja,unidade,canal,pagamento_base')
@@ -1264,7 +1259,10 @@
       setStatus('Upload concluído','ok');
       info(`Gravado/atualizado: ${rows.length} linhas.`);
 
-      try{ await supa.rpc(REFRESH_RPC); }catch(_e){}<
+      // ***** INÍCIO DA CORREÇÃO *****
+      // Removido o caractere '<' que estava causando o erro de sintaxe.
+      try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
+      // ***** FIM DA CORREÇÃO *****
 
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
