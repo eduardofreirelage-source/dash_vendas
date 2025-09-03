@@ -460,11 +460,11 @@
     // Garante que arrays vazios sejam passados como [], não como null, para evitar erro de sobrecarga no RPC.
     return {
       p_dini: de, p_dfim: ate,
-      p_unids:  ms.unids.get().length  ? ms.unids.get()  : undefined,
-      p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : undefined,
-      p_turnos: ms.turnos.get().length ? ms.turnos.get() : undefined,
-      p_canais: ms.canais.get().length ? ms.canais.get() : undefined,
-      p_pags:   ms.pags.get().length   ? ms.pags.get()   : undefined,
+      p_unids:  ms.unids.get().length  ? ms.unids.get()  : [],
+      p_lojas:  ms.lojas.get().length  ? ms.lojas.get()  : [],
+      p_turnos: ms.turnos.get().length ? ms.turnos.get() : [],
+      p_canais: ms.canais.get().length ? ms.canais.get() : [],
+      p_pags:   ms.pags.get().length   ? ms.pags.get()   : [],
       p_cancelado
     };
     // ***** FIM DA CORREÇÃO *****
@@ -482,6 +482,7 @@
   }
   function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4l5 6h-3v6H8v-6H5l5-6z"/></svg>';}
   function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 16l-5-6h3V4h4v6h3l-5 6z"/></svg>';}
+
   // ***** INÍCIO DA MELHORIA *****
   // A função agora aceita um formato e exibe a diferença absoluta junto com o percentual.
   function deltaBadge(el,curr,prev, fmt='money'){
@@ -724,78 +725,70 @@
 
   /* ===================== DATA FETCH & DRAW (ORIGINAL) ===================== */
   async function updateChartsServer(){
-      const de=fDe.value||firstDay, ate=fAte.value||lastDay;
-      const {dePrev, atePrev} = computePrevRangeISO(de,ate);
-      lastPrevRange = {dePrev, atePrev};
-      const meta = KPI_META[selectedKPI]||KPI_META.fat;
-      const mode = effectiveMode();
-
-      try{
-          setDiag('');
-          const canUseRPC = (selectedKPI==='fat' && !wantedCancelFilterForKPI());
-          if(canUseRPC){
-            const [nowD, prevD, nowH, prevH, nowT, prevT] = await Promise.all([
-              fetchChartRPC('dow',de,ate),   fetchChartRPC('dow',dePrev,atePrev),
-              fetchChartRPC('hour',de,ate),  fetchChartRPC('hour',dePrev,atePrev),
-              fetchChartRPC('turno',de,ate), fetchChartRPC('turno',dePrev,atePrev),
-            ]);
+    const de=fDe.value||firstDay, ate=fAte.value||lastDay;
+    const {dePrev, atePrev} = computePrevRangeISO(de,ate);
+    lastPrevRange = {dePrev, atePrev};
+    const meta = KPI_META[selectedKPI]||KPI_META.fat;
+    const mode = effectiveMode();
+    try{
+        setDiag('');
+        const canUseRPC = (selectedKPI==='fat' && !wantedCancelFilterForKPI());
+        if(canUseRPC){
+          const [nowD, prevD, nowH, prevH, nowT, prevT] = await Promise.all([
+            fetchChartRPC('dow',de,ate),   fetchChartRPC('dow',dePrev,atePrev),
+            fetchChartRPC('hour',de,ate),  fetchChartRPC('hour',dePrev,atePrev),
+            fetchChartRPC('turno',de,ate), fetchChartRPC('turno',dePrev,atePrev),
+          ]);
+          const tip = `Período anterior: ${dePrev} → ${atePrev}`;
+          const dowLabels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+          const nArrD = Array(7).fill(0), pArrD = Array(7).fill(0), nMedD=Array(7).fill(0), pMedD=Array(7).fill(0);
+          (nowD||[]).forEach(r=>{ nArrD[r.dow]=+r.total||0; nMedD[r.dow]=+r.media||0; });
+          (prevD||[]).forEach(r=>{ pArrD[r.dow]=+r.total||0; pMedD[r.dow]=+r.media||0; });
+          ensureChart('ch_dow', dowLabels, (mode==='media'?nMedD:nArrD), (mode==='media'?pMedD:pArrD), tip, meta.fmt);
+          const allHours = Array.from({length:24},(_,h)=>h);
+          const nArrH = Array(24).fill(0), pArrH = Array(24).fill(0), nMedH=Array(24).fill(0), pMedH=Array(24).fill(0);
+          (nowH||[]).forEach(r=>{ nArrH[r.h]=+r.total||0; nMedH[r.h]=+r.media||0; });
+          (prevH||[]).forEach(r=>{ pArrH[r.h]=+r.total||0; pMedH[r.h]=+r.media||0; });
+          const useNH = (mode==='media'?nMedH:nArrH); const usePH = (mode==='media'?pMedH:pArrH);
+          const filteredH = allHours.filter(h => (useNH[h]||0)!==0 || (usePH[h]||0)!==0);
+          ensureChart('ch_hour', filteredH.map(h=>String(h).padStart(2,'0')+'h'), filteredH.map(h=>useNH[h]||0), filteredH.map(h=>usePH[h]||0), tip, meta.fmt);
+          const orderT=['Dia','Noite'];
+          const nT = new Map((nowT||[]).map(r=>[r.turno, mode==='media'? (+r.media||0) : (+r.total||0)]));
+          const pT = new Map((prevT||[]).map(r=>[r.turno, mode==='media'? (+r.media||0) : (+r.total||0)]));
+          const labelsT = orderT.filter(x=> nT.has(x) || pT.has(x));
+          ensureChart('ch_turno', labelsT, labelsT.map(l=>nT.get(l)||0), labelsT.map(l=>pT.get(l)||0), tip, meta.fmt);
+        } else {
+            const [rowsNow, rowsPrev] = await Promise.all([ baseQuery(de,ate), baseQuery(dePrev,atePrev) ]);
             const tip = `Período anterior: ${dePrev} → ${atePrev}`;
-
-            const dowLabels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-            const nArrD = Array(7).fill(0), pArrD = Array(7).fill(0), nMedD=Array(7).fill(0), pMedD=Array(7).fill(0);
-            (nowD||[]).forEach(r=>{ nArrD[r.dow]=+r.total||0; nMedD[r.dow]=+r.media||0; });
-            (prevD||[]).forEach(r=>{ pArrD[r.dow]=+r.total||0; pMedD[r.dow]=+r.media||0; });
-            ensureChart('ch_dow', dowLabels, (mode==='media'?nMedD:nArrD), (mode==='media'?pMedD:pArrD), tip, meta.fmt);
-
-            const allHours = Array.from({length:24},(_,h)=>h);
-            const nArrH = Array(24).fill(0), pArrH = Array(24).fill(0), nMedH=Array(24).fill(0), pMedH=Array(24).fill(0);
-            (nowH||[]).forEach(r=>{ nArrH[r.h]=+r.total||0; nMedH[r.h]=+r.media||0; });
-            (prevH||[]).forEach(r=>{ pArrH[r.h]=+r.total||0; pMedH[r.h]=+r.media||0; });
-            const useNH = (mode==='media'?nMedH:nArrH); const usePH = (mode==='media'?pMedH:pArrH);
-            const filteredH = allHours.filter(h => (useNH[h]||0)!==0 || (usePH[h]||0)!==0);
-            ensureChart('ch_hour', filteredH.map(h=>String(h).padStart(2,'0')+'h'), filteredH.map(h=>useNH[h]||0), filteredH.map(h=>usePH[h]||0), tip, meta.fmt);
-
-            const orderT=['Dia','Noite'];
-            const nT = new Map((nowT||[]).map(r=>[r.turno, mode==='media'? (+r.media||0) : (+r.total||0)]));
-            const pT = new Map((prevT||[]).map(r=>[r.turno, mode==='media'? (+r.media||0) : (+r.total||0)]));
-            const labelsT = orderT.filter(x=> nT.has(x) || pT.has(x));
-            ensureChart('ch_turno', labelsT, labelsT.map(l=>nT.get(l)||0), labelsT.map(l=>pT.get(l)||0), tip, meta.fmt);
-
-          } else {
-              const [rowsNow, rowsPrev] = await Promise.all([ baseQuery(de,ate), baseQuery(dePrev,atePrev) ]);
-              const tip = `Período anterior: ${dePrev} → ${atePrev}`;
-              
-              const lab = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-              const cur = computeByBucket(rowsNow,'dow', selectedKPI, mode);
-              const prv = computeByBucket(rowsPrev,'dow', selectedKPI, mode);
-              const nArr = Array(7).fill(0), pArr=Array(7).fill(0);
-              cur.forEach(o=>{ nArr[o.key]=o.value; });
-              prv.forEach(o=>{ pArr[o.key]=o.value; });
-              ensureChart('ch_dow', lab, nArr, pArr, tip, meta.fmt);
-              
-              const all=Array.from({length:24},(_,h)=>h);
-              const curH = computeByBucket(rowsNow,'hora', selectedKPI, mode);
-              const prvH = computeByBucket(rowsPrev,'hora', selectedKPI, mode);
-              const mNowH = new Map(curH.map(o=>[o.key,o.value]));
-              const mPrvH = new Map(prvH.map(o=>[o.key,o.value]));
-              const labelsH = all.filter(h => mNowH.has(h)||mPrvH.has(h)).map(h=>String(h).padStart(2,'0')+'h');
-              const nArrH = labelsH.map(h => mNowH.get(parseInt(h))||0);
-              const pArrH = labelsH.map(h => mPrvH.get(parseInt(h))||0);
-              ensureChart('ch_hour', labelsH, nArrH, pArrH, tip, meta.fmt);
-              
-              const ord=['Dia','Noite'];
-              const curT = computeByBucket(rowsNow,'turno', selectedKPI, mode);
-              const prvT = computeByBucket(rowsPrev,'turno', selectedKPI, mode);
-              const mNowT = new Map(curT.map(o=>[o.key,o.value]));
-              const mPrvT = new Map(prvT.map(o=>[o.key,o.value]));
-              const labelsT = ord.filter(k=> mNowT.has(k)||mPrvT.has(k));
-              ensureChart('ch_turno', labelsT, labelsT.map(k=>mNowT.get(k)||0), labelsT.map(k=>mPrvT.get(k)||0), tip, meta.fmt);
-          }
-          setStatus('OK — gráficos atualizados','ok');
-      } catch(e) {
-          console.error(e);
-          setStatus('OK (sem gráficos — RPC/REST indisponível)','ok');
-      }
+            const lab = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+            const cur = computeByBucket(rowsNow,'dow', selectedKPI, mode);
+            const prv = computeByBucket(rowsPrev,'dow', selectedKPI, mode);
+            const nArr = Array(7).fill(0), pArr=Array(7).fill(0);
+            cur.forEach(o=>{ nArr[o.key]=o.value; });
+            prv.forEach(o=>{ pArr[o.key]=o.value; });
+            ensureChart('ch_dow', lab, nArr, pArr, tip, meta.fmt);
+            const all=Array.from({length:24},(_,h)=>h);
+            const curH = computeByBucket(rowsNow,'hora', selectedKPI, mode);
+            const prvH = computeByBucket(rowsPrev,'hora', selectedKPI, mode);
+            const mNowH = new Map(curH.map(o=>[o.key,o.value]));
+            const mPrvH = new Map(prvH.map(o=>[o.key,o.value]));
+            const labelsH = all.filter(h => mNowH.has(h)||mPrvH.has(h)).map(h=>String(h).padStart(2,'0')+'h');
+            const nArrH = labelsH.map(h => mNowH.get(parseInt(h))||0);
+            const pArrH = labelsH.map(h => mPrvH.get(parseInt(h))||0);
+            ensureChart('ch_hour', labelsH, nArrH, pArrH, tip, meta.fmt);
+            const ord=['Dia','Noite'];
+            const curT = computeByBucket(rowsNow,'turno', selectedKPI, mode);
+            const prvT = computeByBucket(rowsPrev,'turno', selectedKPI, mode);
+            const mNowT = new Map(curT.map(o=>[o.key,o.value]));
+            const mPrvT = new Map(prvT.map(o=>[o.key,o.value]));
+            const labelsT = ord.filter(k=> mNowT.has(k)||mPrvT.has(k));
+            ensureChart('ch_turno', labelsT, labelsT.map(k=>mNowT.get(k)||0), labelsT.map(k=>mPrvT.get(k)||0), tip, meta.fmt);
+        }
+        setStatus('OK — gráficos atualizados','ok');
+    } catch(e) {
+        console.error(e);
+        setStatus('OK (sem gráficos — RPC/REST indisponível)','ok');
+    }
   }
 
   async function updateMonth12x12(){
@@ -818,10 +811,10 @@
       if(canUseRPC){
         const paramsCommon = buildParams(last12Start, last12End);
         const paramsPrev = buildParams(prev12Start, prev12EndAdj);
-
+        
         const [{data:nData,error:nErr},{data:pData,error:pErr}] = await Promise.all([
-          supa.rpc('chart_vendas_mes_v1', paramsCommon),
-          supa.rpc('chart_vendas_mes_v1', paramsPrev),
+          supa.rpc('chart_vendas_mes_v1', prepareArgs(rpcName(paramsCommon), paramsCommon)),
+          supa.rpc('chart_vendas_mes_v1', prepareArgs(rpcName(paramsPrev), paramsPrev)),
         ]);
         if(nErr) throw nErr; if(pErr) throw pErr;
 
