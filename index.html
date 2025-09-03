@@ -687,15 +687,11 @@
 
   /* ===================== Coleta base (REST) para client-side ===================== */
   async function baseQuery(de, ate){
-    // ***** INÍCIO DA CORREÇÃO *****
-    // A coluna de contagem de pedidos foi removida da consulta para evitar o erro,
-    // já que a contagem será feita pelo número de linhas recebidas.
     let q = supa.from(READ_VIEW)
       .select('dia,hora,turno,fat,des,fre,cancelado,loja,unidade,canal,pagamento_base')
       .gte('dia', de).lte('dia', ate)
       .order('dia', { ascending:true })
       .range(0, 199999);
-    // ***** FIM DA CORREÇÃO *****
 
     const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
     const lojas = ms.lojas.get(); if(lojas.length) q = q.in('loja', lojas);
@@ -723,65 +719,90 @@
     if(type==='month'){ const d=new Date(row.dia+'T00:00:00'); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
     return null;
   }
-  function reduceMetric(rows, metric, mode){
-    const res = {};
-    const daysByKey = {}; // para médias por dia
-    for(const r of rows){
-      // chaves por bucket serão definidas fora
-    }
-    return {res, daysByKey};
-  }
   function computeByBucket(rows, type, metric, mode){
-    const map = new Map();
-    const daySetByKey = new Map();
+    const bucketDays = new Map(); // bucket key => set of days
+    const bucketDaily = new Map(); // bucket key => map( day => {fat,des,fre,ped} )
     for(const r of rows){
-      const key = bucketKey(type, r);
-      if(key==null) continue;
-      if(!map.has(key)) map.set(key, {fat:0, des:0, fre:0, ped:0});
-      const acc = map.get(key);
-      acc.fat += +r.fat||0;
-      acc.des += +r.des||0;
-      acc.fre += +r.fre||0;
-      // ***** INÍCIO DA CORREÇÃO *****
-      // A contagem de pedidos ('ped') agora é feita incrementando 1 para cada linha,
-      // tornando a lógica mais robusta e independente do nome da coluna.
-      acc.ped += 1;
-      // ***** FIM DA CORREÇÃO *****
-
-      // dias únicos para médias por dia
-      if(!daySetByKey.has(key)) daySetByKey.set(key, new Set());
-      daySetByKey.get(key).add(r.dia);
+      const bkey = bucketKey(type, r);
+      if(bkey==null) continue;
+      if(!bucketDays.has(bkey)) bucketDays.set(bkey, new Set());
+      bucketDays.get(bkey).add(r.dia);
+      if(!bucketDaily.has(bkey)) bucketDaily.set(bkey, new Map());
+      const dayMap = bucketDaily.get(bkey);
+      const dkey = r.dia;
+      if(!dayMap.has(dkey)) dayMap.set(dkey, {fat:0, des:0, fre:0, ped:0});
+      const dacc = dayMap.get(dkey);
+      dacc.fat += +r.fat||0;
+      dacc.des += +r.des||0;
+      dacc.fre += +r.fre||0;
+      dacc.ped += 1;
     }
-
-    function valFrom(acc){
-      switch(metric){
-        case 'fat':     return mode==='media' ? (acc.fat / Math.max(1, acc.days)) : acc.fat;
-        case 'ped':     return mode==='media' ? (acc.ped / Math.max(1, acc.days)) : acc.ped;
-        case 'tkt':     return (acc.ped>0) ? (acc.fat/acc.ped) : 0;
-        case 'des':     return mode==='media' ? (acc.des / Math.max(1, acc.days)) : acc.des;
-        case 'desperc': return (acc.fat>0) ? (acc.des/acc.fat) : 0;
-        case 'fre':     return mode==='media' ? (acc.fre / Math.max(1, acc.days)) : acc.fre;
-        case 'fremed':  return (acc.ped>0) ? (acc.fre/acc.ped) : 0;
-        case 'fatmed':  return acc.fat / Math.max(1, acc.days);
-        case 'canc_ped': return mode==='media' ? (acc.ped / Math.max(1, acc.days)) : acc.ped;
-        case 'canc_val': return mode==='media' ? (acc.fat / Math.max(1, acc.days)) : acc.fat;
-        case 'roi':     return (acc.des>0) ? ((acc.fat-acc.des)/acc.des) : 0;
-        default:        return acc.fat;
+    function computeRatio(dailyMap, metric){
+      const days = [...dailyMap.values()];
+      const dailyVals = days.map(d => {
+        switch(metric){
+          case 'tkt': return (d.ped > 0) ? (d.fat / d.ped) : 0;
+          case 'desperc': return (d.fat > 0) ? (d.des / d.fat) : 0;
+          case 'fremed': return (d.ped > 0) ? (d.fre / d.ped) : 0;
+          case 'roi': return (d.des > 0) ? ((d.fat - d.des) / d.des) : 0;
+          default: return 0;
+        }
+      }).filter(v => isFinite(v));
+      if(!dailyVals.length) return 0;
+      return dailyVals.reduce((a,b)=>a+b, 0) / dailyVals.length;
+    }
+    function computeNonRatio(dailyMap, metric, numDays){
+      const total = {fat:0, des:0, fre:0, ped:0};
+      for(const d of dailyMap.values()){
+        total.fat += d.fat;
+        total.des += d.des;
+        total.fre += d.fre;
+        total.ped += d.ped;
       }
+      switch(metric){
+        case 'fat': return mode==='media' ? (total.fat / numDays) : total.fat;
+        case 'ped': return mode==='media' ? (total.ped / numDays) : total.ped;
+        case 'des': return mode==='media' ? (total.des / numDays) : total.des;
+        case 'fre': return mode==='media' ? (total.fre / numDays) : total.fre;
+        case 'fatmed': return total.fat / numDays;
+        case 'canc_ped': return mode==='media' ? (total.ped / numDays) : total.ped;
+        case 'canc_val': return mode==='media' ? (total.fat / numDays) : total.fat;
+      }
+      return 0;
     }
-
-    const keys=[...map.keys()].sort((a,b)=>{
-      if(type==='dow' || type==='hour') return a-b;
+    const keys=[...bucketDaily.keys()].sort((a,b)=>{
+      if(type==='dow' || type==='hour') return Number(a)-Number(b);
       if(type==='month'){
         return a.localeCompare(b);
       }
       return String(a).localeCompare(String(b),'pt-BR');
     });
-
     return keys.map(k=>{
-      const acc = map.get(k);
-      acc.days = (daySetByKey.get(k)?.size)||1;
-      return { key:k, value: valFrom(acc) };
+      const dailyMap = bucketDaily.get(k);
+      const numDays = bucketDays.get(k)?.size || 1;
+      let value;
+      const isRatio = ['tkt','desperc','fremed','roi'].includes(metric);
+      if(isRatio){
+        value = (mode === 'media') ? computeRatio(dailyMap, metric) : (function(){
+          const total = {fat:0, des:0, fre:0, ped:0};
+          for(const d of dailyMap.values()){
+            total.fat += d.fat;
+            total.des += d.des;
+            total.fre += d.fre;
+            total.ped += d.ped;
+          }
+          switch(metric){
+            case 'tkt': return (total.ped > 0) ? (total.fat / total.ped) : 0;
+            case 'desperc': return (total.fat > 0) ? (total.des / total.fat) : 0;
+            case 'fremed': return (total.ped > 0) ? (total.fre / total.ped) : 0;
+            case 'roi': return (total.des > 0) ? ((total.fat - total.des) / total.des) : 0;
+          }
+          return 0;
+        })();
+      } else {
+        value = computeNonRatio(dailyMap, metric, numDays);
+      }
+      return { key:k, value: value };
     });
   }
 
@@ -896,7 +917,7 @@
       const end = lastDay || iso(new Date());
       const endMonthStart = monthStartISO(end);
       const last12Start = addMonthsISO(endMonthStart, -11);
-      const prev12Start = addMonthsISO(endMonthStart, -23);
+      const prev12Start =addMonthsISO(endMonthStart, -23);
       const last12End   = monthEndISO(end);
       const prev12EndAdj= monthEndISO(addMonthsISO(endMonthStart, -12));
 
@@ -995,14 +1016,11 @@
       const de=fDe.value||firstDay, ate=fAte.value||lastDay;
       const meta = KPI_META[selectedKPI]||KPI_META.fat;
 
-      // ***** INÍCIO DA CORREÇÃO *****
-      // Removida a coluna de contagem de pedidos da consulta para evitar o erro.
       let q = supa.from(READ_VIEW)
         .select('loja,fat,des,fre,cancelado,dia')
         .gte('dia', de).lte('dia', ate)
         .order('loja', { ascending:true })
         .range(0, 119999);
-      // ***** FIM DA CORREÇÃO *****
 
       const unids = ms.unids.get(); if(unids.length) q = q.in('unidade', unids);
       const lojas = ms.lojas.get(); if(lojas.length) q = q.in('loja', lojas);
@@ -1020,40 +1038,70 @@
       const { data, error } = await q;
       if(error) throw error;
 
-      const m = new Map(); // loja -> {fat,des,fre,ped,days:Set}
+      const m = new Map(); // loja => map(day => {fat,des,fre,ped})
+      const daySets = new Map(); // loja => set days
       (data||[]).forEach(r=>{
-        const k=r.loja||'—';
-        if(!m.has(k)) m.set(k,{fat:0,des:0,fre:0,ped:0, days:new Set()});
-        const a=m.get(k);
-        a.fat += +r.fat||0;
-        a.des += +r.des||0;
-        a.fre += +r.fre||0;
-        // ***** INÍCIO DA CORREÇÃO *****
-        // A contagem de pedidos ('ped') agora é feita incrementando 1 para cada linha.
-        a.ped += 1;
-        // ***** FIM DA CORREÇÃO *****
-        a.days.add(r.dia);
+        const loja = r.loja || '—';
+        if(!m.has(loja)) m.set(loja, new Map());
+        const dayMap = m.get(loja);
+        if(!daySets.has(loja)) daySets.set(loja, new Set());
+        daySets.get(loja).add(r.dia);
+        const dkey = r.dia;
+        if(!dayMap.has(dkey)) dayMap.set(dkey, {fat:0, des:0, fre:0, ped:0});
+        const dacc = dayMap.get(dkey);
+        dacc.fat += +r.fat||0;
+        dacc.des += +r.des||0;
+        dacc.fre += +r.fre||0;
+        dacc.ped += 1;
       });
 
-      function metricVal(a){
-        switch(selectedKPI){
-          case 'fat':     return (effectiveMode()==='media') ? (a.fat/Math.max(1,a.days.size)) : a.fat;
-          case 'ped':     return (effectiveMode()==='media') ? (a.ped/Math.max(1,a.days.size)) : a.ped;
-          case 'tkt':     return a.ped>0 ? (a.fat/a.ped) : 0;
-          case 'des':     return (effectiveMode()==='media') ? (a.des/Math.max(1,a.days.size)) : a.des;
-          case 'desperc': return a.fat>0 ? (a.des/a.fat) : 0;
-          case 'fre':     return (effectiveMode()==='media') ? (a.fre/Math.max(1,a.days.size)) : a.fre;
-          case 'fremed':  return a.ped>0 ? (a.fre/a.ped) : 0;
-          case 'fatmed':  return a.fat/Math.max(1,a.days.size);
-          case 'canc_ped': return (effectiveMode()==='media') ? (a.ped/Math.max(1,a.days.size)) : a.ped;
-          case 'canc_val': return (effectiveMode()==='media') ? (a.fat/Math.max(1,a.days.size)) : a.fat;
-          case 'roi':     return a.des>0 ? ((a.fat-a.des)/a.des) : 0;
-          default:        return a.fat;
+      function metricVal(loja){
+        const dailyMap = m.get(loja);
+        const numDays = daySets.get(loja)?.size || 1;
+        const mode = effectiveMode();
+        const isRatio = ['tkt','desperc','fremed','roi'].includes(selectedKPI);
+        if(isRatio){
+          return (mode === 'media') ? computeRatio(dailyMap, selectedKPI) : (function(){
+            const total = {fat:0, des:0, fre:0, ped:0};
+            for(const d of dailyMap.values()){
+              total.fat += d.fat;
+              total.des += d.des;
+              total.fre += d.fre;
+              total.ped += d.ped;
+            }
+            switch(selectedKPI){
+              case 'tkt': return (total.ped>0) ? total.fat/total.ped : 0;
+              case 'desperc': return (total.fat>0) ? total.des/total.fat : 0;
+              case 'fremed': return (total.ped>0) ? total.fre/total.ped : 0;
+              case 'roi': return (total.des>0) ? (total.fat - total.des)/total.des : 0;
+            }
+          })();
+        } else {
+          const total = {fat:0, des:0, fre:0, ped:0};
+          for(const d of dailyMap.values()){
+            total.fat += d.fat;
+            total.des += d.des;
+            total.fre += d.fre;
+            total.ped += d.ped;
+          }
+          switch(selectedKPI){
+            case 'fat': return mode==='media' ? total.fat / numDays : total.fat;
+            case 'ped': return mode==='media' ? total.ped / numDays : total.ped;
+            case 'des': return mode==='media' ? total.des / numDays : total.des;
+            case 'fre': return mode==='media' ? total.fre / numDays : total.fre;
+            case 'fatmed': return total.fat / numDays;
+            case 'canc_ped': return mode==='media' ? total.ped / numDays : total.ped;
+            case 'canc_val': return mode==='media' ? total.fat / numDays : total.fat;
+          }
         }
+        return 0;
       }
 
-      const arr = [...m.entries()].map(([loja,a])=>[loja, metricVal(a)]).sort((A,B)=>B[1]-A[1]).slice(0,6);
-      ensureDonutTop6(arr.map(a=>a[0]), arr.map(a=>a[1]), null, meta.fmt);
+      const allLojas = [...m.keys()];
+      const arr = allLojas.map(loja => [loja, metricVal(loja)] ).sort((a,b)=> b[1]-a[1]).slice(0,6);
+
+      const total = allLojas.reduce((sum, loja) => sum + metricVal(loja), 0);
+      ensureDonutTop6(arr.map(a=>a[0]), arr.map(a=>a[1]), `Total: ${formatValueBy(meta.fmt, total)}`, meta.fmt);
       setStatus('OK — Top 6','ok');
     }catch(e){
       console.warn('top6 erro:', e.message||e);
@@ -1221,8 +1269,7 @@
         const get = (k)=> (k? r[k] : null);
         const dtSplit = splitDateTimeCell(get(kDia));
         const dia  = dtSplit.dateISO;
-        theHora = parseHourFromEither(get(kDia), get(kHora));
-        const hora = theHora;
+        const hora = parseHourFromEither(get(kDia), get(kHora));
 
         const row = {
           dia, hora,
@@ -1259,10 +1306,7 @@
       setStatus('Upload concluído','ok');
       info(`Gravado/atualizado: ${rows.length} linhas.`);
 
-      // ***** INÍCIO DA CORREÇÃO *****
-      // Removido o caractere '<' que estava causando o erro de sintaxe.
       try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
-      // ***** FIM DA CORREÇÃO *****
 
       try{
         const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
