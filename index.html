@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-f8"/>
+  <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>DASHBOARD - Venda de Pratos</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%237b1e3a"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">VP</text></svg>'/>
@@ -407,46 +407,37 @@
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file) return;
+
+    let uploadSuccess = false;
     info('Lendo arquivo...');
     setStatus('Processando...');
+
     try {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type:'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
-      /**
-       * Função de parse de data à prova de falhas.
-       */
       function parseDate(excelDate) {
           try {
-              if (excelDate === null || typeof excelDate === 'undefined') {
-                  return null;
-              }
+              if (excelDate === null || typeof excelDate === 'undefined') return null;
               let d;
-              // Trata data como número (formato Excel)
               if (typeof excelDate === 'number' && excelDate > 1) {
                   d = new Date(Date.UTC(1899, 11, 30 + excelDate));
               } else {
                   const s = String(excelDate).trim();
                   if (s === '') return null;
-                  // Tenta formato DD/MM/YYYY
                   const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-                  if (dmy) {
-                      d = new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]));
-                  } else {
-                      // Tenta formatos nativos do Javascript (incluindo YYYY-MM-DD)
-                      d = new Date(s);
-                  }
+                  if (dmy) { d = new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]));
+                  } else { d = new Date(s); }
               }
-              // Validação final da data
               if (d instanceof Date && !isNaN(d) && d.getFullYear() > 1900) {
                   return d.toISOString().slice(0, 10);
               }
               return null;
           } catch (error) {
               console.warn('Não foi possível parsear a data:', excelDate, error);
-              return null; // Retorna nulo se qualquer erro inesperado ocorrer
+              return null;
           }
       }
 
@@ -473,9 +464,7 @@
       });
 
       if (rows.length === 0) {
-        info('Nenhuma linha válida foi encontrada no arquivo. Verifique se as colunas (Quantidade, Data, Unidade, Prato, Categoria) estão corretas e se os dados são válidos.');
-        setStatus('Arquivo vazio ou inválido', 'err');
-        return;
+        throw new Error('Nenhuma linha válida encontrada. Verifique as colunas do arquivo.');
       }
       info(`${rows.length} linhas válidas encontradas. Enviando...`);
       
@@ -488,10 +477,7 @@
 
       info(`Upload concluído: ${rows.length} linhas inseridas/atualizadas.`);
       setStatus('Upload concluído', 'ok');
-      
-      try { await supa.rpc(REFRESH_RPC); } catch(e) {}
-      
-      await init();
+      uploadSuccess = true;
 
     } catch(e) {
       console.error(e);
@@ -499,6 +485,17 @@
       info(e.message);
     } finally {
         $('fileExcel').value = '';
+    }
+
+    if (uploadSuccess) {
+      try {
+        setStatus('Atualizando visões...');
+        await supa.rpc(REFRESH_RPC);
+        await init();
+      } catch(e) {
+        setStatus('Erro ao recarregar dashboard.', 'err');
+        console.error(e);
+      }
     }
   });
 
@@ -510,9 +507,6 @@
       const ate = fAte.value || lastDay;
       if (!de || !ate) {
         setStatus('Selecione um intervalo de datas.');
-        renderChart('ch_top10_mais', 'bar', [], []); renderChart('ch_top10_menos', 'bar', [], []);
-        renderChart('ch_dow', 'bar', [], []); renderChart('ch_cat', 'pie', [], []);
-        renderChart('ch_month', 'bar', [], []);
         return;
       }
 
@@ -523,9 +517,8 @@
       ]);
       
       const len = daysLen(de, ate);
-      await updateKPIs(rows, prevRows, len);
-      
       await Promise.all([
+          updateKPIs(rows, prevRows, len),
           updateTopPratosCharts(rows),
           updateDowChart(rows, prevRows),
           updateCategoryChart(rows),
