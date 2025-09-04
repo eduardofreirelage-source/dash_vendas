@@ -36,7 +36,6 @@
     table{width:100%;border-collapse:collapse}
     th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:middle}
     th{background:#f8fafc}
-    /* compacta apenas a lista de pratos */
     table.compact th, table.compact td{padding:6px 8px}
     table.compact td .btn{padding:6px 10px}
     .row-actions{display:flex;gap:6px;flex-wrap:wrap}
@@ -45,6 +44,16 @@
     details > summary{cursor:pointer;font-weight:600;list-style:none}
     details > summary::-webkit-details-marker{display:none}
     .stack{display:flex;flex-direction:column;gap:12px}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .tag{padding:2px 6px;border-radius:8px;background:#f1f5f9;border:1px solid var(--line);font-size:12px}
+    .pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:8px}
+    .pager .btn{padding:6px 10px}
+    /* impressão */
+    @media print{
+      .no-print{display:none !important}
+      body{background:white}
+      .section{box-shadow:none;border:none}
+    }
     @media (max-width:900px){.cols-2,.cols-3{grid-template-columns:1fr}}
   </style>
 </head>
@@ -66,9 +75,8 @@
     <div class="section" id="tab-pratos">
       <h3>Pratos</h3>
 
-      <!-- Lista + editor numa coluna só -->
       <div class="grid">
-        <div class="grid cols-2">
+        <div class="grid cols-2 no-print">
           <div><input id="prato-search" placeholder="Buscar prato cadastrado"></div>
           <div style="text-align:right"><button class="btn" id="btnNewPrato">+ Novo prato</button></div>
         </div>
@@ -76,15 +84,21 @@
         <div style="overflow:auto">
           <table id="tblPratos" class="compact">
             <thead>
-              <tr><th>Nome</th><th>Categoria</th><th>Receitas</th><th>Ativo</th><th>Ações</th></tr>
+              <tr><th>Nome</th><th>Categoria</th><th>Receitas</th><th>Ativo</th><th class="no-print">Ações</th></tr>
             </thead>
             <tbody></tbody>
           </table>
         </div>
+        <div class="pager no-print">
+          <span class="tag" id="pageInfo">Página 1/1</span>
+          <button class="btn" id="prevPage">◀</button>
+          <button class="btn" id="nextPage">▶</button>
+        </div>
 
-        <!-- Editor abaixo -->
         <div class="sep"></div>
-        <div class="stack">
+
+        <!-- Editor -->
+        <div class="stack no-print">
           <div class="kpi" id="prato-kpi">
             <span id="kpi-custo">Custo: —</span>
             <span id="kpi-peso">Peso: —</span>
@@ -115,7 +129,75 @@
           <div class="hint" id="prato-edit-hint" style="color:#64748b"></div>
         </div>
 
-        <!-- Importação do dashboard AGORA ABAIXO DE TUDO -->
+        <!-- ===== PREVISÃO DE PRODUÇÃO ===== -->
+        <details class="summary-card" id="prev-pane" open>
+          <summary>Previsão de Produção (média diária por período selecionado)</summary>
+          <div class="toolbar" style="margin-top:8px">
+            <span class="pill">Período rápido:</span>
+            <button class="btn" data-q="7">07</button>
+            <button class="btn" data-q="15">15</button>
+            <button class="btn" data-q="30">30</button>
+            <button class="btn" data-q="60">60</button>
+            <button class="btn" data-q="90">90</button>
+            <button class="btn" data-q="120">120</button>
+            <span class="pill">ou</span>
+            <label>Início <input id="pv-inicio" type="date"></label>
+            <label>Fim <input id="pv-fim" type="date"></label>
+            <label>Horizonte
+              <select id="pv-horizonte">
+                <option value="1">1 dia</option>
+                <option value="3">3 dias</option>
+                <option value="5">5 dias</option>
+                <option value="7" selected>7 dias (semana)</option>
+              </select>
+            </label>
+            <button class="btn pri" id="btnGerarPrev">Gerar</button>
+            <button class="btn" id="btnExportPDF">Exportar PDF</button>
+          </div>
+          <div class="hint">Fonte de vendas: <code id="sales-source-label"></code> • Considera média de vendas/dia por prato no período, projeta para o horizonte e agrega por receita (componentes do prato).</div>
+
+          <div id="prev-results" style="margin-top:10px;display:none">
+            <div class="pill">Média diária por prato</div>
+            <div style="overflow:auto;margin-top:6px">
+              <table id="tblPrevPratosDia" class="compact">
+                <thead><tr><th>Prato</th><th>Média/dia</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+
+            <div class="sep"></div>
+
+            <div class="pill">Projeção total por prato (para o horizonte)</div>
+            <div style="overflow:auto;margin-top:6px">
+              <table id="tblPrevPratosTot" class="compact">
+                <thead><tr><th>Prato</th><th>Total previsto</th><th>Horizonte</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+
+            <div class="sep"></div>
+
+            <div class="pill">Produção diária — AGRUPADA por Receita</div>
+            <div style="overflow:auto;margin-top:6px">
+              <table id="tblPrevReceitasDia" class="compact">
+                <thead><tr><th>Receita</th><th>Qtd/dia</th><th>Un</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+
+            <div class="sep"></div>
+
+            <div class="pill">Produção TOTAL (para o horizonte) — AGRUPADA por Receita</div>
+            <div style="overflow:auto;margin-top:6px">
+              <table id="tblPrevReceitasTot" class="compact">
+                <thead><tr><th>Receita</th><th>Qtd total</th><th>Un</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+
+        <!-- Importação do dashboard ABAIXO -->
         <details class="summary-card" id="imp-pane">
           <summary>Pratos do Dashboard (clique para expandir/ocultar)</summary>
           <div class="sep"></div>
@@ -153,7 +235,7 @@
       <div class="pill" id="pc-title">Componentes — (nenhum prato selecionado)</div>
       <div style="overflow:auto;margin-top:8px">
         <table id="tblPc">
-          <thead><tr><th>Receita</th><th>Qtd</th><th>Un</th><th>Observações</th><th>Ações</th></tr></thead>
+          <thead><tr><th>Receita</th><th>Qtd</th><th>Un</th><th>Observações</th><th class="no-print">Ações</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -200,7 +282,7 @@
       <div class="pill">Componentes da receita selecionada</div>
       <div style="overflow:auto;margin-top:8px">
         <table id="tblRi">
-          <thead><tr><th>Tipo</th><th>Nome</th><th>Qtd</th><th>Un</th><th>Perda%</th><th>Ações</th></tr></thead>
+          <thead><tr><th>Tipo</th><th>Nome</th><th>Qtd</th><th>Un</th><th>Perda%</th><th class="no-print">Ações</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -222,7 +304,7 @@
         </div>
         <div style="overflow:auto;margin-top:8px">
           <table id="tblDraft">
-            <thead><tr><th>Tipo</th><th>Nome</th><th>Qtd</th><th>Un</th><th>Perda%</th><th>Ações</th></tr></thead>
+            <thead><tr><th>Tipo</th><th>Nome</th><th>Qtd</th><th>Un</th><th>Perda%</th><th class="no-print">Ações</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -238,7 +320,7 @@
       <h3>Ingredientes</h3>
       <div style="overflow:auto">
         <table id="tblIng">
-          <thead><tr><th>Nome</th><th>Unidade</th><th>Preço unitário</th><th>Ativo</th><th>Ações</th></tr></thead>
+          <thead><tr><th>Nome</th><th>Unidade</th><th>Preço unitário</th><th>Ativo</th><th class="no-print">Ações</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -266,17 +348,23 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script>
   document.addEventListener('DOMContentLoaded', () => {
-    /* ========= Supabase ========= */
+    /* ========= Supabase / fontes ========= */
     const SUPABASE_URL  = 'https://rqeagimulvgfecvuzubk.supabase.co';
     const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxZWFnaW11bHZnZmVjdnV6dWJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NzkyMzUsImV4cCI6MjA3MjU1NTIzNX0.SeNHyHOlpqjm-QTl7KXq7YF-48fk5iOQCRgpangP4zU';
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+    // fontes configuráveis
     const DASHBOARD_PRATOS_SOURCE = 'vendas_pratos_pratos'; // prato, categoria (opcional)
+    const SALES_VIEW = 'vendas_pratos_view_only_pratos';   // data (date), prato (text), quantidade (numeric)
+    document.getElementById('sales-source-label').textContent = SALES_VIEW;
 
     /* ========= Helpers ========= */
     const $ = (id)=> document.getElementById(id);
     const setStatus=(msg,cls)=>{ const el=$('status'); if(!el) return; el.textContent=msg; el.className='status'+(cls?(' '+cls):''); };
     const fmtBR = (n, max=3)=> new Intl.NumberFormat('pt-BR',{maximumFractionDigits:max}).format(+n || 0);
     const ptToNumber = (v)=>{ if(v==null) return 0; const s=String(v).trim().replace(/\./g,'').replace(',','.'); const n=parseFloat(s); return isNaN(n)?0:n; };
+    const addDays=(d,add)=>{ const x=new Date(d); x.setDate(x.getDate()+add); return x; };
+    const toISODate=(d)=> new Date(d).toISOString().slice(0,10);
 
     /* ========= Tabs ========= */
     document.querySelectorAll('.tab').forEach(btn=>{
@@ -289,32 +377,52 @@
       });
     });
 
-    /* ================= PRATOS ================= */
-    let pratoEditId = null;
+    /* ================= PRATOS: lista + paginação ================= */
+    let pratoData = []; // dados de v_pratos_resumo
+    let page = 1, pageSize = 10;
 
-    async function loadPratosList(){
+    function renderPratos(){
       const tb = $('tblPratos').querySelector('tbody');
-      tb.innerHTML = '<tr><td colspan="5">Carregando…</td></tr>';
-      const { data, error } = await supa.from('v_pratos_resumo').select('*').order('nome',{ascending:true});
-      if(error){ tb.innerHTML='<tr><td colspan="5">Crie a view v_pratos_resumo</td></tr>'; return; }
       const filtro = ($('prato-search').value||'').toLowerCase();
+      const filtered = pratoData.filter(p=>p.nome.toLowerCase().includes(filtro));
+      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      if(page > totalPages) page = totalPages;
+
       tb.innerHTML='';
-      (data||[]).filter(p=>p.nome.toLowerCase().includes(filtro)).forEach(p=>{
+      filtered.slice((page-1)*pageSize, (page)*pageSize).forEach(p=>{
         const tr=document.createElement('tr');
         tr.innerHTML = `
           <td>${p.nome}</td>
           <td>${p.categoria||'—'}</td>
           <td>${p.receitas ?? 0}</td>
           <td>${p.ativo?'<span class="pill">Ativo</span>':'<span class="pill">Inativo</span>'}</td>
-          <td class="row-actions">
+          <td class="row-actions no-print">
             <button class="btn" data-act="edit" data-id="${p.id}">Editar</button>
             <button class="btn" data-act="toggle" data-id="${p.id}">${p.ativo?'Desativar':'Ativar'}</button>
             <button class="btn" data-act="del" data-id="${p.id}">Excluir</button>
           </td>`;
         tb.appendChild(tr);
       });
+
+      $('pageInfo').textContent = `Página ${page}/${totalPages}`;
+      $('prevPage').disabled = page<=1;
+      $('nextPage').disabled = page>=totalPages;
+    }
+
+    $('prevPage').addEventListener('click', ()=>{ if(page>1){ page--; renderPratos(); }});
+    $('nextPage').addEventListener('click', ()=>{ page++; renderPratos(); });
+    $('prato-search').addEventListener('input', ()=>{ page=1; renderPratos(); });
+
+    async function loadPratosList(){
+      const { data, error } = await supa.from('v_pratos_resumo').select('*').order('nome',{ascending:true});
+      if(error){ setStatus('Crie a view v_pratos_resumo','err'); return; }
+      pratoData = data || [];
+      renderPratos();
       await fillOptionsFromQuery('pc-prato','pratos','id','nome',{ativo:true});
     }
+
+    /* ===== Editor de prato (igual ao anterior) ===== */
+    let pratoEditId = null;
     function enterPratoEdit(row){
       pratoEditId = row?.id || null;
       $('pr-nome').value = row?.nome || '';
@@ -331,7 +439,6 @@
     }
     $('btnNewPrato').addEventListener('click', ()=>enterPratoEdit(null));
     $('btnCancelPrato').addEventListener('click', ()=>enterPratoEdit(null));
-    $('prato-search').addEventListener('input', loadPratosList);
 
     $('tblPratos').addEventListener('click', async (e)=>{
       const btn = e.target.closest('button'); if(!btn) return;
@@ -371,7 +478,7 @@
       await loadPratosList();
     });
 
-    // Importação
+    /* ================= IMPORTAÇÃO (mantida) ================= */
     async function loadDashPratos(){
       const tb = $('tblImp').querySelector('tbody');
       tb.innerHTML = '<tr><td colspan="4">Carregando…</td></tr>';
@@ -444,7 +551,7 @@
             </select>
           </td>
           <td><input data-k="obs" data-id="${row.id}" value="${row.obs||''}"></td>
-          <td class="row-actions">
+          <td class="row-actions no-print">
             <button class="btn" data-act="pc-save" data-id="${row.id}">Salvar</button>
             <button class="btn" data-act="pc-del" data-id="${row.id}">Remover</button>
           </td>`;
@@ -482,7 +589,7 @@
       await loadPratoCompList();
     });
 
-    /* ================= RECEITAS ================= */
+    /* ================= RECEITAS / INGREDIENTES (utilitários) ================= */
     async function fillOptions(selectId, items, valKey, labelKey){
       const sel = $(selectId); if(!sel) return;
       sel.innerHTML=''; (items||[]).forEach(x=>{ const o=document.createElement('option'); o.value=x[valKey]; o.textContent=x[labelKey]; sel.appendChild(o); });
@@ -498,6 +605,8 @@
       await fillOptionsFromQuery('ri-receita','receitas','id','nome',{});
       await fillOptionsFromQuery('pc-rec','receitas','id','nome',{ativo:true});
     }
+
+    // Receitas – tabela itens (mantida)
     let receitaEditId = null;
     async function enterReceita(id){
       receitaEditId = id||null;
@@ -552,7 +661,7 @@
             </select>
           </td>
           <td><input data-k="perda_pct" data-id="${it.id}" value="${it.perda_pct||0}"></td>
-          <td class="row-actions">
+          <td class="row-actions no-print">
             <button class="btn" data-act="ri-save" data-id="${it.id}">Salvar</button>
             <button class="btn" data-act="ri-del" data-id="${it.id}">Remover</button>
           </td>`;
@@ -577,9 +686,9 @@
       }
     });
 
-    // Adição de itens à receita
+    // Draft para adicionar itens à receita (mantido)
     let draftItems = [];
-    function renderDraft(){ const tb=$('tblDraft').querySelector('tbody'); tb.innerHTML=''; draftItems.forEach((d,i)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${d.tipo}</td><td>${d.nome}</td><td>${fmtBR(d.qtd)}</td><td>${d.unidade}</td><td>${fmtBR(d.perda_pct)}%</td><td class="row-actions"><button class="btn" data-act="rm" data-idx="${i}">Remover</button></td>`; tb.appendChild(tr); }); }
+    function renderDraft(){ const tb=$('tblDraft').querySelector('tbody'); tb.innerHTML=''; draftItems.forEach((d,i)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${d.tipo}</td><td>${d.nome}</td><td>${fmtBR(d.qtd)}</td><td>${d.unidade}</td><td>${fmtBR(d.perda_pct)}%</td><td class="row-actions no-print"><button class="btn" data-act="rm" data-idx="${i}">Remover</button></td>`; tb.appendChild(tr); }); }
     async function refreshDraftRefs(){
       const tipo = $('draft-tipo').value;
       if(tipo==='INGREDIENTE'){ const { data } = await supa.from('ingredientes').select('id,nome').eq('ativo',true).order('nome'); fillOptions('draft-ref', data, 'id','nome'); }
@@ -610,7 +719,7 @@
       tb.innerHTML='<tr><td colspan="5">Carregando…</td></tr>';
       const { data, error } = await supa.from('ingredientes').select('*').order('nome',{ascending:true});
       if(error){ tb.innerHTML='<tr><td colspan="5">Erro ao listar ingredientes</td></tr>'; return; }
-      tb.innerHTML=''; (data||[]).forEach(row=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${row.nome}</td><td>${row.unidade}</td><td>R$ ${fmtBR(row.custo_unitario)}</td><td>${row.ativo?'<span class="pill">Ativo</span>':'<span class="pill">Inativo</span>'}</td><td class="row-actions"><button class="btn" data-act="edit" data-id="${row.id}">Editar</button><button class="btn" data-act="toggle" data-id="${row.id}">${row.ativo?'Desativar':'Ativar'}</button><button class="btn" data-act="del" data-id="${row.id}">Excluir</button></td>`; tb.appendChild(tr); });
+      tb.innerHTML=''; (data||[]).forEach(row=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${row.nome}</td><td>${row.unidade}</td><td>R$ ${fmtBR(row.custo_unitario)}</td><td>${row.ativo?'<span class="pill">Ativo</span>':'<span class="pill">Inativo</span>'}</td><td class="row-actions no-print"><button class="btn" data-act="edit" data-id="${row.id}">Editar</button><button class="btn" data-act="toggle" data-id="${row.id}">${row.ativo?'Desativar':'Ativar'}</button><button class="btn" data-act="del" data-id="${row.id}">Excluir</button></td>`; tb.appendChild(tr); });
       await loadReceitasSelect();
     }
     function enterIngEdit(row){
@@ -632,9 +741,162 @@
       setStatus('Ingrediente salvo','ok'); enterIngEdit(null); await loadIngredientes();
     });
 
-    /* INIT */
+    /* ================= PREVISÃO DE PRODUÇÃO ================= */
+    // Carrega mapeamentos prato -> componentes (receitas)
+    async function getPratoReceitasMap(){
+      const { data: prc } = await supa.from('prato_receitas').select('prato_id, receita_id, qtd, unidade');
+      const { data: pratos } = await supa.from('pratos').select('id,nome');
+      const { data: receitas } = await supa.from('receitas').select('id,nome');
+      const pratoById = new Map((pratos||[]).map(p=>[p.id,p.nome]));
+      const recById = new Map((receitas||[]).map(r=>[r.id,r.nome]));
+      // mapa por nome do prato
+      const map = new Map(); // pratoNome -> [{receitaNome,qtd,un}]
+      (prc||[]).forEach(r=>{
+        const pratoNome = pratoById.get(r.prato_id);
+        const receitaNome = recById.get(r.receita_id);
+        if(!pratoNome || !receitaNome) return;
+        if(!map.has(pratoNome)) map.set(pratoNome, []);
+        map.get(pratoNome).push({ receita: receitaNome, qtd: +r.qtd, un: r.unidade });
+      });
+      return map;
+    }
+
+    // Agrega vendas do período por prato e devolve média diária
+    async function getMediaPorPrato(inicioISO, fimISO){
+      // pega todas as vendas do período e agrega no cliente
+      const { data, error } = await supa
+        .from(SALES_VIEW)
+        .select('data,prato,quantidade')
+        .gte('data', inicioISO)
+        .lte('data', fimISO)
+        .limit(50000); // segurança
+      if(error){ alert('Erro lendo vendas: '+(error.message||error)); return { medias:new Map(), dias:0 }; }
+      const dias = Math.max(1, Math.round((new Date(fimISO)-new Date(inicioISO))/86400000)+1);
+      const totPorPrato = new Map();
+      (data||[]).forEach(r=>{
+        const key = r.prato;
+        const q = +r.quantidade || 0;
+        totPorPrato.set(key, (totPorPrato.get(key)||0)+q);
+      });
+      const medias = new Map();
+      totPorPrato.forEach((tot,prato)=>{ medias.set(prato, tot/dias); });
+      return { medias, dias };
+    }
+
+    function fillTable(tbody, rows){
+      tbody.innerHTML=''; rows.forEach(r=>{ const tr=document.createElement('tr'); tr.innerHTML=r; tbody.appendChild(tr); });
+    }
+
+    function printSection(htmlContent){
+      const w = window.open('', '_blank');
+      w.document.write(`
+        <html><head><title>Plano de Produção</title>
+        <style>
+          body{font-family:Arial,Helvetica,sans-serif;font-size:12px}
+          h2{margin:0 0 6px}
+          table{width:100%;border-collapse:collapse;margin:8px 0}
+          th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}
+          th{background:#f3f4f6}
+          .meta{font-size:12px;color:#444;margin-bottom:8px}
+        </style>
+        </head><body>
+        ${htmlContent}
+        </body></html>
+      `);
+      w.document.close(); w.focus();
+      w.print();
+    }
+
+    // Botões de período rápido
+    document.querySelectorAll('#prev-pane [data-q]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const q = +b.dataset.q;
+        const fim = new Date(); // hoje
+        const inicio = addDays(fim, -(q-1));
+        $('pv-inicio').value = toISODate(inicio);
+        $('pv-fim').value = toISODate(fim);
+      });
+    });
+
+    $('btnGerarPrev').addEventListener('click', async ()=>{
+      const ini = $('pv-inicio').value;
+      const fim = $('pv-fim').value;
+      const horizonte = +$('pv-horizonte').value || 7;
+      if(!ini || !fim){ alert('Defina início e fim do período.'); return; }
+
+      setStatus('Calculando previsão…','');
+      // média por prato
+      const { medias } = await getMediaPorPrato(ini, fim);
+
+      // carregar mapeamento prato -> receitas
+      const mapPR = await getPratoReceitasMap();
+
+      // Tabelas de saída
+      // 1) Média diária por prato
+      const rowsPrDia = [];
+      const rowsPrTot = [];
+      const recAgregDia = new Map(); // receita|un -> qtd/dia
+      medias.forEach((media, prato)=>{
+        if(media<=0) return;
+        rowsPrDia.push(`<tr><td>${prato}</td><td>${fmtBR(media,2)}</td></tr>`);
+        rowsPrTot.push(`<tr><td>${prato}</td><td>${fmtBR(media*horizonte,2)}</td><td>${horizonte} dias</td></tr>`);
+        // expande em receitas
+        const comps = mapPR.get(prato) || [];
+        comps.forEach(c=>{
+          const key = c.receita+'|'+c.un;
+          const add = media * c.qtd; // por dia
+          recAgregDia.set(key, (recAgregDia.get(key)||0) + add);
+        });
+      });
+
+      // 3) Receitas/dia agregadas
+      const rowsRecDia = [];
+      const rowsRecTot = [];
+      Array.from(recAgregDia.entries())
+        .sort((a,b)=> a[0].localeCompare(b[0],'pt-BR'))
+        .forEach(([key, qtdDia])=>{
+          const [rec, un] = key.split('|');
+          rowsRecDia.push(`<tr><td>${rec}</td><td>${fmtBR(qtdDia,2)}</td><td>${un}</td></tr>`);
+          rowsRecTot.push(`<tr><td>${rec}</td><td>${fmtBR(qtdDia*horizonte,2)}</td><td>${un}</td></tr>`);
+        });
+
+      fillTable($('tblPrevPratosDia').querySelector('tbody'), rowsPrDia);
+      fillTable($('tblPrevPratosTot').querySelector('tbody'), rowsPrTot);
+      fillTable($('tblPrevReceitasDia').querySelector('tbody'), rowsRecDia);
+      fillTable($('tblPrevReceitasTot').querySelector('tbody'), rowsRecTot);
+      $('prev-results').style.display='block';
+      setStatus('Pronto','ok');
+
+      // handler do PDF (gera a partir das tabelas)
+      $('btnExportPDF').onclick = ()=>{
+        const html = `
+          <h2>Plano de Produção</h2>
+          <div class="meta">Período base: ${ini} a ${fim} • Horizonte: ${horizonte} dia(s)</div>
+
+          <h3>Média diária por prato</h3>
+          ${$('tblPrevPratosDia').outerHTML}
+
+          <h3>Projeção total por prato (horizonte)</h3>
+          ${$('tblPrevPratosTot').outerHTML}
+
+          <h3>Produção diária — AGRUPADA por Receita</h3>
+          ${$('tblPrevReceitasDia').outerHTML}
+
+          <h3>Produção TOTAL para o horizonte — AGRUPADA por Receita</h3>
+          ${$('tblPrevReceitasTot').outerHTML}
+        `;
+        printSection(html);
+      };
+    });
+
+    /* ================= INIT ================= */
     async function init(){
       try{
+        // default período: últimos 15 dias
+        const fim = new Date(); const ini = addDays(fim, -14);
+        $('pv-inicio').value = toISODate(ini);
+        $('pv-fim').value = toISODate(fim);
+
         await loadPratosList();
         await loadReceitasSelect();
         await loadIngredientes();
