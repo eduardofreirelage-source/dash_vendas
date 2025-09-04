@@ -335,7 +335,7 @@
     return all;
   }
 
-  /* ===================== KPIs & CHARTS ===================== */
+  /* ===================== KPI & CHARTS ===================== */
   function deltaBadge(el,curr,prev){
     if(!isFinite(prev)||+prev===0){ el.innerHTML='—'; el.className='delta flat'; return; }
     const p=((curr-prev)/prev)*100;
@@ -375,7 +375,21 @@
         maintainAspectRatio: false,
         animation: false,
         scales: type.includes('bar') ? { y: { beginAtZero: true } } : {},
-        plugins: { legend: { display: datasets.length > 1 || type === 'pie' } },
+        plugins: {
+          legend: { display: datasets.length > 1 || type === 'pie' },
+          tooltip: {
+            callbacks: {
+              afterLabel: (ctx) => {
+                // Tooltip extra para o DOW no modo MÉDIA
+                if (ctx.chart.canvas.id === 'ch_dow' && dowMode === 'MEDIA') {
+                  const occ = ctx.dataset._occurrences || [];
+                  const i = ctx.dataIndex;
+                  if (occ[i] != null) return `  • ${occ[i]} ocorrência(s)`;
+                }
+              }
+            }
+          }
+        },
         ...options
       }
     });
@@ -401,7 +415,6 @@
     }], { indexAxis: 'y', plugins: { legend: { display: false } } });
   }
 
-  // Conta quantas ocorrências de cada dia da semana existem no intervalo
   function countWeekdayOccurrences(de, ate){
     const counts = Array(7).fill(0);
     let d = new Date(de+'T00:00:00'); const end = new Date(ate+'T00:00:00');
@@ -419,19 +432,21 @@
 
     let nowData = nowTotals.slice();
     let prevData = prevTotals.slice();
+    let occNow = null, occPrev = null;
 
     if (dowMode === 'MEDIA') {
-      const occNow = countWeekdayOccurrences(de, ate);
+      occNow = countWeekdayOccurrences(de, ate);
       const { dePrev, atePrev } = computePrevRangeISO(de, ate);
-      const occPrev = countWeekdayOccurrences(dePrev, atePrev);
+      occPrev = countWeekdayOccurrences(dePrev, atePrev);
       nowData = nowTotals.map((v,i)=> occNow[i] ? Math.round(v/occNow[i]) : 0);
       prevData = prevTotals.map((v,i)=> occPrev[i] ? Math.round(v/occPrev[i]) : 0);
     }
 
-    renderChart('ch_dow', 'bar', dowLabels, [
-      { label: dowMode === 'MEDIA' ? 'Média' : 'Total', data: nowData, backgroundColor: 'rgba(123,30,58,.7)' },
-      { label: 'Anterior', data: prevData, backgroundColor: 'rgba(148,163,184,.7)' }
-    ]);
+    const dsNow = { label: dowMode === 'MEDIA' ? 'Média' : 'Total', data: nowData, backgroundColor: 'rgba(123,30,58,.7)' };
+    const dsPrev = { label: 'Anterior', data: prevData, backgroundColor: 'rgba(148,163,184,.7)' };
+    if (dowMode === 'MEDIA') { dsNow._occurrences = occNow; dsPrev._occurrences = occPrev; }
+
+    renderChart('ch_dow', 'bar', dowLabels, [dsNow, dsPrev]);
   }
 
   function updateCategoryChart(rows) {
@@ -444,7 +459,7 @@
     }]);
   }
 
-  // Corrigido: usa o FIM selecionado (fAte.value) para definir as 12 janelas
+  // Usa o FIM selecionado para montar a janela de 12 meses e alinha 12M anteriores
   async function updateMonthChart(selectedEndISO) {
     const end = selectedEndISO || iso(new Date());
     const endMonthStart = monthStartISO(end);
@@ -465,7 +480,7 @@
     const nowMap = new Map();
     nowRows.forEach(r => { if (r.data){ const ym=r.data.slice(0,7); nowMap.set(ym,(nowMap.get(ym)||0)+r.quantidade); }});
     const prevMap = new Map();
-    prevRows.forEach(r => { if (r.data){ const prevDate = addMonthsISO(r.data, 12); const ym=prevDate.slice(0,7); prevMap.set(ym,(prevMap.get(ym)||0)+r.quantidade); }});
+    prevRows.forEach(r => { if (r.data){ const shifted = addMonthsISO(r.data, 12); const ym=shifted.slice(0,7); prevMap.set(ym,(prevMap.get(ym)||0)+r.quantidade); }});
 
     const nowData = [], prevData = [];
     cur = last12Start;
@@ -475,6 +490,7 @@
       prevData.push(prevMap.get(ym) || 0);
       cur = addMonthsISO(cur, 1);
     }
+
     renderChart('ch_month', 'bar', labels, [
       { label: 'Últimos 12M', data: nowData, backgroundColor: 'rgba(123,30,58,.7)' },
       { label: '12M Anteriores', data: prevData, backgroundColor: 'rgba(148,163,184,.7)' }
@@ -620,8 +636,8 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
   async function applyAll() {
     setStatus('Consultando...');
     try {
-      const de = fDe.value || firstDay;
-      const ate = fAte.value || lastDay;
+      const de = $('fDe').value || firstDay;
+      const ate = $('fAte').value || lastDay;
       if (!de || !ate) { setStatus('Selecione um intervalo de datas.'); return; }
 
       const len = daysLen(de, ate);
@@ -637,7 +653,7 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
         Promise.resolve().then(()=>updateTopPratosCharts(rows)),
         Promise.resolve().then(()=>updateDowChart(rows, prevRows, de, ate)),
         Promise.resolve().then(()=>updateCategoryChart(rows)),
-        updateMonthChart(ate) // ← usa o FIM escolhido
+        updateMonthChart(ate) // usa o FIM escolhido
       ]);
 
       renderDebug(rows, prevRows, de, ate);
