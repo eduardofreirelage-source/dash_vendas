@@ -268,7 +268,7 @@
     deltaBadge($('d_qtd'), totalQtd, prevTotalQtd);
     
     $('k_pratos_unicos').textContent = num(pratosUnicos);
-    $('k_media_diaria').textContent = len > 0 ? num(totalQtd / len) : '0';
+    $('k_media_diaria').textContent = len > 0 ? num(Math.round(totalQtd / len)) : '0';
   }
   
   function renderChart(canvasId, type, labels, datasets, options = {}) {
@@ -286,7 +286,7 @@
               maintainAspectRatio: false,
               animation: false,
               scales: type.includes('bar') ? { y: { beginAtZero: true } } : {},
-              plugins: { legend: { display: type !== 'bar' } },
+              plugins: { legend: { display: datasets.length > 1 || type === 'pie' } },
               ...options
           }
       });
@@ -414,22 +414,37 @@
       const ws = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
+      /**
+       * Função de parse de data à prova de falhas.
+       * Tenta identificar múltiplos formatos (numérico Excel, DD/MM/YYYY, YYYY-MM-DD).
+       * Retorna null se não conseguir identificar, sem quebrar a aplicação.
+       */
       function parseDate(excelDate) {
-          if (!excelDate) return null;
-          if (typeof excelDate === 'number' && excelDate > 1) {
-              return new Date(Date.UTC(1899, 11, 30 + excelDate)).toISOString().slice(0, 10);
+          try {
+              if (excelDate === null || typeof excelDate === 'undefined') {
+                  return null;
+              }
+              let d;
+              if (typeof excelDate === 'number' && excelDate > 1) {
+                  d = new Date(Date.UTC(1899, 11, 30 + excelDate));
+              } else {
+                  const s = String(excelDate).trim();
+                  if (s === '') return null;
+                  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+                  if (dmy) {
+                      d = new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]));
+                  } else {
+                      d = new Date(s);
+                  }
+              }
+              if (d instanceof Date && !isNaN(d) && d.getFullYear() > 1900) {
+                  return d.toISOString().slice(0, 10);
+              }
+              return null;
+          } catch (error) {
+              console.warn('Não foi possível parsear a data:', excelDate, error);
+              return null;
           }
-          const s = String(excelDate).trim();
-          const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-          if (dmy) {
-              const d = new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]));
-              if (!isNaN(d)) return d.toISOString().slice(0, 10);
-          }
-          const d = new Date(s);
-          if (!isNaN(d) && d.getFullYear() > 1900) {
-              return d.toISOString().slice(0, 10);
-          }
-          return null;
       }
 
       function makeRowKey(r){
@@ -449,7 +464,6 @@
           row.row_key = makeRowKey(row);
           return row;
       }).filter(r => {
-          // <-- FILTRO ATUALIZADO AQUI
           const pratoValido = r.prato && r.prato !== '0' && r.prato.toLowerCase() !== 'null';
           const qtdValida = r.quantidade && r.quantidade > 0;
           return r.data && pratoValido && qtdValida;
