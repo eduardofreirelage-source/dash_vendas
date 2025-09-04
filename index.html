@@ -16,6 +16,10 @@
     .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap}
     h1{margin:0;font-size:28px;letter-spacing:.2px}
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
+    .btn.sm{padding:6px 10px;font-size:12px;border-radius:8px}
+    .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+    .seg button{padding:6px 10px;border:0;background:#fff;cursor:pointer;font-size:12px}
+    .seg button.active{background:#f1f5f9;font-weight:700}
     .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px;}
     .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap}
     .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
@@ -46,7 +50,7 @@
     .delta.up{background:rgba(123,30,58,.10);border-color:rgba(123,30,58,.25);color:#7b1e3a}
     .delta.down{background:rgba(148,163,184,.15);border-color:rgba(148,163,184,.35);color:#64748b}
     .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
-    .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+    .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:10px;flex-wrap:wrap}
     .chart-box{height:320px;position:relative}
     .chart-box canvas{display:block;width:100%;height:100%;}
     .upload-info{margin-top:8px;font-size:12px;color:#475569}
@@ -118,7 +122,7 @@
         </div>
       </div>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-        <button id="btnCopySQL" class="btn">📋 Copiar SQL de conferência</button>
+        <button id="btnCopySQL" class="btn sm">📋 Copiar SQL de conferência</button>
         <span class="muted" id="dbgMsg">—</span>
       </div>
     </div>
@@ -148,11 +152,38 @@
     <div class="section" style="margin-top:12px">
       <div class="sec-title" style="margin-bottom:10px">Gráficos</div>
       <div class="row cols-2">
-        <div class="chart-card"><div class="chart-head"><div class="muted">Top 10 Mais Vendidos</div></div><div class="chart-box"><canvas id="ch_top10_mais"></canvas></div></div>
-        <div class="chart-card"><div class="chart-head"><div class="muted">Top 10 Menos Vendidos</div></div><div class="chart-box"><canvas id="ch_top10_menos"></canvas></div></div>
-        <div class="chart-card"><div class="chart-head"><div class="muted">Vendas por Dia da Semana</div></div><div class="chart-box"><canvas id="ch_dow"></canvas></div></div>
-        <div class="chart-card"><div class="chart-head"><div class="muted">Vendas por Categoria</div></div><div class="chart-box"><canvas id="ch_cat"></canvas></div></div>
-        <div class="chart-card" style="grid-column: span 2;"><div class="chart-head"><div class="muted">Vendas por Mês (Últimos 12 meses vs. anteriores)</div></div><div class="chart-box"><canvas id="ch_month"></canvas></div></div>
+        <div class="chart-card">
+          <div class="chart-head"><div class="muted">Top 10 Mais Vendidos</div></div>
+          <div class="chart-box"><canvas id="ch_top10_mais"></canvas></div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-head"><div class="muted">Top 10 Menos Vendidos</div></div>
+          <div class="chart-box"><canvas id="ch_top10_menos"></canvas></div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-head">
+            <div class="muted">Vendas por Dia da Semana</div>
+            <div class="seg" id="segDow">
+              <button data-mode="TOTAL" class="active">TOTAL</button>
+              <button data-mode="MEDIA">MÉDIA</button>
+            </div>
+          </div>
+          <div class="chart-box"><canvas id="ch_dow"></canvas></div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-head"><div class="muted">Vendas por Categoria</div></div>
+          <div class="chart-box"><canvas id="ch_cat"></canvas></div>
+        </div>
+
+        <div class="chart-card" style="grid-column: span 2;">
+          <div class="chart-head">
+            <div class="muted">Vendas por Mês (Últimos 12 meses vs. anteriores)</div>
+          </div>
+          <div class="chart-box"><canvas id="ch_month"></canvas></div>
+        </div>
       </div>
     </div>
   </div>
@@ -236,6 +267,8 @@
 
   /* ===================== ESTADO / FILTROS ===================== */
   let firstDay='', lastDay='';
+  let dowMode = 'TOTAL'; // TOTAL | MEDIA
+
   const chips=[...document.querySelectorAll('.chip')];
   const fDe=$('fDe'), fAte=$('fAte');
   const ms = {
@@ -244,7 +277,6 @@
     pratos: MultiSelect('ms-pratos', 'Todos os Pratos')
   };
 
-  // toggle PRATOS x TODAS
   $('onlyPratos').addEventListener('change', ()=>{
     READ_VIEW = $('onlyPratos').checked ? VIEW_ONLY : VIEW_ALL;
     applyAll();
@@ -267,6 +299,14 @@
     applyAll();
   }));
   document.querySelectorAll('.chip').forEach(b=> b.addEventListener('click', ()=>applyQuick(b.dataset.q)));
+
+  // Segmento TOTAL/MÉDIA do DOW
+  document.getElementById('segDow').addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if(!btn) return;
+    [...e.currentTarget.children].forEach(b=>b.classList.toggle('active', b===btn));
+    dowMode = btn.dataset.mode;
+    applyAll(); // recalcula o DOW conforme modo
+  });
 
   /* ===================== SUPABASE FETCH (pagina TUDO) ===================== */
   async function baseQueryPaged(de, ate) {
@@ -361,14 +401,35 @@
     }], { indexAxis: 'y', plugins: { legend: { display: false } } });
   }
 
-  function updateDowChart(rows, prevRows) {
+  // Conta quantas ocorrências de cada dia da semana existem no intervalo
+  function countWeekdayOccurrences(de, ate){
+    const counts = Array(7).fill(0);
+    let d = new Date(de+'T00:00:00'); const end = new Date(ate+'T00:00:00');
+    while (d <= end) { counts[d.getDay()]++; d.setDate(d.getDate()+1); }
+    return counts; // [Dom..Sáb]
+  }
+
+  function updateDowChart(rows, prevRows, de, ate) {
     const dowLabels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-    const nowData = Array(7).fill(0);
-    const prevData = Array(7).fill(0);
-    rows.forEach(r => { if (r.data){ const d=new Date(r.data+'T00:00:00').getDay(); if(!isNaN(d)) nowData[d]+=r.quantidade; }});
-    prevRows.forEach(r => { if (r.data){ const d=new Date(r.data+'T00:00:00').getDay(); if(!isNaN(d)) prevData[d]+=r.quantidade; }});
+    const nowTotals = Array(7).fill(0);
+    const prevTotals = Array(7).fill(0);
+
+    rows.forEach(r => { if (r.data){ const d=new Date(r.data+'T00:00:00').getDay(); if(!isNaN(d)) nowTotals[d]+=r.quantidade; }});
+    prevRows.forEach(r => { if (r.data){ const d=new Date(r.data+'T00:00:00').getDay(); if(!isNaN(d)) prevTotals[d]+=r.quantidade; }});
+
+    let nowData = nowTotals.slice();
+    let prevData = prevTotals.slice();
+
+    if (dowMode === 'MEDIA') {
+      const occNow = countWeekdayOccurrences(de, ate);
+      const { dePrev, atePrev } = computePrevRangeISO(de, ate);
+      const occPrev = countWeekdayOccurrences(dePrev, atePrev);
+      nowData = nowTotals.map((v,i)=> occNow[i] ? Math.round(v/occNow[i]) : 0);
+      prevData = prevTotals.map((v,i)=> occPrev[i] ? Math.round(v/occPrev[i]) : 0);
+    }
+
     renderChart('ch_dow', 'bar', dowLabels, [
-      { label: 'Atual', data: nowData, backgroundColor: 'rgba(123,30,58,.7)' },
+      { label: dowMode === 'MEDIA' ? 'Média' : 'Total', data: nowData, backgroundColor: 'rgba(123,30,58,.7)' },
       { label: 'Anterior', data: prevData, backgroundColor: 'rgba(148,163,184,.7)' }
     ]);
   }
@@ -383,8 +444,9 @@
     }]);
   }
 
-  async function updateMonthChart() {
-    const end = lastDay || iso(new Date());
+  // Corrigido: usa o FIM selecionado (fAte.value) para definir as 12 janelas
+  async function updateMonthChart(selectedEndISO) {
+    const end = selectedEndISO || iso(new Date());
     const endMonthStart = monthStartISO(end);
     const last12Start = addMonthsISO(endMonthStart, -11);
     const prev12Start = addMonthsISO(endMonthStart, -23);
@@ -573,9 +635,9 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
       await Promise.all([
         updateKPIs(rows, prevRows, len),
         Promise.resolve().then(()=>updateTopPratosCharts(rows)),
-        Promise.resolve().then(()=>updateDowChart(rows, prevRows)),
+        Promise.resolve().then(()=>updateDowChart(rows, prevRows, de, ate)),
         Promise.resolve().then(()=>updateCategoryChart(rows)),
-        updateMonthChart()
+        updateMonthChart(ate) // ← usa o FIM escolhido
       ]);
 
       renderDebug(rows, prevRows, de, ate);
