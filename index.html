@@ -7,9 +7,7 @@
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%237b1e3a"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">VP</text></svg>'/>
   <style>
     :root{
-      --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7;
-      --ok:#10b981; --down:#ef4444;
-      --chip:#f7e9ed; --bar:#334155; --wine:#7b1e3a; --wine-soft:#9c3554;
+      --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb;
       --c-now:#7b1e3a; --c-prev:#94a3b8;
     }
     *{box-sizing:border-box}
@@ -22,13 +20,13 @@
     .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap}
     .sec-title{display:flex;align-items:center;gap:10px;font-weight:700}
     .ico{width:16px;height:16px;color:#475569}
-    .muted{color:var(--muted)}
+    .muted{color:#667085}
     .row{display:grid;gap:12px}
     .cols-3{grid-template-columns:repeat(3,1fr)}
     .cols-2{grid-template-columns:repeat(2,1fr)}
     input[type="date"], .msel-btn{ width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff; min-height:44px;font-size:16px; }
     .chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
-    .chip{padding:10px 0;border:1px solid #efd5db;border-radius:10px;background:var(--chip);cursor:pointer;text-align:center;font-weight:800;color:#7b1e3a}
+    .chip{padding:10px 0;border:1px solid #efd5db;border-radius:10px;background:#f7e9ed;cursor:pointer;text-align:center;font-weight:800;color:#7b1e3a}
     .chip.active{background:var(--c-now);border-color:var(--c-now);color:#fff;}
     .msel{position:relative}
     .msel-btn{cursor:pointer;text-align:left}
@@ -42,10 +40,10 @@
     .kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05);}
     .kpi h4{margin:0 0 6px;font-size:13px;color:#475569;display:flex;align-items:center}
     .kpi .val{font-size:22px;font-weight:800}
-    .kpi .accent{height:2px;background:var(--wine);border-radius:999px;margin:6px 0 6px 0;opacity:.95}
+    .kpi .accent{height:2px;background:#7b1e3a;border-radius:999px;margin:6px 0}
     .kpi .sub{font-size:12px;color:#667085;margin-top:2px}
     .delta{display:inline-flex;gap:6px;align-items:center;padding:2px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.35);font-weight:800;font-size:12px;margin-left:12px;background:rgba(148,163,184,.15);color:#64748b}
-    .delta.up{background:rgba(123,30,58,.10);border-color:rgba(123,30,58,.25);color:var(--wine)}
+    .delta.up{background:rgba(123,30,58,.10);border-color:rgba(123,30,58,.25);color:#7b1e3a}
     .delta.down{background:rgba(148,163,184,.15);border-color:rgba(148,163,184,.35);color:#64748b}
     .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
@@ -125,8 +123,7 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  // -> se quiser só 'Pratos', mude para 'vendas_pratos_view_only_pratos'
-  const READ_VIEW         = 'vendas_pratos_view';
+  const READ_VIEW         = 'vendas_pratos_view_only_pratos'; // << KPIs/Gráficos só da categoria PRATOS
   const DEST_INSERT_TABLE = 'vendas_pratos_raw';
   const REFRESH_RPC       = 'refresh_pratos_view';
 
@@ -223,14 +220,11 @@
   }));
 
   /* ===================== LÓGICA DE DADOS ===================== */
-  function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4l5 6h-3v6H8v-6H5l5-6z"/></svg>';}
-  function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 16l-5-6h3V4h4v6h3l-5 6z"/></svg>';}
   function deltaBadge(el,curr,prev){
     if(!isFinite(prev)||+prev===0){ el.innerHTML='—'; el.className='delta flat'; return; }
     const p=((curr-prev)/prev)*100;
+    el.textContent=(p>=0?'+':'-')+Math.abs(p).toFixed(1)+'%';
     el.className='delta '+(p>=0?'up':'down');
-    el.title = `${p>=0?'+':''}${p.toFixed(1)}%`;
-    el.textContent = ` ${Math.abs(p).toFixed(1)}%`;
   }
   function computePrevRangeISO(deISO, ateISO){
     const len=daysLen(deISO,ateISO);
@@ -254,8 +248,7 @@
     if (error) { console.error(error); throw error; }
     return data || [];
   }
-  
-  /* ===================== ATUALIZAÇÃO DE KPIs E GRÁFICOS ===================== */
+
   async function updateKPIs(rows, prevRows, len) {
     const totalQtd = rows.reduce((sum, r) => sum + (r.quantidade || 0), 0);
     const prevTotalQtd = prevRows.reduce((sum, r) => sum + (r.quantidade || 0), 0);
@@ -264,28 +257,27 @@
     $('k_qtd').textContent = num(totalQtd);
     $('p_qtd').textContent = num(prevTotalQtd);
     deltaBadge($('d_qtd'), totalQtd, prevTotalQtd);
-    
     $('k_pratos_unicos').textContent = num(pratosUnicos);
     $('k_media_diaria').textContent = len > 0 ? num(Math.round(totalQtd / len)) : '0';
   }
-  
+
   function renderChart(canvasId, type, labels, datasets, options = {}) {
-      const canvas = $(canvasId);
-      if (!canvas) return;
-      if (canvas.__chart) { try { canvas.__chart.destroy(); } catch (e) {} }
-      const ctx = canvas.getContext('2d');
-      canvas.__chart = new Chart(ctx, {
-          type,
-          data: { labels, datasets },
-          options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              animation: false,
-              scales: type.includes('bar') ? { y: { beginAtZero: true } } : {},
-              plugins: { legend: { display: datasets.length > 1 || type === 'pie' } },
-              ...options
-          }
-      });
+    const canvas = $(canvasId);
+    if (!canvas) return;
+    if (canvas.__chart) { try { canvas.__chart.destroy(); } catch(e){} }
+    const ctx = canvas.getContext('2d');
+    canvas.__chart = new Chart(ctx, {
+      type,
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: type.includes('bar') ? { y: { beginAtZero: true } } : {},
+        plugins: { legend: { display: datasets.length > 1 || type === 'pie' } },
+        ...options
+      }
+    });
   }
 
   function updateTopPratosCharts(rows) {
@@ -294,7 +286,7 @@
     const sorted = [...byPrato.entries()].sort((a, b) => b[1] - a[1]);
     const top10 = sorted.slice(0, 10);
     const bottom10 = [...byPrato.entries()].filter(x => x[1] > 0).sort((a, b) => a[1] - b[1]).slice(0,10);
-    
+
     renderChart('ch_top10_mais', 'bar', top10.map(x => x[0]), [{
       label: 'Quantidade Vendida',
       data: top10.map(x => x[1]),
@@ -307,66 +299,68 @@
       backgroundColor: CHART_COLORS.slice().reverse(),
     }], { indexAxis: 'y', plugins: { legend: { display: false } } });
   }
-  
+
   function updateDowChart(rows, prevRows) {
-    const dowLabels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const dowLabels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
     const nowData = Array(7).fill(0);
     const prevData = Array(7).fill(0);
-
     rows.forEach(r => { if (r.data){ const d=new Date(r.data+'T00:00:00').getDay(); if(!isNaN(d)) nowData[d]+=r.quantidade; }});
     prevRows.forEach(r => { if (r.data){ const d=new Date(r.data+'T00:00:00').getDay(); if(!isNaN(d)) prevData[d]+=r.quantidade; }});
     renderChart('ch_dow', 'bar', dowLabels, [
-      { label: 'Atual', data: nowData, backgroundColor: 'rgba(123, 30, 58, 0.7)' },
-      { label: 'Anterior', data: prevData, backgroundColor: 'rgba(148, 163, 184, 0.7)' }
+      { label: 'Atual', data: nowData, backgroundColor: 'rgba(123,30,58,.7)' },
+      { label: 'Anterior', data: prevData, backgroundColor: 'rgba(148,163,184,.7)' }
     ]);
   }
 
   function updateCategoryChart(rows) {
-      const byCat = new Map();
-      rows.forEach(r => { byCat.set(r.categoria, (byCat.get(r.categoria) || 0) + r.quantidade); });
-      const sorted = [...byCat.entries()].sort((a,b) => b[1] - a[1]);
-      renderChart('ch_cat', 'pie', sorted.map(x => x[0]), [{ data: sorted.map(x => x[1]), backgroundColor: CHART_COLORS }]);
+    const byCat = new Map();
+    rows.forEach(r => { byCat.set(r.categoria, (byCat.get(r.categoria) || 0) + r.quantidade); });
+    const sorted = [...byCat.entries()].sort((a,b) => b[1] - a[1]);
+    renderChart('ch_cat', 'pie', sorted.map(x => x[0]), [{
+      data: sorted.map(x => x[1]),
+      backgroundColor: CHART_COLORS,
+    }]);
   }
 
   async function updateMonthChart() {
-      const end = lastDay || iso(new Date());
-      const endMonthStart = monthStartISO(end);
-      const last12Start = addMonthsISO(endMonthStart, -11);
-      const prev12Start = addMonthsISO(endMonthStart, -23);
-      const last12End   = monthEndISO(end);
-      const prev12End   = monthEndISO(addMonthsISO(endMonthStart, -12));
+    const end = lastDay || iso(new Date());
+    const endMonthStart = monthStartISO(end);
+    const last12Start = addMonthsISO(endMonthStart, -11);
+    const prev12Start = addMonthsISO(endMonthStart, -23);
+    const last12End   = monthEndISO(end);
+    const prev12End   = monthEndISO(addMonthsISO(endMonthStart, -12));
 
-      const [nowRows, prevRows] = await Promise.all([
-        baseQuery(last12Start, last12End),
-        baseQuery(prev12Start, prev12End)
-      ]);
+    const [nowRows, prevRows] = await Promise.all([
+      baseQuery(last12Start, last12End),
+      baseQuery(prev12Start, prev12End)
+    ]);
 
-      const labels = [];
-      let cur = last12Start;
-      for(let i=0;i<12;i++){ labels.push(formatYM(cur)); cur = addMonthsISO(cur, 1); }
+    const labels = [];
+    let cur = last12Start;
+    for(let i=0;i<12;i++){ labels.push(formatYM(cur)); cur = addMonthsISO(cur, 1); }
 
-      const nowMap = new Map();
-      nowRows.forEach(r => { if (r.data){ const ym=r.data.slice(0,7); nowMap.set(ym,(nowMap.get(ym)||0)+r.quantidade); }});
-      const prevMap = new Map();
-      prevRows.forEach(r => { if (r.data){ const prevDate = addMonthsISO(r.data, 12); const ym=prevDate.slice(0,7); prevMap.set(ym,(prevMap.get(ym)||0)+r.quantidade); }});
+    const nowMap = new Map();
+    nowRows.forEach(r => { if (r.data){ const ym=r.data.slice(0,7); nowMap.set(ym,(nowMap.get(ym)||0)+r.quantidade); }});
+    const prevMap = new Map();
+    prevRows.forEach(r => { if (r.data){ const prevDate = addMonthsISO(r.data, 12); const ym=prevDate.slice(0,7); prevMap.set(ym,(prevMap.get(ym)||0)+r.quantidade); }});
 
-      const nowData = [], prevData = [];
-      cur = last12Start;
-      for (let i = 0; i < 12; i++) {
-        const ym = cur.slice(0, 7);
-        nowData.push(nowMap.get(ym) || 0);
-        prevData.push(prevMap.get(ym) || 0);
-        cur = addMonthsISO(cur, 1);
-      }
-      renderChart('ch_month', 'bar', labels, [
-        { label: 'Últimos 12M', data: nowData, backgroundColor: 'rgba(123, 30, 58, 0.7)' },
-        { label: '12M Anteriores', data: prevData, backgroundColor: 'rgba(148, 163, 184, 0.7)' }
-      ]);
+    const nowData = [], prevData = [];
+    cur = last12Start;
+    for (let i = 0; i < 12; i++) {
+      const ym = cur.slice(0, 7);
+      nowData.push(nowMap.get(ym) || 0);
+      prevData.push(prevMap.get(ym) || 0);
+      cur = addMonthsISO(cur, 1);
+    }
+    renderChart('ch_month', 'bar', labels, [
+      { label: 'Últimos 12M', data: nowData, backgroundColor: 'rgba(123,30,58,.7)' },
+      { label: '12M Anteriores', data: prevData, backgroundColor: 'rgba(148,163,184,.7)' }
+    ]);
   }
 
-  /* ===================== UPLOAD (dedupe + UPSERT) ===================== */
-  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
-  $('fileExcel').addEventListener('change', async (ev)=>{
+  /* ===================== UPLOAD (dedupe + UPSERT por chave natural) ===================== */
+  document.getElementById('btnUpload').addEventListener('click', ()=> document.getElementById('fileExcel').click());
+  document.getElementById('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file) return;
 
@@ -398,13 +392,6 @@
         } catch { return null; }
       }
 
-      function makeRowKey(r){
-        const s = `${r.data}|${r.unidade}|${r.prato}|${r.categoria}|${r.quantidade}`;
-        let h=5381; for(let i=0;i<s.length;i++) h=((h<<5)+h)^s.charCodeAt(i);
-        return String(h>>>0);
-      }
-
-      // Parse básico
       const parsedRows = json.map(r => {
         const row = {
           quantidade: parseInt(r['Quantidade'] || 0, 10),
@@ -422,7 +409,7 @@
 
       if (parsedRows.length === 0) throw new Error('Nenhuma linha válida encontrada. Verifique as colunas do arquivo.');
 
-      // DEDUPE somando quantidades por (data,unidade,prato,categoria)
+      // DEDUPE cliente
       const map = new Map();
       for (const r of parsedRows) {
         const baseKey = `${r.data}|${r.unidade}|${r.prato}|${r.categoria}`;
@@ -430,14 +417,16 @@
         if (prev) prev.quantidade += r.quantidade;
         else map.set(baseKey, { ...r });
       }
-      const rows = [...map.values()].map(r => ({ ...r, row_key: makeRowKey(r) }));
+      const rows = [...map.values()];
 
       info(`${rows.length} linhas (deduplicadas) prontas. Enviando...`);
 
       const CHUNK_SIZE = 500;
       for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
         const chunk = rows.slice(i, i + CHUNK_SIZE);
-        const { error } = await supa.from(DEST_INSERT_TABLE).upsert(chunk, { onConflict: 'row_key' });
+        const { error } = await supa
+          .from(DEST_INSERT_TABLE)
+          .upsert(chunk, { onConflict: 'data,unidade,categoria,prato' }); // chave natural
         if (error) throw error;
       }
 
@@ -450,23 +439,18 @@
       setStatus('Erro no upload', 'err');
       info(e.message || 'Falha ao enviar dados.');
     } finally {
-      $('fileExcel').value = '';
+      document.getElementById('fileExcel').value = '';
     }
 
     if (uploadSuccess) {
       try {
         setStatus('Atualizando visões...');
-        const res = await supa.rpc(REFRESH_RPC);
-        if (res && res.error) console.warn('RPC retornou erro (ignorando):', res.error.message);
+        await supa.rpc(REFRESH_RPC);
       } catch (e) {
-        console.warn('RPC ausente ou falhou (seguindo mesmo assim):', e?.message || e);
+        console.warn('RPC ausente/erro (seguindo):', e?.message || e);
       }
-      try {
-        await init();
-      } catch (e) {
-        setStatus('Erro ao recarregar dashboard.', 'err');
-        console.error(e);
-      }
+      try { await init(); }
+      catch (e) { setStatus('Erro ao recarregar dashboard.', 'err'); console.error(e); }
     }
   });
 
@@ -478,10 +462,10 @@
       const ate = fAte.value || lastDay;
       if (!de || !ate) { setStatus('Selecione um intervalo de datas.'); return; }
 
+      const len = daysLen(de, ate);
       const { dePrev, atePrev } = computePrevRangeISO(de, ate);
       const [rows, prevRows] = await Promise.all([ baseQuery(de, ate), baseQuery(dePrev, atePrev) ]);
-      
-      const len = daysLen(de, ate);
+
       await Promise.all([
         updateKPIs(rows, prevRows, len),
         Promise.resolve().then(()=>updateTopPratosCharts(rows)),
@@ -489,7 +473,6 @@
         Promise.resolve().then(()=>updateCategoryChart(rows)),
         updateMonthChart()
       ]);
-      
       setStatus('Dashboard atualizado!', 'ok');
     } catch (e) {
       console.error(e);
@@ -520,10 +503,16 @@
       } else {
         const today = new Date();
         lastDay = iso(today);
-        firstDay = iso(new Date(new Date().setDate(today.getDate() - 29)));
+        const start = new Date(); start.setDate(start.getDate()-29);
+        firstDay = iso(start);
       }
       await reloadFilterOptions();
-      applyQuick('30');
+      const ate = lastDay, de = addDaysISO(ate, -29);
+      $('fDe').value = de; $('fAte').value = ate;
+      document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+      document.querySelector('.chip[data-q="30"]').classList.add('active');
+      $('periodoInfo').textContent = `Último dia carregado: ${lastDay || 'N/D'}`;
+      await applyAll();
     } catch (e) {
       console.error(e);
       setStatus('Erro ao iniciar', 'err');
