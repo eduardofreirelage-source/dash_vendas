@@ -133,7 +133,6 @@
   const DEST_INSERT_TABLE = 'vendas_pratos_raw';
   const REFRESH_RPC       = 'refresh_pratos_view';
 
-  // Cole suas credenciais do Supabase aqui
   const SUPABASE_URL  = 'https://uahmcfzerofhzjvlzrqc.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhaG1jZnplcm9maHpqdmx6cnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxNTg2MzQsImV4cCI6MjA3MDczNDYzNH0.lPVr3wmrXAmSMY5j7JFy6mI87T3I2TxhVKV-gLc7_VU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -247,7 +246,7 @@
     let q = supa.from(READ_VIEW)
       .select('quantidade, data, unidade, categoria, prato')
       .gte('data', de).lte('data', ate)
-      .limit(100000); // Limite generoso
+      .limit(100000);
 
     const unids = ms.unids.get(); if (unids.length) q = q.in('unidade', unids);
     const cats = ms.cats.get(); if (cats.length) q = q.in('categoria', cats);
@@ -313,7 +312,7 @@
     renderChart('ch_top10_menos', 'bar', bottom10.map(x => x[0]), [{
       label: 'Quantidade Vendida',
       data: bottom10.map(x => x[1]),
-      backgroundColor: CHART_COLORS,
+      backgroundColor: CHART_COLORS.slice().reverse(),
     }], { indexAxis: 'y', plugins: { legend: { display: false } } });
   }
   
@@ -323,12 +322,16 @@
     const prevData = Array(7).fill(0);
 
     rows.forEach(r => {
-      const day = new Date(r.data + 'T00:00:00').getDay();
-      nowData[day] += r.quantidade;
+      if (r.data) { // <-- Trava de segurança
+        const day = new Date(r.data + 'T00:00:00').getDay();
+        if(!isNaN(day)) nowData[day] += r.quantidade;
+      }
     });
     prevRows.forEach(r => {
-      const day = new Date(r.data + 'T00:00:00').getDay();
-      prevData[day] += r.quantidade;
+      if (r.data) { // <-- Trava de segurança
+        const day = new Date(r.data + 'T00:00:00').getDay();
+        if(!isNaN(day)) prevData[day] += r.quantidade;
+      }
     });
 
     renderChart('ch_dow', 'bar', dowLabels, [
@@ -369,18 +372,21 @@
 
       const nowMap = new Map();
       nowRows.forEach(r => {
-        const ym = r.data.slice(0, 7);
-        nowMap.set(ym, (nowMap.get(ym) || 0) + r.quantidade);
+        if (r.data && typeof r.data === 'string') { // <-- Trava de Segurança
+          const ym = r.data.slice(0, 7);
+          nowMap.set(ym, (nowMap.get(ym) || 0) + r.quantidade);
+        }
       });
       const prevMap = new Map();
       prevRows.forEach(r => {
-        const prevDate = addMonthsISO(r.data, 12);
-        const ym = prevDate.slice(0, 7);
-        prevMap.set(ym, (prevMap.get(ym) || 0) + r.quantidade);
+        if (r.data && typeof r.data === 'string') { // <-- Trava de Segurança
+          const prevDate = addMonthsISO(r.data, 12);
+          const ym = prevDate.slice(0, 7);
+          prevMap.set(ym, (prevMap.get(ym) || 0) + r.quantidade);
+        }
       });
 
-      const nowData = [];
-      const prevData = [];
+      const nowData = [], prevData = [];
       cur = last12Start;
       for (let i = 0; i < 12; i++) {
         const ym = cur.slice(0, 7);
@@ -408,16 +414,22 @@
       const ws = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
-      function parseDate(excelDate) {
-        if (!excelDate) return null;
-        if (/^\d{5}$/.test(excelDate)) { // Excel serial date
-            return new Date(Date.UTC(1899, 11, 30 + parseInt(excelDate, 10))).toISOString().slice(0, 10);
-        }
-        try { // Tenta parsear formatos comuns
-            const d = new Date(excelDate);
-            if (!isNaN(d)) return d.toISOString().slice(0, 10);
-        } catch(e) {}
-        return null;
+      function parseDate(excelDate) { // <-- FUNÇÃO MELHORADA
+          if (!excelDate) return null;
+          if (typeof excelDate === 'number' && excelDate > 1) {
+              return new Date(Date.UTC(1899, 11, 30 + excelDate)).toISOString().slice(0, 10);
+          }
+          const s = String(excelDate).trim();
+          const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+          if (dmy) {
+              const d = new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]));
+              if (!isNaN(d)) return d.toISOString().slice(0, 10);
+          }
+          const d = new Date(s);
+          if (!isNaN(d) && d.getFullYear() > 1900) {
+              return d.toISOString().slice(0, 10);
+          }
+          return null;
       }
 
       function makeRowKey(r){
@@ -438,6 +450,11 @@
           return row;
       }).filter(r => r.data && r.prato && r.quantidade > 0);
 
+      if (rows.length === 0) {
+        info('Nenhuma linha válida encontrada no arquivo. Verifique as colunas e os dados.');
+        setStatus('Arquivo vazio ou inválido', 'err');
+        return;
+      }
       info(`${rows.length} linhas válidas encontradas. Enviando...`);
       
       const CHUNK_SIZE = 500;
@@ -452,7 +469,7 @@
       
       try { await supa.rpc(REFRESH_RPC); } catch(e) {}
       
-      await init(); // Recarrega tudo
+      await init();
 
     } catch(e) {
       console.error(e);
@@ -469,7 +486,16 @@
     try {
       const de = fDe.value || firstDay;
       const ate = fAte.value || lastDay;
-      if (!de || !ate) { setStatus('Selecione um intervalo de datas.'); return; }
+      if (!de || !ate) {
+        setStatus('Selecione um intervalo de datas.');
+        // Limpa os gráficos para não mostrar dados antigos
+        renderChart('ch_top10_mais', 'bar', [], []);
+        renderChart('ch_top10_menos', 'bar', [], []);
+        renderChart('ch_dow', 'bar', [], []);
+        renderChart('ch_cat', 'pie', [], []);
+        renderChart('ch_month', 'bar', [], []);
+        return;
+      }
 
       const { dePrev, atePrev } = computePrevRangeISO(de, ate);
       const [rows, prevRows] = await Promise.all([
@@ -478,14 +504,19 @@
       ]);
       
       const len = daysLen(de, ate);
-      updateKPIs(rows, prevRows, len);
-      updateTopPratosCharts(rows);
-      updateDowChart(rows, prevRows);
-      updateCategoryChart(rows);
-      updateMonthChart(); // Esta já busca seus próprios dados
+      await updateKPIs(rows, prevRows, len);
+      
+      // Executa as atualizações dos gráficos em paralelo
+      await Promise.all([
+          updateTopPratosCharts(rows),
+          updateDowChart(rows, prevRows),
+          updateCategoryChart(rows),
+          updateMonthChart() // Esta já busca seus próprios dados
+      ]);
       
       setStatus('Dashboard atualizado!', 'ok');
     } catch (e) {
+      console.error(e);
       setStatus('Erro ao atualizar dados', 'err');
     }
   }
@@ -508,9 +539,14 @@
     try {
       const dr = await supa.from('vendas_pratos_daterange').select('*').limit(1);
       if (dr.error) throw dr.error;
-      if (dr.data?.length) {
+      if (dr.data?.length && dr.data[0].min_data) {
           firstDay = dr.data[0].min_data;
           lastDay = dr.data[0].max_data;
+      } else {
+          // Fallback para datas se a view estiver vazia
+          const today = new Date();
+          lastDay = iso(today);
+          firstDay = iso(new Date(today.setDate(today.getDate() - 29)));
       }
       
       await reloadFilterOptions();
@@ -518,6 +554,7 @@
     } catch (e) {
       console.error(e);
       setStatus('Erro ao iniciar', 'err');
+      info(e.message)
     }
   }
   
