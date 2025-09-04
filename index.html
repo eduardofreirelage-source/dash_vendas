@@ -322,13 +322,13 @@
     const prevData = Array(7).fill(0);
 
     rows.forEach(r => {
-      if (r.data) { // <-- Trava de segurança
+      if (r.data) {
         const day = new Date(r.data + 'T00:00:00').getDay();
         if(!isNaN(day)) nowData[day] += r.quantidade;
       }
     });
     prevRows.forEach(r => {
-      if (r.data) { // <-- Trava de segurança
+      if (r.data) {
         const day = new Date(r.data + 'T00:00:00').getDay();
         if(!isNaN(day)) prevData[day] += r.quantidade;
       }
@@ -372,14 +372,14 @@
 
       const nowMap = new Map();
       nowRows.forEach(r => {
-        if (r.data && typeof r.data === 'string') { // <-- Trava de Segurança
+        if (r.data && typeof r.data === 'string') {
           const ym = r.data.slice(0, 7);
           nowMap.set(ym, (nowMap.get(ym) || 0) + r.quantidade);
         }
       });
       const prevMap = new Map();
       prevRows.forEach(r => {
-        if (r.data && typeof r.data === 'string') { // <-- Trava de Segurança
+        if (r.data && typeof r.data === 'string') {
           const prevDate = addMonthsISO(r.data, 12);
           const ym = prevDate.slice(0, 7);
           prevMap.set(ym, (prevMap.get(ym) || 0) + r.quantidade);
@@ -414,7 +414,7 @@
       const ws = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
-      function parseDate(excelDate) { // <-- FUNÇÃO MELHORADA
+      function parseDate(excelDate) {
           if (!excelDate) return null;
           if (typeof excelDate === 'number' && excelDate > 1) {
               return new Date(Date.UTC(1899, 11, 30 + excelDate)).toISOString().slice(0, 10);
@@ -448,7 +448,12 @@
           };
           row.row_key = makeRowKey(row);
           return row;
-      }).filter(r => r.data && r.prato && r.quantidade > 0);
+      }).filter(r => {
+          // <-- FILTRO ATUALIZADO AQUI
+          const pratoValido = r.prato && r.prato !== '0' && r.prato.toLowerCase() !== 'null';
+          const qtdValida = r.quantidade && r.quantidade > 0;
+          return r.data && pratoValido && qtdValida;
+      });
 
       if (rows.length === 0) {
         info('Nenhuma linha válida encontrada no arquivo. Verifique as colunas e os dados.');
@@ -488,7 +493,6 @@
       const ate = fAte.value || lastDay;
       if (!de || !ate) {
         setStatus('Selecione um intervalo de datas.');
-        // Limpa os gráficos para não mostrar dados antigos
         renderChart('ch_top10_mais', 'bar', [], []);
         renderChart('ch_top10_menos', 'bar', [], []);
         renderChart('ch_dow', 'bar', [], []);
@@ -506,12 +510,11 @@
       const len = daysLen(de, ate);
       await updateKPIs(rows, prevRows, len);
       
-      // Executa as atualizações dos gráficos em paralelo
       await Promise.all([
           updateTopPratosCharts(rows),
           updateDowChart(rows, prevRows),
           updateCategoryChart(rows),
-          updateMonthChart() // Esta já busca seus próprios dados
+          updateMonthChart()
       ]);
       
       setStatus('Dashboard atualizado!', 'ok');
@@ -543,10 +546,9 @@
           firstDay = dr.data[0].min_data;
           lastDay = dr.data[0].max_data;
       } else {
-          // Fallback para datas se a view estiver vazia
           const today = new Date();
           lastDay = iso(today);
-          firstDay = iso(new Date(today.setDate(today.getDate() - 29)));
+          firstDay = iso(new Date(new Date().setDate(today.getDate() - 29)));
       }
       
       await reloadFilterOptions();
