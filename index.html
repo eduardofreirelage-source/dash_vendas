@@ -8,7 +8,7 @@
   <style>
     :root{
       --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#7b1e3a;
-      --ok:#059669; --err:#dc2626; --chip:#f1f5f9;
+      --ok:#059669; --err:#dc2626;
     }
     *{box-sizing:border-box}
     html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
@@ -36,7 +36,6 @@
     .tag{display:inline-block;padding:2px 8px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:12px;color:#475569}
     .list{display:flex;flex-direction:column;gap:10px}
     .item{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff}
-    .item .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:#475569}
     table{width:100%;border-collapse:collapse}
     th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:middle}
     th{background:#f8fafc}
@@ -90,10 +89,22 @@
                   <option value="OUTROS">OUTROS</option>
                 </select>
               </div>
-              <div style="align-self:end;display:flex;gap:8px;flex-wrap:wrap">
-                <button id="btnPrSave" class="btn pri">Salvar</button>
-                <button id="btnPrCancel" class="btn ghost" style="display:none">Cancelar</button>
+              <div><label>Peso do prato</label><input id="pr-peso" inputmode="decimal" placeholder="Ex.: 500 (g ou ml)"/></div>
+            </div>
+            <div class="row cols-3" style="margin-top:8px">
+              <div><label>Preço de venda (fator multiplicador)</label><input id="pr-preco-factor" inputmode="decimal" placeholder="Ex.: 3,2"/></div>
+              <div>
+                <label>Custo do prato (calculado)</label>
+                <input id="pr-custo-calc" readonly style="background:#f8fafc"/>
               </div>
+              <div>
+                <label>Última alteração</label>
+                <input id="pr-updated" readonly style="background:#f8fafc"/>
+              </div>
+            </div>
+            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+              <button id="btnPrSave" class="btn pri">Salvar</button>
+              <button id="btnPrCancel" class="btn ghost" style="display:none">Cancelar</button>
             </div>
             <div class="hint" id="pr-mode-hint"></div>
           </div>
@@ -102,7 +113,7 @@
         <!-- DASHBOARD SOURCE -->
         <div class="stack">
           <h3>Pratos do Dashboard</h3>
-          <div class="hint">Fonte: <code id="srcName">vendas_pratos_pratos</code> (colunas: <b>prato</b> e opcional <b>categoria</b>)</div>
+          <div class="hint">Fonte: <code id="srcName">vendas_pratos_pratos</code> (colunas esperadas: <b>prato</b> e opcional <b>categoria</b>)</div>
           <div class="toolbar">
             <select id="fDashCat">
               <option value="">Todas as categorias</option>
@@ -153,7 +164,7 @@
 
       <div class="row cols-3">
         <div><label>Selecionar receita para editar</label><select id="ri-receita"></select></div>
-        <div style="align-self:end"><span class="tag">Escolha uma receita para carregar os itens</span></div>
+        <div style="align-self:end"><span class="tag">Selecione acima para carregar os itens</span></div>
       </div>
 
       <div class="sep"></div>
@@ -256,7 +267,7 @@
   // Fonte de pratos do dashboard
   const DASHBOARD_PRATOS_SOURCE = 'vendas_pratos_pratos';
   const SRC_NAME_COL = 'prato';
-  const SRC_CAT_COL  = 'categoria'; // se não existir, fica null
+  const SRC_CAT_COL  = 'categoria'; // opcional
 
   /************ HELPERS ************/
   const $ = (id)=> document.getElementById(id);
@@ -266,6 +277,22 @@
   const ptToNumber = (v)=>{ if(v==null) return 0; const s=String(v).trim().replace(/\./g,'').replace(',','.'); const n=parseFloat(s); return isNaN(n)?0:n; };
   const need = (id, label)=>{ const el=$(id); if(!el){ throw new Error('Elemento ausente: #'+id+' ('+label+')'); } return el; };
   const confirmDel = (msg)=> window.confirm(msg||'Confirma exclusão?');
+
+  // conversões simples
+  function toBaseUnit(qtd, un){ // retorna {value, base} onde base g/ml/un
+    if(un==='kg') return {value:qtd*1000, base:'g'};
+    if(un==='g')  return {value:qtd, base:'g'};
+    if(un==='L')  return {value:qtd*1000, base:'ml'};
+    if(un==='ml') return {value:qtd, base:'ml'};
+    return {value:qtd, base:un||'un'};
+  }
+  function sameFamily(a,b){ const A=(a||'').toLowerCase(), B=(b||'').toLowerCase();
+    if(['g','kg'].includes(A) && ['g','kg'].includes(B)) return 'g';
+    if(['ml','l'].includes(A) && ['ml','l'].includes(B)) return 'ml';
+    if(A==='porcao' && B==='porcao') return 'porcao';
+    if(A==='un' && B==='un') return 'un';
+    return null;
+  }
 
   /************ TABS ************/
   document.querySelectorAll('.tab').forEach(btn=>{
@@ -359,28 +386,28 @@
     const tb=$('tblRec').querySelector('tbody');
     tb.innerHTML='<tr><td colspan="6">Carregando…</td></tr>';
     const {data,error}=await supa.from('v_receitas_resumo').select('*').order('nome',{ascending:true});
-    if(error){ tb.innerHTML='<tr><td colspan="6">Crie a view v_receitas_resumo</td></tr>'; return; }
-    tb.innerHTML='';
-    (data||[]).forEach(r=>{
-      const tr=document.createElement('tr');
-      tr.innerHTML=`
-        <td>${r.nome}</td><td>${fmt(r.rendimento_qtd)} ${r.unidade_rendimento}</td>
-        <td>${fmt(r.perda_pct)}%</td><td>${r.itens}</td>
-        <td>${r.ativo?'<span class="tag">Ativo</span>':'<span class="tag">Inativo</span>'}</td>
-        <td>
-          <button class="btn" data-act="rec-edit" data-id="${r.id}">Editar</button>
-          <button class="btn" data-act="rec-toggle" data-id="${r.id}">${r.ativo?'Desativar':'Ativar'}</button>
-          <button class="btn" data-act="rec-del" data-id="${r.id}">Excluir</button>
-        </td>`;
-      tb.appendChild(tr);
-    });
-    // combos
+    if(error){ tb.innerHTML='<tr><td colspan="6">Crie a view v_receitas_resumo</td></tr>'; }
+    else{
+      tb.innerHTML='';
+      (data||[]).forEach(r=>{
+        const tr=document.createElement('tr');
+        tr.innerHTML=`
+          <td>${r.nome}</td><td>${fmt(r.rendimento_qtd)} ${r.unidade_rendimento}</td>
+          <td>${fmt(r.perda_pct)}%</td><td>${r.itens}</td>
+          <td>${r.ativo?'<span class="tag">Ativo</span>':'<span class="tag">Inativo</span>'}</td>
+          <td>
+            <button class="btn" data-act="rec-edit" data-id="${r.id}">Editar</button>
+            <button class="btn" data-act="rec-toggle" data-id="${r.id}">${r.ativo?'Desativar':'Ativar'}</button>
+            <button class="btn" data-act="rec-del" data-id="${r.id}">Excluir</button>
+          </td>`;
+        tb.appendChild(tr);
+      });
+    }
     const {data:opt}=await supa.from('receitas').select('id,nome').eq('ativo',true).order('nome');
     const sel=$('ri-receita'); sel.innerHTML='';
     (opt||[]).forEach(x=>{ const o=document.createElement('option'); o.value=x.id; o.textContent=x.nome; sel.appendChild(o); });
     if(recEditId){ sel.value=String(recEditId); }
     loadReceitaSelecionada();
-    // para componentes do prato
     fillOptionsFromQuery('prc-receita','receitas','id','nome',{ativo:true});
   }
   $('tblRec').addEventListener('click', async (e)=>{
@@ -477,7 +504,7 @@
         <td><input data-k="qtd" data-id="${it.id}" value="${it.qtd}"/></td>
         <td>
           <select data-k="unidade" data-id="${it.id}">
-            ${['g','kg','ml','L','un'].map(u=>`<option value="${u}" ${u===it.unidade?'selected':''}>${u}</option>`).join('')}
+            ${['g','kg','ml','L','un','porcao'].map(u=>`<option value="${u}" ${u===it.unidade?'selected':''}>${u}</option>`).join('')}
           </select>
         </td>
         <td><input data-k="perda_pct" data-id="${it.id}" value="${it.perda_pct||0}"/></td>
@@ -490,22 +517,6 @@
   }
   function loadReceitaSelecionada(){ const id=$('ri-receita').value; if(!id){ $('tblRi').querySelector('tbody').innerHTML=''; clearCabecalhoReceita(); return; } recEditId=id; carregarCabecalhoReceita(id); loadReceitaItensTable(id); }
   $('ri-receita').addEventListener('change', loadReceitaSelecionada);
-
-  $('btnRiAdd').addEventListener('click', async ()=>{
-    const receita_id=$('ri-receita').value; if(!receita_id){ return alert('Selecione a receita acima'); }
-    const tipo=$('ri-tipo').value;
-    const ref_id=$('ri-ref').value;
-    const qtd=ptToNumber($('ri-qtd').value);
-    const unidade=$('ri-und').value;
-    const perda_pct=ptToNumber($('ri-perda').value);
-    if(!ref_id || !qtd){ return alert('Selecione referência e informe a quantidade'); }
-    const payload={receita_id, tipo, ref_id, qtd, unidade, perda_pct};
-    const {error}=await supa.from('receita_itens').insert(payload);
-    if(error){ return alert(error.message||error); }
-    setStatus('Item adicionado','ok');
-    $('ri-qtd').value=''; $('ri-perda').value='0';
-    loadReceitaItensTable(receita_id);
-  });
   $('tblRi').addEventListener('click', async (e)=>{
     const b=e.target.closest('button'); if(!b) return;
     const id=b.dataset.id, act=b.dataset.act;
@@ -525,7 +536,10 @@
 
   /************ PRATOS ************/
   let prEditId=null;
-  function resetPrForm(){ prEditId=null; $('pr-form-title').textContent='Novo prato'; $('pr-mode-hint').textContent=''; $('btnPrCancel').style.display='none'; $('pr-nome').value=''; $('pr-cat').value='PRATOS'; }
+  let pratosHasExtraCols = { preco_factor:true, peso_prato:true, updated_at:true }; // detectaremos dinamicamente
+  function resetPrForm(){ prEditId=null; $('pr-form-title').textContent='Novo prato'; $('pr-mode-hint').textContent=''; $('btnPrCancel').style.display='none';
+    $('pr-nome').value=''; $('pr-cat').value='PRATOS'; $('pr-peso').value=''; $('pr-preco-factor').value=''; $('pr-custo-calc').value=''; $('pr-updated').value='';
+  }
   $('btnNewPrato').addEventListener('click', resetPrForm);
   $('btnPrCancel').addEventListener('click', resetPrForm);
 
@@ -551,7 +565,6 @@
         tb.appendChild(tr);
       });
     }
-    // combos p/ componentes do prato
     fillOptionsFromQuery('prc-prato','pratos','id','nome',{ativo:true});
   }
   $('prato-search').addEventListener('input', loadPratos);
@@ -559,10 +572,21 @@
     const b=e.target.closest('button'); if(!b) return;
     const id=b.dataset.id, act=b.dataset.act;
     if(act==='pr-edit'){
-      const {data,error}=await supa.from('pratos').select('*').eq('id',id).single();
-      if(error){ return alert(error.message||error); }
+      // tentar buscar colunas extras também
+      let cols='id,nome,categoria,preco_factor,peso_prato,updated_at';
+      let res=await supa.from('pratos').select(cols).eq('id',id).single();
+      if(res.error && String(res.error.message||'').includes('column')){ // sem as extras
+        pratosHasExtraCols.preco_factor=false; pratosHasExtraCols.peso_prato=false; pratosHasExtraCols.updated_at=false;
+        res=await supa.from('pratos').select('id,nome,categoria').eq('id',id).single();
+      }
+      if(res.error){ return alert(res.error.message||res.error); }
+      const data=res.data;
       prEditId=id; $('pr-form-title').textContent='Editar prato'; $('btnPrCancel').style.display='inline-flex'; $('pr-mode-hint').textContent='Editando #'+id;
       $('pr-nome').value=data.nome||''; $('pr-cat').value=data.categoria||'PRATOS';
+      $('pr-preco-factor').value = (data.preco_factor!=null? String(data.preco_factor).replace('.',',') : '');
+      $('pr-peso').value = (data.peso_prato!=null? String(data.peso_prato).replace('.',',') : '');
+      $('pr-updated').value = data.updated_at ? new Date(data.updated_at).toLocaleString('pt-BR') : '';
+      await updatePratoCustoCalculado(id);
     }else if(act==='pr-toggle'){
       const {data}=await supa.from('pratos').select('ativo').eq('id',id).single();
       const {error}=await supa.from('pratos').update({ativo:!data.ativo}).eq('id',id);
@@ -577,18 +601,84 @@
   });
   $('btnPrSave').addEventListener('click', async ()=>{
     const nome=$('pr-nome').value.trim(); const categoria=$('pr-cat').value;
+    const preco_factor=ptToNumber($('pr-preco-factor').value);
+    const peso_prato=ptToNumber($('pr-peso').value);
     if(!nome){ return alert('Informe o nome'); }
+    // monta payload dinamicamente para não quebrar se colunas não existirem
+    const payload={nome,categoria};
+    if(pratosHasExtraCols.preco_factor) payload.preco_factor = isNaN(preco_factor)? null : preco_factor;
+    if(pratosHasExtraCols.peso_prato) payload.peso_prato = isNaN(peso_prato)? null : peso_prato;
     if(prEditId){
-      const {error}=await supa.from('pratos').update({nome,categoria}).eq('id',prEditId);
-      if(error){ return alert(error.message||error); }
+      let res=await supa.from('pratos').update(payload).eq('id',prEditId);
+      if(res.error && String(res.error.message||'').includes('column')){ // salva só as básicas
+        await supa.from('pratos').update({nome,categoria}).eq('id',prEditId);
+      }else if(res.error){ return alert(res.error.message||res.error); }
       setStatus('Prato atualizado','ok');
+      await updatePratoCustoCalculado(prEditId);
     }else{
-      const {error}=await supa.from('pratos').insert({nome,categoria});
-      if(error){ return alert(error.message||error); }
+      let res=await supa.from('pratos').insert(payload);
+      if(res.error && String(res.error.message||'').includes('column')){
+        res=await supa.from('pratos').insert({nome,categoria});
+      }
+      if(res.error){ return alert(res.error.message||res.error); }
       setStatus('Prato criado','ok');
     }
     resetPrForm(); loadPratos();
   });
+
+  /************ CUSTO DO PRATO (cálculo) ************/
+  const recCostCache = new Map();
+  async function calcReceitaCost(receita_id){
+    if(recCostCache.has(receita_id)) return recCostCache.get(receita_id);
+    const rec = await supa.from('receitas').select('*').eq('id',receita_id).single();
+    if(rec.error) throw rec.error;
+    const R = rec.data;
+    const itens = await supa.from('receita_itens').select('*').eq('receita_id',receita_id);
+    if(itens.error) throw itens.error;
+    let total=0;
+    for(const it of (itens.data||[])){
+      const perda = (it.perda_pct||0)/100;
+      if(it.tipo==='INGREDIENTE'){
+        const ing = await supa.from('ingredientes').select('custo_unitario,unidade').eq('id',it.ref_id).single();
+        if(ing.error) continue;
+        // converte qtd do item para unidade do custo do ingrediente
+        const fam = sameFamily(it.unidade, ing.data.unidade);
+        if(!fam){ console.warn('Unidade incompatível em ingrediente', it); continue; }
+        const qBase = toBaseUnit(it.qtd, it.unidade);
+        const ingBase = toBaseUnit(1, ing.data.unidade); // 1 unidade do custo
+        const fator = qBase.value / ingBase.value; // quantas "unidades de custo" usamos
+        total += (fator * (ing.data.custo_unitario||0)) * (1+perda);
+      }else if(it.tipo==='RECEITA'){
+        const sub = await calcReceitaCost(it.ref_id);
+        const fam = sameFamily(it.unidade, sub.unit);
+        if(!fam){ console.warn('Unidade incompatível em sub-receita', it); continue; }
+        const qBase = toBaseUnit(it.qtd, it.unidade);
+        const yieldBase = toBaseUnit(sub.yield, sub.unit);
+        const custoPorBase = sub.totalCost / yieldBase.value;
+        total += (qBase.value * custoPorBase) * (1+perda);
+      }
+    }
+    const result = { totalCost: total, unit: R.unidade_rendimento||'g', yield: R.rendimento_qtd||1 };
+    recCostCache.set(receita_id, result);
+    return result;
+  }
+  async function updatePratoCustoCalculado(prato_id){
+    try{
+      const prs = await supa.from('prato_receitas').select('receita_id,qtd,unidade').eq('prato_id',prato_id);
+      if(prs.error){ $('pr-custo-calc').value=''; return; }
+      let total=0;
+      for(const row of (prs.data||[])){
+        const rc = await calcReceitaCost(row.receita_id);
+        const fam = sameFamily(row.unidade, rc.unit);
+        if(!fam){ console.warn('Unidade incompatível no vínculo prato-receita', row); continue; }
+        const qtdBase = toBaseUnit(row.qtd, row.unidade);
+        const yieldBase = toBaseUnit(rc.yield, rc.unit);
+        const custoPorBase = rc.totalCost / yieldBase.value;
+        total += qtdBase.value * custoPorBase;
+      }
+      $('pr-custo-calc').value = money(total);
+    }catch(e){ $('pr-custo-calc').value=''; }
+  }
 
   /************ PRATO ⇄ RECEITAS ************/
   async function loadPratoCompTable(){
@@ -607,6 +697,8 @@
         <td><button class="btn" data-act="prc-del" data-id="${r.id}">Remover</button></td>`;
       tb.appendChild(tr);
     }
+    // se estou editando um prato, atualiza custo
+    if(prEditId){ recCostCache.clear(); updatePratoCustoCalculado(prEditId); }
   }
   $('prc-prato').addEventListener('change', loadPratoCompTable);
   $('btnAddPrComp').addEventListener('click', async ()=>{
@@ -632,29 +724,31 @@
   $('srcName').textContent = DASHBOARD_PRATOS_SOURCE;
   async function loadDashboardPratos(){
     const cont=$('dashList'); cont.innerHTML='Carregando…';
-    const {data,error}=await supa.from(DASHBOARD_PRATOS_SOURCE).select(SRC_NAME_COL+','+SRC_CAT_COL);
-    if(error){ cont.textContent='Não foi possível ler '+DASHBOARD_PRATOS_SOURCE; setStatus(error.message,'err'); return; }
-    // existentes
+    // tenta com categoria; se der erro de coluna, tenta somente nome
+    let data=null, hadCat=true;
+    let res = await supa.from(DASHBOARD_PRATOS_SOURCE).select(SRC_NAME_COL+','+SRC_CAT_COL);
+    if(res.error && String(res.error.message||'').includes('column')){ hadCat=false; res = await supa.from(DASHBOARD_PRATOS_SOURCE).select(SRC_NAME_COL); }
+    if(res.error){ cont.textContent='Não foi possível ler '+DASHBOARD_PRATOS_SOURCE; setStatus(res.error.message,'err'); return; }
+    data=res.data;
     const {data:exist}=await supa.from('pratos').select('nome');
     const existSet=new Set((exist||[]).map(x=>x.nome));
-    // filtro
     const term=($('dash-search').value||'').toLowerCase();
     const cat=($('fDashCat').value||'');
-    const items=Array.from(new Map((data||[]).map(r=>[r[SRC_NAME_COL], r])).values()) // únicos por nome
+    const items=Array.from(new Map((data||[]).map(r=>[r[SRC_NAME_COL], r])).values())
       .filter(r=>!term || String(r[SRC_NAME_COL]||'').toLowerCase().includes(term))
       .filter(r=>{
-        const c = (r[SRC_CAT_COL] || 'N/D').toUpperCase();
+        const c = hadCat ? (r[SRC_CAT_COL]||'N/D').toUpperCase() : 'N/D';
         return !cat || c===cat;
       })
       .sort((a,b)=> String(a[SRC_NAME_COL]||'').localeCompare(String(b[SRC_NAME_COL]||''),'pt-BR'));
     cont.innerHTML='';
     items.forEach(r=>{
-      const nome=r[SRC_NAME_COL]; const cat=(r[SRC_CAT_COL]||'N/D').toUpperCase();
+      const nome=r[SRC_NAME_COL]; const c = hadCat ? (r[SRC_CAT_COL]||'N/D').toUpperCase() : 'N/D';
       const exists=existSet.has(nome);
       const div=document.createElement('div'); div.className='item';
       div.innerHTML=`
-        <div class="meta"><strong>${nome}</strong> <span class="tag">${cat}</span> ${exists?'<span class="tag">Já existe</span>':''}</div>
-        <div><button class="btn" data-act="imp-one" data-nome="${nome.replace(/"/g,'&quot;')}" data-cat="${cat}" ${exists?'disabled':''}>Importar</button></div>`;
+        <div class="meta"><strong>${nome}</strong> <span class="tag">${c}</span> ${exists?'<span class="tag">Já existe</span>':''}</div>
+        <div><button class="btn" data-act="imp-one" data-nome="${nome.replace(/"/g,'&quot;')}" data-cat="${c}" ${exists?'disabled':''}>Importar</button></div>`;
       cont.appendChild(div);
     });
   }
@@ -668,14 +762,16 @@
   $('fDashCat').addEventListener('change', loadDashboardPratos);
   $('dash-search').addEventListener('input', loadDashboardPratos);
   $('btnSyncAll').addEventListener('click', async ()=>{
-    const {data,error}=await supa.from(DASHBOARD_PRATOS_SOURCE).select(SRC_NAME_COL+','+SRC_CAT_COL);
-    if(error){ return alert(error.message||error); }
+    let res = await supa.from(DASHBOARD_PRATOS_SOURCE).select(SRC_NAME_COL+','+SRC_CAT_COL);
+    let hadCat = true;
+    if(res.error && String(res.error.message||'').includes('column')){ hadCat=false; res = await supa.from(DASHBOARD_PRATOS_SOURCE).select(SRC_NAME_COL); }
+    if(res.error){ return alert(res.error.message||res.error); }
     const {data:exist}=await supa.from('pratos').select('nome');
     const existSet=new Set((exist||[]).map(x=>x.nome));
-    const unique = Array.from(new Map((data||[]).map(r=>[r[SRC_NAME_COL], r])).values());
+    const unique = Array.from(new Map((res.data||[]).map(r=>[r[SRC_NAME_COL], r])).values());
     for(const r of unique){
       const nome=r[SRC_NAME_COL]; if(!nome || existSet.has(nome)) continue;
-      await importPratoByName(nome, (r[SRC_CAT_COL]||'PRATOS').toUpperCase());
+      await importPratoByName(nome, hadCat ? (r[SRC_CAT_COL]||'PRATOS').toUpperCase() : 'PRATOS');
     }
     loadPratos(); loadDashboardPratos();
   });
