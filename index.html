@@ -228,7 +228,7 @@
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
     // Fonte dos pratos do dashboard (ajuste se sua view/tabela tiver outro nome)
-    const DASHBOARD_PRATOS_SOURCE = 'vendas_pratos_pratos'; // deve ter coluna 'prato'
+    const DASHBOARD_PRATOS_SOURCE = 'vendas_pratos_pratos'; // precisa ter coluna 'prato'
 
     /* ===== Helpers ===== */
     const $ = (id)=> document.getElementById(id);
@@ -274,8 +274,7 @@
           </td>`;
         tb.appendChild(tr);
       });
-      await refreshDraftRefs();
-      if($('#ri-tipo')?.value==='INGREDIENTE') await fillOptionsFromQuery('ri-ref','ingredientes','id','nome',{ativo:true});
+      await refreshDraftRefs(); // para o formulário de “nova receita”
     }
 
     function enterIngEdit(row){
@@ -350,15 +349,6 @@
       sel.innerHTML='';
       (items||[]).forEach(x=>{ const o=document.createElement('option'); o.value=x[valKey]; o.textContent=x[labelKey]; sel.appendChild(o); });
     }
-    async function fillOptionsFromQuery(selectId, table, valKey, labelKey, whereEq){
-      const sel = $(selectId); if(!sel) return;
-      let q = supa.from(table).select(`${valKey},${labelKey}`).order(labelKey,{ascending:true});
-      if(whereEq){ Object.entries(whereEq).forEach(([k,v]) => q = q.eq(k, v)); }
-      const { data, error } = await q;
-      if(error){ sel.innerHTML=''; return; }
-      sel.innerHTML='';
-      (data||[]).forEach(x=>{ const o=document.createElement('option'); o.value=x[valKey]; o.textContent=x[labelKey]; sel.appendChild(o); });
-    }
 
     async function loadReceitas(){
       const tb = need('tblRec','tabela receitas').querySelector('tbody');
@@ -384,8 +374,10 @@
           tb.appendChild(tr);
         });
       }
-      await fillOptionsFromQuery('ri-receita','receitas','id','nome',{ativo:true});
-      await fillOptionsFromQuery('pr-receita','receitas','id','nome',{ativo:true});
+      // selects usados em outras abas
+      const { data:receitasAct } = await supa.from('receitas').select('id,nome').eq('ativo',true).order('nome');
+      await fillOptions('ri-receita', receitasAct, 'id','nome');
+      await fillOptions('pr-receita', receitasAct, 'id','nome');
     }
 
     // Modo edição de receita (cabeçalho)
@@ -401,7 +393,6 @@
       $('btnUpdateRec').style.display='inline-flex';
       $('btnCancelRecEdit').style.display='inline-flex';
       $('rec-mode-hint').textContent='Editando receita #'+rec.id+' (use a lista de itens abaixo para editar componentes)';
-      // selecionar no dropdown “Receitas existentes”
       const sel=$('ri-receita'); if(sel){ sel.value=String(rec.id); sel.dispatchEvent(new Event('change')); }
     }
     function cancelRecEdit(){
@@ -433,7 +424,7 @@
       await loadReceitas(); await loadReceitaItensTable();
     });
 
-    // Draft da nova receita (mesmo que antes)
+    // Draft da nova receita
     let draftItems = [];
     function renderDraft(){
       const tb = need('tblDraft','grade draft').querySelector('tbody');
@@ -529,18 +520,6 @@
       setStatus('Cabeçalho da receita atualizado','ok');
     });
 
-    async function loadRefOptionsForTipo(){
-      const tipo = need('ri-tipo','tipo edição').value;
-      if(tipo==='INGREDIENTE'){
-        const { data } = await supa.from('ingredientes').select('id,nome').eq('ativo',true).order('nome');
-        fillOptions('ri-ref', data, 'id','nome');
-      }else{
-        const { data } = await supa.from('receitas').select('id,nome').eq('ativo',true).order('nome');
-        fillOptions('ri-ref', data, 'id','nome');
-      }
-    }
-    need('ri-tipo','tipo edição').addEventListener('change', loadRefOptionsForTipo);
-
     async function loadReceitaItensTable(){
       const receitaId = $('ri-receita')?.value;
       const tb = need('tblRi','itens receita').querySelector('tbody');
@@ -621,7 +600,9 @@
           tb.appendChild(tr);
         });
       }
-      await fillOptionsFromQuery('pr-prato','pratos','id','nome',{ativo:true});
+      // combos
+      const { data:pratosAct } = await supa.from('pratos').select('id,nome').eq('ativo',true).order('nome');
+      await fillOptions('pr-prato', pratosAct, 'id','nome');
       await loadPratoCompTable();
       await loadDashboardPratos();
     }
@@ -644,12 +625,11 @@
     async function loadDashboardPratos(){
       const tb = need('tblDashPratos','dash pratos').querySelector('tbody');
       tb.innerHTML='<tr><td colspan="3">Carregando…</td></tr>';
-      // busca fonte do dashboard
       const { data:dash, error:err1 } = await supa.from(DASHBOARD_PRATOS_SOURCE).select('prato');
       if(err1){ tb.innerHTML='<tr><td colspan="3">Não foi possível ler '+DASHBOARD_PRATOS_SOURCE+'</td></tr>'; return; }
       const nomesDash = Array.from(new Set((dash||[]).map(r=>r.prato).filter(Boolean))).sort((a,b)=>a.localeCompare(b,'pt-BR'));
-      // pratos já existentes
       const { data:pr, error:err2 } = await supa.from('pratos').select('id,nome');
+      if(err2){ tb.innerHTML='<tr><td colspan="3">Erro ao listar pratos existentes</td></tr>'; return; }
       const setExist = new Map((pr||[]).map(p=>[p.nome,true]));
       tb.innerHTML='';
       nomesDash.forEach(n=>{
@@ -664,7 +644,6 @@
     }
 
     async function importPratoByName(nome){
-      // categoria padrão PRATOS; ajuste se quiser inferir por regras
       const { error } = await supa.from('pratos').insert({ nome, categoria:'PRATOS' });
       if(error){ if(!String(error.message||'').includes('duplicate')) alert(error.message||error); }
     }
@@ -743,11 +722,11 @@
       try{
         await loadIngredientes();
         await loadReceitas();
-        await loadRefOptionsForTipo();
-        await refreshDraftRefs();
+        await refreshDraftRefs(); // popula combo de referência do draft
         await loadPratos();
         setStatus('Pronto','ok');
       }catch(e){
+        console.error(e);
         setStatus(e.message,'err');
       }
     }
