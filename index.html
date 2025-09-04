@@ -230,12 +230,10 @@
   };
 
   function applyQuick(val){
-    // "end" SEMPRE = último dia carregado; evita 15d e 30d com fins diferentes
     const ate=lastDay||iso(new Date());
     const de = addDaysISO(ate, -(Number(val)-1));
     chips.forEach(c=>c.classList.toggle('active', c.dataset.q===String(val)));
-    fDe.value=de;
-    fAte.value=ate;
+    fDe.value=de; fAte.value=ate;
     $('periodoInfo').textContent=`Último dia carregado: ${lastDay || 'N/D'}`;
     applyAll();
   }
@@ -249,7 +247,35 @@
     applyAll();
   }));
 
-  /* ===================== LÓGICA DE DADOS ===================== */
+  /* ===================== SUPABASE FETCH (pagina TUDO) ===================== */
+  async function baseQueryPaged(de, ate) {
+    const pageSize = 1000;            // teto seguro do PostgREST
+    let from = 0;
+    let all = [];
+    while (true) {
+      let q = supa
+        .from(READ_VIEW)
+        .select('quantidade, data, unidade, categoria, prato', { count: 'exact' })
+        .gte('data', de).lte('data', ate)
+        .order('data', { ascending: true })
+        .range(from, from + pageSize - 1);
+
+      const unids = ms.unids.get(); if (unids.length) q = q.in('unidade', unids);
+      const cats = ms.cats.get(); if (cats.length) q = q.in('categoria', cats);
+      const pratos = ms.pratos.get(); if (pratos.length) q = q.in('prato', pratos);
+
+      const { data, error } = await q;
+      if (error) { console.error(error); throw error; }
+      if (!data || data.length === 0) break;
+
+      all = all.concat(data);
+      if (data.length < pageSize) break;  // última página
+      from += pageSize;
+    }
+    return all;
+  }
+
+  /* ===================== KPIs & CHARTS ===================== */
   function deltaBadge(el,curr,prev){
     if(!isFinite(prev)||+prev===0){ el.innerHTML='—'; el.className='delta flat'; return; }
     const p=((curr-prev)/prev)*100;
@@ -262,21 +288,6 @@
     const atePrev=new Date(d1.getTime()-86400000);
     const dePrev=new Date(atePrev.getTime()-(len-1)*86400000);
     return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
-  }
-
-  async function baseQuery(de, ate) {
-    let q = supa.from(READ_VIEW)
-      .select('quantidade, data, unidade, categoria, prato')
-      .gte('data', de).lte('data', ate)
-      .limit(100000);
-
-    const unids = ms.unids.get(); if (unids.length) q = q.in('unidade', unids);
-    const cats = ms.cats.get(); if (cats.length) q = q.in('categoria', cats);
-    const pratos = ms.pratos.get(); if (pratos.length) q = q.in('prato', pratos);
-    
-    const { data, error } = await q;
-    if (error) { console.error(error); throw error; }
-    return data || [];
   }
 
   async function updateKPIs(rows, prevRows, len) {
@@ -361,8 +372,8 @@
     const prev12End   = monthEndISO(addMonthsISO(endMonthStart, -12));
 
     const [nowRows, prevRows] = await Promise.all([
-      baseQuery(last12Start, last12End),
-      baseQuery(prev12Start, prev12End)
+      baseQueryPaged(last12Start, last12End),
+      baseQueryPaged(prev12Start, prev12End)
     ]);
 
     const labels = [];
@@ -533,7 +544,11 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
 
       const len = daysLen(de, ate);
       const { dePrev, atePrev } = computePrevRangeISO(de, ate);
-      const [rows, prevRows] = await Promise.all([ baseQuery(de, ate), baseQuery(dePrev, atePrev) ]);
+
+      const [rows, prevRows] = await Promise.all([
+        baseQueryPaged(de, ate),
+        baseQueryPaged(dePrev, atePrev)
+      ]);
 
       await Promise.all([
         updateKPIs(rows, prevRows, len),
