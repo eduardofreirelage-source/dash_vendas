@@ -59,6 +59,9 @@
     .switch input:checked{background:#7b1e3a}
     .switch input::after{content:'';position:absolute;top:1px;left:1px;width:18px;height:18px;background:#fff;border-radius:50%;transition:left .2s}
     .switch input:checked::after{left:20px}
+    table.audit{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px}
+    table.audit th,table.audit td{border:1px solid var(--line);padding:6px 8px;text-align:left}
+    table.audit th{background:#f8fafc}
     @media (max-width:1024px){.cols-3,.cols-2,.krow,.grid-2{grid-template-columns:1fr}}
   </style>
 </head>
@@ -98,7 +101,7 @@
       </div>
     </div>
 
-    <!-- DEBUG -->
+    <!-- DEBUG (com auditoria de unidade) -->
     <div class="section" id="dbgSec">
       <div class="sec-head">
         <div class="sec-title">🔎 Debug do Período</div>
@@ -121,6 +124,11 @@
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
         <button id="btnCopySQL" class="btn sm">📋 Copiar SQL de conferência</button>
         <span class="muted" id="dbgMsg">—</span>
+      </div>
+
+      <div style="margin-top:12px">
+        <div class="muted" style="margin-bottom:6px;">Diagnóstico por Unidade (intervalo atual)</div>
+        <table class="audit" id="tblAudit"><thead><tr><th>Unidade</th><th>Qtd</th><th>%</th></tr></thead><tbody></tbody></table>
       </div>
     </div>
 
@@ -210,6 +218,16 @@
 
   const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const cleanSpaces = (s) => String(s||'').replace(/\s+/g,' ').trim();
+  const toKey = s => rmAcc(String(s||'').trim()).toUpperCase();
+
+  // Canonizador de unidade (JS) – cobre variações comuns
+  function canonUnidade(v){
+    const u = toKey(v);
+    if (!u) return 'Unidade Desconhecida';
+    if (/(SAVASSI|LOJA\s*01|MATRIZ)/.test(u)) return 'Unidade Savassi';
+    if (/(ESTORIL|LOJA\s*02)/.test(u)) return 'Unidade Estoril';
+    return cleanSpaces(v||'Unidade');
+  }
 
   /* ===================== MULTISELECT ===================== */
   function MultiSelect(rootId, placeholder){
@@ -272,10 +290,8 @@
     Object.values(ms).forEach(m => m.set([]));
     applyQuick('30');
   });
-  [fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{
-    chips.forEach(c=>c.classList.remove('active'));
-    applyAll();
-  }));
+  [fDe,fAte].addEventListener?.('change', ()=>{}); // quiet
+  [fDe,fAte].forEach(inp=>inp.addEventListener('change', ()=>{ chips.forEach(c=>c.classList.remove('active')); applyAll(); }));
   document.querySelectorAll('.chip').forEach(b=> b.addEventListener('click', ()=>applyQuick(b.dataset.q)));
 
   document.getElementById('segDow').addEventListener('click', (e)=>{
@@ -305,7 +321,9 @@
       if (error) { console.error(error); throw error; }
       if (!data || data.length === 0) break;
 
-      all = all.concat(data);
+      all = all.concat(
+        data.map(r => ({ ...r, unidade: canonUnidade(r.unidade) })) // normaliza unidade também na leitura (protege histórico não higienizado)
+      );
       if (data.length < pageSize) break;
       from += pageSize;
     }
@@ -352,20 +370,7 @@
         maintainAspectRatio: false,
         animation: false,
         scales: type.includes('bar') ? { y: { beginAtZero: true } } : {},
-        plugins: {
-          legend: { display: datasets.length > 1 || type === 'pie' },
-          tooltip: {
-            callbacks: {
-              afterLabel: (ctx) => {
-                if (ctx.chart.canvas.id === 'ch_dow' && dowMode === 'MEDIA') {
-                  const occ = ctx.dataset._occurrences || [];
-                  const i = ctx.dataIndex;
-                  if (occ[i] != null) return `  • ${occ[i]} ocorrência(s)`;
-                }
-              }
-            }
-          }
-        },
+        plugins: { legend: { display: datasets.length > 1 || type === 'pie' } },
         ...options
       }
     });
@@ -467,7 +472,23 @@
     ]);
   }
 
-  /* ===================== DEBUG ===================== */
+  /* ===================== AUDITORIA POR UNIDADE ===================== */
+  function renderAuditUnidade(rows){
+    const by = new Map();
+    rows.forEach(r => { const u=canonUnidade(r.unidade); by.set(u,(by.get(u)||0)+(r.quantidade||0)); });
+    const total = [...by.values()].reduce((a,b)=>a+b,0) || 1;
+    const arr = [...by.entries()].sort((a,b)=>b[1]-a[1]);
+    const tb = document.querySelector('#tblAudit tbody'); tb.innerHTML='';
+    arr.forEach(([u,q])=>{
+      const tr=document.createElement('tr');
+      const td1=document.createElement('td'); td1.textContent=u;
+      const td2=document.createElement('td'); td2.textContent=num(q);
+      const td3=document.createElement('td'); td3.textContent=(q*100/total).toFixed(1)+'%';
+      tr.append(td1,td2,td3); tb.appendChild(tr);
+    });
+  }
+
+  /* ===================== DEBUG UI ===================== */
   function renderDebug(rows, prevRows, de, ate){
     const sumNow  = rows.reduce((s,r)=>s+(r.quantidade||0),0);
     const sumPrev = prevRows.reduce((s,r)=>s+(r.quantidade||0),0);
@@ -479,6 +500,7 @@
     $('dbgRows').textContent = rows.length.toLocaleString('pt-BR');
     $('dbgDays').textContent = distinctDays.toLocaleString('pt-BR');
     $('dbgFilters').textContent = `Unid: ${ms.unids.get().length} • Cat: ${ms.cats.get().length} • Prato: ${ms.pratos.get().length}`;
+    renderAuditUnidade(rows);
   }
 
   function buildSQLCompare(de, ate){
@@ -487,7 +509,6 @@
     const atePrev = new Date(d.getTime()-86400000);
     const dePrev = new Date(atePrev.getTime()-(len-1)*86400000);
     const dePrevISO = iso(dePrev), atePrevISO = iso(atePrev);
-
     return `
 -- Conferência (view: ${READ_VIEW})
 select coalesce(sum(quantidade),0) as qtd_atual
@@ -498,15 +519,14 @@ select coalesce(sum(quantidade),0) as qtd_anterior
 from ${READ_VIEW}
 where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
   }
-
   document.getElementById('btnCopySQL').addEventListener('click', async ()=>{
     const de = $('fDe').value || firstDay;
     const ate = $('fAte').value || lastDay;
-    try { await navigator.clipboard.writeText(buildSQLCompare(de, ate)); $('dbgMsg').textContent = 'SQL copiado. Cole no editor para confrontar.'; setTimeout(()=> $('dbgMsg').textContent='—', 3000); }
-    catch { $('dbgMsg').textContent = 'Não consegui copiar automaticamente. Selecione e copie manualmente.'; }
+    try { await navigator.clipboard.writeText(buildSQLCompare(de, ate)); $('dbgMsg').textContent = 'SQL copiado.'; setTimeout(()=> $('dbgMsg').textContent='—', 3000); }
+    catch { $('dbgMsg').textContent = 'Copie manualmente o SQL exibido.'; }
   });
 
-  /* ===================== UPLOAD ROBUSTO (dedupe + lotes adaptativos) ===================== */
+  /* ===================== UPLOAD ROBUSTO ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
@@ -514,9 +534,9 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
 
     const MAX_STR = 180;
     const trimStr = v => (v==null?'':String(v).trim().slice(0, MAX_STR));
-    const normCat = (v) => {
-      const s = trimStr(v);
-      if (!s) return 'PRATOS';
+
+    function normCat(v){
+      const s = trimStr(v); if (!s) return 'PRATOS';
       const u = s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
       if (/^PRATOS?(\b|\/|,| -|$)/.test(u)) return 'PRATOS';
       if (/^ACOMPANH/.test(u)) return 'ACOMPANHAMENTOS';
@@ -525,20 +545,17 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
       if (/^SUBSTIT/.test(u)) return 'SUBSTITUICOES';
       if (/^PROMOC/.test(u)) return 'PROMOÇÕES';
       return s;
-    };
-
+    }
     function parseDate(excelDate) {
       try {
         if (excelDate === null || typeof excelDate === 'undefined') return null;
         let d;
-        if (typeof excelDate === 'number' && excelDate > 1) {
-          d = new Date(Date.UTC(1899, 11, 30 + excelDate)); // Excel serial
-        } else {
+        if (typeof excelDate === 'number' && excelDate > 1) d = new Date(Date.UTC(1899, 11, 30 + excelDate));
+        else {
           const s = String(excelDate).trim();
           if (s === '') return null;
           const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-          if (dmy) d = new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]));
-          else d = new Date(s);
+          if (dmy) d = new Date(parseInt(dmy[3]), parseInt(dmy[2])-1, parseInt(dmy[1])); else d = new Date(s);
         }
         if (d instanceof Date && !isNaN(d) && d.getFullYear() > 1900) return d.toISOString().slice(0, 10);
         return null;
@@ -546,8 +563,7 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
     }
 
     let uploadSuccess = false;
-    info('Lendo arquivo...');
-    setStatus('Processando...');
+    info('Lendo arquivo...'); setStatus('Processando...');
 
     try {
       const buf = await file.arrayBuffer();
@@ -555,18 +571,18 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
       const ws = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
-      // Normaliza & valida
+      // Normaliza & valida (inclui canonização de unidade)
       const prelim = json.map(r => ({
         quantidade: parseInt(r['Quantidade'] ?? r['Qtd'] ?? r['Qtde'] ?? 0, 10),
         data:       parseDate(r['Data']),
-        unidade:    trimStr(r['Loja'] ?? r['Unidade']),
+        unidade:    canonUnidade(trimStr(r['Loja'] ?? r['Unidade'])),
         prato:      trimStr(r['Itens e Opções'] ?? r['Prato'] ?? r['Item']),
         categoria:  normCat(r['Item Código Mãe'] ?? r['Categoria']),
       })).filter(r => r.data && r.prato && r.quantidade > 0);
 
       if (!prelim.length) throw new Error('Nenhuma linha válida encontrada. Verifique cabeçalhos e conteúdo do arquivo.');
 
-      // DEDUPE GLOBAL (data,unidade,categoria,prato) somando quantidades
+      // DEDUPE GLOBAL (data,unidade,categoria,prato)
       const map = new Map();
       for (const r of prelim) {
         const key = `${r.data}|${r.unidade}|${r.categoria}|${r.prato}`;
@@ -576,22 +592,14 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
       }
       const rows = [...map.values()];
 
-      // Envio em lotes adaptativos
       async function upsertChunks(list, chunkSize) {
         let i = 0;
         while (i < list.length) {
           const slice = list.slice(i, i + chunkSize);
           const { error } = await supa.from(DEST_INSERT_TABLE).upsert(slice, { onConflict: 'data,unidade,categoria,prato' });
           if (error) {
-            // Se o lote é grande, divide e tenta novamente
-            if (chunkSize > 1) {
-              const half = Math.max(1, Math.floor(chunkSize / 2));
-              await upsertChunks(slice, half); // recursivo em fatias menores
-            } else {
-              // Mostra linha problemática
-              console.error('Falha em linha:', slice[0], error);
-              throw new Error(`Falha ao inserir uma linha (ver console): ${error.message || error}`);
-            }
+            if (chunkSize > 1) { const half = Math.max(1, Math.floor(chunkSize / 2)); await upsertChunks(slice, half); }
+            else { console.error('Falha em linha:', slice[0], error); throw new Error(`Falha ao inserir uma linha (ver console): ${error.message || error}`); }
           }
           i += chunkSize;
         }
@@ -599,23 +607,18 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
 
       info(`${rows.length} linhas válidas (deduplicadas). Enviando…`);
       await upsertChunks(rows, 1000);
-
-      info(`Upload concluído: ${rows.length} linhas inseridas/atualizadas.`);
-      setStatus('Upload concluído', 'ok');
+      info(`Upload concluído: ${rows.length} linhas inseridas/atualizadas.`); setStatus('Upload concluído', 'ok');
       uploadSuccess = true;
 
     } catch (e) {
-      console.error(e);
-      setStatus('Erro no upload', 'err');
-      info(e.message || 'Falha ao enviar dados.');
+      console.error(e); setStatus('Erro no upload', 'err'); info(e.message || 'Falha ao enviar dados.');
     } finally {
       $('fileExcel').value = '';
     }
 
     if (uploadSuccess) {
-      try { setStatus('Atualizando visões...'); await supa.rpc(REFRESH_RPC); }
-      catch (e) { console.warn('RPC ausente/erro (seguindo):', e?.message || e); }
-      try { await init(); } catch (e) { setStatus('Erro ao recarregar dashboard.', 'err'); console.error(e); }
+      try { setStatus('Atualizando visões...'); await supa.rpc(REFRESH_RPC); } catch(e){ console.warn('RPC ausente/erro', e?.message||e); }
+      try { await init(); } catch(e){ setStatus('Erro ao recarregar dashboard.', 'err'); console.error(e); }
     }
   });
 
@@ -653,12 +656,13 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
 
   /* ===================== INICIALIZAÇÃO ===================== */
   async function reloadFilterOptions() {
+    // opções vindas das tabelas auxiliares; nomes já devem estar canônicos
     const [unids, cats, pratos] = await Promise.all([
       supa.from('vendas_pratos_unidades').select('unidade'),
       supa.from('vendas_pratos_categorias').select('categoria'),
       supa.from('vendas_pratos_pratos').select('prato')
     ]);
-    ms.unids.setOptions(unids.data?.map(r => r.unidade) || []);
+    ms.unids.setOptions((unids.data?.map(r => canonUnidade(r.unidade)) || []).filter(Boolean));
     ms.cats.setOptions(cats.data?.map(r => r.categoria) || []);
     ms.pratos.setOptions(pratos.data?.map(r => r.prato) || []);
   }
@@ -668,15 +672,8 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
     try {
       const dr = await supa.from('vendas_pratos_daterange').select('*').limit(1);
       if (dr.error) throw dr.error;
-      if (dr.data?.length && dr.data[0].min_data) {
-        firstDay = dr.data[0].min_data;
-        lastDay  = dr.data[0].max_data;
-      } else {
-        const today = new Date();
-        lastDay = iso(today);
-        const start = new Date(); start.setDate(start.getDate()-29);
-        firstDay = iso(start);
-      }
+      if (dr.data?.length && dr.data[0].min_data) { firstDay = dr.data[0].min_data; lastDay  = dr.data[0].max_data; }
+      else { const today=new Date(); lastDay=iso(today); const start=new Date(); start.setDate(start.getDate()-29); firstDay=iso(start); }
       await reloadFilterOptions();
       const ate = lastDay, de = addDaysISO(ate, -29);
       $('fDe').value = de; $('fAte').value = ate;
@@ -687,9 +684,7 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
       READ_VIEW = VIEW_ALL;
       await applyAll();
     } catch (e) {
-      console.error(e);
-      setStatus('Erro ao iniciar', 'err');
-      info(e.message);
+      console.error(e); setStatus('Erro ao iniciar', 'err'); info(e.message);
     }
   }
   init();
