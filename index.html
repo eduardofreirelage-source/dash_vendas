@@ -6,10 +6,7 @@
   <title>DASHBOARD - Venda de Pratos</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%237b1e3a"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">VP</text></svg>'/>
   <style>
-    :root{
-      --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb;
-      --c-now:#7b1e3a; --c-prev:#94a3b8;
-    }
+    :root{ --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --c-now:#7b1e3a; --c-prev:#94a3b8; }
     *{box-sizing:border-box}
     html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
     .wrap{max-width:1200px;margin:28px auto;padding:0 16px}
@@ -101,7 +98,7 @@
       </div>
     </div>
 
-    <!-- DEBUG CARD -->
+    <!-- DEBUG -->
     <div class="section" id="dbgSec">
       <div class="sec-head">
         <div class="sec-title">🔎 Debug do Período</div>
@@ -152,16 +149,8 @@
     <div class="section" style="margin-top:12px">
       <div class="sec-title" style="margin-bottom:10px">Gráficos</div>
       <div class="row cols-2">
-        <div class="chart-card">
-          <div class="chart-head"><div class="muted">Top 10 Mais Vendidos</div></div>
-          <div class="chart-box"><canvas id="ch_top10_mais"></canvas></div>
-        </div>
-
-        <div class="chart-card">
-          <div class="chart-head"><div class="muted">Top 10 Menos Vendidos</div></div>
-          <div class="chart-box"><canvas id="ch_top10_menos"></canvas></div>
-        </div>
-
+        <div class="chart-card"><div class="chart-head"><div class="muted">Top 10 Mais Vendidos</div></div><div class="chart-box"><canvas id="ch_top10_mais"></canvas></div></div>
+        <div class="chart-card"><div class="chart-head"><div class="muted">Top 10 Menos Vendidos</div></div><div class="chart-box"><canvas id="ch_top10_menos"></canvas></div></div>
         <div class="chart-card">
           <div class="chart-head">
             <div class="muted">Vendas por Dia da Semana</div>
@@ -172,18 +161,8 @@
           </div>
           <div class="chart-box"><canvas id="ch_dow"></canvas></div>
         </div>
-
-        <div class="chart-card">
-          <div class="chart-head"><div class="muted">Vendas por Categoria</div></div>
-          <div class="chart-box"><canvas id="ch_cat"></canvas></div>
-        </div>
-
-        <div class="chart-card" style="grid-column: span 2;">
-          <div class="chart-head">
-            <div class="muted">Vendas por Mês (Últimos 12 meses vs. anteriores)</div>
-          </div>
-          <div class="chart-box"><canvas id="ch_month"></canvas></div>
-        </div>
+        <div class="chart-card"><div class="chart-head"><div class="muted">Vendas por Categoria</div></div><div class="chart-box"><canvas id="ch_cat"></canvas></div></div>
+        <div class="chart-card" style="grid-column: span 2;"><div class="chart-head"><div class="muted">Vendas por Mês (Últimos 12 meses vs. anteriores)</div></div><div class="chart-box"><canvas id="ch_month"></canvas></div></div>
       </div>
     </div>
   </div>
@@ -194,8 +173,8 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  const VIEW_ALL        = 'vendas_pratos_view';                // TODAS as categorias
-  const VIEW_ONLY       = 'vendas_pratos_view_only_pratos';    // Somente PRATOS
+  const VIEW_ALL        = 'vendas_pratos_view';
+  const VIEW_ONLY       = 'vendas_pratos_view_only_pratos';
   let   READ_VIEW       = VIEW_ALL;
 
   const DEST_INSERT_TABLE = 'vendas_pratos_raw';
@@ -265,10 +244,9 @@
     };
   }
 
-  /* ===================== ESTADO / FILTROS ===================== */
+  /* ===================== ESTADO ===================== */
   let firstDay='', lastDay='';
   let dowMode = 'TOTAL'; // TOTAL | MEDIA
-
   const chips=[...document.querySelectorAll('.chip')];
   const fDe=$('fDe'), fAte=$('fAte');
   const ms = {
@@ -300,15 +278,14 @@
   }));
   document.querySelectorAll('.chip').forEach(b=> b.addEventListener('click', ()=>applyQuick(b.dataset.q)));
 
-  // Segmento TOTAL/MÉDIA do DOW
   document.getElementById('segDow').addEventListener('click', (e)=>{
     const btn = e.target.closest('button'); if(!btn) return;
     [...e.currentTarget.children].forEach(b=>b.classList.toggle('active', b===btn));
     dowMode = btn.dataset.mode;
-    applyAll(); // recalcula o DOW conforme modo
+    applyAll();
   });
 
-  /* ===================== SUPABASE FETCH (pagina TUDO) ===================== */
+  /* ===================== SUPABASE FETCH (PAGINADO) ===================== */
   async function baseQueryPaged(de, ate) {
     const pageSize = 1000;
     let from = 0, all = [];
@@ -380,7 +357,6 @@
           tooltip: {
             callbacks: {
               afterLabel: (ctx) => {
-                // Tooltip extra para o DOW no modo MÉDIA
                 if (ctx.chart.canvas.id === 'ch_dow' && dowMode === 'MEDIA') {
                   const occ = ctx.dataset._occurrences || [];
                   const i = ctx.dataIndex;
@@ -403,15 +379,11 @@
     const bottom10 = [...byPrato.entries()].filter(x => x[1] > 0).sort((a, b) => a[1] - b[1]).slice(0,10);
 
     renderChart('ch_top10_mais', 'bar', top10.map(x => x[0]), [{
-      label: 'Qtd',
-      data: top10.map(x => x[1]),
-      backgroundColor: CHART_COLORS,
+      label: 'Qtd', data: top10.map(x => x[1]), backgroundColor: CHART_COLORS,
     }], { indexAxis: 'y', plugins: { legend: { display: false } } });
 
     renderChart('ch_top10_menos', 'bar', bottom10.map(x => x[0]), [{
-      label: 'Qtd',
-      data: bottom10.map(x => x[1]),
-      backgroundColor: CHART_COLORS.slice().reverse(),
+      label: 'Qtd', data: bottom10.map(x => x[1]), backgroundColor: CHART_COLORS.slice().reverse(),
     }], { indexAxis: 'y', plugins: { legend: { display: false } } });
   }
 
@@ -419,7 +391,7 @@
     const counts = Array(7).fill(0);
     let d = new Date(de+'T00:00:00'); const end = new Date(ate+'T00:00:00');
     while (d <= end) { counts[d.getDay()]++; d.setDate(d.getDate()+1); }
-    return counts; // [Dom..Sáb]
+    return counts;
   }
 
   function updateDowChart(rows, prevRows, de, ate) {
@@ -454,12 +426,10 @@
     rows.forEach(r => { byCat.set(r.categoria, (byCat.get(r.categoria) || 0) + r.quantidade); });
     const sorted = [...byCat.entries()].sort((a,b) => b[1] - a[1]);
     renderChart('ch_cat', 'pie', sorted.map(x => x[0]), [{
-      data: sorted.map(x => x[1]),
-      backgroundColor: CHART_COLORS,
+      data: sorted.map(x => x[1]), backgroundColor: CHART_COLORS,
     }]);
   }
 
-  // Usa o FIM selecionado para montar a janela de 12 meses e alinha 12M anteriores
   async function updateMonthChart(selectedEndISO) {
     const end = selectedEndISO || iso(new Date());
     const endMonthStart = monthStartISO(end);
@@ -532,20 +502,48 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
   document.getElementById('btnCopySQL').addEventListener('click', async ()=>{
     const de = $('fDe').value || firstDay;
     const ate = $('fAte').value || lastDay;
-    try {
-      await navigator.clipboard.writeText(buildSQLCompare(de, ate));
-      $('dbgMsg').textContent = 'SQL copiado. Cole no editor para confrontar.';
-      setTimeout(()=> $('dbgMsg').textContent='—', 3000);
-    } catch {
-      $('dbgMsg').textContent = 'Não consegui copiar automaticamente. Selecione e copie manualmente.';
-    }
+    try { await navigator.clipboard.writeText(buildSQLCompare(de, ate)); $('dbgMsg').textContent = 'SQL copiado. Cole no editor para confrontar.'; setTimeout(()=> $('dbgMsg').textContent='—', 3000); }
+    catch { $('dbgMsg').textContent = 'Não consegui copiar automaticamente. Selecione e copie manualmente.'; }
   });
 
-  /* ===================== UPLOAD (dedupe + UPSERT) ===================== */
-  document.getElementById('btnUpload').addEventListener('click', ()=> document.getElementById('fileExcel').click());
-  document.getElementById('fileExcel').addEventListener('change', async (ev)=>{
+  /* ===================== UPLOAD ROBUSTO (dedupe + lotes adaptativos) ===================== */
+  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
+  $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
     if(!file) return;
+
+    const MAX_STR = 180;
+    const trimStr = v => (v==null?'':String(v).trim().slice(0, MAX_STR));
+    const normCat = (v) => {
+      const s = trimStr(v);
+      if (!s) return 'PRATOS';
+      const u = s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
+      if (/^PRATOS?(\b|\/|,| -|$)/.test(u)) return 'PRATOS';
+      if (/^ACOMPANH/.test(u)) return 'ACOMPANHAMENTOS';
+      if (/^BEBID/.test(u)) return 'BEBIDAS';
+      if (/^SOBREM/.test(u)) return 'SOBREMESA';
+      if (/^SUBSTIT/.test(u)) return 'SUBSTITUICOES';
+      if (/^PROMOC/.test(u)) return 'PROMOÇÕES';
+      return s;
+    };
+
+    function parseDate(excelDate) {
+      try {
+        if (excelDate === null || typeof excelDate === 'undefined') return null;
+        let d;
+        if (typeof excelDate === 'number' && excelDate > 1) {
+          d = new Date(Date.UTC(1899, 11, 30 + excelDate)); // Excel serial
+        } else {
+          const s = String(excelDate).trim();
+          if (s === '') return null;
+          const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+          if (dmy) d = new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]));
+          else d = new Date(s);
+        }
+        if (d instanceof Date && !isNaN(d) && d.getFullYear() > 1900) return d.toISOString().slice(0, 10);
+        return null;
+      } catch { return null; }
+    }
 
     let uploadSuccess = false;
     info('Lendo arquivo...');
@@ -557,72 +555,61 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
       const ws = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
-      function parseDate(excelDate) {
-        try {
-          if (excelDate === null || typeof excelDate === 'undefined') return null;
-          let d;
-          if (typeof excelDate === 'number' && excelDate > 1) {
-            d = new Date(Date.UTC(1899, 11, 30 + excelDate));
-          } else {
-            const s = String(excelDate).trim();
-            if (s === '') return null;
-            const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-            if (dmy) d = new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]));
-            else d = new Date(s);
-          }
-          if (d instanceof Date && !isNaN(d) && d.getFullYear() > 1900) return d.toISOString().slice(0, 10);
-          return null;
-        } catch { return null; }
-      }
+      // Normaliza & valida
+      const prelim = json.map(r => ({
+        quantidade: parseInt(r['Quantidade'] ?? r['Qtd'] ?? r['Qtde'] ?? 0, 10),
+        data:       parseDate(r['Data']),
+        unidade:    trimStr(r['Loja'] ?? r['Unidade']),
+        prato:      trimStr(r['Itens e Opções'] ?? r['Prato'] ?? r['Item']),
+        categoria:  normCat(r['Item Código Mãe'] ?? r['Categoria']),
+      })).filter(r => r.data && r.prato && r.quantidade > 0);
 
-      const parsedRows = json.map(r => {
-        const row = {
-          quantidade: parseInt(r['Quantidade'] || 0, 10),
-          data:       parseDate(r['Data']),
-          unidade:    cleanSpaces(r['Loja'] ?? r['Unidade']),
-          prato:      cleanSpaces(r['Itens e Opções'] ?? r['Prato']),
-          categoria:  cleanSpaces(r['Item Código Mãe'] ?? r['Categoria']),
-        };
-        return row;
-      }).filter(r => {
-        const pratoValido = r.prato && r.prato !== '0' && String(r.prato).toLowerCase() !== 'null';
-        const qtdValida = r.quantidade && r.quantidade > 0;
-        return r.data && pratoValido && qtdValida;
-      });
+      if (!prelim.length) throw new Error('Nenhuma linha válida encontrada. Verifique cabeçalhos e conteúdo do arquivo.');
 
-      if (parsedRows.length === 0) throw new Error('Nenhuma linha válida encontrada. Verifique as colunas do arquivo.');
-
-      // DEDUPE no cliente
+      // DEDUPE GLOBAL (data,unidade,categoria,prato) somando quantidades
       const map = new Map();
-      for (const r of parsedRows) {
-        const baseKey = `${r.data}|${r.unidade}|${r.prato}|${r.categoria}`;
-        const prev = map.get(baseKey);
-        if (prev) prev.quantidade += r.quantidade;
-        else map.set(baseKey, { ...r });
+      for (const r of prelim) {
+        const key = `${r.data}|${r.unidade}|${r.categoria}|${r.prato}`;
+        const curr = map.get(key);
+        if (curr) curr.quantidade += r.quantidade;
+        else map.set(key, { ...r });
       }
       const rows = [...map.values()];
 
-      info(`${rows.length} linhas (deduplicadas) prontas. Enviando...`);
-
-      const CHUNK_SIZE = 500;
-      for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
-        const chunk = rows.slice(i, i + CHUNK_SIZE);
-        const { error } = await supa
-          .from(DEST_INSERT_TABLE)
-          .upsert(chunk, { onConflict: 'data,unidade,categoria,prato' });
-        if (error) throw error;
+      // Envio em lotes adaptativos
+      async function upsertChunks(list, chunkSize) {
+        let i = 0;
+        while (i < list.length) {
+          const slice = list.slice(i, i + chunkSize);
+          const { error } = await supa.from(DEST_INSERT_TABLE).upsert(slice, { onConflict: 'data,unidade,categoria,prato' });
+          if (error) {
+            // Se o lote é grande, divide e tenta novamente
+            if (chunkSize > 1) {
+              const half = Math.max(1, Math.floor(chunkSize / 2));
+              await upsertChunks(slice, half); // recursivo em fatias menores
+            } else {
+              // Mostra linha problemática
+              console.error('Falha em linha:', slice[0], error);
+              throw new Error(`Falha ao inserir uma linha (ver console): ${error.message || error}`);
+            }
+          }
+          i += chunkSize;
+        }
       }
+
+      info(`${rows.length} linhas válidas (deduplicadas). Enviando…`);
+      await upsertChunks(rows, 1000);
 
       info(`Upload concluído: ${rows.length} linhas inseridas/atualizadas.`);
       setStatus('Upload concluído', 'ok');
       uploadSuccess = true;
 
-    } catch(e) {
+    } catch (e) {
       console.error(e);
       setStatus('Erro no upload', 'err');
       info(e.message || 'Falha ao enviar dados.');
     } finally {
-      document.getElementById('fileExcel').value = '';
+      $('fileExcel').value = '';
     }
 
     if (uploadSuccess) {
@@ -653,7 +640,7 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
         Promise.resolve().then(()=>updateTopPratosCharts(rows)),
         Promise.resolve().then(()=>updateDowChart(rows, prevRows, de, ate)),
         Promise.resolve().then(()=>updateCategoryChart(rows)),
-        updateMonthChart(ate) // usa o FIM escolhido
+        updateMonthChart(ate)
       ]);
 
       renderDebug(rows, prevRows, de, ate);
@@ -696,7 +683,7 @@ where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
       document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
       document.querySelector('.chip[data-q="30"]').classList.add('active');
       $('periodoInfo').textContent = `Último dia carregado: ${lastDay || 'N/D'}`;
-      $('onlyPratos').checked = false; // começa em TODAS as categorias
+      $('onlyPratos').checked = false;
       READ_VIEW = VIEW_ALL;
       await applyAll();
     } catch (e) {
