@@ -53,7 +53,7 @@
     .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
     .chart-box{height:320px;position:relative}
     .chart-box canvas{display:block;width:100%;height:100%;}
-    .diag{font-size:12px;color:#475569;margin-left:8px}
+    .diag{font-size:12px;color:#475569}
     .upload-info{margin-top:8px;font-size:12px;color:#475569}
     @media (max-width:1024px){.cols-3,.cols-2,.krow{grid-template-columns:repeat(2,1fr)}}
     @media (max-width:640px){.cols-3,.cols-2,.krow{grid-template-columns:1fr}}
@@ -132,12 +132,11 @@
   const DEST_INSERT_TABLE = 'vendas_pratos_raw';
   const REFRESH_RPC       = 'refresh_pratos_view';
 
-  // Chaves Supabase
   const SUPABASE_URL  = 'https://rqeagimulvgfecvuzubk.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxZWFnaW11bHZnZmVjdnV6dWJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NzkyMzUsImV4cCI6MjA3MjU1NTIzNX0.SeNHyHOlpqjm-QTl7KXq7YF-48fk5iOQCRgpangP4zU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  /* ===================== CHART.JS DEFAULTS ===================== */
+  /* ===================== CHART DEFAULTS ===================== */
   Chart.defaults.font.family = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu';
   Chart.defaults.color = '#334155';
   Chart.defaults.plugins.legend.position = 'top';
@@ -145,7 +144,7 @@
   Chart.defaults.datasets.bar.borderRadius = 6;
   Chart.defaults.datasets.bar.borderSkipped = false;
   Chart.defaults.devicePixelRatio = Math.max(1, window.devicePixelRatio || 1);
-  const CHART_COLORS = ["#7b1e3a", "#9c3554", "#bd4c6e", "#ce577b", "#e07a94", "#f2a9c1", "#94a3b8", "#a9b6c8", "#bec8d7", "#d3dae6"];
+  const CHART_COLORS = ["#7b1e3a","#9c3554","#bd4c6e","#ce577b","#e07a94","#f2a9c1","#94a3b8","#a9b6c8","#bec8d7","#d3dae6"];
 
   /* ===================== HELPERS ===================== */
   const $ = id => document.getElementById(id);
@@ -366,7 +365,7 @@
       ]);
   }
 
-  /* ===================== UPLOAD (com DEDUPE antes do UPSERT) ===================== */
+  /* ===================== UPLOAD (dedupe + UPSERT) ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0];
@@ -406,7 +405,7 @@
         return String(h>>>0);
       }
 
-      // 1) Mapeia linhas válidas
+      // Parse básico
       const parsedRows = json.map(r => {
         const row = {
           quantidade: parseInt(r['Quantidade'] || 0, 10),
@@ -422,25 +421,20 @@
         return r.data && pratoValido && qtdValida;
       });
 
-      if (parsedRows.length === 0) {
-        throw new Error('Nenhuma linha válida encontrada. Verifique as colunas do arquivo.');
-      }
+      if (parsedRows.length === 0) throw new Error('Nenhuma linha válida encontrada. Verifique as colunas do arquivo.');
 
-      // 2) DEDUPE por (data,unidade,prato,categoria,quantidade) → somando quantidades
+      // DEDUPE somando quantidades por (data,unidade,prato,categoria)
       const map = new Map();
       for (const r of parsedRows) {
         const baseKey = `${r.data}|${r.unidade}|${r.prato}|${r.categoria}`;
         const prev = map.get(baseKey);
         if (prev) prev.quantidade += r.quantidade;
-        else map.set(baseKey, { ...r }); // cópia
+        else map.set(baseKey, { ...r });
       }
-
-      // 3) Gera row_key após agregação
       const rows = [...map.values()].map(r => ({ ...r, row_key: makeRowKey(r) }));
 
       info(`${rows.length} linhas (deduplicadas) prontas. Enviando...`);
 
-      // 4) UPSERT em lotes
       const CHUNK_SIZE = 500;
       for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
         const chunk = rows.slice(i, i + CHUNK_SIZE);
@@ -463,9 +457,15 @@
     if (uploadSuccess) {
       try {
         setStatus('Atualizando visões...');
-        await supa.rpc(REFRESH_RPC).catch(() => {}); // se não existir, segue
+        // <<< FIX AQUI: usar try/catch em vez de .catch()
+        const res = await supa.rpc(REFRESH_RPC);
+        if (res && res.error) console.warn('RPC retornou erro (ignorando):', res.error.message);
+      } catch (e) {
+        console.warn('RPC ausente ou falhou (seguindo mesmo assim):', e?.message || e);
+      }
+      try {
         await init();
-      } catch(e) {
+      } catch (e) {
         setStatus('Erro ao recarregar dashboard.', 'err');
         console.error(e);
       }
