@@ -10,7 +10,7 @@
       --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --pri:#2f6ef7;
       --ok:#10b981; --down:#ef4444;
       --chip:#f7e9ed; --bar:#334155; --wine:#7b1e3a; --wine-soft:#9c3554;
-      --c-now:#7b1e3a; --c-now-soft:#9c3554; --c-prev:#94a3b8; --c-prev-soft:#cbd5e1;
+      --c-now:#7b1e3a; --c-prev:#94a3b8;
     }
     *{box-sizing:border-box}
     html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
@@ -41,19 +41,16 @@
     .krow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
     .kpi{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;box-shadow:0 8px 24px rgba(10,18,32,.05);}
     .kpi h4{margin:0 0 6px;font-size:13px;color:#475569;display:flex;align-items:center}
-    .kpi h4 .spacer{flex:1}
     .kpi .val{font-size:22px;font-weight:800}
     .kpi .accent{height:2px;background:var(--wine);border-radius:999px;margin:6px 0 6px 0;opacity:.95}
     .kpi .sub{font-size:12px;color:#667085;margin-top:2px}
     .delta{display:inline-flex;gap:6px;align-items:center;padding:2px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.35);font-weight:800;font-size:12px;margin-left:12px;background:rgba(148,163,184,.15);color:#64748b}
-    .delta svg{width:12px;height:12px}
     .delta.up{background:rgba(123,30,58,.10);border-color:rgba(123,30,58,.25);color:var(--wine)}
     .delta.down{background:rgba(148,163,184,.15);border-color:rgba(148,163,184,.35);color:#64748b}
     .chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 12px 8px 12px;box-shadow:0 8px 24px rgba(10,18,32,.05)}
     .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
     .chart-box{height:320px;position:relative}
     .chart-box canvas{display:block;width:100%;height:100%;}
-    .diag{font-size:12px;color:#475569}
     .upload-info{margin-top:8px;font-size:12px;color:#475569}
     @media (max-width:1024px){.cols-3,.cols-2,.krow{grid-template-columns:repeat(2,1fr)}}
     @media (max-width:640px){.cols-3,.cols-2,.krow{grid-template-columns:1fr}}
@@ -128,6 +125,7 @@
 
   <script>
   /* ===================== CONFIG ===================== */
+  // -> se quiser só 'Pratos', mude para 'vendas_pratos_view_only_pratos'
   const READ_VIEW         = 'vendas_pratos_view';
   const DEST_INSERT_TABLE = 'vendas_pratos_raw';
   const REFRESH_RPC       = 'refresh_pratos_view';
@@ -230,8 +228,9 @@
   function deltaBadge(el,curr,prev){
     if(!isFinite(prev)||+prev===0){ el.innerHTML='—'; el.className='delta flat'; return; }
     const p=((curr-prev)/prev)*100;
-    el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
     el.className='delta '+(p>=0?'up':'down');
+    el.title = `${p>=0?'+':''}${p.toFixed(1)}%`;
+    el.textContent = ` ${Math.abs(p).toFixed(1)}%`;
   }
   function computePrevRangeISO(deISO, ateISO){
     const len=daysLen(deISO,ateISO);
@@ -410,9 +409,9 @@
         const row = {
           quantidade: parseInt(r['Quantidade'] || 0, 10),
           data:       parseDate(r['Data']),
-          unidade:    cleanSpaces(r['Unidade']),
-          prato:      cleanSpaces(r['Prato']),
-          categoria:  cleanSpaces(r['Categoria']),
+          unidade:    cleanSpaces(r['Loja'] ?? r['Unidade']),
+          prato:      cleanSpaces(r['Itens e Opções'] ?? r['Prato']),
+          categoria:  cleanSpaces(r['Item Código Mãe'] ?? r['Categoria']),
         };
         return row;
       }).filter(r => {
@@ -457,7 +456,6 @@
     if (uploadSuccess) {
       try {
         setStatus('Atualizando visões...');
-        // <<< FIX AQUI: usar try/catch em vez de .catch()
         const res = await supa.rpc(REFRESH_RPC);
         if (res && res.error) console.warn('RPC retornou erro (ignorando):', res.error.message);
       } catch (e) {
