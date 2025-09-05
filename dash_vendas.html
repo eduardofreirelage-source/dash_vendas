@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DASHBOARD — CFO (v2.21.0 — CORREÇÃO FINAL)</title>
+  <title>DASHBOARD — CFO (v6.0.0 — Versão Final)</title>
   <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%232f6ef7"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">CFO</text></svg>'/>
   <style>
     :root{
@@ -483,30 +483,7 @@
       p_cancelado
     };
   }
-
-  // ==================================================================
-  // INÍCIO DA CORREÇÃO
-  // ==================================================================
   
-  function rpcName(params){
-    // CORRIGIDO: Usa a RPC 'v2' se QUALQUER filtro estiver ativo, não apenas o de unidade.
-    const hasFilters = params.p_unids || params.p_lojas || params.p_turnos || params.p_canais || params.p_pags;
-    return hasFilters ? 'kpi_vendas_v2' : 'kpi_vendas';
-  }
-
-  function prepareArgs(name, params){
-    // CORRIGIDO: Se for usar a RPC simples ('kpi_vendas'), remove todos os filtros para evitar erros.
-    if(name === 'kpi_vendas'){
-      const {p_unids, p_lojas, p_turnos, p_canais, p_pags, ...rest} = params;
-      return rest;
-    }
-    return params;
-  }
-  
-  // ==================================================================
-  // FIM DA CORREÇÃO
-  // ==================================================================
-
   function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
   async function kpiCancelFallback(de,ate,dePrev,atePrev){
     const rowsNow = await fetchRowsLocal(de,ate,'Sim');
@@ -525,13 +502,16 @@
   }
   async function updateKPIs(de, ate, dePrev, atePrev){
     const pNow=buildParams(de,ate), pPrev=buildParams(dePrev,atePrev);
-    const nameNow=rpcName(pNow),     namePrev=rpcName(pPrev);
+    
+    // CORREÇÃO FINAL: As funções rpcName e prepareArgs foram removidas.
+    // O código agora chama diretamente a única função correta no banco de dados.
     const [now,prev,cNow,cPrev] = await Promise.all([
-      supa.rpc(nameNow, prepareArgs(nameNow,pNow)),
-      supa.rpc(namePrev, prepareArgs(namePrev,pPrev)),
-      supa.rpc(nameNow, prepareArgs(nameNow,{...pNow, p_cancelado:'Sim'})),
-      supa.rpc(namePrev, prepareArgs(namePrev,{...pPrev, p_cancelado:'Sim'})),
+      supa.rpc('kpi_vendas_unificado', pNow),
+      supa.rpc('kpi_vendas_unificado', pPrev),
+      supa.rpc('kpi_vendas_unificado', {...pNow, p_cancelado:'Sim'}),
+      supa.rpc('kpi_vendas_unificado', {...pPrev, p_cancelado:'Sim'}),
     ]);
+
     if(now.error) throw now.error;
     if(prev.error) throw prev.error;
 
@@ -1447,8 +1427,8 @@
       ms.cancel.setOptions(['','Não','Sim']); ms.cancel.set(['Não']);
 
       $('periodoInfo').textContent=`Último dia carregado: ${lastDay}`;
-      bindKPIClick();
-      updateChartTitles();
+      bindKPIClick();           // >>> KPI clicável
+      updateChartTitles();      // >>> títulos dinâmicos por KPI
       applyQuick('30');
       resetAutoCollapse();
     }catch(e){
