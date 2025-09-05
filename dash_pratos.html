@@ -63,9 +63,8 @@
     table.audit th,table.audit td{border:1px solid var(--line);padding:6px 8px;text-align:left}
     table.audit th{background:#f8fafc}
     @media (max-width:1024px){.cols-3,.cols-2,.krow,.grid-2{grid-template-columns:1fr}}
-  #dbgSec{display:none!important}
-</style>
-</head>
+  </style>
+<style>#dbgSec,[data-debug], [id*="debug"], .debug{display:none!important}</style></head>
   <script>
   // Envia a altura atual para o portal
   function postHeight(){
@@ -85,7 +84,6 @@
 <style>
   /* garantir que o conteúdo permita rolagem caso precise */
   html,body{min-height:100%; overflow:auto !important;}
-#dbgSec{display:none!important}
 </style>
 <body>
   <div class="wrap">
@@ -124,8 +122,7 @@
     </div>
 
     <!-- DEBUG (com auditoria de unidade) -->
-    <div><span class="badge" id="dbgView">—</span></div>
-      </div>
+    <div class="section" 
       <div class="grid-2">
         <div>
           <div class="muted">Intervalo atual</div>
@@ -508,7 +505,42 @@
   }
 
   /* ===================== DEBUG UI ===================== */
-  function renderDebug(){ /* debug removido */ });
+  function renderDebug(rows, prevRows, de, ate){
+    const sumNow  = rows.reduce((s,r)=>s+(r.quantidade||0),0);
+    const sumPrev = prevRows.reduce((s,r)=>s+(r.quantidade||0),0);
+    const distinctDays = new Set(rows.map(r=>r.data)).size;
+    $('dbgView').textContent = READ_VIEW;
+    $('dbgRange').textContent = `de ${de} até ${ate} (${daysLen(de,ate)} dias)`;
+    $('dbgSumNow').textContent = num(sumNow);
+    $('dbgSumPrev').textContent = num(sumPrev);
+    $('dbgRows').textContent = rows.length.toLocaleString('pt-BR');
+    $('dbgDays').textContent = distinctDays.toLocaleString('pt-BR');
+    $('dbgFilters').textContent = `Unid: ${ms.unids.get().length} • Cat: ${ms.cats.get().length} • Prato: ${ms.pratos.get().length}`;
+    renderAuditUnidade(rows);
+  }
+
+  function buildSQLCompare(de, ate){
+    const len = daysLen(de, ate);
+    const d = new Date(de+'T00:00:00');
+    const atePrev = new Date(d.getTime()-86400000);
+    const dePrev = new Date(atePrev.getTime()-(len-1)*86400000);
+    const dePrevISO = iso(dePrev), atePrevISO = iso(atePrev);
+    return `
+-- Conferência (view: ${READ_VIEW})
+select coalesce(sum(quantidade),0) as qtd_atual
+from ${READ_VIEW}
+where data between '${de}' and '${ate}';
+
+select coalesce(sum(quantidade),0) as qtd_anterior
+from ${READ_VIEW}
+where data between '${dePrevISO}' and '${atePrevISO}';`.trim();
+  }
+  document.getElementById('btnCopySQL').addEventListener('click', async ()=>{
+    const de = $('fDe').value || firstDay;
+    const ate = $('fAte').value || lastDay;
+    try { await navigator.clipboard.writeText(buildSQLCompare(de, ate)); $('dbgMsg').textContent = 'SQL copiado.'; setTimeout(()=> $('dbgMsg').textContent='—', 3000); }
+    catch { $('dbgMsg').textContent = 'Copie manualmente o SQL exibido.'; }
+  });
 
   /* ===================== UPLOAD ROBUSTO ===================== */
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
@@ -630,7 +662,7 @@
         updateMonthChart(ate)
       ]);
 
-      // debug removido
+      renderDebug(rows, prevRows, de, ate);
       setStatus('Dashboard atualizado!', 'ok');
     } catch (e) {
       console.error(e);
@@ -672,39 +704,6 @@
     }
   }
   init();
-  </script>
-</body>
-</html>
-<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Dashboard de Pratos</title>
-  <style>
-    /* fallback: se a seção tiver id/classe previsível, já some via CSS */
-    #debug-periodo,[data-debug-periodo]{display:none!important}
-  #dbgSec{display:none!important}
-</style>
-</head>
-<body>
-  <!-- SEU CONTEÚDO ORIGINAL DO DASH AQUI (gráficos, filtros, etc.) -->
-
-  <script>
-    // Remove dinamicamente o card "Debug do Período" por texto do cabeçalho:
-    (function hideDebug(){
-      function tryHide(){
-        const nodes = Array.from(document.querySelectorAll('*'))
-          .filter(el => /debug do período/i.test(el.textContent||''));
-        nodes.forEach(el=>{
-          // esconde o “card” pai mais próximo
-          let p = el; for(let i=0;i<4 && p && p.parentElement;i++){ p = p.parentElement; if(p && /card|section|box|container/i.test(p.className)) break; }
-          (p||el).style.display='none';
-        });
-      }
-      new MutationObserver(tryHide).observe(document.body,{childList:true,subtree:true});
-      tryHide();
-    })();
   </script>
 </body>
 </html>
