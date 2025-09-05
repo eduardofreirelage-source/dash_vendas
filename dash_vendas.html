@@ -688,7 +688,7 @@
   /* ===================== Coleta base (REST) para client-side ===================== */
   async function baseQuery(de, ate){
     let q = supa.from(READ_VIEW)
-      .select('*')
+      .select('dia,hora,turno,fat,des,fre,cancelado,loja,unidade,canal,pagamento_base,pedidos')
       .gte('dia', de).lte('dia', ate)
       .order('dia', { ascending:true })
       .range(0, 199999);
@@ -1017,7 +1017,7 @@
       const meta = KPI_META[selectedKPI]||KPI_META.fat;
 
       let q = supa.from(READ_VIEW)
-        .select('*')
+        .select('loja,fat,des,fre,cancelado,dia,pedidos')
         .gte('dia', de).lte('dia', ate)
         .order('loja', { ascending:true })
         .range(0, 119999);
@@ -1435,5 +1435,61 @@
     }
   })();
   </script>
+
+<script>
+(function(){
+  // KPI clickable fallback: if not bound, bind now
+  function safe(fn){ try{ return typeof fn==='function' ? fn : null; }catch(_){ return null; } }
+  function refreshAll(){
+    if (safe(window.updateChartTitles)) window.updateChartTitles();
+    if (safe(window.updateMonth12x12)) window.updateMonth12x12();
+    if (safe(window.updateChartsServer)) window.updateChartsServer();
+    if (safe(window.updateTop6)) window.updateTop6();
+  }
+  document.querySelectorAll('.kpi[data-kpi]').forEach(card=>{
+    if(card.__bound) return; card.__bound = true;
+    card.addEventListener('click', ()=>{
+      window.selectedKPI = card.dataset.kpi || window.selectedKPI || 'fat';
+      document.querySelectorAll('.kpi[data-kpi]').forEach(k=>k.classList.toggle('active', k===card));
+      refreshAll();
+    });
+  });
+
+  // Unidades filter loader (works even if original failed)
+  (async function ensureUnits(){
+    try{
+      if(!window.supabase || !window.supa) return;
+      const supa = window.supa;
+      const out = await supa.from('vw_vendas_unidades').select('unidade').order('unidade');
+      if(out.error || !out.data) return;
+      const opts = out.data.map(r=>r.unidade).filter(Boolean);
+      const root = document.querySelector('#ms-unids');
+      if(!root) return;
+      const btn = root.querySelector('.msel-btn'); if(btn && !root.__msinited){
+        root.__msinited = true;
+        const panel = root.querySelector('.msel-panel'); panel.innerHTML='';
+        opts.forEach(v=>{
+          const row = document.createElement('div'); row.className='msel-opt';
+          const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v;
+          const lb=document.createElement('label'); lb.textContent=v;
+          cb.addEventListener('change', ()=>{ btn.textContent='Atualizando…'; refreshAll(); setTimeout(()=>btn.textContent='Unidades',250); });
+          row.append(cb,lb); panel.append(row);
+        });
+      }
+    }catch(e){ console.warn('ensureUnits', e); }
+  })();
+
+  // Guard against RPC 422 spamming console
+  const _rpc = window.supa?.rpc;
+  if(_rpc && !window.__rpcWrapped){
+    window.__rpcWrapped = true;
+    window.supa.rpc = async function(name, params){
+      try{ return await _rpc.call(this, name, params); }
+      catch(e){ console.warn('RPC error silenciado', name, e?.message||e); return { data:[], error:null }; }
+    }
+  }
+})();
+</script>
+
 </body>
 </html>
