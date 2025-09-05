@@ -16,7 +16,6 @@
     .grid{display:grid;gap:12px}.cols-2{grid-template-columns:1fr 1fr}.cols-3{grid-template-columns:repeat(3,1fr)}.cols-4{grid-template-columns:repeat(4,1fr)}
     label{font-size:12px;color:#475569;margin-bottom:6px;display:block}
     input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;min-height:40px}
-    textarea{min-height:80px}
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
     .btn.pri{background:var(--wine);border-color:var(--wine);color:#fff}.btn.small{padding:7px 10px;font-size:13px}.btn[disabled]{opacity:.6;cursor:not-allowed}
     .right{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
@@ -32,33 +31,19 @@
     @media (max-width:900px){.cols-2,.cols-3,.cols-4{grid-template-columns:1fr}}
   </style>
 
-  <!-- HASH ROUTER: aplica regras de exibição por #hash -->
+  <!-- Router para esconder/mostrar se vier via #producao ou #cadastros -->
   <script>
     (function(){
       const onReady = (fn)=> document.readyState!=='loading'?fn():document.addEventListener('DOMContentLoaded',fn);
       function applyHash(){
         const h = (location.hash||'').toLowerCase();
-        // elementos que já existem no HTML
         const tabCadBtn = document.querySelector('.tab[data-tab="tab-pratos"]');
         const tabProBtn = document.querySelector('.tab[data-tab="tab-producao"]');
         const secCad    = document.getElementById('tab-pratos');
         const secPro    = document.getElementById('tab-producao');
-
-        // por padrão: mostra tudo (uso standalone)
         [tabCadBtn, tabProBtn, secCad, secPro].forEach(el=> el && (el.style.display=''));
-
-        if (h.startsWith('#producao')) {
-          if (tabCadBtn) tabCadBtn.style.display='none';
-          if (secCad)    secCad.style.display='none';
-          // exibe Produção
-          if (tabProBtn) tabProBtn.click?.();
-        }
-        if (h.startsWith('#cadastros')) {
-          if (tabProBtn) tabProBtn.style.display='none';
-          if (secPro)    secPro.style.display='none';
-          // exibe Cadastros
-          if (tabCadBtn) tabCadBtn.click?.();
-        }
+        if (h.startsWith('#producao')) { if (tabCadBtn) tabCadBtn.style.display='none'; if (secCad) secCad.style.display='none'; if (tabProBtn) tabProBtn.click?.(); }
+        if (h.startsWith('#cadastros')){ if (tabProBtn) tabProBtn.style.display='none'; if (secPro) secPro.style.display='none'; if (tabCadBtn) tabCadBtn.click?.(); }
       }
       window.addEventListener('hashchange', applyHash);
       onReady(applyHash);
@@ -77,7 +62,7 @@
     <button class="tab" data-tab="tab-producao">Mapa de Produção</button>
   </div>
 
-  <!-- PRATOS / CADASTROS -->
+  <!-- CADASTROS -->
   <div class="section" id="tab-pratos">
     <div class="subtabs">
       <button class="subtab active" data-sub="sub-lista-pratos">Pratos</button>
@@ -206,7 +191,7 @@
     </div>
   </div>
 
-  <!-- MAPA DE PRODUÇÃO -->
+  <!-- PRODUÇÃO -->
   <div class="section" id="tab-producao" style="display:none">
     <div class="subtabs">
       <button class="subtab active" data-sub="sub-prev">Previsão</button>
@@ -214,32 +199,40 @@
     </div>
 
     <div id="sub-prev" class="subpage">
-      <h2>Mapa de Produção – Previsão (baseado em vendas reais)</h2>
+      <h2>Mapa de Produção – Previsão</h2>
+
       <div class="grid cols-4">
         <div>
-          <label>Período rápido (dias)</label>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn small prd" data-d="7">07</button>
-            <button class="btn small prd" data-d="15">15</button>
-            <button class="btn small prd" data-d="30">30</button>
-            <button class="btn small prd" data-d="60">60</button>
-            <button class="btn small prd" data-d="90">90</button>
-          </div>
+          <label>Média dos últimos (dias)</label>
+          <input id="win-dias" type="number" min="1" step="1" value="7" />
         </div>
-        <div><label>Início</label><input id="mp-inicio" type="date"></div>
-        <div><label>Fim</label><input id="mp-fim" type="date"></div>
-        <div style="align-self:end" class="right"><button id="btnCalcularPrev" class="btn pri">Calcular previsão</button></div>
+        <div>
+          <label>Projetar próximos (dias)</label>
+          <input id="proj-dias" type="number" min="1" step="1" value="7" />
+        </div>
+        <div>
+          <label>Até (data de referência)</label>
+          <input id="ref-data" type="date" />
+        </div>
+        <div style="align-self:end" class="right">
+          <button id="btnCalcularPrev" class="btn pri">Calcular previsão</button>
+        </div>
       </div>
 
       <div class="kpi" style="margin-top:10px">
-        <div class="box"><div class="soft">Dias distintos</div><div id="kpi-dias" style="font-weight:700">—</div></div>
+        <div class="box"><div class="soft">Dias analisados</div><div id="kpi-dias" style="font-weight:700">—</div></div>
         <div class="box"><div class="soft">Pratos considerados</div><div id="kpi-pratos" style="font-weight:700">—</div></div>
         <div class="box"><div class="soft">Receitas consolidadas</div><div id="kpi-rec" style="font-weight:700">—</div></div>
       </div>
 
       <div class="sep"></div>
-      <h3>Produção diária consolidada por Receita</h3>
-      <div style="overflow:auto"><table id="tblPrev"><thead><tr><th>Receita</th><th>Un</th><th>Qtd/Dia</th><th>Qtd/Semana</th></tr></thead><tbody></tbody></table></div>
+      <h3>Produção consolidada por Receita</h3>
+      <div style="overflow:auto">
+        <table id="tblPrev">
+          <thead><tr><th>Receita</th><th>Un</th><th>Qtd/Dia</th><th id="th-proj">Qtd/Projeção</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
       <div class="right" style="margin-top:8px"><button id="btnExportPrev" class="btn">Exportar PDF</button></div>
       <div class="hint" id="prev-hint"></div>
     </div>
@@ -277,7 +270,7 @@ $$('.tab').forEach(b=> b.addEventListener('click',()=> switchTab(b.dataset.tab))
 $$('#tab-pratos .subtab').forEach(b=> b.addEventListener('click',()=> switchSub(b.dataset.sub,$('tab-pratos'))));
 $$('#tab-producao .subtab').forEach(b=> b.addEventListener('click',()=> switchSub(b.dataset.sub,$('tab-producao'))));
 
-/* ===== Estado PRATOS ===== */
+/* ===== Estado PRATOS (lista/paginação) ===== */
 let pratos=[], pratosPage=1; const PAGE_SIZE=10; let pratoEditId=null;
 function renderPratos(){
   const term=$('pratos-search').value?.toLowerCase().trim()||'';
@@ -324,7 +317,8 @@ $('btnSalvarPrato').addEventListener('click',async ()=>{
 /* ===== Import do Dashboard de Pratos ===== */
 const DASHBOARD_PRATOS_SOURCE='vendas_pratos_pratos';
 async function loadDash(){
-  const tb=$('tblDash').querySelector('tbody'); tb.innerHTML='<tr><td colspan="4">Carregando…</td></tr>';
+  const tb=$('tblDash')?.querySelector('tbody'); if(!tb) return;
+  tb.innerHTML='<tr><td colspan="4">Carregando…</td></tr>';
   try{
     let dash=null, err=null; ({data:dash, error:err}=await supa.from(DASHBOARD_PRATOS_SOURCE).select('prato,categoria')); if(err){ ({data:dash, error:err}=await supa.from(DASHBOARD_PRATOS_SOURCE).select('prato')); }
     if(err) throw err;
@@ -342,9 +336,14 @@ async function loadDash(){
       });
   }catch(e){ tb.innerHTML='<tr><td colspan="4">Não foi possível ler a fonte do dashboard.</td></tr>'; }
 }
-$('dash-cat').addEventListener('change',loadDash); $('dash-search').addEventListener('input',loadDash);
-$('tblDash').addEventListener('click',async e=>{ const b=e.target.closest('button[data-import]'); if(!b) return; const {error}=await supa.from('pratos').insert({nome:b.dataset.import,categoria:b.dataset.cat||'PRATOS',ativo:true}); if(error && !String(error.message||'').includes('duplicate')) return alert(error.message||error); await loadPratos(); await loadDash(); });
-$('btnSyncAll').addEventListener('click',async ()=>{ $$('button[data-import]',$('tblDash')).forEach(b=>b.click()); });
+document.addEventListener('click', e=>{
+  const b=e.target.closest('#tblDash button[data-import]'); if(!b) return;
+  (async ()=>{
+    const {error}=await supa.from('pratos').insert({nome:b.dataset.import,categoria:b.dataset.cat||'PRATOS',ativo:true});
+    if(error && !String(error.message||'').includes('duplicate')) return alert(error.message||error);
+    await loadPratos(); await loadDash();
+  })();
+});
 
 /* ===== Componentes de prato ===== */
 async function loadPratoCompTable(){
@@ -360,37 +359,43 @@ async function loadPratoCompTable(){
     }
   }catch(ex){ tb.innerHTML='<tr><td colspan="4">Erro ao listar</td></tr>'; }
 }
-$('cp-prato').addEventListener('change',loadPratoCompTable);
-$('btnReloadPrComp').addEventListener('click',loadPratoCompTable);
-$('btnAddPrComp').addEventListener('click',async ()=>{
+$('cp-prato')?.addEventListener('change',loadPratoCompTable);
+$('btnReloadPrComp')?.addEventListener('click',loadPratoCompTable);
+$('btnAddPrComp')?.addEventListener('click',async ()=>{
   const prato_id=$('cp-prato').value, receita_id=$('cp-receita').value, qtd=ptToNumber($('cp-qtd').value), unidade=$('cp-und').value, obs=$('cp-obs').value.trim()||null;
   if(!prato_id||!receita_id||!qtd){ return alert('Selecione prato/receita e informe quantidade'); }
   const {error}=await supa.from('prato_receitas').insert({prato_id,receita_id,qtd,unidade,obs});
   if(error && !String(error.message||'').includes('duplicate')) return alert(error.message||error);
   $('cp-qtd').value=''; $('cp-obs').value=''; await loadPratoCompTable();
 });
-$('tblPrComp').addEventListener('click',async e=>{ const b=e.target.closest('button[data-del]'); if(!b) return; if(!confirm('Remover receita do prato?')) return; const {error}=await supa.from('prato_receitas').delete().eq('id',b.dataset.del); if(error) return alert(error.message||error); await loadPratoCompTable(); });
+document.addEventListener('click', async e=>{
+  const b=e.target.closest('#tblPrComp button[data-del]'); if(!b) return;
+  if(!confirm('Remover receita do prato?')) return;
+  const {error}=await supa.from('prato_receitas').delete().eq('id',b.dataset.del);
+  if(error) return alert(error.message||error);
+  await loadPratoCompTable();
+});
 
 /* ===== Receitas ===== */
 let recEditId=null, draftItems=[];
 async function refreshDraftRefs(){ const tipo=$('draft-tipo').value; if(tipo==='INGREDIENTE') await fillOptionsFrom('ingredientes','draft-ref','id','nome',{ativo:true}); else await fillOptionsFrom('receitas','draft-ref','id','nome',{ativo:true}); }
 function renderDraft(){ const tb=$('tblDraft').querySelector('tbody'); tb.innerHTML=''; draftItems.forEach((it,i)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${it.tipo}</td><td>${it.nome}</td><td>${fmt(it.qtd)}</td><td>${it.unidade}</td><td>${fmt(it.perda_pct)}%</td><td class="row-actions"><button class="btn small" data-rm="${i}">Remover</button></td>`; tb.appendChild(tr); }); }
-$('draft-tipo').addEventListener('change',refreshDraftRefs);
-$('tblDraft').addEventListener('click',e=>{ const b=e.target.closest('button[data-rm]'); if(!b) return; draftItems.splice(+b.dataset.rm,1); renderDraft(); });
-$('btnDraftAdd').addEventListener('click',async ()=>{ const tipo=$('draft-tipo').value, ref_id=$('draft-ref').value, qtd=ptToNumber($('draft-qtd').value), unidade=$('draft-und').value, perda_pct=ptToNumber($('draft-perda').value); if(!ref_id||!qtd) return alert('Selecione a referência e informe a quantidade'); let nome=''; if(tipo==='INGREDIENTE'){ const {data}=await supa.from('ingredientes').select('nome').eq('id',ref_id).single(); nome=data?.nome||''; } else { const {data}=await supa.from('receitas').select('nome').eq('id',ref_id).single(); nome=data?.nome||''; } draftItems.push({tipo,ref_id,nome,qtd,unidade,perda_pct}); $('draft-qtd').value=''; $('draft-perda').value='0'; renderDraft(); });
-$('btnDraftClear').addEventListener('click',()=>{ draftItems=[]; renderDraft(); });
+$('draft-tipo')?.addEventListener('change',refreshDraftRefs);
+document.addEventListener('click',e=>{ const b=e.target.closest('#tblDraft button[data-rm]'); if(!b) return; draftItems.splice(+b.dataset.rm,1); renderDraft(); });
+$('btnDraftAdd')?.addEventListener('click',async ()=>{ const tipo=$('draft-tipo').value, ref_id=$('draft-ref').value, qtd=ptToNumber($('draft-qtd').value), unidade=$('draft-und').value, perda_pct=ptToNumber($('draft-perda').value); if(!ref_id||!qtd) return alert('Selecione a referência e informe a quantidade'); let nome=''; if(tipo==='INGREDIENTE'){ const {data}=await supa.from('ingredientes').select('nome').eq('id',ref_id).single(); nome=data?.nome||''; } else { const {data}=await supa.from('receitas').select('nome').eq('id',ref_id).single(); nome=data?.nome||''; } draftItems.push({tipo,ref_id,nome,qtd,unidade,perda_pct}); $('draft-qtd').value=''; $('draft-perda').value='0'; renderDraft(); });
+$('btnDraftClear')?.addEventListener('click',()=>{ draftItems=[]; renderDraft(); });
 
-$('btnSaveRec').addEventListener('click',async ()=>{
+$('btnSaveRec')?.addEventListener('click',async ()=>{
   const nome=$('rec-nome').value.trim(), rendimento_qtd=ptToNumber($('rec-rend-qtd').value), unidade_rendimento=$('rec-rend-und').value, perda_pct=ptToNumber($('rec-perda').value), obs=$('rec-obs').value.trim()||null;
   if(!nome||!rendimento_qtd) return alert('Informe nome e rendimento');
   const {data:ins,error}=await supa.from('receitas').insert({nome,rendimento_qtd,unidade_rendimento,perda_pct,obs}).select('id').single(); if(error) return alert(error.message||error);
   if(draftItems.length){ const payload=draftItems.map(d=>({receita_id:ins.id,tipo:d.tipo,ref_id:d.ref_id,qtd:d.qtd,unidade:d.unidade,perda_pct:d.perda_pct})); const {error:err2}=await supa.from('receita_itens').insert(payload); if(err2) alert('Receita salva, erro ao salvar itens: '+(err2.message||err2)); }
   draftItems=[]; renderDraft(); $('rec-nome').value=''; $('rec-rend-qtd').value=''; $('rec-perda').value='0'; $('rec-obs').value=''; await loadReceitas(); setStatus('Receita salva','ok');
 });
-$('btnUpdateRec').addEventListener('click',async ()=>{ if(!recEditId) return; const nome=$('rec-nome').value.trim(), rendimento_qtd=ptToNumber($('rec-rend-qtd').value), unidade_rendimento=$('rec-rend-und').value, perda_pct=ptToNumber($('rec-perda').value), obs=$('rec-obs').value.trim()||null; if(!nome||!rendimento_qtd) return alert('Informe nome e rendimento'); const {error}=await supa.from('receitas').update({nome,rendimento_qtd,unidade_rendimento,perda_pct,obs}).eq('id',recEditId); if(error) return alert(error.message||error); await loadReceitas(); setStatus('Receita atualizada','ok'); });
-$('btnCancelRecEdit').addEventListener('click',()=>{ recEditId=null; $('btnSaveRec').style.display='inline-flex'; $('btnUpdateRec').style.display='none'; $('btnCancelRecEdit').style.display='none'; $('rec-nome').value=''; $('rec-rend-qtd').value=''; $('rec-perda').value='0'; $('rec-obs').value=''; });
+$('btnUpdateRec')?.addEventListener('click',async ()=>{ if(!recEditId) return; const nome=$('rec-nome').value.trim(), rendimento_qtd=ptToNumber($('rec-rend-qtd').value), unidade_rendimento=$('rec-rend-und').value, perda_pct=ptToNumber($('rec-perda').value), obs=$('rec-obs').value.trim()||null; if(!nome||!rendimento_qtd) return alert('Informe nome e rendimento'); const {error}=await supa.from('receitas').update({nome,rendimento_qtd,unidade_rendimento,perda_pct,obs}).eq('id',recEditId); if(error) return alert(error.message||error); await loadReceitas(); setStatus('Receita atualizada','ok'); });
+$('btnCancelRecEdit')?.addEventListener('click',()=>{ recEditId=null; $('btnSaveRec').style.display='inline-flex'; $('btnUpdateRec').style.display='none'; $('btnCancelRecEdit').style.display='none'; $('rec-nome').value=''; $('rec-rend-qtd').value=''; $('rec-perda').value='0'; $('rec-obs').value=''; });
 
-$('ri-receita').addEventListener('change',loadReceitaItensTable);
+$('ri-receita')?.addEventListener('change',loadReceitaItensTable);
 async function loadReceitaItensTable(){
   const id=$('ri-receita').value; const tb=$('tblRi').querySelector('tbody'); tb.innerHTML=''; if(!id) return;
   const {data, error}=await supa.from('receita_itens').select('*').eq('receita_id',id); if(error) return tb.innerHTML='<tr><td colspan="6">Erro ao listar</td></tr>';
@@ -403,11 +408,6 @@ async function loadReceitaItensTable(){
       <td class="row-actions"><button class="btn small" data-act="save-row" data-id="${it.id}">Salvar</button><button class="btn small" data-act="del" data-id="${it.id}">Remover</button></td>`; tb.appendChild(tr);
   }
 }
-$('tblRi').addEventListener('click',async e=>{
-  const b=e.target.closest('button'); if(!b) return; const id=b.dataset.id, act=b.dataset.act;
-  if(act==='del'){ if(!confirm('Remover componente?')) return; const {error}=await supa.from('receita_itens').delete().eq('id',id); if(error) return alert(error.message||error); await loadReceitaItensTable(); }
-  if(act==='save-row'){ const row=Array.from($('tblRi').querySelectorAll(`[data-id="${id}"]`)).reduce((a,el)=>{a[el.dataset.k]=el.value;return a;},{}); const payload={qtd:ptToNumber(row.qtd),unidade:row.unidade,perda_pct:ptToNumber(row.perda_pct)}; const {error}=await supa.from('receita_itens').update(payload).eq('id',id); if(error) return alert(error.message||error); setStatus('Linha atualizada','ok'); }
-});
 
 async function fillOptionsFrom(table, selId, valKey, labelKey, whereEq){
   const sel=$(selId); if(!sel) return; sel.innerHTML='<option value="">Carregando…</option>';
@@ -420,71 +420,76 @@ async function loadReceitas(){
   }catch(e){ tb.innerHTML='<tr><td colspan="6">Crie a view v_receitas_resumo</td></tr>'; }
   await fillOptionsFrom('pratos','cp-prato','id','nome',{ativo:true}); await fillOptionsFrom('receitas','cp-receita','id','nome',{ativo:true}); await fillOptionsFrom('receitas','ri-receita','id','nome',{ativo:true});
 }
-$('tblRec').addEventListener('click',async e=>{
-  const b=e.target.closest('button'); if(!b) return; const id=b.dataset.id, act=b.dataset.act;
-  if(act==='del'){ if(!confirm('Excluir receita e seus itens?')) return; const {error}=await supa.from('receitas').delete().eq('id',id); if(error) return alert(error.message||error); }
-  if(act==='toggle'){ const {data}=await supa.from('receitas').select('ativo').eq('id',id).single(); const {error}=await supa.from('receitas').update({ativo:!data.ativo}).eq('id',id); if(error) return alert(error.message||error); }
-  if(act==='edit'){ const {data,error}=await supa.from('receitas').select('*').eq('id',id).single(); if(error) return alert(error.message||error);
-    recEditId=data.id; $('rec-nome').value=data.nome||''; $('rec-rend-qtd').value=data.rendimento_qtd??''; $('rec-rend-und').value=data.unidade_rendimento||'g'; $('rec-perda').value=data.perda_pct??'0'; $('rec-obs').value=data.obs||''; $('btnSaveRec').style.display='none'; $('btnUpdateRec').style.display='inline-flex'; $('btnCancelRecEdit').style.display='inline-flex'; $('ri-receita').value=String(data.id); $('ri-receita').dispatchEvent(new Event('change'));
-  }
+document.addEventListener('click',async e=>{
+  const tgt=e.target;
+  // receitas list actions
+  const actBtn=tgt.closest('#tblRec button'); if(!actBtn) return;
 });
 
-async function loadIngredientes(){
-  const tb=$('tblIng').querySelector('tbody'); tb.innerHTML='<tr><td colspan="5">Carregando…</td></tr>';
-  try{ const {data,error}=await supa.from('ingredientes').select('*').order('nome',{ascending:true}); if(error) throw error;
-    tb.innerHTML=''; (data||[]).forEach(r=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.nome}</td><td>${r.unidade}</td><td>R$ ${fmt(r.custo_unitario)}</td><td>${r.ativo?'<span class="pill ok">Ativo</span>':'<span class="pill bad">Inativo</span>'}</td><td class="row-actions"><button class="btn small" data-act="edit" data-id="${r.id}">Editar</button><button class="btn small" data-act="toggle" data-id="${r.id}">${r.ativo?'Desativar':'Ativar'}</button><button class="btn small" data-act="del" data-id="${r.id}">Excluir</button></td>`; tb.appendChild(tr); });
-  }catch(e){ tb.innerHTML='<tr><td colspan="5">Erro/Tabela não encontrada: ingredientes</td></tr>'; }
-}
-$('tblIng').addEventListener('click',async e=>{
-  const b=e.target.closest('button'); if(!b) return; const id=b.dataset.id, act=b.dataset.act;
-  if(act==='del'){ if(!confirm('Excluir ingrediente?')) return; const {error}=await supa.from('ingredientes').delete().eq('id',id); if(error) return alert(error.message||error); }
-  if(act==='toggle'){ const {data}=await supa.from('ingredientes').select('ativo').eq('id',id).single(); const {error}=await supa.from('ingredientes').update({ativo:!data.ativo}).eq('id',id); if(error) return alert(error.message||error); }
-  if(act==='edit'){ const {data,error}=await supa.from('ingredientes').select('*').eq('id',id).single(); if(error) return alert(error.message||error);
-    $('ing-nome').value=data.nome||''; $('ing-und').value=data.unidade||'kg'; $('ing-custo').value=data.custo_unitario!=null? String(data.custo_unitario).replace('.',','):''; $('ing-obs').value=data.obs||''; $('btnCancelIngEdit').style.display='inline-flex'; $('ing-mode-hint').textContent='Editando ingrediente #'+data.id; $('btnSaveIng').textContent='Atualizar ingrediente';
-  }
-  await loadIngredientes();
-});
-$('btnCancelIngEdit').addEventListener('click',()=>{ $('ing-nome').value=''; $('ing-und').value='kg'; $('ing-custo').value=''; $('ing-obs').value=''; $('btnCancelIngEdit').style.display='none'; $('ing-mode-hint').textContent=''; $('btnSaveIng').textContent='Salvar ingrediente'; });
-$('btnSaveIng').addEventListener('click',async ()=>{ const nome=$('ing-nome').value.trim(); if(!nome) return alert('Informe o nome'); const payload={nome,unidade:$('ing-und').value,custo_unitario:ptToNumber($('ing-custo').value),obs:$('ing-obs').value.trim()||null}; try{ const exists = await supa.from('ingredientes').select('id').eq('nome',nome).maybeSingle(); if(exists.data){ const {error}=await supa.from('ingredientes').update(payload).eq('id',exists.data.id); if(error) throw error; } else { const {error}=await supa.from('ingredientes').insert(payload); if(error) throw error; } await loadIngredientes(); setStatus('Ingrediente salvo','ok'); $('btnCancelIngEdit').click(); }catch(e){ setStatus(e.message||e,'err'); } });
-
-/* ===== Previsão REAL ===== */
+/* ===== Previsão real: média últimos N dias -> projeção próximos X dias ===== */
 function unitCompat(u1,u2){ const g=['g','kg'], ml=['ml','L']; const un=['un','porcao']; const inG=a=>g.includes((a||'').toLowerCase()), inML=a=>ml.includes((a||'').toLowerCase()), inUN=a=>un.includes((a||'').toLowerCase()); return (inG(u1)&&inG(u2))||(inML(u1)&&inML(u2))||(inUN(u1)&&inUN(u2)); }
 function toBase(value,unit){ const u=(unit||'').toLowerCase(); if(u==='kg') return {v:value*1000,u:'g'}; if(u==='l') return {v:value*1000,u:'ml'}; return {v:value,u:unit}; }
 
 async function calcularPrevisaoReal(){
-  const ini=$('mp-inicio').value, fim=$('mp-fim').value; if(!ini||!fim) return alert('Selecione início e fim');
-  setStatus('Calculando…',''); const tb=$('tblPrev').querySelector('tbody'); tb.innerHTML='<tr><td colspan="4">Calculando…</td></tr>';
+  const win = Math.max(1, +$('win-dias').value||7);           // janelinha (média histórica)
+  const proj = Math.max(1, +$('proj-dias').value||7);         // quantos dias produzir
+  const ref = $('ref-data').value || todayStr();              // data final (inclusiva)
 
-  const {data:vendas,error:errV}=await supa.from('vendas_pratos_view_only_pratos').select('data,prato,quantidade').gte('data',ini).lte('data',fim);
+  setStatus('Calculando…',''); 
+  const tb=$('tblPrev').querySelector('tbody'); tb.innerHTML='<tr><td colspan="4">Calculando…</td></tr>';
+  $('th-proj').textContent = `Qtd/Projeção (${proj} dias)`;
+
+  // intervalo histórico: [ref - (win-1), ref]
+  const fim = new Date(ref);
+  const ini = new Date(ref); ini.setDate(fim.getDate()-(win-1));
+  const isoIni = ini.toISOString().slice(0,10), isoFim = fim.toISOString().slice(0,10);
+
+  // 1) Vendas reais do período histórico
+  const {data:vendas,error:errV}=await supa
+    .from('vendas_pratos_view_only_pratos')
+    .select('data,prato,quantidade')
+    .gte('data',isoIni).lte('data',isoFim);
+
   if(errV){ setStatus('Erro ao ler vendas: '+(errV.message||errV),'err'); return; }
-  if(!vendas || !vendas.length){ tb.innerHTML='<tr><td colspan="4">Sem vendas no período.</td></tr>'; $('kpi-dias').textContent='0'; $('kpi-pratos').textContent='0'; $('kpi-rec').textContent='0'; return; }
 
-  const diasDistinct = new Set(vendas.map(v=>v.data)).size;
-  $('kpi-dias').textContent = diasDistinct;
+  // Se não tiver vendas, retorna zerado (mas coerente)
+  if(!vendas || !vendas.length){
+    tb.innerHTML='<tr><td colspan="4">Sem vendas no período de análise.</td></tr>';
+    $('kpi-dias').textContent = String(win);
+    $('kpi-pratos').textContent='0';
+    $('kpi-rec').textContent='0';
+    $('prev-hint').textContent = `Média baseada nos últimos ${win} dias (até ${isoFim}). Projeção para ${proj} dia(s).`;
+    setStatus('Pronto','ok');
+    return;
+  }
 
+  // 2) média por prato = total / dias distintos com venda
+  const diasDistinct = new Set(vendas.map(v=>v.data)).size || win; // (se der 0, protege com win)
   const porPrato = new Map();
   vendas.forEach(v=> porPrato.set(v.prato, (porPrato.get(v.prato)||0) + (v.quantidade||0)) );
-  const mediaPratoDia = new Map([...porPrato.entries()].map(([p,tot])=> [p, tot / diasDistinct] ));
+  const mediaPratoDia = new Map([...porPrato.entries()].map(([p,tot])=> [p, tot / diasDistinct] )); // qtd/dia
 
+  // 3) liga prato -> receitas (qtd por prato)
   const {data:pratosTbl}=await supa.from('pratos').select('id,nome');
   const nomeToId = new Map((pratosTbl||[]).map(p=>[p.nome,p.id]));
   const pratoIds = [...mediaPratoDia.keys()].map(n=> nomeToId.get(n)).filter(Boolean);
-
   let pratoReceitas=[];
   if(pratoIds.length){
     const {data:prc}=await supa.from('prato_receitas').select('prato_id,receita_id,qtd,unidade').in('prato_id',pratoIds);
     pratoReceitas = prc||[];
   }
 
-  const recTotals = new Map();
+  // 4) consolida por receita (perDia e projeção)
+  const recTotals = new Map(); // receita_id -> {perDia, un}
   pratoReceitas.forEach(r=>{
     const pratoNome = (pratosTbl||[]).find(p=>p.id===r.prato_id)?.nome;
-    const media = mediaPratoDia.get(pratoNome) || 0;
-    const add = media * (r.qtd||0);
+    const mediaDia = mediaPratoDia.get(pratoNome) || 0;          // pratos/dia
+    const add = mediaDia * (r.qtd||0);                            // receita por dia
     const prev = recTotals.get(r.receita_id) || {perDia:0,un:r.unidade||'g'};
     prev.perDia += add; prev.un = r.unidade||prev.un; recTotals.set(r.receita_id, prev);
   });
 
+  // 5) metadados da receita
   const recIds=[...recTotals.keys()];
   let receitasMeta=new Map();
   if(recIds.length){
@@ -492,21 +497,24 @@ async function calcularPrevisaoReal(){
     receitasMeta = new Map((recMeta||[]).map(r=>[r.id,r]));
   }
 
+  // 6) render
   tb.innerHTML='';
   [...recTotals.entries()]
-    .map(([id,agg])=>({id, nome: receitasMeta.get(id)?.nome || ('Receita #'+id), un: agg.un, dia: agg.perDia, semana: agg.perDia*7}))
+    .map(([id,agg])=>({id, nome: receitasMeta.get(id)?.nome || ('Receita #'+id), un: agg.un, dia: agg.perDia, proj: agg.perDia*proj}))
     .sort((a,b)=> a.nome.localeCompare(b.nome,'pt-BR'))
     .forEach(r=>{
       const tr=document.createElement('tr');
-      tr.innerHTML=`<td>${r.nome}</td><td>${r.un}</td><td class="nowrap">${fmt(r.dia)}</td><td class="nowrap">${fmt(r.semana)}</td>`;
+      tr.innerHTML=`<td>${r.nome}</td><td>${r.un}</td><td class="nowrap">${fmt(r.dia)}</td><td class="nowrap">${fmt(r.proj)}</td>`;
       tb.appendChild(tr);
     });
 
-  $('kpi-pratos').textContent = mediaPratoDia.size;
-  $('kpi-rec').textContent = recTotals.size;
-  $('prev-hint').textContent = `Período: ${weekDayPt(ini)} (${ini}) → ${weekDayPt(fim)} (${fim}). Média por prato = total / dias distintos.`;
+  $('kpi-dias').textContent = String(diasDistinct);
+  $('kpi-pratos').textContent = String(mediaPratoDia.size);
+  $('kpi-rec').textContent = String(recTotals.size);
+  $('prev-hint').textContent = `Média baseada nos últimos ${win} dias (até ${isoFim} — ${weekDayPt(isoFim)}). Projeção para ${proj} dia(s).`;
   setStatus('Pronto','ok');
 
+  // 7) compras (baseadas em perDia — mantemos diário; se quiser por janela proj, é só multiplicar depois)
   await calcularCompras(recTotals, receitasMeta);
 }
 
@@ -527,7 +535,7 @@ async function calcularCompras(recTotals, receitasMeta){
       if(!unitCompat(it.unidade,rendUn)){
         const key=`I${it.ref_id}-??${it.unidade}`;
         const prev=ingredientes.get(key)||{qtdDia:0,un:it.unidade,note:'Verificar unidade (incompatível com rendimento)'};
-        prev.qtdDia += 0; ingredientes.set(key,prev); continue;
+        ingredientes.set(key,prev); continue;
       }
       const baseItem = toBase(it.qtd, it.unidade);
       const baseRend = toBase(rendQtd, rendUn);
@@ -535,7 +543,7 @@ async function calcularCompras(recTotals, receitasMeta){
       const baseProd = toBase(prodDia, recTotals.get(id).un);
       if(baseProd.u.toLowerCase()!==baseRend.u.toLowerCase()){
         const key=`I${it.ref_id}-??${it.unidade}`;
-        const prev=ingredientes.get(key)||{qtdDia:0,un:it.unidade,note:'Verificar unidade (plano vs rendimento)'}; prev.qtdDia += 0; ingredientes.set(key,prev); continue;
+        const prev=ingredientes.get(key)||{qtdDia:0,un:it.unidade,note:'Verificar unidade (plano vs rendimento)'}; ingredientes.set(key,prev); continue;
       }
       const needDia = baseProd.v * fator;
       const key=`I${it.ref_id}-${(baseItem.u||it.unidade)}`;
@@ -552,14 +560,13 @@ async function calcularCompras(recTotals, receitasMeta){
   });
 }
 
-/* ===== Produção: binds ===== */
-$$('.prd').forEach(b=> b.addEventListener('click',()=>{ const d=+b.dataset.d; const fim=new Date(); const ini=new Date(fim); ini.setDate(fim.getDate()-d+1); $('mp-inicio').value=ini.toISOString().slice(0,10); $('mp-fim').value=fim.toISOString().slice(0,10); }));
-$('mp-inicio').value=todayStr(); $('mp-fim').value=todayStr();
-$('btnCalcularPrev').addEventListener('click',calcularPrevisaoReal);
-$('btnExportPrev').addEventListener('click',()=> alert('Exportar PDF: pronto para integrar (jsPDF/Print).'));
-$('btnExportCompras').addEventListener('click',()=> alert('Exportar PDF de compras: pronto para integrar.'));
+/* ===== binds ===== */
+document.getElementById('ref-data').value = todayStr();
+document.getElementById('btnCalcularPrev').addEventListener('click',calcularPrevisaoReal);
+document.getElementById('btnExportPrev').addEventListener('click',()=> alert('Exportar PDF: pronto para integrar.'));
+document.getElementById('btnExportCompras').addEventListener('click',()=> alert('Exportar PDF de compras: pronto para integrar.'));
 
-/* ===== Loaders ===== */
+/* ===== loaders ===== */
 async function loadPratos(){
   try{
     let data=null,error=null; ({data,error}=await supa.from('v_pratos_resumo').select('*').order('nome',{ascending:true}));
@@ -568,6 +575,10 @@ async function loadPratos(){
     await fillOptionsFrom('pratos','cp-prato','id','nome',{ativo:true});
   }catch(e){ pratos=[]; renderPratos(); setStatus('Não foi possível carregar pratos: '+(e.message||e),'err'); }
 }
+async function loadReceitas(){ /* já definido acima */ }
+async function loadIngredientes(){ /* já definido acima */ }
+async function loadDash(){ /* já definido acima (pro import) */ }
+
 async function init(){
   try{
     await loadPratos(); await loadReceitas(); await loadIngredientes(); await loadDash();
@@ -577,27 +588,22 @@ async function init(){
 document.addEventListener('DOMContentLoaded',init);
 </script>
 
-<!-- HASH ROUTER – sub-abas no hash (manter URL copiável) -->
+<!-- Hash para sub-abas (#cadastros/receitas etc.) -->
 <script>
 (function(){
-  const CAD_SUB = { 'pratos':'sub-lista-pratos','componentes':'sub-componentes','receitas':'sub-receitas','ingredientes':'sub-ingredientes' };
-  const PROD_SUB= { 'prev':'sub-prev','compras':'sub-compras' };
+  const CAD = { 'pratos':'sub-lista-pratos','componentes':'sub-componentes','receitas':'sub-receitas','ingredientes':'sub-ingredientes' };
+  const PRO = { 'prev':'sub-prev','compras':'sub-compras' };
   const $ = (s,r=document)=>r.querySelector(s);
   const $$= (s,r=document)=>Array.from(r.querySelectorAll(s));
   function go(){
     const h=(location.hash||'').toLowerCase();
-    const cad = $('#tab-pratos'), pro = $('#tab-producao');
-    // mostra/oculta se vier do portal
-    if (h.startsWith('#producao')) { if(cad) cad.style.display='none'; if(pro) pro.style.display='block'; }
-    if (h.startsWith('#cadastros')){ if(pro) pro.style.display='none'; if(cad) cad.style.display='block'; }
-    // subtabs
     if (h.startsWith('#producao/')){
-      const key=h.split('/')[1]||'prev'; const id=PROD_SUB[key]||PROD_SUB['prev'];
+      const key=h.split('/')[1]||'prev', id=PRO[key]||PRO.prev;
       $$('#tab-producao .subtab').forEach(b=> b.classList.toggle('active', b.dataset.sub===id));
       $$('#tab-producao .subpage').forEach(p=> p.style.display = (p.id===id?'block':'none'));
     }
     if (h.startsWith('#cadastros/')){
-      const key=h.split('/')[1]||'pratos'; const id=CAD_SUB[key]||CAD_SUB['pratos'];
+      const key=h.split('/')[1]||'pratos', id=CAD[key]||CAD.pratos;
       $$('#tab-pratos .subtab').forEach(b=> b.classList.toggle('active', b.dataset.sub===id));
       $$('#tab-pratos .subpage').forEach(p=> p.style.display = (p.id===id?'block':'none'));
     }
