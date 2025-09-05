@@ -16,6 +16,7 @@
     .grid{display:grid;gap:12px}.cols-2{grid-template-columns:1fr 1fr}.cols-3{grid-template-columns:repeat(3,1fr)}.cols-4{grid-template-columns:repeat(4,1fr)}
     label{font-size:12px;color:#475569;margin-bottom:6px;display:block}
     input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;min-height:40px}
+    select[multiple]{height:112px}
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
     .btn.pri{background:var(--wine);border-color:var(--wine);color:#fff}.btn.small{padding:7px 10px;font-size:13px}.btn[disabled]{opacity:.6;cursor:not-allowed}
     .right{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
@@ -31,7 +32,7 @@
     @media (max-width:900px){.cols-2,.cols-3,.cols-4{grid-template-columns:1fr}}
   </style>
 
-  <!-- Router para esconder/mostrar se vier via #producao ou #cadastros -->
+  <!-- Router: esconder/mostrar conforme #hash -->
   <script>
     (function(){
       const onReady = (fn)=> document.readyState!=='loading'?fn():document.addEventListener('DOMContentLoaded',fn);
@@ -62,7 +63,7 @@
     <button class="tab" data-tab="tab-producao">Mapa de Produção</button>
   </div>
 
-  <!-- CADASTROS -->
+  <!-- ================= CADASTROS ================= -->
   <div class="section" id="tab-pratos">
     <div class="subtabs">
       <button class="subtab active" data-sub="sub-lista-pratos">Pratos</button>
@@ -191,7 +192,7 @@
     </div>
   </div>
 
-  <!-- PRODUÇÃO -->
+  <!-- ================= PRODUÇÃO ================= -->
   <div class="section" id="tab-producao" style="display:none">
     <div class="subtabs">
       <button class="subtab active" data-sub="sub-prev">Previsão</button>
@@ -211,18 +212,28 @@
           <input id="proj-dias" type="number" min="1" step="1" value="7" />
         </div>
         <div>
-          <label>Até (data de referência)</label>
-          <input id="ref-data" type="date" />
+          <label>Filtrar Categorias de Pratos</label>
+          <select id="cat-filter" multiple></select>
         </div>
         <div style="align-self:end" class="right">
           <button id="btnCalcularPrev" class="btn pri">Calcular previsão</button>
         </div>
       </div>
+      <div class="hint" id="prev-hint-top"></div>
 
       <div class="kpi" style="margin-top:10px">
         <div class="box"><div class="soft">Dias analisados</div><div id="kpi-dias" style="font-weight:700">—</div></div>
         <div class="box"><div class="soft">Pratos considerados</div><div id="kpi-pratos" style="font-weight:700">—</div></div>
         <div class="box"><div class="soft">Receitas consolidadas</div><div id="kpi-rec" style="font-weight:700">—</div></div>
+      </div>
+
+      <div class="sep"></div>
+      <h3>Resumo — Média de Vendas por Prato</h3>
+      <div style="overflow:auto">
+        <table id="tblResumoPratos">
+          <thead><tr><th>Prato</th><th>Categoria</th><th>Média/Dia</th><th id="th-proj-prato">Projeção</th></tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
 
       <div class="sep"></div>
@@ -239,7 +250,7 @@
 
     <div id="sub-compras" class="subpage" style="display:none">
       <h2>Mapa de Produção – Compras (derivado da previsão)</h2>
-      <div class="hint">Consolidação de ingredientes baseada nas receitas acima.</div>
+      <div class="hint">Ingredientes consolidados (com receitas e sub-receitas resolvidas).</div>
       <div class="sep"></div>
       <div style="overflow:auto"><table id="tblCompras"><thead><tr><th>Ingrediente</th><th>Un</th><th>Qtd total/dia</th><th>Observações</th></tr></thead><tbody></tbody></table></div>
       <div class="right" style="margin-top:8px"><button id="btnExportCompras" class="btn">Exportar PDF</button></div>
@@ -345,7 +356,7 @@ document.addEventListener('click', e=>{
   })();
 });
 
-/* ===== Componentes de prato ===== */
+/* ===== Componentes do prato ===== */
 async function loadPratoCompTable(){
   const prato_id=$('cp-prato').value; const tb=$('tblPrComp').querySelector('tbody'); tb.innerHTML='';
   if(!prato_id) return;
@@ -376,7 +387,7 @@ document.addEventListener('click', async e=>{
   await loadPratoCompTable();
 });
 
-/* ===== Receitas ===== */
+/* ===== Receitas (cadastro) — (mesmo que antes) ===== */
 let recEditId=null, draftItems=[];
 async function refreshDraftRefs(){ const tipo=$('draft-tipo').value; if(tipo==='INGREDIENTE') await fillOptionsFrom('ingredientes','draft-ref','id','nome',{ativo:true}); else await fillOptionsFrom('receitas','draft-ref','id','nome',{ativo:true}); }
 function renderDraft(){ const tb=$('tblDraft').querySelector('tbody'); tb.innerHTML=''; draftItems.forEach((it,i)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${it.tipo}</td><td>${it.nome}</td><td>${fmt(it.qtd)}</td><td>${it.unidade}</td><td>${fmt(it.perda_pct)}%</td><td class="row-actions"><button class="btn small" data-rm="${i}">Remover</button></td>`; tb.appendChild(tr); }); }
@@ -420,85 +431,110 @@ async function loadReceitas(){
   }catch(e){ tb.innerHTML='<tr><td colspan="6">Crie a view v_receitas_resumo</td></tr>'; }
   await fillOptionsFrom('pratos','cp-prato','id','nome',{ativo:true}); await fillOptionsFrom('receitas','cp-receita','id','nome',{ativo:true}); await fillOptionsFrom('receitas','ri-receita','id','nome',{ativo:true});
 }
-document.addEventListener('click',async e=>{
-  const tgt=e.target;
-  // receitas list actions
-  const actBtn=tgt.closest('#tblRec button'); if(!actBtn) return;
-});
+async function loadIngredientes(){
+  const tb=$('tblIng').querySelector('tbody'); tb.innerHTML='<tr><td colspan="5">Carregando…</td></tr>';
+  try{ const {data,error}=await supa.from('ingredientes').select('*').order('nome',{ascending:true}); if(error) throw error;
+    tb.innerHTML=''; (data||[]).forEach(r=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.nome}</td><td>${r.unidade}</td><td>R$ ${fmt(r.custo_unitario)}</td><td>${r.ativo?'<span class="pill ok">Ativo</span>':'<span class="pill bad">Inativo</span>'}</td><td class="row-actions"><button class="btn small" data-act="edit" data-id="${r.id}">Editar</button><button class="btn small" data-act="toggle" data-id="${r.id}">${r.ativo?'Desativar':'Ativar'}</button><button class="btn small" data-act="del" data-id="${r.id}">Excluir</button></td>`; tb.appendChild(tr); });
+  }catch(e){ tb.innerHTML='<tr><td colspan="5">Erro/Tabela não encontrada: ingredientes</td></tr>'; }
+}
 
-/* ===== Previsão real: média últimos N dias -> projeção próximos X dias ===== */
-function unitCompat(u1,u2){ const g=['g','kg'], ml=['ml','L']; const un=['un','porcao']; const inG=a=>g.includes((a||'').toLowerCase()), inML=a=>ml.includes((a||'').toLowerCase()), inUN=a=>un.includes((a||'').toLowerCase()); return (inG(u1)&&inG(u2))||(inML(u1)&&inML(u2))||(inUN(u1)&&inUN(u2)); }
-function toBase(value,unit){ const u=(unit||'').toLowerCase(); if(u==='kg') return {v:value*1000,u:'g'}; if(u==='l') return {v:value*1000,u:'ml'}; return {v:value,u:unit}; }
+/* ===== Unidades ===== */
+function unitCompat(u1,u2){ const g=['g','kg'], ml=['ml','L'], un=['un','porcao']; const inG=a=>g.includes((a||'').toLowerCase()), inML=a=>ml.includes((a||'').toLowerCase()), inUN=a=>un.includes((a||'').toLowerCase()); return (inG(u1)&&inG(u2))||(inML(u1)&&inML(u2))||(inUN(u1)&&inUN(u2)); }
+function toBase(value,unit){ const u=(unit||'').toLowerCase(); if(u==='kg') return {v:value*1000,u:'g'}; if(u==='l') return {v:value*1000,u:'ml'}; if(u==='porcao') return {v:value,u:'un'}; return {v:value,u:(u==='ml'||u==='l')?'ml':(u==='kg'||u==='g')?'g':unit}; }
 
+/* ===== PREVISÃO (média últimos N dias até a última data com venda) ===== */
+async function preencherCategorias(){
+  const sel=$('cat-filter'); sel.innerHTML='';
+  const {data}=await supa.from('pratos').select('categoria').not('categoria','is',null);
+  const cats=[...new Set((data||[]).map(x=>x.categoria||'OUTROS'))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  cats.forEach(c=>{ const o=document.createElement('option'); o.value=c; o.textContent=c; sel.appendChild(o); });
+}
+async function obterUltimaDataVenda(){
+  const {data,error}=await supa.from('vendas_pratos_view_only_pratos').select('data').order('data',{ascending:false}).limit(1).maybeSingle();
+  if(error) return todayStr();
+  return data?.data || todayStr();
+}
 async function calcularPrevisaoReal(){
-  const win = Math.max(1, +$('win-dias').value||7);           // janelinha (média histórica)
-  const proj = Math.max(1, +$('proj-dias').value||7);         // quantos dias produzir
-  const ref = $('ref-data').value || todayStr();              // data final (inclusiva)
+  const win = Math.max(1, +$('win-dias').value||7);
+  const proj = Math.max(1, +$('proj-dias').value||7);
+  const refReal = await obterUltimaDataVenda();
+  $('prev-hint-top').textContent = `Usando como referência a última data com lançamento: ${refReal} (${weekDayPt(refReal)}).`;
 
-  setStatus('Calculando…',''); 
-  const tb=$('tblPrev').querySelector('tbody'); tb.innerHTML='<tr><td colspan="4">Calculando…</td></tr>';
+  setStatus('Calculando…','');
   $('th-proj').textContent = `Qtd/Projeção (${proj} dias)`;
+  $('th-proj-prato').textContent = `Projeção (${proj} dias)`;
 
-  // intervalo histórico: [ref - (win-1), ref]
-  const fim = new Date(ref);
-  const ini = new Date(ref); ini.setDate(fim.getDate()-(win-1));
-  const isoIni = ini.toISOString().slice(0,10), isoFim = fim.toISOString().slice(0,10);
+  // Janela histórica: [ref - (win-1), ref]
+  const fim = new Date(refReal);
+  const ini = new Date(refReal); ini.setDate(fim.getDate()-(win-1));
+  const isoIni = ini.toISOString().slice(0,10), isoFim = refReal;
 
-  // 1) Vendas reais do período histórico
+  // Vendas no período
   const {data:vendas,error:errV}=await supa
     .from('vendas_pratos_view_only_pratos')
     .select('data,prato,quantidade')
     .gte('data',isoIni).lte('data',isoFim);
-
   if(errV){ setStatus('Erro ao ler vendas: '+(errV.message||errV),'err'); return; }
 
-  // Se não tiver vendas, retorna zerado (mas coerente)
-  if(!vendas || !vendas.length){
-    tb.innerHTML='<tr><td colspan="4">Sem vendas no período de análise.</td></tr>';
-    $('kpi-dias').textContent = String(win);
-    $('kpi-pratos').textContent='0';
-    $('kpi-rec').textContent='0';
-    $('prev-hint').textContent = `Média baseada nos últimos ${win} dias (até ${isoFim}). Projeção para ${proj} dia(s).`;
-    setStatus('Pronto','ok');
-    return;
-  }
-
-  // 2) média por prato = total / dias distintos com venda
-  const diasDistinct = new Set(vendas.map(v=>v.data)).size || win; // (se der 0, protege com win)
-  const porPrato = new Map();
-  vendas.forEach(v=> porPrato.set(v.prato, (porPrato.get(v.prato)||0) + (v.quantidade||0)) );
-  const mediaPratoDia = new Map([...porPrato.entries()].map(([p,tot])=> [p, tot / diasDistinct] )); // qtd/dia
-
-  // 3) liga prato -> receitas (qtd por prato)
-  const {data:pratosTbl}=await supa.from('pratos').select('id,nome');
+  // Catálogo de pratos (nome->id/categoria)
+  const {data:pratosTbl}=await supa.from('pratos').select('id,nome,categoria');
   const nomeToId = new Map((pratosTbl||[]).map(p=>[p.nome,p.id]));
+  const nomeToCat= new Map((pratosTbl||[]).map(p=>[p.nome,p.categoria||'OUTROS']));
+
+  // Filtro por categorias
+  const selCats = new Set(Array.from($('cat-filter').selectedOptions||[]).map(o=>o.value));
+  const filtraCat = (pratoNome)=> selCats.size? selCats.has(nomeToCat.get(pratoNome)||'OUTROS') : true;
+
+  // Soma por prato e média/dia (usa jan janela cheia win)
+  const porPrato = new Map();
+  (vendas||[]).forEach(v=>{
+    if(!filtraCat(v.prato)) return;
+    porPrato.set(v.prato,(porPrato.get(v.prato)||0)+(v.quantidade||0));
+  });
+  const mediaPratoDia = new Map([...porPrato.entries()].map(([p,tot])=> [p, tot / win] ));
   const pratoIds = [...mediaPratoDia.keys()].map(n=> nomeToId.get(n)).filter(Boolean);
+
+  // Render resumo por prato
+  const tbResumo=$('tblResumoPratos').querySelector('tbody'); tbResumo.innerHTML='';
+  [...mediaPratoDia.entries()]
+    .map(([nome,md])=>({nome,cat:nomeToCat.get(nome)||'—', md, proj: md*proj}))
+    .sort((a,b)=> a.nome.localeCompare(b.nome,'pt-BR'))
+    .forEach(r=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${r.nome}</td><td>${r.cat}</td><td>${fmt(r.md)}</td><td>${fmt(r.proj)}</td>`;
+      tbResumo.appendChild(tr);
+    });
+
+  // Liga prato -> receitas
   let pratoReceitas=[];
   if(pratoIds.length){
     const {data:prc}=await supa.from('prato_receitas').select('prato_id,receita_id,qtd,unidade').in('prato_id',pratoIds);
     pratoReceitas = prc||[];
   }
 
-  // 4) consolida por receita (perDia e projeção)
+  // Consolidação por receita (perDia)
   const recTotals = new Map(); // receita_id -> {perDia, un}
   pratoReceitas.forEach(r=>{
     const pratoNome = (pratosTbl||[]).find(p=>p.id===r.prato_id)?.nome;
-    const mediaDia = mediaPratoDia.get(pratoNome) || 0;          // pratos/dia
-    const add = mediaDia * (r.qtd||0);                            // receita por dia
+    if(!mediaPratoDia.has(pratoNome)) return;
+    const mediaDia = mediaPratoDia.get(pratoNome) || 0;
+    const add = mediaDia * (r.qtd||0);
     const prev = recTotals.get(r.receita_id) || {perDia:0,un:r.unidade||'g'};
     prev.perDia += add; prev.un = r.unidade||prev.un; recTotals.set(r.receita_id, prev);
   });
 
-  // 5) metadados da receita
+  // Metadados + itens de receitas (para resolver sub-receitas)
   const recIds=[...recTotals.keys()];
-  let receitasMeta=new Map();
+  let receitasMeta=new Map(), itensByRec=new Map();
   if(recIds.length){
-    const {data:recMeta}=await supa.from('receitas').select('id,nome,unidade_rendimento,rendimento_qtd').in('id',recIds);
+    const {data:recMeta}=await supa.from('receitas').select('id,nome,unidade_rendimento,rendimento_qtd,perda_pct').in('id',recIds);
     receitasMeta = new Map((recMeta||[]).map(r=>[r.id,r]));
+    const {data:itens}=await supa.from('receita_itens').select('id,receita_id,tipo,ref_id,qtd,unidade,perda_pct').in('receita_id',recIds);
+    (itens||[]).forEach(it=>{ const arr=itensByRec.get(it.receita_id)||[]; arr.push(it); itensByRec.set(it.receita_id,arr); });
   }
 
-  // 6) render
-  tb.innerHTML='';
+  // Render produção por receita
+  const tb=$('tblPrev').querySelector('tbody'); tb.innerHTML='';
   [...recTotals.entries()]
     .map(([id,agg])=>({id, nome: receitasMeta.get(id)?.nome || ('Receita #'+id), un: agg.un, dia: agg.perDia, proj: agg.perDia*proj}))
     .sort((a,b)=> a.nome.localeCompare(b.nome,'pt-BR'))
@@ -508,60 +544,79 @@ async function calcularPrevisaoReal(){
       tb.appendChild(tr);
     });
 
-  $('kpi-dias').textContent = String(diasDistinct);
+  $('kpi-dias').textContent = String(win);
   $('kpi-pratos').textContent = String(mediaPratoDia.size);
   $('kpi-rec').textContent = String(recTotals.size);
-  $('prev-hint').textContent = `Média baseada nos últimos ${win} dias (até ${isoFim} — ${weekDayPt(isoFim)}). Projeção para ${proj} dia(s).`;
-  setStatus('Pronto','ok');
+  $('prev-hint').textContent = `Janela: ${isoIni} → ${isoFim} (média baseada em ${win} dia(s)). Projeção para ${proj} dia(s).`;
 
-  // 7) compras (baseadas em perDia — mantemos diário; se quiser por janela proj, é só multiplicar depois)
-  await calcularCompras(recTotals, receitasMeta);
-}
+  setStatus('Consolidando ingredientes…','');
 
-async function calcularCompras(recTotals, receitasMeta){
-  const tb=$('tblCompras').querySelector('tbody'); tb.innerHTML='<tr><td colspan="4">Consolidando…</td></tr>';
-  const recIds=[...recTotals.keys()]; if(!recIds.length){ tb.innerHTML='<tr><td colspan="4">Sem receitas previstas.</td></tr>'; return; }
-  const {data:itens}=await supa.from('receita_itens').select('receita_id,tipo,ref_id,qtd,unidade').in('receita_id',recIds);
-  const ingredientes = new Map();
-
-  for(const id of recIds){
-    const meta=receitasMeta.get(id); if(!meta) continue;
-    const prodDia = recTotals.get(id).perDia;
-    const rendQtd = meta.rendimento_qtd || 1;
-    const rendUn  = meta.unidade_rendimento || recTotals.get(id).un;
-    const rows=(itens||[]).filter(x=>x.receita_id===id && x.tipo==='INGREDIENTE');
-
-    for(const it of rows){
-      if(!unitCompat(it.unidade,rendUn)){
-        const key=`I${it.ref_id}-??${it.unidade}`;
-        const prev=ingredientes.get(key)||{qtdDia:0,un:it.unidade,note:'Verificar unidade (incompatível com rendimento)'};
-        ingredientes.set(key,prev); continue;
-      }
-      const baseItem = toBase(it.qtd, it.unidade);
-      const baseRend = toBase(rendQtd, rendUn);
-      const fator = baseItem.v / (baseRend.v || 1);
-      const baseProd = toBase(prodDia, recTotals.get(id).un);
-      if(baseProd.u.toLowerCase()!==baseRend.u.toLowerCase()){
-        const key=`I${it.ref_id}-??${it.unidade}`;
-        const prev=ingredientes.get(key)||{qtdDia:0,un:it.unidade,note:'Verificar unidade (plano vs rendimento)'}; ingredientes.set(key,prev); continue;
-      }
-      const needDia = baseProd.v * fator;
-      const key=`I${it.ref_id}-${(baseItem.u||it.unidade)}`;
-      const prev=ingredientes.get(key)||{qtdDia:0,un:(baseItem.u||it.unidade),note:''};
-      prev.qtdDia += needDia; ingredientes.set(key,prev);
+  // ======= Consolidação de ingredientes com sub-receitas (recursivo) =======
+  // Carrega (on-demand) metadados/itens de quaisquer sub-receitas encontradas.
+  async function ensureRecipeLoaded(id){
+    if(!receitasMeta.has(id)){
+      const {data:rm}=await supa.from('receitas').select('id,nome,unidade_rendimento,rendimento_qtd,perda_pct').eq('id',id).maybeSingle();
+      if(rm){ receitasMeta.set(id,rm); }
+    }
+    if(!itensByRec.has(id)){
+      const {data:it}=await supa.from('receita_itens').select('id,receita_id,tipo,ref_id,qtd,unidade,perda_pct').eq('receita_id',id);
+      itensByRec.set(id,it||[]);
     }
   }
-  const ingIds=[...ingredientes.keys()].map(k=> +k.split('-')[0].substring(1)).filter(x=>!Number.isNaN(x));
+
+  const ingr = new Map(); // key "I<id>-<baseUnit>" -> {qtdDia, un, note}
+  const visiting = new Set(); // proteção contra ciclo
+
+  async function expandRecipe(recipeId, perDia, unit){
+    await ensureRecipeLoaded(recipeId);
+    const meta = receitasMeta.get(recipeId); if(!meta) return;
+    const rendBase = toBase(meta.rendimento_qtd||1, meta.unidade_rendimento||unit);
+    const prodBase = toBase(perDia, unit||meta.unidade_rendimento||'g');
+
+    // se unidades não compatíveis, marca observação e aborta
+    if(rendBase.u.toLowerCase()!==prodBase.u.toLowerCase()){
+      const key=`I??-??`; const prev=ingr.get(key)||{qtdDia:0,un:prodBase.u,note:`Verificar unidade da receita #${recipeId}`}; ingr.set(key,prev); return;
+    }
+
+    const linhas = itensByRec.get(recipeId)||[];
+    for(const it of linhas){
+      const baseItem = toBase(it.qtd, it.unidade);
+      const fator = (baseItem.v/(rendBase.v||1)) * (1 + (it.perda_pct||0)/100); // ajusta perda de linha
+      if(it.tipo==='INGREDIENTE'){
+        const needBase = prodBase.v * fator; // já na base do item
+        const key = `I${it.ref_id}-${baseItem.u}`;
+        const prev = ingr.get(key)||{qtdDia:0,un:baseItem.u,note:''};
+        prev.qtdDia += needBase; ingr.set(key,prev);
+      }else if(it.tipo==='RECEITA'){
+        // resolve sub-receita
+        if(visiting.has(it.ref_id)) { continue; } // evita ciclo
+        visiting.add(it.ref_id);
+        await expandRecipe(it.ref_id, prodBase.v * fator, meta.unidade_rendimento||'g'); // passa na mesma família do rendimento pai
+        visiting.delete(it.ref_id);
+      }
+    }
+  }
+
+  // Expande todas as receitas do plano por dia
+  for(const [rid,agg] of recTotals.entries()){
+    await expandRecipe(rid, agg.perDia, agg.un);
+  }
+
+  // Nome dos ingredientes
+  const ingIds=[...ingr.keys()].map(k=> +k.split('-')[0].substring(1)).filter(x=>!Number.isNaN(x));
   let nomes=new Map(); if(ingIds.length){ const {data}=await supa.from('ingredientes').select('id,nome'); nomes=new Map((data||[]).map(i=>[i.id,i.nome])); }
-  tb.innerHTML='';
-  [...ingredientes.entries()].sort((a,b)=> a[0].localeCompare(b[0])).forEach(([key,agg])=>{
+
+  // Render Compras (diário)
+  const tbCompras=$('tblCompras').querySelector('tbody'); tbCompras.innerHTML='';
+  [...ingr.entries()].sort((a,b)=> a[0].localeCompare(b[0])).forEach(([key,agg])=>{
     const id=+key.split('-')[0].substring(1); const nome=nomes.get(id)||(`Ingrediente #${id}`);
-    const tr=document.createElement('tr'); tr.innerHTML=`<td>${nome}</td><td>${agg.un}</td><td class="nowrap">${fmt(agg.qtdDia)}</td><td>${agg.note||''}</td>`; tb.appendChild(tr);
+    const tr=document.createElement('tr'); tr.innerHTML=`<td>${nome}</td><td>${agg.un}</td><td class="nowrap">${fmt(agg.qtdDia)}</td><td>${agg.note||''}</td>`; tbCompras.appendChild(tr);
   });
+
+  setStatus('Pronto','ok');
 }
 
 /* ===== binds ===== */
-document.getElementById('ref-data').value = todayStr();
 document.getElementById('btnCalcularPrev').addEventListener('click',calcularPrevisaoReal);
 document.getElementById('btnExportPrev').addEventListener('click',()=> alert('Exportar PDF: pronto para integrar.'));
 document.getElementById('btnExportCompras').addEventListener('click',()=> alert('Exportar PDF de compras: pronto para integrar.'));
@@ -575,37 +630,31 @@ async function loadPratos(){
     await fillOptionsFrom('pratos','cp-prato','id','nome',{ativo:true});
   }catch(e){ pratos=[]; renderPratos(); setStatus('Não foi possível carregar pratos: '+(e.message||e),'err'); }
 }
-async function loadReceitas(){ /* já definido acima */ }
-async function loadIngredientes(){ /* já definido acima */ }
-async function loadDash(){ /* já definido acima (pro import) */ }
-
 async function init(){
   try{
-    await loadPratos(); await loadReceitas(); await loadIngredientes(); await loadDash();
+    await loadPratos(); await loadReceitas(); await loadIngredientes(); await preencherCategorias(); await loadDash?.();
     setStatus('Pronto','ok');
   }catch(e){ setStatus(e.message||e,'err'); }
 }
 document.addEventListener('DOMContentLoaded',init);
-</script>
 
-<!-- Hash para sub-abas (#cadastros/receitas etc.) -->
-<script>
+/* ===== Hash para sub-abas (#cadastros/..., #producao/...) ===== */
 (function(){
   const CAD = { 'pratos':'sub-lista-pratos','componentes':'sub-componentes','receitas':'sub-receitas','ingredientes':'sub-ingredientes' };
   const PRO = { 'prev':'sub-prev','compras':'sub-compras' };
-  const $ = (s,r=document)=>r.querySelector(s);
-  const $$= (s,r=document)=>Array.from(r.querySelectorAll(s));
+  const $q = (s,r=document)=>r.querySelector(s);
+  const $$q= (s,r=document)=>Array.from(r.querySelectorAll(s));
   function go(){
     const h=(location.hash||'').toLowerCase();
     if (h.startsWith('#producao/')){
       const key=h.split('/')[1]||'prev', id=PRO[key]||PRO.prev;
-      $$('#tab-producao .subtab').forEach(b=> b.classList.toggle('active', b.dataset.sub===id));
-      $$('#tab-producao .subpage').forEach(p=> p.style.display = (p.id===id?'block':'none'));
+      $$q('#tab-producao .subtab').forEach(b=> b.classList.toggle('active', b.dataset.sub===id));
+      $$q('#tab-producao .subpage').forEach(p=> p.style.display = (p.id===id?'block':'none'));
     }
     if (h.startsWith('#cadastros/')){
       const key=h.split('/')[1]||'pratos', id=CAD[key]||CAD.pratos;
-      $$('#tab-pratos .subtab').forEach(b=> b.classList.toggle('active', b.dataset.sub===id));
-      $$('#tab-pratos .subpage').forEach(p=> p.style.display = (p.id===id?'block':'none'));
+      $$q('#tab-pratos .subtab').forEach(b=> b.classList.toggle('active', b.dataset.sub===id));
+      $$q('#tab-pratos .subpage').forEach(p=> p.style.display = (p.id===id?'block':'none'));
     }
   }
   window.addEventListener('hashchange', go);
