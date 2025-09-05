@@ -31,6 +31,39 @@
     .status{font-size:13px}.status.ok{color:var(--ok)}.status.err{color:var(--bad)}
     @media (max-width:900px){.cols-2,.cols-3,.cols-4{grid-template-columns:1fr}}
   </style>
+
+  <!-- HASH ROUTER: aplica regras de exibição por #hash -->
+  <script>
+    (function(){
+      const onReady = (fn)=> document.readyState!=='loading'?fn():document.addEventListener('DOMContentLoaded',fn);
+      function applyHash(){
+        const h = (location.hash||'').toLowerCase();
+        // elementos que já existem no HTML
+        const tabCadBtn = document.querySelector('.tab[data-tab="tab-pratos"]');
+        const tabProBtn = document.querySelector('.tab[data-tab="tab-producao"]');
+        const secCad    = document.getElementById('tab-pratos');
+        const secPro    = document.getElementById('tab-producao');
+
+        // por padrão: mostra tudo (uso standalone)
+        [tabCadBtn, tabProBtn, secCad, secPro].forEach(el=> el && (el.style.display=''));
+
+        if (h.startsWith('#producao')) {
+          if (tabCadBtn) tabCadBtn.style.display='none';
+          if (secCad)    secCad.style.display='none';
+          // exibe Produção
+          if (tabProBtn) tabProBtn.click?.();
+        }
+        if (h.startsWith('#cadastros')) {
+          if (tabProBtn) tabProBtn.style.display='none';
+          if (secPro)    secPro.style.display='none';
+          // exibe Cadastros
+          if (tabCadBtn) tabCadBtn.click?.();
+        }
+      }
+      window.addEventListener('hashchange', applyHash);
+      onReady(applyHash);
+    })();
+  </script>
 </head>
 <body>
 <div class="wrap">
@@ -44,7 +77,7 @@
     <button class="tab" data-tab="tab-producao">Mapa de Produção</button>
   </div>
 
-  <!-- PRATOS -->
+  <!-- PRATOS / CADASTROS -->
   <div class="section" id="tab-pratos">
     <div class="subtabs">
       <button class="subtab active" data-sub="sub-lista-pratos">Pratos</button>
@@ -237,37 +270,14 @@ const SUPABASE_URL  = 'https://rqeagimulvgfecvuzubk.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxZWFnaW11bHZnZmVjdnV6dWJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NzkyMzUsImV4cCI6MjA3MjU1NTIzNX0.SeNHyHOlpqjm-QTl7KXq7YF-48fk5iOQCRgpangP4zU';
 const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-/* ===== Tabs + Subtabs (mostrar/ocultar) ===== */
-function switchTab(id){
-  $$('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===id));
-  $$('.section').forEach(s=> s.style.display=(s.id===id?'block':'none'));
-}
-function switchSub(id,scope){
-  $$('.subtab',scope).forEach(s=> s.classList.toggle('active',s.dataset.sub===id));
-  $$('.subpage',scope.parentElement).forEach(p=> p.style.display=(p.id===id?'block':'none'));
-}
-$$('.tab').forEach(b=> b.addEventListener('click',()=> {
-  const target = b.dataset.tab;
-  switchTab(target);
-  // sincroniza com hash
-  if(target==='tab-pratos') location.hash = '#cadastros/'+ currentSub('tab-pratos');
-  if(target==='tab-producao') location.hash = '#producao/'+ currentSub('tab-producao');
-}));
-$$('#tab-pratos .subtab').forEach(b=> b.addEventListener('click',()=> {
-  switchSub(b.dataset.sub,$('tab-pratos'));
-  location.hash = '#cadastros/'+ currentSub('tab-pratos');
-}));
-$$('#tab-producao .subtab').forEach(b=> b.addEventListener('click',()=> {
-  switchSub(b.dataset.sub,$('tab-producao'));
-  location.hash = '#producao/'+ currentSub('tab-producao');
-}));
-function currentSub(tabId){
-  const scope=$(tabId);
-  const active=scope.querySelector('.subtab.active');
-  return active ? active.dataset.sub : (tabId==='tab-pratos'?'sub-lista-pratos':'sub-prev');
-}
+/* ===== Tabs/Subtabs ===== */
+function switchTab(id){ $$('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===id)); $$('.section').forEach(s=> s.style.display=(s.id===id?'block':'none')); }
+function switchSub(id,scope){ $$('.subtab',scope).forEach(s=> s.classList.toggle('active',s.dataset.sub===id)); $$('.subpage',scope.parentElement).forEach(p=> p.style.display=(p.id===id?'block':'none')); }
+$$('.tab').forEach(b=> b.addEventListener('click',()=> switchTab(b.dataset.tab)));
+$$('#tab-pratos .subtab').forEach(b=> b.addEventListener('click',()=> switchSub(b.dataset.sub,$('tab-pratos'))));
+$$('#tab-producao .subtab').forEach(b=> b.addEventListener('click',()=> switchSub(b.dataset.sub,$('tab-producao'))));
 
-/* ===== Estado simples para PRATOS (lista/paginação) ===== */
+/* ===== Estado PRATOS ===== */
 let pratos=[], pratosPage=1; const PAGE_SIZE=10; let pratoEditId=null;
 function renderPratos(){
   const term=$('pratos-search').value?.toLowerCase().trim()||'';
@@ -292,7 +302,7 @@ $('pratos-prev').addEventListener('click',()=>{ pratosPage=Math.max(1,pratosPage
 $('pratos-next').addEventListener('click',()=>{ pratosPage=pratosPage+1; renderPratos(); });
 $('pratos-search').addEventListener('input',()=>{ pratosPage=1; renderPratos(); });
 
-/* ===== CRUD básico de PRATOS ===== */
+/* ===== CRUD PRATOS ===== */
 $('btnNovoPrato').addEventListener('click',()=>{ pratoEditId=null; $('prato-form-title').textContent='Novo prato'; $('prato-nome').value=''; $('prato-cat').value='PRATOS'; $('prato-peso').value=''; $('prato-peso-un').value='g'; $('prato-preco').value=''; $('prato-custo').value=''; $('prato-ultima').value=''; });
 $('btnCancelarPrato').addEventListener('click',()=> $('btnNovoPrato').click());
 $('tblPratos').addEventListener('click',async e=>{
@@ -311,7 +321,7 @@ $('btnSalvarPrato').addEventListener('click',async ()=>{
   }catch(ex){ setStatus(ex.message||ex,'err'); }
 });
 
-/* ===== Dashboard import ===== */
+/* ===== Import do Dashboard de Pratos ===== */
 const DASHBOARD_PRATOS_SOURCE='vendas_pratos_pratos';
 async function loadDash(){
   const tb=$('tblDash').querySelector('tbody'); tb.innerHTML='<tr><td colspan="4">Carregando…</td></tr>';
@@ -361,7 +371,7 @@ $('btnAddPrComp').addEventListener('click',async ()=>{
 });
 $('tblPrComp').addEventListener('click',async e=>{ const b=e.target.closest('button[data-del]'); if(!b) return; if(!confirm('Remover receita do prato?')) return; const {error}=await supa.from('prato_receitas').delete().eq('id',b.dataset.del); if(error) return alert(error.message||error); await loadPratoCompTable(); });
 
-/* ===== Receitas (itens + edição) ===== */
+/* ===== Receitas ===== */
 let recEditId=null, draftItems=[];
 async function refreshDraftRefs(){ const tipo=$('draft-tipo').value; if(tipo==='INGREDIENTE') await fillOptionsFrom('ingredientes','draft-ref','id','nome',{ativo:true}); else await fillOptionsFrom('receitas','draft-ref','id','nome',{ativo:true}); }
 function renderDraft(){ const tb=$('tblDraft').querySelector('tbody'); tb.innerHTML=''; draftItems.forEach((it,i)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${it.tipo}</td><td>${it.nome}</td><td>${fmt(it.qtd)}</td><td>${it.unidade}</td><td>${fmt(it.perda_pct)}%</td><td class="row-actions"><button class="btn small" data-rm="${i}">Remover</button></td>`; tb.appendChild(tr); }); }
@@ -437,9 +447,10 @@ $('tblIng').addEventListener('click',async e=>{
 $('btnCancelIngEdit').addEventListener('click',()=>{ $('ing-nome').value=''; $('ing-und').value='kg'; $('ing-custo').value=''; $('ing-obs').value=''; $('btnCancelIngEdit').style.display='none'; $('ing-mode-hint').textContent=''; $('btnSaveIng').textContent='Salvar ingrediente'; });
 $('btnSaveIng').addEventListener('click',async ()=>{ const nome=$('ing-nome').value.trim(); if(!nome) return alert('Informe o nome'); const payload={nome,unidade:$('ing-und').value,custo_unitario:ptToNumber($('ing-custo').value),obs:$('ing-obs').value.trim()||null}; try{ const exists = await supa.from('ingredientes').select('id').eq('nome',nome).maybeSingle(); if(exists.data){ const {error}=await supa.from('ingredientes').update(payload).eq('id',exists.data.id); if(error) throw error; } else { const {error}=await supa.from('ingredientes').insert(payload); if(error) throw error; } await loadIngredientes(); setStatus('Ingrediente salvo','ok'); $('btnCancelIngEdit').click(); }catch(e){ setStatus(e.message||e,'err'); } });
 
-/* ===== Previsão REAL com base em vendas ===== */
+/* ===== Previsão REAL ===== */
 function unitCompat(u1,u2){ const g=['g','kg'], ml=['ml','L']; const un=['un','porcao']; const inG=a=>g.includes((a||'').toLowerCase()), inML=a=>ml.includes((a||'').toLowerCase()), inUN=a=>un.includes((a||'').toLowerCase()); return (inG(u1)&&inG(u2))||(inML(u1)&&inML(u2))||(inUN(u1)&&inUN(u2)); }
 function toBase(value,unit){ const u=(unit||'').toLowerCase(); if(u==='kg') return {v:value*1000,u:'g'}; if(u==='l') return {v:value*1000,u:'ml'}; return {v:value,u:unit}; }
+
 async function calcularPrevisaoReal(){
   const ini=$('mp-inicio').value, fim=$('mp-fim').value; if(!ini||!fim) return alert('Selecione início e fim');
   setStatus('Calculando…',''); const tb=$('tblPrev').querySelector('tbody'); tb.innerHTML='<tr><td colspan="4">Calculando…</td></tr>';
@@ -448,8 +459,7 @@ async function calcularPrevisaoReal(){
   if(errV){ setStatus('Erro ao ler vendas: '+(errV.message||errV),'err'); return; }
   if(!vendas || !vendas.length){ tb.innerHTML='<tr><td colspan="4">Sem vendas no período.</td></tr>'; $('kpi-dias').textContent='0'; $('kpi-pratos').textContent='0'; $('kpi-rec').textContent='0'; return; }
 
-  const dias = new Set(vendas.map(v=>v.data));
-  const diasDistinct = dias.size;
+  const diasDistinct = new Set(vendas.map(v=>v.data)).size;
   $('kpi-dias').textContent = diasDistinct;
 
   const porPrato = new Map();
@@ -459,6 +469,7 @@ async function calcularPrevisaoReal(){
   const {data:pratosTbl}=await supa.from('pratos').select('id,nome');
   const nomeToId = new Map((pratosTbl||[]).map(p=>[p.nome,p.id]));
   const pratoIds = [...mediaPratoDia.keys()].map(n=> nomeToId.get(n)).filter(Boolean);
+
   let pratoReceitas=[];
   if(pratoIds.length){
     const {data:prc}=await supa.from('prato_receitas').select('prato_id,receita_id,qtd,unidade').in('prato_id',pratoIds);
@@ -494,21 +505,24 @@ async function calcularPrevisaoReal(){
   $('kpi-pratos').textContent = mediaPratoDia.size;
   $('kpi-rec').textContent = recTotals.size;
   $('prev-hint').textContent = `Período: ${weekDayPt(ini)} (${ini}) → ${weekDayPt(fim)} (${fim}). Média por prato = total / dias distintos.`;
-
   setStatus('Pronto','ok');
+
   await calcularCompras(recTotals, receitasMeta);
 }
+
 async function calcularCompras(recTotals, receitasMeta){
   const tb=$('tblCompras').querySelector('tbody'); tb.innerHTML='<tr><td colspan="4">Consolidando…</td></tr>';
   const recIds=[...recTotals.keys()]; if(!recIds.length){ tb.innerHTML='<tr><td colspan="4">Sem receitas previstas.</td></tr>'; return; }
   const {data:itens}=await supa.from('receita_itens').select('receita_id,tipo,ref_id,qtd,unidade').in('receita_id',recIds);
   const ingredientes = new Map();
+
   for(const id of recIds){
     const meta=receitasMeta.get(id); if(!meta) continue;
     const prodDia = recTotals.get(id).perDia;
     const rendQtd = meta.rendimento_qtd || 1;
     const rendUn  = meta.unidade_rendimento || recTotals.get(id).un;
     const rows=(itens||[]).filter(x=>x.receita_id===id && x.tipo==='INGREDIENTE');
+
     for(const it of rows){
       if(!unitCompat(it.unidade,rendUn)){
         const key=`I${it.ref_id}-??${it.unidade}`;
@@ -521,8 +535,7 @@ async function calcularCompras(recTotals, receitasMeta){
       const baseProd = toBase(prodDia, recTotals.get(id).un);
       if(baseProd.u.toLowerCase()!==baseRend.u.toLowerCase()){
         const key=`I${it.ref_id}-??${it.unidade}`;
-        const prev=ingredientes.get(key)||{qtdDia:0,un:it.unidade,note:'Verificar unidade (plano vs rendimento)'};
-        prev.qtdDia += 0; ingredientes.set(key,prev); continue;
+        const prev=ingredientes.get(key)||{qtdDia:0,un:it.unidade,note:'Verificar unidade (plano vs rendimento)'}; prev.qtdDia += 0; ingredientes.set(key,prev); continue;
       }
       const needDia = baseProd.v * fator;
       const key=`I${it.ref_id}-${(baseItem.u||it.unidade)}`;
@@ -539,14 +552,14 @@ async function calcularCompras(recTotals, receitasMeta){
   });
 }
 
-/* ===== Produção: UI binds ===== */
+/* ===== Produção: binds ===== */
 $$('.prd').forEach(b=> b.addEventListener('click',()=>{ const d=+b.dataset.d; const fim=new Date(); const ini=new Date(fim); ini.setDate(fim.getDate()-d+1); $('mp-inicio').value=ini.toISOString().slice(0,10); $('mp-fim').value=fim.toISOString().slice(0,10); }));
 $('mp-inicio').value=todayStr(); $('mp-fim').value=todayStr();
 $('btnCalcularPrev').addEventListener('click',calcularPrevisaoReal);
 $('btnExportPrev').addEventListener('click',()=> alert('Exportar PDF: pronto para integrar (jsPDF/Print).'));
 $('btnExportCompras').addEventListener('click',()=> alert('Exportar PDF de compras: pronto para integrar.'));
 
-/* ===== Inicialização de dados ===== */
+/* ===== Loaders ===== */
 async function loadPratos(){
   try{
     let data=null,error=null; ({data,error}=await supa.from('v_pratos_resumo').select('*').order('nome',{ascending:true}));
@@ -555,37 +568,43 @@ async function loadPratos(){
     await fillOptionsFrom('pratos','cp-prato','id','nome',{ativo:true});
   }catch(e){ pratos=[]; renderPratos(); setStatus('Não foi possível carregar pratos: '+(e.message||e),'err'); }
 }
-async function loadDash(){ /* redefinido acima */ }
-
-/* ===== Router por #hash ===== */
-function applyHashRoute(){
-  const raw = (location.hash||'').replace(/^#\/?/,'').toLowerCase();
-  // padrões: "cadastros[/sub]" | "producao[/sub]"
-  const [root, sub] = raw.split('/');
-  if(root==='producao'){
-    switchTab('tab-producao');
-    const wanted = sub==='compras' ? 'sub-compras' : 'sub-prev';
-    switchSub(wanted, $('tab-producao'));
-  } else { // default: cadastros
-    switchTab('tab-pratos');
-    let wanted = 'sub-lista-pratos';
-    if(sub==='componentes') wanted='sub-componentes';
-    if(sub==='receitas')    wanted='sub-receitas';
-    if(sub==='ingredientes')wanted='sub-ingredientes';
-    switchSub(wanted, $('tab-pratos'));
-  }
-}
-window.addEventListener('hashchange', applyHashRoute);
-
-/* ===== INIT ===== */
 async function init(){
   try{
     await loadPratos(); await loadReceitas(); await loadIngredientes(); await loadDash();
-    applyHashRoute(); // abre a rota correta na primeira carga
     setStatus('Pronto','ok');
   }catch(e){ setStatus(e.message||e,'err'); }
 }
 document.addEventListener('DOMContentLoaded',init);
+</script>
+
+<!-- HASH ROUTER – sub-abas no hash (manter URL copiável) -->
+<script>
+(function(){
+  const CAD_SUB = { 'pratos':'sub-lista-pratos','componentes':'sub-componentes','receitas':'sub-receitas','ingredientes':'sub-ingredientes' };
+  const PROD_SUB= { 'prev':'sub-prev','compras':'sub-compras' };
+  const $ = (s,r=document)=>r.querySelector(s);
+  const $$= (s,r=document)=>Array.from(r.querySelectorAll(s));
+  function go(){
+    const h=(location.hash||'').toLowerCase();
+    const cad = $('#tab-pratos'), pro = $('#tab-producao');
+    // mostra/oculta se vier do portal
+    if (h.startsWith('#producao')) { if(cad) cad.style.display='none'; if(pro) pro.style.display='block'; }
+    if (h.startsWith('#cadastros')){ if(pro) pro.style.display='none'; if(cad) cad.style.display='block'; }
+    // subtabs
+    if (h.startsWith('#producao/')){
+      const key=h.split('/')[1]||'prev'; const id=PROD_SUB[key]||PROD_SUB['prev'];
+      $$('#tab-producao .subtab').forEach(b=> b.classList.toggle('active', b.dataset.sub===id));
+      $$('#tab-producao .subpage').forEach(p=> p.style.display = (p.id===id?'block':'none'));
+    }
+    if (h.startsWith('#cadastros/')){
+      const key=h.split('/')[1]||'pratos'; const id=CAD_SUB[key]||CAD_SUB['pratos'];
+      $$('#tab-pratos .subtab').forEach(b=> b.classList.toggle('active', b.dataset.sub===id));
+      $$('#tab-pratos .subpage').forEach(p=> p.style.display = (p.id===id?'block':'none'));
+    }
+  }
+  window.addEventListener('hashchange', go);
+  document.addEventListener('DOMContentLoaded', go);
+})();
 </script>
 </body>
 </html>
