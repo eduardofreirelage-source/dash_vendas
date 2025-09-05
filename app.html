@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Pratos & Produção – Sistema Unificado</title>
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="0" y="0" width="128" height="128" rx="24" fill="%237b1e3a"/><text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white">PP</text></svg>'/>
+  <style>
+    :root{
+      --bg:#f6f8fb; --card:#ffffff; --ink:#0b1220; --muted:#667085; --line:#e6e7eb; --wine:#7b1e3a;
+      --ok:#059669; --err:#dc2626;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
+    .wrap{max-width:1250px;margin:28px auto;padding:0 16px}
+    h1{margin:0 0 8px;font-size:28px;letter-spacing:.2px}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+    .tab{padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:#fff;cursor:pointer;font-weight:600}
+    .tab.active{background:#f1f5f9}
+    .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(10,18,32,.05);margin-bottom:12px}
+    .row{display:grid;gap:12px}
+    .cols-2{grid-template-columns:1fr 1fr}
+    .muted{color:var(--muted);font-size:12px}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
+    .btn.pri{background:var(--wine);border-color:var(--wine);color:#fff}
+    .btn.ghost{background:#f8fafc}
+    input,select,textarea{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:#fff;min-height:42px}
+    textarea{min-height:92px}
+    table{width:100%;border-collapse:collapse}
+    th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:middle}
+    th{background:#f8fafc}
+    .status{font-size:13px}
+    .status.ok{color:var(--ok)} .status.err{color:var(--err)}
+    /* área iframe do Dash */
+    .iframe-box{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+    .iframe-box iframe{display:block;width:100%;height:1200px;border:0}
+    /* sub-abas da Produção */
+    .subtabs{display:flex;gap:8px;margin:4px 0 14px}
+    .subtab{padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;font-weight:600}
+    .subtab.active{background:#f1f5f9}
+    /* cartões simples */
+    .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px}
+    .grid-3{display:grid;gap:10px;grid-template-columns:repeat(3,1fr)}
+    .grid-2{display:grid;gap:10px;grid-template-columns:repeat(2,1fr)}
+    .hint{font-size:12px;color:#475569}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono"; font-size:12px}
+    @media (max-width:1024px){.cols-2,.grid-3,.grid-2{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <h1>Pratos & Produção – Sistema Unificado</h1>
+      <div id="appStatus" class="status">Pronto</div>
+    </div>
+
+    <!-- Abas-mãe -->
+    <div class="tabs" id="mainTabs">
+      <button class="tab active" data-tab="tab-dash">Dash Pratos</button>
+      <button class="tab" data-tab="tab-producao">Produção</button>
+      <button class="tab" data-tab="tab-cadastros">Cadastros</button>
+    </div>
+
+    <!-- 1) DASH PRATOS (seu dashboard intacto) -->
+    <div id="tab-dash" class="section">
+      <div class="muted" style="margin-bottom:10px">
+        O conteúdo abaixo carrega o seu Dashboard exatamente como está no arquivo original. Mantemos isolado para estabilidade e
+        evolução modular. Arquivo esperado: <code>dash_pratos.html</code>.
+      </div>
+      <div class="iframe-box">
+        <!-- Coloque o conteúdo do arquivo enviado em um arquivo local chamado "dash_pratos.html"
+             ou altere o src abaixo se preferir outro nome. -->
+        <iframe id="dashFrame" src="dash_pratos.html" title="Dash Pratos"></iframe>
+      </div>
+    </div>
+
+    <!-- 2) PRODUÇÃO -->
+    <div id="tab-producao" class="section" style="display:none">
+      <div class="subtabs" id="prodSubtabs">
+        <button class="subtab active" data-sub="sub-mapa">Produção (Mapa de Produção)</button>
+        <button class="subtab" data-sub="sub-compras">Previsão de Compras</button>
+      </div>
+
+      <!-- 2.1 Mapa de Produção -->
+      <div id="sub-mapa">
+        <div class="row cols-2">
+          <div class="card">
+            <div class="muted" style="margin-bottom:6px">Período de referência</div>
+            <div class="grid-3">
+              <div>
+                <label class="muted">Início</label>
+                <input type="date" id="mp-de">
+              </div>
+              <div>
+                <label class="muted">Fim</label>
+                <input type="date" id="mp-ate">
+              </div>
+              <div>
+                <label class="muted">Período rápido</label>
+                <select id="mp-quick">
+                  <option value="7">Últimos 7 dias</option>
+                  <option value="15" selected>Últimos 15 dias</option>
+                  <option value="30">Últimos 30 dias</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="margin-top:10px" class="grid-2">
+              <div>
+                <label class="muted">Unidade</label>
+                <select id="mp-unidade"><option value="">Todas</option></select>
+              </div>
+              <div>
+                <label class="muted">Prato</label>
+                <select id="mp-prato"><option value="">Todos</option></select>
+              </div>
+            </div>
+
+            <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+              <button id="mpRun" class="btn pri">Gerar produção</button>
+              <button id="mpPDF" class="btn">Exportar PDF</button>
+              <span id="mpStatus" class="status">—</span>
+            </div>
+
+            <div class="hint" style="margin-top:6px">
+              * A média diária considera quantas ocorrências de cada dia da semana existem no período escolhido.
+              Ex.: 15 dias → normalmente 2 segundas, 2 terças, etc. Usamos isso para estimar a produção semanal.
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="muted" style="margin-bottom:8px">Resumo (estimativa)</div>
+            <div class="grid-3">
+              <div><div class="muted">Pratos considerados</div><div id="mp-k-pratos" class="mono">—</div></div>
+              <div><div class="muted">Unidades/semana</div><div id="mp-k-semana" class="mono">—</div></div>
+              <div><div class="muted">Receitas envolvidas</div><div id="mp-k-receitas" class="mono">—</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <div class="muted" style="margin-bottom:6px">Produção diária por receita (consolidado)</div>
+          <div style="overflow:auto">
+            <table id="tblMapa">
+              <thead>
+                <tr>
+                  <th>Receita</th>
+                  <th>Un</th>
+                  <th class="mono">Seg</th>
+                  <th class="mono">Ter</th>
+                  <th class="mono">Qua</th>
+                  <th class="mono">Qui</th>
+                  <th class="mono">Sex</th>
+                  <th class="mono">Sáb</th>
+                  <th class="mono">Dom</th>
+                  <th class="mono">Total/semana</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2.2 Previsão de Compras -->
+      <div id="sub-compras" style="display:none">
+        <div class="card">
+          <div class="muted" style="margin-bottom:8px">Janela de previsão (linkada ao Mapa de Produção)</div>
+          <div class="grid-3">
+            <div><label class="muted">Início</label><input type="date" id="pc-de"></div>
+            <div><label class="muted">Fim</label><input type="date" id="pc-ate"></div>
+            <div><label class="muted">Horizonte</label>
+              <select id="pc-hz"><option value="7" selected>1 semana</option><option value="14">2 semanas</option></select>
+            </div>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+            <button id="pcRun" class="btn pri">Gerar lista de compras</button>
+            <button id="pcPDF" class="btn">Exportar PDF</button>
+            <span id="pcStatus" class="status">—</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <div class="muted" style="margin-bottom:6px">Ingredientes necessários (agregado)</div>
+          <div style="overflow:auto">
+            <table id="tblCompras">
+              <thead>
+                <tr>
+                  <th>Ingrediente</th><th>Un</th><th class="mono">Qtd/semana</th><th class="mono">Estoque (opcional)</th><th class="mono">Comprar</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3) CADASTROS (placeholder para a sua tela de cadastros que já estamos montando) -->
+    <div id="tab-cadastros" class="section" style="display:none">
+      <div class="muted" style="margin-bottom:10px">
+        Aqui entra a tela de cadastros completa (Pratos, Componentes de Prato, Receitas, Ingredientes) que já construímos.
+        Como combinamos, estou mantendo módulos separados para estabilidade; posso colar aqui a versão final assim que você der ok.
+      </div>
+      <div class="card">
+        <div class="muted">Acesso rápido</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <button class="btn" id="openCadPratos">Pratos</button>
+          <button class="btn" id="openCadComp">Componentes do Prato</button>
+          <button class="btn" id="openCadRec">Receitas</button>
+          <button class="btn" id="openCadIng">Ingredientes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- libs necessárias para as novas abas -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script>
+  /* ========= CONFIGURAÇÃO BÁSICA (reaproveita seu projeto) ========= */
+  const SUPABASE_URL  = 'https://rqeagimulvgfecvuzubk.supabase.co';
+  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxZWFnaW11bHZnZmVjdnV6dWJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NzkyMzUsImV4cCI6MjA3MjU1NTIzNX0.SeNHyHOlpqjm-QTl7KXq7YF-48fk5iOQCRgpangP4zU';
+  const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  const $ = (sel,root=document)=> root.querySelector(sel);
+  const $$ = (sel,root=document)=> [...root.querySelectorAll(sel)];
+  const setAppStatus=(msg,kind)=>{ const el=$('#appStatus'); el.textContent=msg; el.className='status '+(kind||''); };
+
+  /* ========= Troca de abas-mãe ========= */
+  $('#mainTabs').addEventListener('click', (e)=>{
+    const btn = e.target.closest('.tab'); if(!btn) return;
+    $$('.tab', $('#mainTabs')).forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const id = btn.dataset.tab;
+    ['tab-dash','tab-producao','tab-cadastros'].forEach(t => { const el = $('#'+t); if(el) el.style.display = (t===id?'block':'none'); });
+    // ajusta altura do iframe quando volta ao dash
+    if (id==='tab-dash'){ const ifr=$('#dashFrame'); if(ifr) ifr.style.height = '1200px'; }
+  });
+
+  /* ========= Sub-abas de Produção ========= */
+  $('#prodSubtabs').addEventListener('click', (e)=>{
+    const btn=e.target.closest('.subtab'); if(!btn) return;
+    $$('.subtab', $('#prodSubtabs')).forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const sub = btn.dataset.sub;
+    $('#sub-mapa').style.display = (sub==='sub-mapa'?'block':'none');
+    $('#sub-compras').style.display = (sub==='sub-compras'?'block':'none');
+  });
+
+  /* ========= Helpers simples ========= */
+  const iso  = d => d.toISOString().slice(0,10);
+  function addDaysISO(isoStr,n){const d=new Date(isoStr+'T00:00:00'); d.setDate(d.getDate()+n); return iso(d);}
+  function daysLen(de,ate){const d1=new Date(de+'T00:00:00'), d2=new Date(ate+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24))+1;}
+  function countWeekdayOccurrences(de, ate){
+    const counts = Array(7).fill(0);
+    let d = new Date(de+'T00:00:00'); const end = new Date(ate+'T00:00:00');
+    while (d <= end) { counts[d.getDay()]++; d.setDate(d.getDate()+1); }
+    return counts;
+  }
+
+  /* ========= Fonte de dados para Produção =========
+     Reuso das suas views auxiliares, idênticas às do Dash:
+       - vendas_pratos_daterange      (range total carregado)
+       - vendas_pratos_unidades       (lista canônica de unidades)
+       - vendas_pratos_pratos         (lista canônica de pratos)
+       - v_pratos_resumo / v_receitas_resumo (para composições e custo)
+       - prato_receitas / receitas / receita_itens / ingredientes (cadastros)
+  */
+  async function initProducaoFilters(){
+    // datas: default = últimos 15 dias terminando no último dia carregado
+    try{
+      const dr = await supa.from('vendas_pratos_daterange').select('*').limit(1);
+      const today = dr.data?.[0]?.max_data || iso(new Date());
+      const de = addDaysISO(today, -14);
+      $('#mp-de').value = de; $('#mp-ate').value = today;
+      $('#pc-de').value = de; $('#pc-ate').value = today;
+    }catch{}
+
+    // unidade & pratos
+    try{
+      const [u, p] = await Promise.all([
+        supa.from('vendas_pratos_unidades').select('unidade').order('unidade'),
+        supa.from('vendas_pratos_pratos').select('prato').order('prato')
+      ]);
+      const un = $('#mp-unidade'); un.innerHTML = '<option value="">Todas</option>' + (u.data||[]).map(r=>`<option>${r.unidade}</option>`).join('');
+      const pr = $('#mp-prato');   pr.innerHTML = '<option value="">Todos</option>'   + (p.data||[]).map(r=>`<option>${r.prato}</option>`).join('');
+    }catch(e){ setAppStatus('Falha ao carregar filtros de produção','err'); }
+  }
+
+  /* ========= Cálculo do Mapa de Produção =========
+     1) Busca vendas no período para calcular médias por dia da semana por prato
+     2) Multiplica por 7 para obter a produção semanal estimada por prato
+     3) Explode pratos → receitas (prato_receitas) e agrega por receita/unidade
+  */
+  async function gerarMapaProducao(){
+    const quick = $('#mp-quick').value;
+    const ateSel = $('#mp-ate').value || iso(new Date());
+    const deSel  = $('#mp-de').value  || addDaysISO(ateSel, -(Number(quick)-1));
+    const unidade = $('#mp-unidade').value || null;
+    const prato   = $('#mp-prato').value   || null;
+    $('#mpStatus').textContent = 'Consultando...';
+
+    try{
+      // 1) vendas no período
+      let q = supa.from('vendas_pratos_view').select('data, prato, quantidade, unidade').gte('data', deSel).lte('data', ateSel);
+      if (unidade) q = q.eq('unidade', unidade);
+      if (prato)   q = q.eq('prato', prato);
+      const { data: vendas, error } = await q;
+      if(error) throw error;
+
+      // média por DOW por prato
+      const occ = countWeekdayOccurrences(deSel, ateSel); // [Dom..Sáb]
+      const porPratoDow = new Map(); // key: prato → array[7] somas
+      vendas.forEach(v=>{
+        const dow = new Date(v.data+'T00:00:00').getDay();
+        const arr = porPratoDow.get(v.prato) || Array(7).fill(0);
+        arr[dow] += (v.quantidade||0);
+        porPratoDow.set(v.prato, arr);
+      });
+      // 2) produção semanal por prato (média * ocorrências desta semana)
+      // usaremos as médias diárias do período, depois multiplicamos por 1 (uma semana: dom..sáb)
+      const producaoSemanalPorPrato = new Map(); // prato → array[7] quantidades/dia
+      porPratoDow.forEach((arr,pr)=>{
+        const medias = arr.map((sum,i)=> occ[i] ? sum/occ[i] : 0);
+        producaoSemanalPorPrato.set(pr, medias); // já no formato por dia (Dom..Sáb)
+      });
+
+      // 3) prato → receitas
+      // pega componentes por prato
+      const listaPratos = [...producaoSemanalPorPrato.keys()];
+      let comp = [];
+      if (listaPratos.length){
+        const { data: join } = await supa.from('pratos').select('id,nome').in('nome', listaPratos);
+        const ids = (join||[]).map(r=>r.id);
+        if (ids.length){
+          const { data: prc } = await supa.from('prato_receitas').select('prato_id,receita_id,qtd,unidade').in('prato_id', ids);
+          const { data: recs } = await supa.from('receitas').select('id,nome');
+          const recById = new Map((recs||[]).map(r=>[r.id,r.nome]));
+          const nomeById= new Map((join||[]).map(r=>[r.id,r.nome]));
+          comp = (prc||[]).map(r=>({
+            prato: nomeById.get(r.prato_id),
+            receita: recById.get(r.receita_id),
+            qtd: r.qtd, un: r.unidade
+          }));
+        }
+      }
+
+      // agrega por receita/unidade somando todas as contribuições de todos os pratos e de cada dia
+      const result = new Map(); // key: receita|un → {rec,un, dow[7], total}
+      for (const [pr, dowArr] of producaoSemanalPorPrato){
+        const linhas = comp.filter(c => c.prato === pr);
+        for (const linha of linhas){
+          const key = `${linha.receita}|${linha.un}`;
+          const obj = result.get(key) || { receita: linha.receita, un: linha.un, dow: Array(7).fill(0) };
+          for (let i=0;i<7;i++){
+            obj.dow[i] += (dowArr[i]||0) * (linha.qtd||0); // quantidade do prato no dia * consumo por prato
+          }
+          result.set(key, obj);
+        }
+      }
+
+      // render
+      const tbody = $('#tblMapa tbody'); tbody.innerHTML='';
+      let totalSem = 0, receitas = 0, pratosConsiderados = producaoSemanalPorPrato.size;
+      [...result.values()]
+        .sort((a,b)=> a.receita.localeCompare(b.receita,'pt-BR'))
+        .forEach(r=>{
+          const tr = document.createElement('tr');
+          const tsem = r.dow.reduce((a,b)=>a+b,0);
+          totalSem += tsem; receitas++;
+          tr.innerHTML = `
+            <td>${r.receita||'—'}</td>
+            <td>${r.un||'—'}</td>
+            ${r.dow.map(v=>`<td class="mono">${Math.round(v)}</td>`).join('')}
+            <td class="mono"><b>${Math.round(tsem)}</b></td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+      $('#mp-k-pratos').textContent   = pratosConsiderados.toLocaleString('pt-BR');
+      $('#mp-k-semana').textContent   = Math.round(totalSem).toLocaleString('pt-BR');
+      $('#mp-k-receitas').textContent = receitas.toLocaleString('pt-BR');
+      $('#mpStatus').textContent = result.size ? 'Ok' : 'Sem dados para o filtro';
+    }catch(e){
+      console.error(e);
+      $('#mpStatus').textContent = 'Erro';
+      setAppStatus('Erro na geração do mapa','err');
+    }
+  }
+
+  /* ========= Lista de Compras (agregado por ingrediente) =========
+     Usamos o resultado do Mapa de Produção para “explodir” receitas → ingredientes.
+     (Considera receita_itens.tipo = INGREDIENTE; sub-receita somada recursivamente em melhoria futura)
+  */
+  async function gerarCompras(){
+    $('#pcStatus').textContent = 'Calculando...';
+    try{
+      // Leitura do grid do mapa (já calculado)
+      const linhas = [...$('#tblMapa tbody').rows].map(tr=>{
+        const tds = [...tr.cells];
+        return {
+          receita: tds[0].textContent.trim(),
+          un: tds[1].textContent.trim(),
+          semana: parseFloat(tds[tds.length-1].textContent.replace(/\./g,'').replace(',','.'))||0
+        };
+      });
+      if(!linhas.length){ $('#pcStatus').textContent='Gere o mapa primeiro.'; return; }
+
+      // Receita → itens (somente ingredientes diretos)
+      const nomes = [...new Set(linhas.map(l=>l.receita))];
+      const { data: recs } = await supa.from('receitas').select('id,nome').in('nome', nomes);
+      const recIdByName = new Map((recs||[]).map(r=>[r.nome, r.id]));
+      const ids = (recs||[]).map(r=>r.id);
+      const { data: itens } = await supa.from('receita_itens').select('receita_id,tipo,ref_id,qtd,unidade').in('receita_id', ids);
+      const { data: ings }  = await supa.from('ingredientes').select('id,nome');
+
+      const ingNameById = new Map((ings||[]).map(i=>[i.id,i.nome]));
+      // agrega: ingrediente/un → total semana
+      const agg = new Map();
+      for(const l of linhas){
+        const rid = recIdByName.get(l.receita);
+        const usos = (itens||[]).filter(x=>x.receita_id===rid && x.tipo==='INGREDIENTE');
+        for(const u of usos){
+          const key = `${ingNameById.get(u.ref_id)}|${u.unidade}`;
+          const curr = agg.get(key) || { ingrediente: ingNameById.get(u.ref_id), un: u.unidade, qtd: 0 };
+          curr.qtd += (l.semana || 0) * (u.qtd || 0);
+          agg.set(key, curr);
+        }
+      }
+
+      const tbody = $('#tblCompras tbody'); tbody.innerHTML='';
+      [...agg.values()]
+        .sort((a,b)=> a.ingrediente.localeCompare(b.ingrediente,'pt-BR'))
+        .forEach(r=>{
+          const tr=document.createElement('tr');
+          tr.innerHTML = `
+            <td>${r.ingrediente||'—'}</td>
+            <td>${r.un||'—'}</td>
+            <td class="mono">${Math.round(r.qtd)}</td>
+            <td><input style="width:120px" placeholder="Ex.: 50"></td>
+            <td class="mono"><b class="pcBuy">—</b></td>`;
+          tbody.appendChild(tr);
+        });
+
+      // calcula “Comprar” ao digitar estoque
+      $('#tblCompras').addEventListener('input',(e)=>{
+        const tr=e.target.closest('tr'); if(!tr) return;
+        const need = parseFloat(tr.cells[2].textContent.replace(/\./g,'').replace(',','.'))||0;
+        const have = parseFloat(e.target.value.replace(/\./g,'').replace(',','.'))||0;
+        tr.querySelector('.pcBuy').textContent = Math.max(0, Math.round(need - have));
+      }, { once:true });
+
+      $('#pcStatus').textContent = 'Ok';
+    }catch(e){
+      console.error(e); $('#pcStatus').textContent='Erro'; setAppStatus('Erro na previsão de compras','err');
+    }
+  }
+
+  /* ========= Exportações em PDF (placeholder minimalista) ========= */
+  function exportarTabelaParaPDF(tableId, titulo){
+    // placeholder simples com print. Em próxima etapa integro jsPDF/autoTable.
+    window.print();
+  }
+
+  /* ========= Eventos ========= */
+  $('#mp-quick').addEventListener('change', ()=>{
+    const ate = $('#mp-ate').value || iso(new Date());
+    const de  = addDaysISO(ate, -(Number($('#mp-quick').value)-1));
+    $('#mp-de').value = de;
+  });
+  $('#mpRun').addEventListener('click', gerarMapaProducao);
+  $('#mpPDF').addEventListener('click', ()=>exportarTabelaParaPDF('tblMapa','Mapa de Produção'));
+
+  $('#pcRun').addEventListener('click', gerarCompras);
+  $('#pcPDF').addEventListener('click', ()=>exportarTabelaParaPDF('tblCompras','Previsão de Compras'));
+
+  // atalhos para Cadastros (abrimos a aba e podemos no próximo passo embutir o módulo completo)
+  $('#openCadPratos')?.addEventListener('click', ()=>alert('Abrir “Pratos” (integração do módulo de cadastros).'));
+  $('#openCadComp') ?.addEventListener('click', ()=>alert('Abrir “Componentes do Prato”.'));
+  $('#openCadRec')  ?.addEventListener('click', ()=>alert('Abrir “Receitas”.'));
+  $('#openCadIng')  ?.addEventListener('click', ()=>alert('Abrir “Ingredientes”.'));
+
+  /* ========= Inicialização ========= */
+  (async function init(){
+    setAppStatus('Carregando...');
+    await initProducaoFilters();
+    setAppStatus('Pronto','ok');
+  })();
+  </script>
+</body>
+</html>
