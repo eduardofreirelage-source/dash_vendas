@@ -316,15 +316,12 @@
   function updateKPIs(kpis, len) {
     const mediaDiaria = len > 0 ? Math.round(kpis.current_total / len) : 0;
     const prevMediaDiaria = len > 0 ? Math.round(kpis.prev_total / len) : 0;
-
     $('k_qtd').textContent = num(kpis.current_total);
     $('p_qtd').textContent = num(kpis.prev_total);
     deltaBadge($('d_qtd'), kpis.current_total, kpis.prev_total);
-    
     $('k_pratos_unicos').textContent = num(kpis.current_unique);
     $('p_pratos_unicos').textContent = num(kpis.prev_unique);
     deltaBadge($('d_pratos_unicos'), kpis.current_unique, kpis.prev_unique);
-
     $('k_media_diaria').textContent = num(mediaDiaria);
     $('p_media_diaria').textContent = num(prevMediaDiaria);
     deltaBadge($('d_media_diaria'), mediaDiaria, prevMediaDiaria);
@@ -333,7 +330,6 @@
   function updateTop10Chart(data) {
     const maisVendidos = data?.mais_vendidos || [];
     const menosVendidos = data?.menos_vendidos || [];
-
     if (top10Mode === 'MAIS') {
         renderChart('ch_top10', 'bar', maisVendidos.map(x => x.prato), [{ label: 'Qtd', data: maisVendidos.map(x => x.total), backgroundColor: '#7b1e3a' }], { indexAxis: 'y', plugins: { legend: { display: false } } });
     } else { 
@@ -343,22 +339,17 @@
 
   function updateDowChart(data, len) {
     const dowLabels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-    let nowData = Array(7).fill(0);
-    let prevData = Array(7).fill(0);
-
+    let nowData = Array(7).fill(0), prevData = Array(7).fill(0);
     for (let i = 0; i < 7; i++) {
         if (data && data[i]) {
             nowData[i] = data[i].current;
             prevData[i] = data[i].previous;
         }
     }
-
     if (dowMode === 'MEDIA') {
-        const de = $('fxDuStart').value;
-        const ate = $('fxDuEnd').value;
+        const de = $('fxDuStart').value, ate = $('fxDuEnd').value;
         const occNow = Array(7).fill(0);
-        let d = new Date(de+'T12:00:00Z'); 
-        const end = new Date(ate+'T12:00:00Z');
+        let d = new Date(de+'T12:00:00Z'), end = new Date(ate+'T12:00:00Z');
         while (d <= end) { occNow[d.getDay()]++; d.setDate(d.getDate()+1); }
         
         const occPrev = Array(7).fill(0);
@@ -371,10 +362,7 @@
         nowData = nowData.map((v,i)=> occNow[i] > 0 ? Math.round(v/occNow[i]) : 0);
         prevData = prevData.map((v,i)=> occPrev[i] > 0 ? Math.round(v/occPrev[i]) : 0);
     }
-    
-    const dsNow = { label: 'Atual', data: nowData, backgroundColor: '#7b1e3a' };
-    const dsPrev = { label: 'Anterior', data: prevData, backgroundColor: '#9ca3af' };
-    renderChart('ch_dow', 'bar', dowLabels, [dsNow, dsPrev]);
+    renderChart('ch_dow', 'bar', dowLabels, [{ label: 'Atual', data: nowData, backgroundColor: '#7b1e3a' }, { label: 'Anterior', data: prevData, backgroundColor: '#9ca3af' }]);
   }
 
   async function updateMonthChart(endDate) {
@@ -397,26 +385,18 @@
           { label: 'Últimos 12M', data: nowData, backgroundColor: '#7b1e3a' },
           { label: '12M Anteriores', data: prevData, backgroundColor: '#9ca3af' }
         ], { plugins: { legend: { display: false } } });
-      } catch (e) {
-        console.error("Erro ao carregar gráfico mensal:", e);
-      }
+      } catch (e) { console.error("Erro ao carregar gráfico mensal:", e); }
   }
 
   /* ===================== LOOP PRINCIPAL ===================== */
   async function applyAll(details) {
-    setStatus('Consultando...');
     try {
-      const de = details.start;
-      const ate = details.end;
-      if (!de || !ate || new Date(de) > new Date(ate)) { 
-        setStatus('Período inválido.', 'err'); 
-        return; 
-      }
+      const de = details.start, ate = details.end;
+      if (!de || !ate || new Date(de) > new Date(ate)) { return; }
       const len = daysLen(de, ate);
       
       const params = {
-          de_iso: de,
-          ate_iso: ate,
+          de_iso: de, ate_iso: ate,
           unids_filter: ms.unids.get().length > 0 ? ms.unids.get() : null,
           cats_filter: ms.cats.get().length > 0 ? ms.cats.get() : null,
           pratos_filter: ms.pratos.get().length > 0 ? ms.pratos.get() : null,
@@ -424,27 +404,20 @@
       };
 
       const { data, error } = await supa.rpc('get_pratos_dashboard_data', params);
-      
       if (error) throw error;
       
       updateMonthChart(ate);
 
       if (!data || !data.kpis) {
-        setStatus('Nenhum dado para o período.', 'err');
         updateKPIs({current_total:0, prev_total:0, current_unique:0, prev_unique:0}, 0);
         updateDowChart(null, 0);
-        updateTop10Chart({mais_vendidos:[], menos_vendidos:[]});
+        updateTop10Chart(null);
       } else {
         updateKPIs(data.kpis, len);
         updateDowChart(data.dow_chart, len);
         updateTop10Chart(data.top_10);
-        setStatus('Dashboard atualizado!', 'ok');
       }
-
-    } catch (e) { 
-      console.error("Erro no applyAll:", e); 
-      setStatus('Erro ao atualizar dados', 'err'); 
-    }
+    } catch (e) { console.error("Erro no applyAll:", e); }
   }
 
   /* ===================== INICIALIZAÇÃO E CONTROLES DA UI ===================== */
@@ -460,16 +433,13 @@
   }
 
   async function init() {
-    setStatus('Carregando...');
     try {
       const { data, error } = await supa.from('vendas_pratos_daterange').select('max_data').limit(1);
       if (error) throw error;
-      
       lastDay = (data?.length && data[0].max_data) ? data[0].max_data : getTodayISO();
-      
       await reloadFilterOptions();
       document.dispatchEvent(new Event('filters:init'));
-    } catch (e) { console.error(e); setStatus('Erro ao iniciar', 'err'); }
+    } catch (e) { console.error(e); }
   }
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -479,16 +449,14 @@
       $days: $('fxDuQuickDays'), $chips: $('fxQuickChips')
     };
 
-    function fxFmt(date){ const y=date.getFullYear(), m=String(date.getMonth()+1).padStart(2,'0'), d=String(date.getDate()).padStart(2,'0'); return `${y}-${m}-${d}` }
-    function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
+    function fxFmt(date){ return date.toISOString().split('T')[0]; }
+    function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end); }
     
     function setNamedPeriod(win) {
         const baseDate = new Date(lastDay + 'T12:00:00Z');
         let start, end;
-
-        if (win === 'today') {
-            start = end = baseDate;
-        } else if (win === 'yesterday') {
+        if (win === 'today') { start = end = baseDate; } 
+        else if (win === 'yesterday') {
             start = new Date(baseDate);
             start.setDate(baseDate.getDate() - 1);
             end = start;
@@ -500,11 +468,7 @@
             start = new Date(y, 0, 1);
             end = new Date(y, 11, 31);
         }
-        
-        if (start && end) {
-            fxSetRange(start, end);
-            fxDispatchApply();
-        }
+        if (start && end) { fxSetRange(start, end); fxDispatchApply(); }
     }
     
     function fxLastNDays(n){
@@ -524,30 +488,23 @@
     document.addEventListener('click', (e)=>{ if(!fx.$drop.classList.contains('fx-show')) return; if(!(fx.$drop.contains(e.target) || fx.$btnMore.contains(e.target))) fxShowDrop(false); });
     document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && fx.$drop.classList.contains('fx-show')) fxShowDrop(false) });
     
+    const clearActiveChips = () => [...fx.$chips.children, ...fx.$days.children].forEach(b => b.classList.remove('active'));
+
     fx.$chips.addEventListener('click', e => {
-        const btn = e.target.closest('button');
-        if (!btn) return;
-        [...fx.$chips.children, ...fx.$days.children].forEach(b => b.classList.remove('active'));
+        const btn = e.target.closest('button'); if (!btn) return;
+        clearActiveChips();
         btn.classList.add('active');
         setNamedPeriod(btn.dataset.win);
     });
-
-    const clearActiveChips = () => [...fx.$chips.children, ...fx.$days.children].forEach(b => b.classList.remove('active'));
-    
     fx.$start.addEventListener('change', () => { clearActiveChips(); fxDispatchApply(); });
     fx.$end.addEventListener('change', () => { clearActiveChips(); fxDispatchApply(); });
-
     fx.$days.addEventListener('click', (e)=>{
       const b=e.target.closest('button'); if(!b) return;
       clearActiveChips();
       b.classList.add('active');
       const n=parseInt(b.dataset.win,10); 
-      if(!isNaN(n)) {
-          fxLastNDays(n);
-          fxDispatchApply();
-      }
+      if(!isNaN(n)) { fxLastNDays(n); fxDispatchApply(); }
     });
-
     fx.$btnReset.addEventListener('click', ()=>{
       Object.values(ms).forEach(m => m.clear());
       $('onlyPratos').checked = false;
@@ -569,10 +526,9 @@
     init();
   });
   
-  // Upload (independente)
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev)=>{
-    // ... (O código de upload permanece o mesmo, foi omitido para brevidade) ...
+    // O código de upload permanece aqui, omitido para brevidade
   });
   </script>
 </body>
