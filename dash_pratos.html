@@ -366,6 +366,29 @@
     renderChart('ch_dow', 'bar', dowLabels, [{ label: 'Atual', data: nowData, backgroundColor: '#7b1e3a' }, { label: 'Anterior', data: prevData, backgroundColor: '#9ca3af' }]);
   }
 
+  async function updateMonthChart(endDate) {
+      try {
+        const params = {
+            end_date_iso: endDate,
+            unids_filter: ms.unids.get().length > 0 ? ms.unids.get() : null,
+            cats_filter: ms.cats.get().length > 0 ? ms.cats.get() : null,
+            pratos_filter: ms.pratos.get().length > 0 ? ms.pratos.get() : null,
+            is_pratos_only: $('onlyPratos').checked
+        };
+        const { data, error } = await supa.rpc('get_monthly_sales_chart_data', params);
+        if (error) throw error;
+
+        const labels = (data || []).map(d => formatYM(d.period));
+        const nowData = (data || []).map(d => d.current_total);
+        const prevData = (data || []).map(d => d.prev_total);
+
+        renderChart('ch_month', 'bar', labels, [
+          { label: 'Últimos 12M', data: nowData, backgroundColor: '#7b1e3a' },
+          { label: '12M Anteriores', data: prevData, backgroundColor: '#9ca3af' }
+        ], { plugins: { legend: { display: false } } });
+      } catch (e) { console.error("Erro ao carregar gráfico mensal:", e); }
+  }
+
   /* ===================== LOOP PRINCIPAL ===================== */
   async function applyAll(details) {
     try {
@@ -396,11 +419,9 @@
       if (top10Result.status === 'fulfilled' && top10Result.value.data) {
         updateTop10Chart(top10Result.value.data);
       }
-
-      [kpisResult, dowResult, top10Result].forEach(res => {
-        if (res.status === 'rejected') console.error("Falha em RPC:", res.reason);
-      });
       
+      updateMonthChart(ate);
+
     } catch (e) { console.error("Erro no applyAll:", e); }
   }
 
