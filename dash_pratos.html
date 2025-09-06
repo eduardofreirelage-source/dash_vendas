@@ -224,10 +224,9 @@
 
   const num = v => (v==null||!isFinite(+v)) ? '0' : (+v).toLocaleString('pt-BR');
   
-  // Adjusted date utility functions for robustness
   function getTodayISO(baseDate) {
     const d = baseDate ? new Date(baseDate + 'T12:00:00Z') : new Date();
-    d.setHours(12, 0, 0, 0); // Ensure midday to avoid timezone issues
+    d.setHours(12, 0, 0, 0);
     return d.toISOString().split('T')[0];
   }
 
@@ -246,10 +245,10 @@
   function addMonthsISO(isoStr, delta) {
     const d = new Date(isoStr + 'T12:00:00Z');
     const day = d.getDate();
-    d.setDate(1); // Go to start of month
+    d.setDate(1); 
     d.setMonth(d.getMonth() + delta);
     const lastDayOfMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-    d.setDate(Math.min(day, lastDayOfMonth)); // Set day, clamping to max day of new month
+    d.setDate(Math.min(day, lastDayOfMonth));
     return d.toISOString().split('T')[0];
   }
 
@@ -261,7 +260,7 @@
 
   function monthEndISO(isoStr) {
     const d = new Date(isoStr + 'T12:00:00Z');
-    d.setMonth(d.getMonth() + 1, 0); // Last day of current month
+    d.setMonth(d.getMonth() + 1, 0);
     return d.toISOString().split('T')[0];
   }
 
@@ -395,12 +394,15 @@
   }
 
   function computePrevRangeISO(deISO, ateISO){
-    const len=daysLen(deISO,ateISO);
-    const d1=new Date(deISO+'T12:00:00Z');
-    const atePrev=new Date(d1.getTime()-86400000); // Subtract 1 day
-    const dePrev=new Date(atePrev.getTime()-(len-1)*86400000); // Subtract (len-1) days
-    return { dePrev: atePrev.toISOString().split('T')[0], atePrev: dePrev.toISOString().split('T')[0] };
+    const len = daysLen(deISO, ateISO);
+    const d1 = new Date(deISO + 'T12:00:00Z');
+    const atePrev = new Date(d1.getTime());
+    atePrev.setDate(d1.getDate() - len);
+    const dePrev = new Date(d1.getTime());
+    dePrev.setDate(d1.getDate() - (len * 2) + 1);
+    return { dePrev: dePrev.toISOString().split('T')[0], atePrev: atePrev.toISOString().split('T')[0] };
   }
+
 
   async function updateKPIs(rows, prevRows, len) {
     const totalQtd = rows.reduce((sum, r) => sum + (r.quantidade || 0), 0);
@@ -410,12 +412,7 @@
     const prevItensUnicos = new Set(prevRows.map(r => r.prato)).size;
 
     const mediaDiaria = len > 0 ? Math.round(totalQtd / len) : 0;
-    
-    // Ensure that prevRows has valid data to calculate prevLen
-    const effectivePrevStart = prevRows.length > 0 ? prevRows[0].data : getTodayISO(lastDay);
-    const effectivePrevEnd = prevRows.length > 0 ? prevRows[prevRows.length-1].data : getTodayISO(lastDay);
-    const prevLen = daysLen(effectivePrevStart, effectivePrevEnd);
-    
+    const prevLen = prevRows.length > 0 ? daysLen(prevRows[0].data, prevRows[prevRows.length-1].data) : len;
     const prevMediaDiaria = prevLen > 0 ? Math.round(prevTotalQtd / prevLen) : 0;
 
     $('k_qtd').textContent = num(totalQtd);
@@ -449,9 +446,7 @@
   }
 
   function updateTop10Chart(rows) {
-    // Filter for 'PRATOS' category only
     const pratosOnlyRows = rows.filter(r => r.categoria === 'PRATOS');
-
     const byPrato = new Map();
     pratosOnlyRows.forEach(r => { byPrato.set(r.prato, (byPrato.get(r.prato) || 0) + r.quantidade); });
     
@@ -459,7 +454,7 @@
         const sorted = [...byPrato.entries()].sort((a, b) => b[1] - a[1]);
         const top10 = sorted.slice(0, 10);
         renderChart('ch_top10', 'bar', top10.map(x => x[0]), [{ label: 'Qtd', data: top10.map(x => x[1]), backgroundColor: '#7b1e3a' }], { indexAxis: 'y', plugins: { legend: { display: false } } });
-    } else { // MENOS
+    } else { 
         const bottom10 = [...byPrato.entries()].filter(x => x[1] > 0).sort((a, b) => a[1] - b[1]).slice(0,10);
         renderChart('ch_top10', 'bar', bottom10.map(x => x[0]), [{ label: 'Qtd', data: bottom10.map(x => x[1]), backgroundColor: '#9ca3af' }], { indexAxis: 'y', plugins: { legend: { display: false } } });
     }
@@ -467,8 +462,8 @@
 
   function countWeekdayOccurrences(de, ate){
     const counts = Array(7).fill(0);
-    let d = new Date(de+'T12:00:00Z'); // Use midday
-    const end = new Date(ate+'T12:00:00Z'); // Use midday
+    let d = new Date(de+'T12:00:00Z'); 
+    const end = new Date(ate+'T12:00:00Z');
     while (d <= end) { counts[d.getDay()]++; d.setDate(d.getDate()+1); }
     return counts;
   }
@@ -569,12 +564,8 @@
 
       const [rows, prevRows] = await Promise.all([ baseQueryPaged(de, ate), baseQueryPaged(dePrev, atePrev) ]);
       
-      // If no data is returned for the current period, display zeros/empty charts
-      if (rows.length === 0) {
-        setStatus('Nenhum dado para o período selecionado.', 'err');
-      } else {
-        setStatus('Dashboard atualizado!', 'ok');
-      }
+      if (rows.length === 0) { setStatus('Nenhum dado para o período selecionado.', 'err'); } 
+      else { setStatus('Dashboard atualizado!', 'ok'); }
 
       await Promise.all([
         updateKPIs(rows, prevRows, len),
@@ -603,13 +594,12 @@
     try {
       const dr = await supa.from('vendas_pratos_daterange').select('*').limit(1);
       if (dr.error) throw dr.error;
-      // Ensure lastDay is always available from DB or defaults to today
+      
       if (dr.data?.length && dr.data[0].max_data) { lastDay = dr.data[0].max_data; }
       else { lastDay = getTodayISO(); } 
       
-      // Ensure firstDay is always available from DB or defaults to 30 days before lastDay
       if (dr.data?.length && dr.data[0].min_data) { firstDay = dr.data[0].min_data; }
-      else { firstDay = addDaysISO(lastDay, -29); } // Default to lastDay - 29 days for a 30-day range
+      else { firstDay = addDaysISO(lastDay, -29); }
 
       await reloadFilterOptions();
       $('onlyPratos').checked = false;
@@ -633,28 +623,22 @@
         let start, end;
 
         if (win === 'today') {
-            start = new Date(baseDate);
-            end = new Date(baseDate);
+            start = end = baseDate;
         } else if (win === 'yesterday') {
             start = new Date(baseDate);
             start.setDate(baseDate.getDate() - 1);
-            end = new Date(start);
+            end = start;
         } else if (win === 'lastMonth') {
-            end = new Date(baseDate);
-            end.setDate(1); // Set to 1st of current month
-            end.setDate(0); // Set to last day of previous month
-            start = new Date(end);
-            start.setDate(1); // Set to 1st of previous month
+            start = new Date(baseDate);
+            start.setDate(1); 
+            start.setMonth(start.getMonth() - 1);
+            end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
         } else if (win === 'lastYear') {
             const y = baseDate.getFullYear() - 1;
             start = new Date(y, 0, 1);
             end = new Date(y, 11, 31);
         }
         
-        // Ensure all dates are set to midday to avoid timezone issues
-        if (start) start.setHours(12,0,0,0);
-        if (end) end.setHours(12,0,0,0);
-
         if (start && end) {
             fxSetRange(start, end);
             fxDispatchApply();
