@@ -565,7 +565,7 @@
     function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
     function displayNormalize(s){ return cleanSpaces(s); }
     const agg = (rows) => {
-      let ped = rows?.length || 0; // Contagem de pedidos é pelo número de linhas.
+      const ped = rows?.length || 0; // Contagem de pedidos é pelo número de linhas.
       let fat=0,des=0,fre=0; 
       for(const r of (rows||[])){ fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } 
       return {ped,fat,des,fre};
@@ -828,34 +828,30 @@
         const pNow = buildParams(de, ate, analiticos);
         const pPrev = buildParams(dePrev, atePrev, analiticos);
         
-        // CORREÇÃO: Lógica Híbrida para Precisão e Performance
-        // 1. Busca os totais financeiros (faturamento, etc.) da RPC otimizada existente
-        const [finNowResult, finPrevResult] = await Promise.all([
-            supa.rpc(RPC_KPI_FUNC, pNow),
-            supa.rpc(RPC_KPI_FUNC, pPrev)
-        ]);
-
-        // 2. Busca a CONTAGEM CORRETA de linhas (pedidos) usando a RPC de filtro + opção de contagem
         const [
-            { count: pedNowCount, error: errPedNow },
-            { count: pedPrevCount, error: errPedPrev },
-            { count: cnCount, error: errCn }, { count: vnCount, error: errVn },
-            { count: cpCount, error: errCp }, { count: vpCount, error: errVp }
+          finNowResult, finPrevResult,
+          { count: pedNowCount, error: errPedNow },
+          { count: pedPrevCount, error: errPedPrev },
+          { count: cnCount, error: errCn }, { count: vnCount, error: errVn },
+          { count: cpCount, error: errCp }, { count: vpCount, error: errVp }
         ] = await Promise.all([
-            supa.rpc(RPC_FILTER_FUNC, pNow, { count: 'exact' }),
-            supa.rpc(RPC_FILTER_FUNC, pPrev, { count: 'exact' }),
-            supa.rpc(RPC_FILTER_FUNC, { ...pNow, p_cancelado: 'Sim' }, { count: 'exact' }),
-            supa.rpc(RPC_FILTER_FUNC, { ...pNow, p_cancelado: 'Não' }, { count: 'exact' }),
-            supa.rpc(RPC_FILTER_FUNC, { ...pPrev, p_cancelado: 'Sim' }, { count: 'exact' }),
-            supa.rpc(RPC_FILTER_FUNC, { ...pPrev, p_cancelado: 'Não' }, { count: 'exact' })
+            supa.rpc(RPC_KPI_FUNC, pNow),
+            supa.rpc(RPC_KPI_FUNC, pPrev),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Sim'),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Não'),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Sim'),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Não')
         ]);
 
         if(finNowResult.error) throw finNowResult.error;
         if(errPedNow) throw errPedNow;
+        
+        let N_ped_final = analiticos.cancelado === 'sim' ? cnCount : analiticos.cancelado === 'nao' ? vnCount : pedNowCount;
 
-        // 3. Combina os resultados para os KPIs
         const N = {
-            ped: pedNowCount,
+            ped: N_ped_final,
             fat: +(finNowResult.data[0]?.fat || 0),
             des: +(finNowResult.data[0]?.des || 0),
             fre: +(finNowResult.data[0]?.fre || 0)
@@ -870,11 +866,11 @@
         const totalPedidosNow = vnCount + cnCount;
         const totalPedidosPrev = vpCount + cpCount;
         
-        // Busca o valor cancelado separadamente, pois a contagem não o retorna
+        // Busca o valor cancelado separadamente
         const {data: cancDataNow} = await supa.rpc(RPC_KPI_FUNC, { ...pNow, p_cancelado: 'Sim' });
         const {data: cancDataPrev} = await supa.rpc(RPC_KPI_FUNC, { ...pPrev, p_cancelado: 'Sim' });
-        const CN_val = agg(cancDataNow);
-        const CP_val = agg(cancDataPrev);
+        const CN_val = { fat: +(cancDataNow[0]?.fat || 0) };
+        const CP_val = { fat: +(cancDataPrev[0]?.fat || 0) };
 
         const len = DateHelpers.daysLen(de, ate);
         const prevLen = DateHelpers.daysLen(dePrev, atePrev);
