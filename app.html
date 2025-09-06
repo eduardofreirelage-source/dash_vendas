@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
+  <link rel="icon" type="image/x-icon" href="data:image/x-icon;,"/>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Mapa de Produção — v2.8</title>
@@ -713,13 +714,13 @@ function renderPratos(){
   $('pratos-page-info').textContent=`Página ${pratosPage}/${totalPages}`;
   $('pratos-prev').disabled=pratosPage<=1; $('pratos-next').disabled=pratosPage>=totalPages;
 }
-$('pratos-prev').addEventListener('click',()=>{ pratosPage=Math.max(1,pratosPage-1); renderPratos(); });
-$('pratos-next').addEventListener('click',()=>{ pratosPage=pratosPage+1; renderPratos(); });
-$('pratos-search').addEventListener('input',()=>{ pratosPage=1; renderPratos(); });
-$('pratos-cat-filter').addEventListener('change',()=>{ pratosPage=1; renderPratos(); });
+$('pratos-prev')?.addEventListener('click',()=>{ pratosPage=Math.max(1,pratosPage-1); renderPratos(); });
+$('pratos-next')?.addEventListener('click',()=>{ pratosPage=pratosPage+1; renderPratos(); });
+$('pratos-search')?.addEventListener('input',()=>{ pratosPage=1; renderPratos(); });
+$('pratos-cat-filter')?.addEventListener('change',()=>{ pratosPage=1; renderPratos(); });
 
 /* ===== CRUD PRATOS ===== */
-$('btnNovoPrato').addEventListener('click',()=>{ 
+$('btnNovoPrato')?.addEventListener('click',()=>{ 
     pratoEditId=null; 
     $('prato-form-title').textContent='Novo prato'; 
     $('prato-nome').value=''; 
@@ -733,8 +734,8 @@ $('btnNovoPrato').addEventListener('click',()=>{
     $('prato-codigo-barras').value = '';
     $('prato-qrcode').value = '';
 });
-$('btnCancelarPrato').addEventListener('click',()=> $('btnNovoPrato').click());
-$('tblPratos').addEventListener('click',async e=>{
+$('btnCancelarPrato')?.addEventListener('click',()=> $('btnNovoPrato').click());
+$('tblPratos')?.addEventListener('click',async e=>{
   const b=e.target.closest('button'); if(!b) return; const id=b.dataset.id, act=b.dataset.act;
   if(act==='edit'){ 
       const p=pratos.find(x=>String(x.id)===String(id)); 
@@ -755,7 +756,7 @@ $('tblPratos').addEventListener('click',async e=>{
   if(act==='toggle'){ try{ const p=pratos.find(x=>String(x.id)===String(id)); const {error}=await supa.from('pratos').update({ativo:!p.ativo}).eq('id',id); if(error) throw error; await loadPratos(); }catch(ex){ alert(ex.message||ex); } }
   if(act==='del'){ if(!confirm('Excluir prato?')) return; try{ const {error}=await supa.from('pratos').delete().eq('id',id); if(error) throw error; await loadPratos(); }catch(ex){ alert(ex.message||ex); } }
 });
-$('btnSalvarPrato').addEventListener('click',async ()=>{
+$('btnSalvarPrato')?.addEventListener('click',async ()=>{
   const nome=$('prato-nome').value.trim(); if(!nome){ alert('Informe o nome do prato'); return; }
   const basePayload={ 
       nome, 
@@ -788,12 +789,42 @@ $('btnSalvarPrato').addEventListener('click',async ()=>{
 });
 
 /* ===== Import do Dashboard de Pratos ===== */
-const DASHBOARD_PRATOS_SOURCE='vendas_pratos_pratos';
+let DASHBOARD_PRATOS_SOURCE='vendas_pratos_pratos';
+
 async function loadDash(){
   const tb=$('tblDash')?.querySelector('tbody'); if(!tb) return;
   tb.innerHTML='<tr><td colspan="4">Carregando…</td></tr>';
   try{
-    let dash=null, err=null; ({data:dash, error:err}=await supa.from(DASHBOARD_PRATOS_SOURCE).select('prato,categoria')); if(err){ ({data:dash, error:err}=await supa.from(DASHBOARD_PRATOS_SOURCE).select('prato')); }
+    let dash=null, err=null;
+    // Try primary source
+    ({data:dash, error:err}=await supa.from(DASHBOARD_PRATOS_SOURCE).select('prato,categoria'));
+    if(err){
+      // Try alternative known view/table names
+      const alts=['vendas_pratos_view_only_pratos','vendas_pratos','vendas_pratos_itens'];
+      for(const alt of alts){
+        let r=await supa.from(alt).select('prato,categoria');
+        if(!r.error){ dash=r.data; err=null; DASHBOARD_PRATOS_SOURCE=alt; break; }
+        // try only prato
+        r=await supa.from(alt).select('prato');
+        if(!r.error){ dash=r.data.map(x=>({prato:x.prato,categoria:null})); err=null; DASHBOARD_PRATOS_SOURCE=alt; break; }
+      }
+    }
+    if(err) throw err;
+    const {data:pr}=await supa.from('pratos').select('id,nome'); const exist=new Set((pr||[]).map(p=>p.nome));
+    const cat=$('dash-cat').value?.toUpperCase()||''; const term=$('dash-search').value?.toLowerCase().trim()||'';
+    tb.innerHTML='';
+    (dash||[]).filter(r=> (!cat||String(r.categoria||'').toUpperCase()===cat) && (!term||String(r.prato||'').toLowerCase().includes(term)) )
+      .forEach(r=>{
+        const already=exist.has(r.prato);
+        const tr=document.createElement('tr');
+        tr.innerHTML=`<td>${r.prato}</td><td>${r.categoria||'<span class="soft">N/D</span>'}</td>
+          <td>${already?'<span class="pill">Já existe</span>':'<span class="pill">Falta importar</span>'}</td>
+          <td>${already?'-':`<button class="btn small" data-import="${r.prato.replace(/"/g,'&quot;')}" data-cat="${(r.categoria||'PRATOS').replace(/"/g,'&quot;')}">Importar</button>`}</td>`;
+        tb.appendChild(tr);
+      });
+  }catch(e){ tb.innerHTML='<tr><td colspan="4">Não foi possível ler a fonte do dashboard. Ajuste o nome da view/tabela em DASHBOARD_PRATOS_SOURCE.</td></tr>'; }
+}
+=await supa.from(DASHBOARD_PRATOS_SOURCE).select('prato,categoria')); if(err){ ({data:dash, error:err}=await supa.from(DASHBOARD_PRATOS_SOURCE).select('prato')); }
     if(err) throw err;
     const {data:pr}=await supa.from('pratos').select('id,nome'); const exist=new Set((pr||[]).map(p=>p.nome));
     const cat=$('dash-cat').value?.toUpperCase()||''; const term=$('dash-search').value?.toLowerCase().trim()||'';
@@ -896,7 +927,7 @@ $('btnUpdateRec')?.addEventListener('click',async ()=>{
     await loadReceitas(); 
     setStatus('Receita atualizada','ok'); 
 });
-$('btnCancelRecEdit').addEventListener('click',()=>{ 
+$('btnCancelRecEdit')?.addEventListener('click',()=>{ 
     recEditId=null; 
     $('recipe-editor-container').style.display = 'none';
     $('recipe-form-title').textContent = 'Nova Receita';
@@ -1274,7 +1305,7 @@ document.querySelector('#tblIng')?.addEventListener('click', async (e) => {
     }
 });
 
-$('btnSaveIng').addEventListener('click', async () => {
+$('btnSaveIng')?.addEventListener('click', async () => {
     const nome = $('ing-nome').value.trim();
     if (!nome) return alert('O nome do ingrediente é obrigatório.');
     const basePayload = { 
@@ -1306,7 +1337,7 @@ $('btnSaveIng').addEventListener('click', async () => {
         setStatus('Ingrediente salvo.', 'ok');
     } catch (ex) { setStatus('Erro ao salvar ingrediente: ' + (ex.message || ex), 'err'); }
 });
-$('btnCancelIngEdit').addEventListener('click', () => {
+$('btnCancelIngEdit')?.addEventListener('click', () => {
     ingEditId = null;
     $('ingrediente-editor-container').style.display = 'none';
     $('ingrediente-form-title').textContent = 'Novo Ingrediente';
@@ -1321,14 +1352,14 @@ $('btnCancelIngEdit').addEventListener('click', () => {
 });
 
 // Botão para mostrar formulário de nova receita
-$('btnShowNewRecipeForm').addEventListener('click', () => {
+$('btnShowNewRecipeForm')?.addEventListener('click', () => {
     $('btnCancelRecEdit').click(); // Reseta o formulário e o estado
     $('recipe-editor-container').style.display = 'block';
     $('recipe-editor-container').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
 // Botão para mostrar formulário de novo ingrediente
-$('btnShowNewIngredienteForm').addEventListener('click', () => {
+$('btnShowNewIngredienteForm')?.addEventListener('click', () => {
     $('btnCancelIngEdit').click();
     $('ingrediente-editor-container').style.display = 'block';
 });
@@ -1391,10 +1422,10 @@ const EstoqueModule = {
     
     init() {
         $$('.mov-actions .btn').forEach(btn => btn.addEventListener('click', (e) => this.showMovForm(e.currentTarget.dataset.movType)));
-        $('btnMovCancel').addEventListener('click', () => this.hideMovForm());
+        $('btnMovCancel')?.addEventListener('click', () => this.hideMovForm());
         $('frmMov')?.addEventListener('submit', (e) => this.handleMovimentacao(e));
         $('mov-item-tipo')?.addEventListener('change', () => this.populateItemsDropdown());
-        $('btnMovScan').addEventListener('click', () => this.toggleCamera());
+        $('btnMovScan')?.addEventListener('click', () => this.toggleCamera());
         this.loadInitialData();
     },
 
@@ -1731,16 +1762,50 @@ $('btnSaveUM')?.addEventListener('click', async ()=>{
   };
   if(!payload.codigo) return alert('Informe o código da unidade (ex.: kg)');
   try{
-    if(umEditId){ await supa.from('unidades_medida').update(payload).eq('id',umEditId); }
-    else { await supa.from('unidades_medida').insert(payload); }
+    if(umEditId){ await (await supa.from('unidades_medida')).error ? supa.from('unidade_medida') : supa.from('unidades_medida').update(payload).eq('id',umEditId); }
+    else { await (await supa.from('unidades_medida')).error ? supa.from('unidade_medida') : supa.from('unidades_medida').insert(payload); }
     $('um-editor').style.display='none';
     await loadUM();
   }catch(e){ alert(e.message||e); }
 });
+
 async function loadUM(){
   const tb=$('tblUM')?.querySelector('tbody'); if(!tb) return;
   tb.innerHTML='<tr><td colspan="5">Carregando…</td></tr>';
-  const {data,error}=await supa.from('unidades_medida').select('*').order('codigo',{ascending:true});
+  let data=null, error=null, used='unidades_medida', orderCol='codigo';
+  try{
+    let q = supa.from(used).select('*');
+    try{ q = q.order(orderCol,{ascending:true}); }catch(_){}
+    ({data,error}=await q);
+    if(error){
+      // Try singular table name
+      used='unidade_medida';
+      let q2 = supa.from(used).select('*');
+      try{ q2 = q2.order(orderCol,{ascending:true}); }catch(_){}
+      ({data,error}=await q2);
+    }
+    if(error){
+      // Try without order or with alternative column names
+      used=used;
+      const tryCols=['codigo','sigla','id'];
+      for(const c of tryCols){
+        let q3 = supa.from(used).select('*');
+        try{ q3 = q3.order(c,{ascending:true}); }catch(_){}
+        const r = await q3;
+        if(!r.error){ data=r.data; error=null; orderCol=c; break; }
+      }
+    }
+  }catch(ex){ error=ex; }
+  if(error){ tb.innerHTML='<tr><td colspan="5">Não foi possível ler a tabela de Unidades de Medida. Verifique o nome (unidades_medida/unidade_medida) e as colunas (codigo/descricao/base/fator_base).</td></tr>'; return; }
+  tb.innerHTML='';
+  (data||[]).forEach(um=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${um.codigo??um.sigla??'—'}</td><td>${um.descricao||'—'}</td><td>${um.base||'—'}</td><td>${um.fator_base??um.fator??'—'}</td>
+    <td class="row-actions"><button class="btn small" data-edit-um="${um.id}">Editar</button><button class="btn small" data-del-um="${um.id}">Excluir</button></td>`;
+    tb.appendChild(tr);
+  });
+}
+=await (await supa.from('unidades_medida')).error ? supa.from('unidade_medida') : supa.from('unidades_medida').select('*').order('codigo',{ascending:true});
   if(error){ tb.innerHTML='<tr><td colspan="5">Crie a tabela "unidades_medida".</td></tr>'; return; }
   tb.innerHTML='';
   (data||[]).forEach(um=>{
@@ -1752,14 +1817,14 @@ async function loadUM(){
 }
 document.addEventListener('click', async (e)=>{
   const be=e.target.closest('button[data-edit-um]'); if(be){
-    const id=be.dataset.editUm; const {data}=await supa.from('unidades_medida').select('*').eq('id',id).single();
+    const id=be.dataset.editUm; const {data}=await (await supa.from('unidades_medida')).error ? supa.from('unidade_medida') : supa.from('unidades_medida').select('*').eq('id',id).single();
     umEditId=id; $('um-form-title').textContent='Editar UM';
     $('um-cod').value=data?.codigo||''; $('um-desc').value=data?.descricao||''; $('um-base').value=data?.base||'g'; $('um-fator').value=data?.fator_base||'';
     $('um-editor').style.display='block';
   }
   const bd=e.target.closest('button[data-del-um]'); if(bd){
     if(!confirm('Excluir unidade de medida?')) return;
-    await supa.from('unidades_medida').delete().eq('id',bd.dataset.delUm);
+    await (await supa.from('unidades_medida')).error ? supa.from('unidade_medida') : supa.from('unidades_medida').delete().eq('id',bd.dataset.delUm);
     await loadUM();
   }
 });
