@@ -1817,5 +1817,106 @@
   }
 })();
 </script>
+
+<script>
+/* ===== DX Data Tap (sync with app data) =====
+   - Mirrors calls to baseQuery so Diagnóstico uses the SAME rows as KPIs/gráficos.
+   - No breaking changes: wraps baseQuery only if it exists, returns untouched results.
+*/
+(() => {
+  'use strict';
+  const $ = (s)=>document.querySelector(s);
+  const once = '__dx_baseQuery_wrapped__';
+  if (typeof window.baseQuery === 'function' && !window[once]) {
+    const orig = window.baseQuery;
+    window[once] = true;
+    window.baseQuery = async function(...args){
+      const res = await orig.apply(this, args);
+      try {
+        const [de, ate, anal] = args || [];
+        document.dispatchEvent(new CustomEvent('dx:baseQuery', { detail: { de, ate, analiticos: anal, rows: res } }));
+      } catch(e){ /* noop */ }
+      return res;
+    };
+  }
+
+  // State for Diagnóstico to consume without requery
+  window.__dx_state__ = window.__dx_state__ || { now:null, prev:null, anal:null, de:null, ate:null };
+
+  // Capture current period from UI to classify baseQuery results
+  function uiDates(){
+    const a = $('#fxDuStart')?.value, b = $('#fxDuEnd')?.value;
+    if(!a || !b) return null;
+    const start = b>=a ? a : b, end = b>=a ? b : a;
+    return {start, end};
+  }
+
+  function eqDate(a,b){ return String(a||'') === String(b||''); }
+
+  document.addEventListener('dx:baseQuery', (e)=>{
+    const d = e.detail || {};
+    const ui = uiDates();
+    if (!ui) return;
+    // classify as now or prev
+    const nowMatch = eqDate(d.de, ui.start) && eqDate(d.ate, ui.end);
+    let isPrev = false;
+    try {
+      const pr = (window.DateHelpers && typeof DateHelpers.computePrevRangeISO==='function')
+        ? DateHelpers.computePrevRangeISO(ui.start, ui.end) : null;
+      if (pr) isPrev = eqDate(d.de, pr.dePrev) && eqDate(d.ate, pr.atePrev);
+    } catch(_) {}
+    if (nowMatch) {
+      window.__dx_state__.now = d.rows;
+      window.__dx_state__.anal = d.analiticos || window.__dx_state__.anal;
+      window.__dx_state__.de = d.de; window.__dx_state__.ate = d.ate;
+      document.dispatchEvent(new Event('dx:now-ready'));
+    } else if (isPrev) {
+      window.__dx_state__.prev = d.rows;
+      document.dispatchEvent(new Event('dx:prev-ready'));
+    }
+  });
+
+  // Helper for Diagnóstico to read state
+  window.DX_getDataTap = function(){
+    return window.__dx_state__ || { now:null, prev:null, anal:null, de:null, ate:null };
+  };
+})();
+</script>
+
+
+<script>
+(() => {
+  'use strict';
+  // Re-run Diagnóstico when data tap signals new data
+  function rerunIfPossible(){
+    try{
+      const tap = (typeof window.DX_getDataTap==='function') ? window.DX_getDataTap() : null;
+      if(!tap || !tap.now) return;
+      // If run() exists inside our diagnostic block, call it with payload from tap
+      const payload = {
+        start: tap.de, end: tap.ate,
+        analiticos: tap.anal || {
+          unidade: (window.ms?.unids?.get?.() ?? []),
+          loja:    (window.ms?.lojas?.get?.() ?? []),
+          turno:   (window.ms?.turnos?.get?.() ?? []),
+          canal:   (window.ms?.canais?.get?.() ?? []),
+          pagamento: (window.ms?.pags?.get?.() ?? []),
+          cancelado: document.querySelector('#fxCanceled')?.value
+        }
+      };
+      // Prefer a global run if exposed; else fire filters:apply:internal to trigger existing runner
+      if (typeof window.run === 'function') {
+        window.run(payload);
+      } else {
+        document.dispatchEvent(new CustomEvent('filters:apply', { detail: payload }));
+      }
+    }catch(e){ /* noop */ }
+  }
+  document.addEventListener('dx:now-ready', rerunIfPossible);
+  // also re-run when prev becomes available to update deltas
+  document.addEventListener('dx:prev-ready', rerunIfPossible);
+})();
+</script>
+
 </body>
 </html>
