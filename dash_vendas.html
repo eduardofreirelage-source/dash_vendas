@@ -40,6 +40,7 @@
     .kpi[data-kpi="fat"] .val { color: var(--c-now); }
     .delta{display:inline-flex;gap:4px;align-items:center;padding:1px 6px;border-radius:999px;border:1px solid rgba(148,163,184,.35);font-weight:700;font-size:10px;margin-left:6px;background:rgba(148,163,184,.15);color:#6b7280}
     .delta svg{width:10px;height:10px}
+    /* CORREÇÃO DE COR */
     .delta.up{background:rgba(6,95,70,.1);border-color:rgba(6,95,70,.25);color:var(--ok-dark)}
     .delta.down{background:rgba(136,19,55,.1);border-color:rgba(136,19,55,.25);color:var(--wine-dark)}
 
@@ -513,7 +514,6 @@
     // ===================================================================================
     
     /* ===================== CONFIG ===================== */
-    const READ_VIEW       = 'vendas_canon';
     const RPC_FILTER_FUNC = 'filter_vendas';
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
@@ -791,28 +791,55 @@
     }
 
     async function baseQuery(de, ate, analiticos){
+      const PAGE_SIZE = 1000;
+      let allRows = [];
+      let page = 0;
+      let keepFetching = true;
       const params = buildParams(de, ate, analiticos);
-      const { data, error } = await supa.rpc(RPC_FILTER_FUNC, params);
-      if (error) { console.error(`[RPC ${RPC_FILTER_FUNC}]`, error); throw error; }
-      return data || [];
+
+      while (keepFetching) {
+          const { data, error } = await supa.rpc(RPC_FILTER_FUNC, params)
+                                          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+          if (error) {
+              console.error(`[RPC ${RPC_FILTER_FUNC}]`, error);
+              throw error;
+          }
+
+          if (data && data.length > 0) {
+              allRows.push(...data); // Use spread syntax for efficiency
+              page++;
+              if (data.length < PAGE_SIZE) {
+                  keepFetching = false;
+              }
+          } else {
+              keepFetching = false;
+          }
+      }
+      return allRows;
     }
     
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
       try {
+        const otherFilters = {
+          unidade: analiticos.unidade,
+          loja: analiticos.loja,
+          turno: analiticos.turno,
+          canal: analiticos.canal,
+          pagamento: analiticos.pagamento
+        };
+        
         const [
-          rowsNow,
-          rowsPrev,
-          rowsCanceledNow,
-          rowsValidNow,
-          rowsCanceledPrev,
-          rowsValidPrev
+          rowsNow, rowsPrev,
+          rowsCanceledNow, rowsValidNow,
+          rowsCanceledPrev, rowsValidPrev
         ] = await Promise.all([
             baseQuery(de, ate, analiticos),
             baseQuery(dePrev, atePrev, analiticos),
-            baseQuery(de, ate, { ...analiticos, cancelado: 'sim' }),
-            baseQuery(de, ate, { ...analiticos, cancelado: 'nao' }),
-            baseQuery(dePrev, atePrev, { ...analiticos, cancelado: 'sim' }),
-            baseQuery(dePrev, atePrev, { ...analiticos, cancelado: 'nao' })
+            baseQuery(de, ate, { ...otherFilters, cancelado: 'sim' }),
+            baseQuery(de, ate, { ...otherFilters, cancelado: 'nao' }),
+            baseQuery(dePrev, atePrev, { ...otherFilters, cancelado: 'sim' }),
+            baseQuery(dePrev, atePrev, { ...otherFilters, cancelado: 'nao' })
         ]);
 
         const N = agg(rowsNow);
@@ -857,8 +884,7 @@
 
       } catch (e) {
         console.error("Erro detalhado em updateKPIs:", e);
-        document.querySelectorAll('.kpi .val').forEach(el => el.textContent = '—');
-        document.querySelectorAll('.kpi .sub span').forEach(el => el.textContent = '—');
+        document.querySelectorAll('.kpi .val, .kpi .sub span').forEach(el => el.textContent = '—');
         document.querySelectorAll('.kpi .delta').forEach(el => { el.textContent = '—'; el.className = 'delta flat'; });
         throw e;
       }
