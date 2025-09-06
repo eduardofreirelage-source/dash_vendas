@@ -1086,87 +1086,31 @@
   }
 
   function fillHero(selectedKey, nowVal, prevVal, aggNow){
-    const heroVal = $q('.hero .hero-value-number');
-    const heroDelta = $q('.hero .delta');
-    const heroSub = $q('.hero .hero-sub-value');
-    const ctx = $q('.hero .hero-context');
+  const heroVal = document.querySelector('.hero-value-number');
+  const heroDelta = heroVal ? (heroVal.parentElement?.querySelector('.delta') || document.querySelector('.delta')) : document.querySelector('.delta');
+  const heroSub = document.querySelector('.hero-sub-value');
+  const ctx = document.querySelector('.hero-context');
 
-    // valor principal + delta + anterior
+  if(heroVal){
     heroVal.textContent = fmtBy(selectedKey, nowVal);
+  }
+  if(heroDelta){
     const {deltaText, cls} = classifyDelta(nowVal, prevVal);
-    heroDelta.textContent = deltaText.replace(/^./,''); // texto sem setinha
+    heroDelta.textContent = deltaText.replace(/^./,'');
     heroDelta.innerHTML = (cls==='up'?'▲ ':'▼ ')+heroDelta.textContent;
     heroDelta.classList.remove('up','down','flat');
-    heroDelta.classList.add(cls==='flat'?'':cls);
+    if(cls!=='flat') heroDelta.classList.add(cls);
+  }
+  if(heroSub){
     heroSub.textContent = 'Período anterior: '+fmtBy(selectedKey, prevVal);
-
-    // destaques
+  }
+  if(ctx){
     const topLojas  = topN(aggNow.byStore, selectedKey, 2).map(x=>x.k).join(' e ') || '—';
     const topHoras  = topN(aggNow.byHour,  selectedKey, 2).map(x=>x.k+'h').join('–') || '—';
     const topCanais = topN(aggNow.byCanal, selectedKey, 1).map(x=>x.k).join(', ') || '—';
     ctx.innerHTML = `<strong>Destaques:</strong> Lojas ${topLojas} • <strong>Horário:</strong> ${topHoras} • <strong>Canal:</strong> ${topCanais}`;
   }
-
-  function renderInsights(selectedKey, aggNow, aggPrev){
-    const box = $q('.ins-list');
-    if(!box) return;
-    box.innerHTML = '';
-
-    // 1) Aceleração últimas 4 semanas (vs. 4 anteriores)
-    function lastWeeksTrend(map){
-      const dates = [...map.keys()].sort();
-      const chunks = [];
-      for(let i=0;i<dates.length;i++){
-        const d = dates[i];
-        const v = map.get(d);
-        chunks.push({d, v});
-      }
-      // separa 4 semanas (~28 dias) finais e 28 dias anteriores
-      const N = 28;
-      const tail = chunks.slice(-N);
-      const prev = chunks.slice(-2*N, -N);
-      const sum = arr => arr.reduce((a,c)=>a+c.v.fat,0);
-      return { now: sum(tail), prev: sum(prev) };
-    }
-
-    const t = lastWeeksTrend(aggNow.byDay);
-    if(t.now>0 || t.prev>0){
-      const up = t.now>=t.prev;
-      const el = document.createElement('div');
-      el.className = 'ins-card '+(up?'up':'down');
-      el.innerHTML = `
-        <div class="dot"></div>
-        <div>
-          <div class="ins-title">${up?'Aceleração':'Desaceleração'} nas últimas 4 semanas</div>
-          <div class="ins-sub">Δ ${((t.now-t.prev)/Math.max(1,t.prev)*100).toFixed(1)}% em receita agregada.</div>
-          <div class="ins-action">Ação: ${up?'reforçar':'ajustar'} mix de <strong>combos almoço</strong> nas Top Lojas.</div>
-        </div>`;
-      box.appendChild(el);
-    }
-
-    // 2) Subsídio alto (desperc acima de 10–12%)
-    const desperc = (aggNow.tot.fat>0? aggNow.tot.des/aggNow.tot.fat : 0);
-    {
-      const warn = desperc >= 0.12;
-      const el = document.createElement('div');
-      el.className = 'ins-card '+(warn?'down':'up');
-      el.innerHTML = `
-        <div class="dot"></div>
-        <div>
-          <div class="ins-title">${warn?'Subsídio acima do ideal':'Subsídio dentro do alvo'}</div>
-          <div class="ins-sub">% Incentivos atual: ${(desperc*100).toFixed(1)}%.</div>
-          <div class="ins-action">Ação: ${warn?'migrar para <strong>tiers 60/90/120</strong>':'manter tiers atuais e testar horário-alvo (11–14h)'}.</div>
-        </div>`;
-      box.appendChild(el);
-    }
-
-    // 3) “Elasticidade” no almoço (11–14h): ticket subindo junto com pedidos
-    function sliceHour(map, hIni, hFim){
-      let fat=0,ped=0;
-      for(const [h,v] of map.entries()){
-        const hh = parseInt(h,10);
-        if(hh>=hIni && hh<=hFim){ fat+=v.fat; ped+=v.ped; }
-      }
+}
       return {fat,ped};
     }
     const almNow = sliceHour(aggNow.byHour, 11, 14);
@@ -1260,12 +1204,12 @@
           cancelado: document.getElementById('fxCanceled')?.value
         }
       };
-      loadDiagnostico(payload);
+      try{ await loadDiagnostico(payload); }catch(err){ console.error('Diagnóstico internal error', err);}
     }
   });
 
-  document.addEventListener('filters:apply', (e)=>{ if(e.detail) loadDiagnostico(e.detail); });
-  document.addEventListener('filters:apply:internal', ()=>{
+  document.addEventListener('filters:apply', async (e)=>{ try{ if(e.detail) await loadDiagnostico(e.detail);}catch(err){ console.error('Diagnóstico load error', err);} });
+  document.addEventListener('filters:apply:internal', async ()=>{
     // reexecuta usando últimos filtros aplicados
     const start = document.getElementById('fxDuStart')?.value;
     const end   = document.getElementById('fxDuEnd')?.value;
@@ -1281,7 +1225,7 @@
           cancelado: document.getElementById('fxCanceled').value
         }
       };
-      loadDiagnostico(payload);
+      try{ await loadDiagnostico(payload); }catch(err){ console.error('Diagnóstico internal error', err);}
     }
   });
 
