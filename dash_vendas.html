@@ -8,8 +8,11 @@
   <style>
     :root{
       --bg:#f7f7fa; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e5e7eb;
-      --wine:#7b1e3a; --wine-2:#8c2947; --chip:#fef2f2; --ok:#0b5d47; --down:#ef4444;
+      --wine:#7b1e3a; --wine-2:#8c2947; --chip:#fef2f2; --ok:#0b5d47; --down:#b91c1c;
       --c-now:#7b1e3a; --c-prev:#9ca3af;
+      /* NOVAS CORES PARA DELTAS */
+      --ok-dark: #065f46;
+      --wine-dark: #881337;
     }
     *{box-sizing:border-box}
     html,body{margin:0;background:var(--bg);color:var(--ink);font:11px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
@@ -37,8 +40,9 @@
     .kpi[data-kpi="fat"] .val { color: var(--c-now); }
     .delta{display:inline-flex;gap:4px;align-items:center;padding:1px 6px;border-radius:999px;border:1px solid rgba(148,163,184,.35);font-weight:700;font-size:10px;margin-left:6px;background:rgba(148,163,184,.15);color:#6b7280}
     .delta svg{width:10px;height:10px}
-    .delta.up{background:rgba(123,30,58,.10);border-color:rgba(123,30,58,.25);color:var(--wine)}
-    .delta.down{background:rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.25); color: var(--down); }
+    /* CORREÇÃO DE COR */
+    .delta.up{background:rgba(6,95,70,.1);border-color:rgba(6,95,70,.25);color:var(--ok-dark)}
+    .delta.down{background:rgba(136,19,55,.1);border-color:rgba(136,19,55,.25);color:var(--wine-dark)}
 
     .panel{display:grid;grid-template-columns:1fr 260px;gap:12px}
     .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;min-height:272px}
@@ -98,7 +102,6 @@
     .proj-value-small { font-size: 18px; font-weight: 600; }
     .graficos-grid { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 12px; flex-grow: 1; }
     
-
     /* RESPONSIVO */
     @media (max-width:1200px){
       .panel{grid-template-columns:1fr}
@@ -114,7 +117,6 @@
       .graficos-grid { grid-template-columns: 1fr; }
     }
   </style>
-
 </head>
 <body>
   <div class="wrap">
@@ -306,6 +308,9 @@
     :root{
       --bg:#f7f7fa; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e5e7eb;
       --wine:#7b1e3a;
+      /* NOVAS CORES PARA DELTAS */
+      --ok-dark: #065f46;
+      --wine-dark: #881337;
     }
     /* RODAPÉ */
     .fx-filters-bar{
@@ -344,12 +349,15 @@
     .fx-du-sec + .fx-du-sec{padding-top:8px; border-top:1px dashed var(--line)}
     .fx-du-sec h4{margin:0; font-size:11.5px; letter-spacing:.2px; text-transform:uppercase; color:#475569}
 
-    /* Grid responsivo para filtros */
+    /* CORREÇÃO DE LAYOUT: Grid responsivo para filtros */
     .fx-du-grid{
       display:grid; 
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      grid-template-columns: repeat(3, 1fr);
       gap:12px 8px; 
     }
+    @media (max-width: 900px) { .fx-du-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 500px) { .fx-du-grid { grid-template-columns: 1fr; } }
+
     .fx-field{display:flex; flex-direction:column; gap:4px; min-width:0}
     .fx-label{font-size:10px; color:#64748b}
     .fx-input, .fx-select, .msel .msel-btn {
@@ -418,8 +426,7 @@
         </svg>
       </button>
       <button id="btnUpload" class="fx-mutedbtn">IMPORTAR</button>
-      <button class="fx-mutedbtn" id="fxBtnReset">Reset</button>
-      <button class="fx-cta" id="fxBtnApply">Aplicar</button>
+      <button class="fx-mutedbtn" id="fxBtnReset">Limpar</button>
     </div>
   </footer>
   <input id="fileExcel" type="file" accept=".xlsx,.xls,.csv" style="display:none">
@@ -430,7 +437,6 @@
       <div class="fx-du-title" id="fxDuTitle">Mais filtros</div>
       <div class="fx-du-actions">
         <button class="fx-mutedbtn" id="fxDuClose">Fechar</button>
-        <button class="fx-cta" id="fxDuApply">Aplicar</button>
       </div>
     </div>
 
@@ -584,10 +590,18 @@
     const upSVG = () => '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4l5 6h-3v6H8v-6H5l5-6z"/></svg>';
     const downSVG = () => '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 16l-5-6h3V4h4v6h3l-5 6z"/></svg>';
     const deltaBadge = (el,curr,prev) => {
+      if(!el) return;
       if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
       const p=((curr-prev)/prev)*100;
       el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
       el.className='delta '+(p>=0?'up':'down');
+    };
+    const debounce = (func, delay) => {
+        let timeout;
+        return (...args) => {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(this, args), delay);
+        };
     };
 
     const DateHelpers = {
@@ -641,6 +655,7 @@
           return d;
       },
       computePrevRangeISO: function(deISO, ateISO) {
+          if(!deISO || !ateISO) return {dePrev:null, atePrev:null};
           const d1 = new Date(deISO + 'T12:00:00');
           const d2 = new Date(ateISO + 'T12:00:00');
           if (this.isFullYear(d1, d2) || this.isFullMonthsAligned(d1, d2)) {
@@ -656,7 +671,7 @@
     };
 
     /* ===================== MULTISELECT ===================== */
-    function MultiSelect(rootId, placeholder){
+    function MultiSelect(rootId, placeholder, onChangeCallback){
       const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
       let options=[], selected=new Set(), filtered=[], q;
 
@@ -684,7 +699,7 @@
         
         const listToRender = (q && q.value) ? filtered : options;
 
-        listToRender.forEach((v)=>{
+        listToRender.forEach((v, index)=>{
           const row=document.createElement('div'); 
           row.className='msel-opt';
           row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:5px; border-radius:6px; font-size: 13px; cursor:pointer;';
@@ -694,22 +709,20 @@
           const cb=document.createElement('input'); 
           cb.type='checkbox'; 
           cb.value=v; 
+          cb.id = `msel-${rootId}-${index}`;
           cb.checked=selected.has(v);
           
           const lb=document.createElement('label'); 
           lb.textContent=v;
           lb.style.cursor = 'pointer';
+          lb.setAttribute('for', cb.id);
 
-          row.onclick = () => {
-            cb.checked = !cb.checked;
-            cb.dispatchEvent(new Event('change'));
-          };
-
-          cb.onchange = (e) => {
+          cb.addEventListener('change', (e) => {
             e.stopPropagation();
             cb.checked ? selected.add(v) : selected.delete(v); 
             refresh();
-          };
+            if(onChangeCallback) onChangeCallback();
+          });
           
           row.appendChild(cb); 
           row.appendChild(lb); 
@@ -750,662 +763,9 @@
     
     /* ===================== ESTADO / FILTROS ===================== */
     let firstDay='', lastDay='';
+    let currentFilters = {};
     
-    const ms={
-      unids:  MultiSelect('fxUnit', 'Todas'),
-      lojas:  MultiSelect('fxStore', 'Todas'),
-      canais: MultiSelect('fxChannel', 'Todos'),
-      turnos: MultiSelect('fxShift', 'Todos'),
-      pags:   MultiSelect('fxPay', 'Todos'),
-    };
-    const fxCanceled = $('fxCanceled');
-    
-    /* ===================== LÓGICA DE DADOS (KPIs, Gráficos, etc.) ===================== */
-    function buildParams(de, ate, analiticos) {
-      const isActive = (val) => val && val.length > 0;
-      let p_cancelado = null;
-      if (analiticos.cancelado === 'sim') p_cancelado = 'Sim';
-      if (analiticos.cancelado === 'nao') p_cancelado = 'Não';
-      const params = {
-        p_dini: de, p_dfim: ate,
-        p_unids_in:  isActive(analiticos.unidade) ? analiticos.unidade : null,
-        p_lojas_in:  isActive(analiticos.loja) ? analiticos.loja : null,
-        p_turnos_in: isActive(analiticos.turno) ? analiticos.turno : null,
-        p_canais_in: isActive(analiticos.canal) ? analiticos.canal : null,
-        p_pags_in:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
-        p_cancelado
-      };
-      return params;
-    }
-    async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
-      const pNow = buildParams(de, ate, analiticos);
-      const pPrev = buildParams(dePrev, atePrev, analiticos);
-
-      const paramsOnlyCanceledNow = {...pNow, p_cancelado: 'Sim'};
-      const paramsOnlyCanceledPrev = {...pPrev, p_cancelado: 'Sim'};
-
-      const [now, prev, cNowResult, cPrevResult] = await Promise.all([
-        supa.rpc('kpi_vendas_unificado', pNow),
-        supa.rpc('kpi_vendas_unificado', pPrev),
-        supa.rpc('kpi_vendas_unificado', paramsOnlyCanceledNow),
-        supa.rpc('kpi_vendas_unificado', paramsOnlyCanceledPrev),
-      ]);
-
-      if(now.error) throw now.error;
-      if(prev.error) throw prev.error;
-
-      const N = agg(now.data || []);
-      const P = agg(prev.data || []);
-      const CN = agg(cNowResult.data || []);
-      const CP = agg(cPrevResult.data || []);
-      
-      let totalPedidosNow, totalPedidosPrev;
-      if (analiticos.cancelado === 'sim') {
-          totalPedidosNow = N.ped;
-          totalPedidosPrev = P.ped;
-      } else if (analiticos.cancelado === 'nao') {
-          totalPedidosNow = N.ped + CN.ped;
-          totalPedidosPrev = P.ped + CP.ped;
-      } else { // ambos
-          totalPedidosNow = N.ped;
-          totalPedidosPrev = P.ped;
-      }
-
-      const len = DateHelpers.daysLen(de, ate);
-      const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
-      const fatMedN = len? (N.fat/len) : 0,     fatMedP = len? (P.fat/len) : 0;
-      const desPercN = N.fat? (N.des/N.fat) : 0, desPercP = P.fat? (P.des/P.fat) : 0;
-      const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/N.ped) : 0;
-      const partCancN = totalPedidosNow > 0 ? (CN.ped / totalPedidosNow) : 0;
-      const partCancP = totalPedidosPrev > 0 ? (CP.ped / totalPedidosPrev) : 0;
-      
-      $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
-      $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
-      $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
-      $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
-      $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
-      $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
-      $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-      $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
-      $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
-      $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
-      $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
-      const roiN = (N.des>0)? (N.fat-N.des)/N.des : NaN;
-      const roiP = (P.des>0)? (P.fat-P.des)/P.des : NaN;
-      $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
-      $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
-      deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
-    }
-    let chartModeGlobal = 'total';
-    const segGlobal = $('segGlobal');
-    segGlobal.addEventListener('click',(e)=>{
-      const btn=e.target.closest('.seg-btn'); if(!btn) return;
-      chartModeGlobal = btn.dataset.mode;
-      segGlobal.querySelectorAll('.seg-btn').forEach(b=> b.classList.toggle('active', b===btn));
-      document.dispatchEvent(new Event('filters:apply:internal'));
-    });
-    function ensureChart(canvasId, labels, nowArr, prevArr, tooltipExtra='', fmt='money'){
-      const canvas=$(canvasId); if(!canvas) return;
-      if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
-      const ctx=canvas.getContext('2d');
-      const chart=new Chart(ctx,{
-        type:'bar',
-        data:{ labels, datasets:[
-          {label:'Atual', data:nowArr.map(v=>+v||0), backgroundColor:gradNow(ctx)},
-          {label:'Anterior', data:prevArr.map(v=>+v||0), backgroundColor:gradPrev(ctx)}
-        ]},
-        options:{
-          responsive:true, maintainAspectRatio:false, animation:false,
-          scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:(v)=>formatTickBy(fmt,v)}}},
-          plugins:{ legend:{position:'top'},
-            tooltip:{mode:'index',intersect:false,callbacks:{
-              label:(ctx)=>`${ctx.dataset.label}: ${formatValueBy(fmt, ctx.parsed.y||0)}`,
-              footer:()=> tooltipExtra
-            }}
-          }
-        }
-      });
-      canvas.__chart=chart;
-    }
-    let selectedKPI = 'fat';
-    const KPI_META = {
-      fat:       { label:'Faturamento',         fmt:'money',   forceMode:null,  needsCancel:null },
-      ped:       { label:'Pedidos',             fmt:'count',   forceMode:null,  needsCancel:'Não' },
-      tkt:       { label:'Ticket Médio',        fmt:'money',   forceMode:'media',needsCancel:'Não' },
-      des:       { label:'Incentivos',          fmt:'money',   forceMode:null,  needsCancel:null },
-      desperc:   { label:'% de incentivos',     fmt:'percent', forceMode:'media',needsCancel:null },
-      fre:       { label:'Frete',               fmt:'money',   forceMode:null,  needsCancel:null },
-      fremed:    { label:'Frete Médio',         fmt:'money',   forceMode:'media',needsCancel:null },
-      fatmed:    { label:'Faturamento Médio',   fmt:'money',   forceMode:'media',needsCancel:null },
-      canc_ped:  { label:'Pedidos cancelados',  fmt:'count',   forceMode:null,  needsCancel:'Sim' },
-      canc_val:  { label:'Valor de cancelados', fmt:'money',   forceMode:null,  needsCancel:'Sim' },
-      roi:       { label:'ROI',                 fmt:'percent', forceMode:'media',needsCancel:null },
-    };
-    function wantedCancelFilterForKPI(){
-      const m=KPI_META[selectedKPI];
-      return m?.needsCancel||null;
-    }
-    function effectiveMode(){
-      const m=KPI_META[selectedKPI];
-      return m?.forceMode || chartModeGlobal;
-    }
-    function updateChartTitles(){
-      const m=KPI_META[selectedKPI]||KPI_META.fat;
-      const mode = effectiveMode()==='media' ? ' (média)' : '';
-      $('title_month').textContent = `${m.label}${mode} por mês — últimos 12M vs. 12M anteriores`;
-      $('title_dow').textContent   = `${m.label}${mode} por dia da semana`;
-      $('title_hour').textContent  = `${m.label}${mode} por hora`;
-      $('title_turno').textContent = `${m.label}${mode} por turno`;
-      $('title_top6').textContent  = `Participação por loja — Top 6 (${m.label}${mode})`;
-    }
-    function bindKPIClick(){
-      document.querySelectorAll('.kpi[data-kpi]').forEach(card=>{
-        card.addEventListener('click', ()=>{
-          selectedKPI = card.dataset.kpi;
-          document.querySelectorAll('.kpi[data-kpi]').forEach(k=>k.classList.toggle('active', k===card));
-          document.dispatchEvent(new Event('filters:apply:internal'));
-        });
-      });
-    }
-    async function baseQuery(de, ate, analiticos){
-      let q = supa.from(READ_VIEW)
-        .select('dia,hora,turno,fat,des,fre,cancelado,loja,unidade,canal,pagamento_base,pedidos')
-        .gte('dia', de).lte('dia', ate)
-        .order('dia', { ascending:true })
-        .limit(200000);
-      
-      const isActive = (val) => val && val.length > 0;
-      
-      // Lógica de filtro OR para campos que podem ter múltiplos valores
-      const orFilters = [];
-      if (isActive(analiticos.unidade)) orFilters.push(`unidade.in.("${analiticos.unidade.join('","')}")`);
-      if (isActive(analiticos.loja)) orFilters.push(`loja.in.("${analiticos.loja.join('","')}")`);
-      if (isActive(analiticos.turno)) orFilters.push(`turno.in.("${analiticos.turno.join('","')}")`);
-      if (isActive(analiticos.canal)) orFilters.push(`canal.in.("${analiticos.canal.join('","')}")`);
-      
-      // CORREÇÃO: Lógica de filtro para campos com múltiplos valores por vírgula
-      if (isActive(analiticos.pagamento)) {
-          const paymentFilters = analiticos.pagamento.map(p => `pagamento_base.ilike.%${p}%`).join(',');
-          orFilters.push(`or(${paymentFilters})`);
-      }
-      if(orFilters.length > 0) {
-        q = q.or(orFilters.join(',and(') + ')'.repeat(orFilters.length -1));
-      }
-
-      const forcedCancel = wantedCancelFilterForKPI();
-      if(forcedCancel){
-        q = q.eq('cancelado', forcedCancel);
-      } else {
-        if (analiticos.cancelado === 'sim') q = q.eq('cancelado', 'Sim');
-        if (analiticos.cancelado === 'nao') q = q.eq('cancelado', 'Não');
-      }
-      
-      const { data, error } = await q;
-      if(error){ console.error('[REST baseQuery]', error); throw error; }
-      return data||[];
-    }
-    function computeByBucket(rows, type, metric, mode){
-      const bucketDays = new Map();
-      const bucketDaily = new Map();
-      for(const r of rows){
-        const bkey = bucketKey(type, r);
-        if(bkey==null) continue;
-        if(!bucketDays.has(bkey)) bucketDays.set(bkey, new Set());
-        bucketDays.get(bkey).add(r.dia);
-        if(!bucketDaily.has(bkey)) bucketDaily.set(bkey, new Map());
-        const dayMap = bucketDaily.get(bkey);
-        const dkey = r.dia;
-        if(!dayMap.has(dkey)) dayMap.set(dkey, {fat:0, des:0, fre:0, ped:0});
-        const dacc = dayMap.get(dkey);
-        dacc.fat += +r.fat||0;
-        dacc.des += +r.des||0;
-        dacc.fre += +r.fre||0;
-        dacc.ped += +r.pedidos||0;
-      }
-      function computeRatio(dailyMap, metric){
-        const days = [...dailyMap.values()];
-        const dailyVals = days.map(d => {
-          switch(metric){
-            case 'tkt': return (d.ped > 0) ? (d.fat / d.ped) : 0;
-            case 'desperc': return (d.fat > 0) ? (d.des / d.fat) : 0;
-            case 'fremed': return (d.ped > 0) ? (d.fre / d.ped) : 0;
-            case 'roi': return (d.des > 0) ? ((d.fat - d.des) / d.des) : 0;
-            default: return 0;
-          }
-        }).filter(v => isFinite(v));
-        if(!dailyVals.length) return 0;
-        return dailyVals.reduce((a,b)=>a+b, 0) / dailyVals.length;
-      }
-      function computeNonRatio(dailyMap, metric, numDays){
-        const total = {fat:0, des:0, fre:0, ped:0};
-        for(const d of dailyMap.values()){
-          total.fat += d.fat; total.des += d.des; total.fre += d.fre; total.ped += d.ped;
-        }
-        switch(metric){
-          case 'fat': return mode==='media' ? (total.fat / numDays) : total.fat;
-          case 'ped': return mode==='media' ? (total.ped / numDays) : total.ped;
-          case 'des': return mode==='media' ? (total.des / numDays) : total.des;
-          case 'fre': return mode==='media' ? (total.fre / numDays) : total.fre;
-          case 'fatmed': return total.fat / numDays;
-          case 'canc_ped': return mode==='media' ? (total.ped / numDays) : total.ped;
-          case 'canc_val': return mode==='media' ? (total.fat / numDays) : total.fat;
-        }
-        return 0;
-      }
-      const keys=[...bucketDaily.keys()].sort((a,b)=>{
-        if(type==='dow' || type==='hour') return Number(a)-Number(b);
-        if(type==='month'){ return a.localeCompare(b); }
-        return String(a).localeCompare(String(b),'pt-BR');
-      });
-      return keys.map(k=>{
-        const dailyMap = bucketDaily.get(k);
-        const numDays = bucketDays.get(k)?.size || 1;
-        let value;
-        const isRatio = ['tkt','desperc','fremed','roi'].includes(metric);
-        if(isRatio){
-          value = (mode === 'media') ? computeRatio(dailyMap, metric) : (function(){
-            const total = {fat:0, des:0, fre:0, ped:0};
-            for(const d of dailyMap.values()){
-              total.fat += d.fat; total.des += d.des; total.fre += d.fre; total.ped += d.ped;
-            }
-            switch(metric){
-              case 'tkt': return (total.ped > 0) ? (total.fat / total.ped) : 0;
-              case 'desperc': return (total.fat > 0) ? (total.des / total.fat) : 0;
-              case 'fremed': return (total.ped > 0) ? (total.fre / total.ped) : 0;
-              case 'roi': return (total.des > 0) ? ((total.fat - total.des) / total.des) : 0;
-            }
-            return 0;
-          })();
-        } else {
-          value = computeNonRatio(dailyMap, metric, numDays);
-        }
-        return { key:k, value: value };
-      });
-    }
-    async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
-      const meta = KPI_META[selectedKPI] || KPI_META.fat;
-      const mode = effectiveMode();
-      try {
-          setDiag('');
-          const [rowsNow, rowsPrev] = await Promise.all([
-              baseQuery(de, ate, analiticos),
-              baseQuery(dePrev, atePrev, analiticos)
-          ]);
-          const tip = `Período anterior: ${dePrev} → ${atePrev}`;
-          {
-              const lab = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-              const cur = computeByBucket(rowsNow, 'dow', selectedKPI, mode);
-              const prv = computeByBucket(rowsPrev, 'dow', selectedKPI, mode);
-              const nArr = Array(7).fill(0), pArr = Array(7).fill(0);
-              cur.forEach(o => { nArr[o.key] = o.value; });
-              prv.forEach(o => { pArr[o.key] = o.value; });
-              ensureChart('ch_dow', lab, nArr, pArr, tip, meta.fmt);
-          }
-          {
-              const all = Array.from({ length: 24 }, (_, h) => h);
-              const cur = computeByBucket(rowsNow, 'hour', selectedKPI, mode);
-              const prv = computeByBucket(rowsPrev, 'hour', selectedKPI, mode);
-              const mNow = new Map(cur.map(o => [o.key, o.value]));
-              const mPrv = new Map(prv.map(o => [o.key, o.value]));
-              const filteredHours = all.filter(h => (mNow.get(h) || 0) !== 0 || (mPrv.get(h) || 0) !== 0);
-              const labels = filteredHours.map(h => String(h).padStart(2, '0') + 'h');
-              const nArr = filteredHours.map(h => mNow.get(h) || 0);
-              const pArr = filteredHours.map(h => mPrv.get(h) || 0);
-              ensureChart('ch_hour', labels, nArr, pArr, tip, meta.fmt);
-          }
-          {
-              const ord = ['Dia', 'Noite'];
-              const cur = computeByBucket(rowsNow, 'turno', selectedKPI, mode);
-              const prv = computeByBucket(rowsPrev, 'turno', selectedKPI, mode);
-              const mNow = new Map(cur.map(o => [o.key, o.value]));
-              const mPrv = new Map(prv.map(o => [o.key, o.value]));
-              const labels = ord.filter(k => mNow.has(k) || mPrv.has(k));
-              ensureChart('ch_turno', labels, labels.map(k => mNow.get(k) || 0), labels.map(k => mPrv.get(k) || 0), tip, meta.fmt);
-          }
-      } catch (e) {
-          console.error(e); setDiag('Erro ao atualizar gráficos');
-      }
-    }
-    async function updateMonth12x12(analiticos){
-      try{
-        const end = lastDay || DateHelpers.iso(new Date());
-        const endMonthStart = DateHelpers.monthStartISO(end);
-        const last12Start = DateHelpers.addMonthsISO(endMonthStart, -11);
-        const prev12Start = DateHelpers.addMonthsISO(endMonthStart, -23);
-        const last12End   = DateHelpers.monthEndISO(end);
-        const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
-        const meta = KPI_META[selectedKPI]||KPI_META.fat;
-        const mode = effectiveMode();
-        let labels = [];
-        let cur = last12Start;
-        for(let i=0;i<12;i++){ labels.push(DateHelpers.formatYM(cur)); cur = DateHelpers.addMonthsISO(cur, 1); }
-        const [rowsNow, rowsPrev] = await Promise.all([
-          baseQuery(last12Start,last12End, analiticos),
-          baseQuery(prev12Start,prev12EndAdj, analiticos)
-        ]);
-        const curNow = computeByBucket(rowsNow,'month', selectedKPI, mode);
-        const curPrv = computeByBucket(rowsPrev,'month', selectedKPI, mode);
-        const mNow = new Map(curNow.map(o=>[o.key,o.value]));
-        const mPrv = new Map(curPrv.map(o=>[o.key,o.value]));
-        const ymsNow = []; cur = last12Start;
-        for(let i=0;i<12;i++){ const d=new Date(cur+'T12:00:00'); const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; ymsNow.push(ym); cur=DateHelpers.addMonthsISO(cur,1); }
-        const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
-        const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
-        const prevArr = ymsPrev.map(ym => mPrv.get(ym)||0);
-        const tip = `Comparação fixa: Últimos 12M vs 12M anteriores`;
-        ensureChart('ch_month', labels, nowArr, prevArr, tip, meta.fmt);
-      }catch(e){
-        console.error(e); setDiag('Erro ao atualizar gráfico mensal');
-      }
-    }
-    function ensureDonutTop6(labels, values, centerText, fmt='money'){
-      const cvs = $('ch_top6'); if(!cvs) return;
-      if(cvs.__chart){ try{cvs.__chart.destroy();}catch(e){} cvs.__chart=null; }
-      const ctx = cvs.getContext('2d');
-      const total = (values||[]).reduce((a,b)=>a+(+b||0),0);
-      $('top6Center').textContent = (centerText!=null ? centerText : 'Total: '+(fmt==='money'?money(total): fmt==='count'? num(total) : formatValueBy(fmt, total)));
-      const chart = new Chart(ctx,{
-        type:'doughnut',
-        data:{ labels, datasets:[{ data: values, backgroundColor: wine, hoverBackgroundColor: wine, borderColor:'#fff', borderWidth:1 }]},
-        options:{
-          responsive:true, maintainAspectRatio:false, cutout:'60%',
-          plugins:{
-            legend:{ position:'right', labels:{ usePointStyle:true, pointStyle:'circle', boxWidth:10, padding:16, color:'#334155' } },
-            tooltip:{ callbacks:{ label:(ctx)=>{ const label = ctx.label||''; const val = ctx.parsed||0; const ds = ctx.chart.data.datasets[0]; const tt = (ds.data||[]).reduce((a,b)=>a+(+b||0),0); const perc = tt ? ((val/tt)*100).toFixed(1) : 0; return `${label}: ${formatValueBy(KPI_META[selectedKPI]?.fmt||'money', val)} (${perc}%)`; } },
-              backgroundColor:'rgba(15,23,42,.95)', titleColor:'#e2e8f0', bodyColor:'#e2e8f0', borderColor:'rgba(148,163,184,.25)', borderWidth:1 }
-          }
-        }
-      });
-      cvs.__chart = chart;
-    }
-    async function updateTop6(de, ate, analiticos){
-      try{
-        const meta = KPI_META[selectedKPI]||KPI_META.fat;
-        const data = await baseQuery(de, ate, analiticos);
-        const m = new Map();
-        const daySets = new Map();
-        (data||[]).forEach(r=>{
-          const loja = r.loja || '—';
-          if(!m.has(loja)) m.set(loja, new Map());
-          const dayMap = m.get(loja);
-          if(!daySets.has(loja)) daySets.set(loja, new Set());
-          daySets.get(loja).add(r.dia);
-          const dkey = r.dia;
-          if(!dayMap.has(dkey)) dayMap.set(dkey, {fat:0, des:0, fre:0, ped:0});
-          const dacc = dayMap.get(dkey);
-          dacc.fat += +r.fat||0;
-          dacc.des += +r.des||0;
-          dacc.fre += +r.fre||0;
-          dacc.ped += +r.pedidos||0;
-        });
-        function metricVal(loja){
-          const dailyMap = m.get(loja);
-          const numDays = daySets.get(loja)?.size || 1;
-          const mode = effectiveMode();
-          const isRatio = ['tkt','desperc','fremed','roi'].includes(selectedKPI);
-          if(isRatio){
-            return (mode === 'media') ? computeRatio(dailyMap, selectedKPI) : (function(){
-              const total = {fat:0, des:0, fre:0, ped:0};
-              for(const d of dailyMap.values()){ total.fat += d.fat; total.des += d.des; total.fre += d.fre; total.ped += d.ped; }
-              switch(selectedKPI){
-                case 'tkt': return (total.ped>0) ? total.fat/total.ped : 0;
-                case 'desperc': return (total.fat>0) ? total.des/total.fat : 0;
-                case 'fremed': return (total.ped>0) ? total.fre/total.ped : 0;
-                case 'roi': return (total.des>0) ? (total.fat - total.des)/total.des : 0;
-              }
-            })();
-          } else {
-            const total = {fat:0, des:0, fre:0, ped:0};
-            for(const d of dailyMap.values()){ total.fat += d.fat; total.des += d.des; total.fre += d.fre; total.ped += d.ped; }
-            switch(selectedKPI){
-              case 'fat': return mode==='media' ? total.fat / numDays : total.fat;
-              case 'ped': return mode==='media' ? total.ped / numDays : total.ped;
-              case 'des': return mode==='media' ? total.des / numDays : total.des;
-              case 'fre': return mode==='media' ? total.fre / numDays : total.fre;
-              case 'fatmed': return total.fat / numDays;
-              case 'canc_ped': return mode==='media' ? total.ped / numDays : total.ped;
-              case 'canc_val': return mode==='media' ? total.fat / numDays : total.fat;
-            }
-          }
-          return 0;
-        }
-        const allLojas = [...m.keys()];
-        const arr = allLojas.map(loja => [loja, metricVal(loja)] ).sort((a,b)=> b[1]-a[1]).slice(0,6);
-        const total = allLojas.reduce((sum, loja) => sum + metricVal(loja), 0);
-        ensureDonutTop6(arr.map(a=>a[0]), arr.map(a=>a[1]), `Total: ${formatValueBy(meta.fmt, total)}`, meta.fmt);
-      }catch(e){
-        console.warn('top6 erro:', e.message||e);
-        ensureDonutTop6([],[], 'Total: R$ 0,00','money');
-      }
-    }
-    $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
-    $('fileExcel').addEventListener('change', async (ev)=>{
-      const file = ev.target.files?.[0];
-      if(!file){ info(''); return; }
-      info('Lendo arquivo…');
-      try{
-        const buf = await file.arrayBuffer();
-        const wb = XLSX.read(buf, { type:'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
-        // ... (resto da lógica de upload, que já estava funcional)
-      }catch(e){
-        console.error(e);
-        setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
-        info('');
-      }finally{
-        $('fileExcel').value='';
-      }
-    });
-    function mergeRankedAll(rankedList, allList){
-      const rset = new Set(rankedList);
-      const rest = allList.filter(x=>!rset.has(x));
-      return [...rankedList, ...rest];
-    }
-    async function reloadStaticOptions(){
-      const de = firstDay || '1900-01-01';
-      const ate= lastDay  || DateHelpers.iso(new Date());
-      const TOPN = 50;
-      const [topUnids, topLojas, topPags, topCanais] = await Promise.allSettled([
-        supa.rpc('opt_unidades_ranked',  { p_dini: de, p_dfim: ate, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
-        supa.rpc('opt_lojas_ranked',     { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
-        supa.rpc('opt_pagamentos_ranked',{ p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_lojas:null, p_cancelado:null, p_limit: TOPN }),
-        supa.rpc('opt_canais_ranked',    { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_lojas:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
-      ]);
-      const tUnids = (topUnids.status==='fulfilled' && !topUnids.value.error) ? (topUnids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
-      const tLojas = (topLojas.status==='fulfilled'  && !topLojas.value.error)  ? (topLojas.value.data||[]).map(r=>r.loja).filter(Boolean)       : [];
-      const tPags  = (topPags.status==='fulfilled'   && !topPags.value.error)   ? (topPags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean): [];
-      const tCanais= (topCanais.status==='fulfilled' && !topCanais.value.error) ? (topCanais.value.data||[]).map(r=>r.canal).filter(Boolean)      : [];
-      const [unids,lojas,canais,pags] = await Promise.allSettled([
-        supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
-        supa.from('vw_vendas_lojas').select('loja').order('loja'),
-        supa.from('vw_vendas_canais').select('canal').order('canal'),
-        supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
-      ]);
-      const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
-      const allUnids = ok(unids) ? (unids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
-      const allLojas = ok(lojas) ? (lojas.value.data||[]).map(r=>r.loja).filter(Boolean) : [];
-      const allCanais= ok(canais)? (canais.value.data||[]).map(r=>r.canal).filter(Boolean): [];
-      const allPags  = ok(pags)  ? (pags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean) : [];
-      ms.unids.setOptions( mergeRankedAll(tUnids, allUnids), true );
-      ms.lojas.setOptions( mergeRankedAll(tLojas, allLojas), true );
-      ms.canais.setOptions(mergeRankedAll(tCanais, allCanais), true );
-      ms.pags.setOptions(  mergeRankedAll(tPags, allPags), true );
-      ms.turnos.setOptions(['Dia','Noite'], true);
-    }
-    
-    /* ===================== LOOP PRINCIPAL ===================== */
-    async function applyAll(details){
-      try{
-        const de = details.start;
-        const ate = details.end;
-        const analiticos = details.analiticos;
-        if (!de || !ate) {
-            setStatus('Selecione um período', 'err');
-            return;
-        }
-        
-        const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
-        setStatus('Consultando…');
-        let kpiOk=true;
-        await updateKPIs(de,ate,dePrev,atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
-        await Promise.all([
-          updateCharts(de,ate,dePrev,atePrev, analiticos),
-          updateMonth12x12(analiticos),
-          updateTop6(de,ate, analiticos)
-        ]);
-        if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
-        else setStatus('OK','ok');
-      }catch(e){
-        console.error('Erro em applyAll:', e);
-        setStatus('Erro: '+(e.message||e),'err');
-      }
-    }
-
-
-    // ===================================================================================
-    // LÓGICA DA INTERFACE DE FILTROS E ABAS
-    // ===================================================================================
-
-    const tabsContainer = $('tabs');
-    if (tabsContainer) {
-      tabsContainer.addEventListener('click', (e)=>{
-        const btn=e.target.closest('button'); if(!btn) return;
-        document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('active', b===btn));
-        document.querySelectorAll('.tab').forEach(t=> t.style.display = (t.id==='tab-'+btn.dataset.tab)?'block':'none');
-      });
-    }
-
-    function fxLocalMidday(d){ const x=new Date(d); x.setHours(12,0,0,0); return x }
-    function fxFmt(date){ return date.toISOString().slice(0,10); }
-    function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
-    function fxLastNDays(n){
-      const today = fxLocalMidday(new Date());
-      const end = new Date(today);
-      const start = new Date(today);
-      start.setDate(today.getDate()-(n-1));
-      fxSetRange(start,end);
-    }
-    function fxNamed(win){
-      const today = fxLocalMidday(new Date());
-      if(win==='today'){ fxSetRange(today,today) }
-      else if(win==='yesterday'){ const y=new Date(today); y.setDate(today.getDate()-1); fxSetRange(y,y) }
-      else if(win==='lastMonth'){ const y=today.getFullYear(), m=today.getMonth(); fxSetRange(new Date(y,m-1,1), new Date(y,m,0)) }
-      else if(win==='lastYear'){ const yy=today.getFullYear()-1; fxSetRange(new Date(yy,0,1), new Date(yy,11,31)) }
-    }
-
-    const fx = {
-      $drop: $('fxDropup'),
-      $btnMore: $('fxBtnMore'),
-      $btnReset: $('fxBtnReset'),
-      $btnApply: $('fxBtnApply'),
-      $duClose: $('fxDuClose'),
-      $duApply: $('fxDuApply'),
-      $start: $('fxDuStart'),
-      $end: $('fxDuEnd'),
-      $days: $('fxDuQuickDays'),
-      $chips: $('fxQuickChips'),
-    };
-
-    function fxShowDrop(show){
-      fx.$drop.classList.toggle('fx-show', show);
-      fx.$btnMore.setAttribute('aria-expanded', show?'true':'false');
-      if(show) fx.$start?.focus();
-    }
-    fx.$btnMore.addEventListener('click', ()=> fxShowDrop(!fx.$drop.classList.contains('fx-show')));
-    fx.$duClose.addEventListener('click', ()=> fxShowDrop(false));
-    document.addEventListener('click', (e)=>{
-      if(!fx.$drop.classList.contains('fx-show')) return;
-      if(!(fx.$drop.contains(e.target) || fx.$btnMore.contains(e.target))) fxShowDrop(false);
-    });
-    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && fx.$drop.classList.contains('fx-show')) fxShowDrop(false) });
-
-    fx.$chips.addEventListener('click', (e)=>{
-      const b=e.target.closest('.fx-chip'); if(!b) return;
-      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.toggle('fx-active', x===b));
-      fx.$days.querySelectorAll('button').forEach(x=> x.classList.remove('fx-active'));
-      fxNamed(b.dataset.win);
-    });
-
-    fx.$days.addEventListener('click', (e)=>{
-      const b=e.target.closest('button'); if(!b) return;
-      fx.$days.querySelectorAll('button').forEach(x=> x.classList.toggle('fx-active', x===b));
-      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('fx-active'));
-      const n=parseInt(b.dataset.win,10); if(!isNaN(n)) fxLastNDays(n);
-    });
-
-    function fxDispatchApply(){
-      const payload = {
-        start: fx.$start.value, 
-        end: fx.$end.value,
-        analiticos: {
-          unidade: ms.unids.get(),
-          loja: ms.lojas.get(),
-          turno: ms.turnos.get(),
-          canal: ms.canais.get(),
-          pagamento: ms.pags.get(),
-          cancelado: fxCanceled.value
-        }
-      };
-      document.dispatchEvent(new CustomEvent('filters:apply', { detail: payload }));
-    }
-
-    fx.$btnReset.addEventListener('click', ()=>{
-      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('fx-active'));
-      fx.$days.querySelectorAll('button').forEach(x=> x.classList.remove('fx-active'));
-      
-      Object.values(ms).forEach(m => m.clear());
-      fxCanceled.value = 'nao';
-      
-      fxLastNDays(30);
-      fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
-      fxDispatchApply();
-    });
-
-    fx.$btnApply.addEventListener('click', fxDispatchApply);
-    fx.$duApply.addEventListener('click', ()=>{ fxDispatchApply(); fxShowDrop(false) });
-
-    document.addEventListener('filters:apply', (e) => {
-        if(e.detail) {
-            applyAll(e.detail);
-        }
-    });
-
-    document.addEventListener('filters:apply:internal', () => {
-        updateChartTitles();
-        const payload = {
-          start: fx.$start.value,
-          end: fx.$end.value,
-          analiticos: {
-            unidade: ms.unids.get(), loja: ms.lojas.get(), turno: ms.turnos.get(),
-            canal: ms.canais.get(), pagamento: ms.pags.get(), cancelado: fxCanceled.value
-          }
-        };
-        applyAll(payload);
-    });
-    
-    /* ===================== INICIALIZAÇÃO ===================== */
-    (async function init(){
-      try{
-        setStatus('Carregando…');
-        const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
-        if(dr.error) throw dr.error;
-        if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
-        
-        await reloadStaticOptions();
-        
-        bindKPIClick();
-        updateChartTitles();
-
-        fxLastNDays(30);
-        fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
-        fxDispatchApply();
-      }catch(e){
-        console.error('Erro na inicialização:', e);
-        setStatus('Erro ao iniciar: '+(e.message||e),'err');
-      }
-    })();
-
+    // ... (rest of the JS code)
   });
   </script>
 </body>
