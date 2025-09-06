@@ -1914,5 +1914,263 @@
   }
 })();
 </script>
+
+<script>
+/* ==== DX Ultimate Sync (late-binding + UI listeners + self panel) ==== */
+(() => {
+  'use strict';
+
+  // 1) Late-binding wrapper: wrap baseQuery even if it's defined AFTER this script
+  try {
+    if (!window.__dx_wrap_ready__) {
+      window.__dx_wrap_ready__ = true;
+      let _baseQuery = window.baseQuery;
+      Object.defineProperty(window, 'baseQuery', {
+        configurable: true,
+        enumerable: true,
+        get() { return _baseQuery; },
+        set(fn) {
+          if (typeof fn === 'function') {
+            const wrapped = async function(...args) {
+              const res = await fn.apply(this, args);
+              try {
+                const [de, ate, anal] = args || [];
+                document.dispatchEvent(new CustomEvent('dx:baseQuery', { detail: { de, ate, analiticos: anal, rows: res } }));
+              } catch (_) {}
+              return res;
+            };
+            _baseQuery = wrapped;
+            document.dispatchEvent(new Event('dx:wrapped'));
+          } else {
+            _baseQuery = fn;
+          }
+        }
+      });
+      // If it already exists, trigger setter to wrap
+      if (typeof _baseQuery === 'function') { window.baseQuery = _baseQuery; }
+    }
+  } catch (e) { console.warn('[DX] late-binding wrap fail', e); }
+
+  // 2) Utility funcs
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
+  const debounce = (fn, w=180)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), w); }; };
+
+  function agg(rows){
+    const byDay=new Map(), byStore=new Map(), byHour=new Map(), byCanal=new Map();
+    let canc_val=0, canc_ped=0;
+    for (const r of (rows||[])){
+      const dia=r.dia, loja=r.loja??'—', h=(r.hora??'—').toString().padStart(2,'0'), canal=r.canal??'—';
+      const v={fat:+r.fat||0, des:+r.des||0, fre:+r.fre||0, ped:1};
+      if(!byDay.has(dia)) byDay.set(dia,{fat:0,des:0,fre:0,ped:0}); const d=byDay.get(dia); d.fat+=v.fat; d.des+=v.des; d.fre+=v.fre; d.ped+=1;
+      if(!byStore.has(loja)) byStore.set(loja,{fat:0,des:0,fre:0,ped:0}); const s=byStore.get(loja); s.fat+=v.fat; s.des+=v.des; s.fre+=v.fre; s.ped+=1;
+      if(!byHour.has(h)) byHour.set(h,{fat:0,des:0,fre:0,ped:0}); const hh=byHour.get(h); hh.fat+=v.fat; hh.des+=v.des; hh.fre+=v.fre; hh.ped+=1;
+      if(!byCanal.has(canal)) byCanal.set(canal,{fat:0,des:0,fre:0,ped:0}); const c=byCanal.get(canal); c.fat+=v.fat; c.des+=v.des; c.fre+=v.fre; c.ped+=1;
+      if(String(r.cancelado)==='Sim'){ canc_ped+=1; canc_val+=v.fat; }
+    }
+    const dias = byDay.size;
+    const tot={fat:0,des:0,fre:0,ped:0,dias,canc_ped,canc_val};
+    for (const v of byDay.values()){ tot.fat+=v.fat; tot.des+=v.des; tot.fre+=v.fre; tot.ped+=v.ped; }
+    return {byDay,byStore,byHour,byCanal,tot};
+  }
+  function valBy(key, a){
+    switch(key){
+      case 'fat':return a.fat; case 'des':return a.des; case 'fre':return a.fre; case 'ped':return a.ped;
+      case 'tkt': return (a.ped>0? a.fat/a.ped:0);
+      case 'fatmed': return (a.dias>0? a.fat/a.dias:0);
+      case 'fremed': return (a.ped>0? a.fre/a.ped:0);
+      case 'desperc': return (a.fat>0? a.des/a.fat:0);
+      case 'canc_ped': return a.canc_ped||0;
+      case 'canc_val': return a.canc_val||0;
+      case 'roi': return (a.des>0? (a.fat-a.des)/a.des: NaN);
+      default: return 0;
+    }
+  }
+  function fmt(key, v){
+    const metaFmt = (window.KPI_META?.[key]?.fmt);
+    const fallbackFmt = (() => {
+      switch (key) {
+        case 'ped':
+        case 'canc_ped':
+          return 'count';
+        case 'desperc':
+        case 'roi':
+          return 'percent';
+        case 'tkt':
+        case 'fatmed':
+        case 'fremed':
+        case 'fat':
+        case 'des':
+        case 'fre':
+        case 'canc_val':
+          return 'money';
+        default:
+          return metaFmt || 'money';
+      }
+    })();
+    const m = metaFmt || fallbackFmt;
+    if (m === 'money')   return (isFinite(v) ? ('R$ ' + (+v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})) : '—');
+    if (m === 'count')   return (isFinite(v) ? (+v).toLocaleString('pt-BR') : '—');
+    if (m === 'percent') return (isFinite(v) ? ((+v)*100).toLocaleString('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1}) + '%' : '—');
+    return String(v);
+  }
+  function delta(now, prev){
+    if(!isFinite(prev)||prev===0) return {txt:'—',cls:'flat'};
+    const p=((now-prev)/prev)*100;
+    return {txt:(p>=0?'▲ ':'▼ ')+Math.abs(p).toFixed(1)+'%', cls:(p>=0?'up':'down')};
+  }
+  function norm(s){ return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+  function getK(){
+    const sel = document.querySelector('#kpi-select');
+    const raw = sel?.value || sel?.getAttribute?.('data-value') || sel?.options?.[sel?.selectedIndex||0]?.value || sel?.options?.[sel?.selectedIndex||0]?.text || '';
+    const r = norm(raw);
+    if (window.selectedKPI) return window.selectedKPI;
+    if (window.KPI_META && KPI_META[raw]) return raw;
+    for (const k in (window.KPI_META||{})) { if (norm(k)===r) return k; }
+    if (r.includes('fatur') || r==='fat' || r==='faturamento') return 'fat';
+    if (r.includes('pedido') || r==='ped' || r.includes('qtd')) return 'ped';
+    if (r.includes('ticket') || r==='tkt' || r.includes('medio')) return 'tkt';
+    if (r.includes('frete') || r==='fre') return 'fre';
+    if (r.includes('descon') || r==='des') return 'des';
+    if (r.includes('%') || r.includes('subs') || r.includes('perc')) return 'desperc';
+    if (r.includes('roi')) return 'roi';
+    if (r.includes('cancel') && r.includes('pedido')) return 'canc_ped';
+    if (r.includes('cancel') && r.includes('valor')) return 'canc_val';
+    return 'fat';
+  }
+
+  // 3) Self panel (non-invasive): render numbers into #tab-diagnostico or as a floating box
+  function ensurePanel(){
+    let host = document.getElementById('tab-diagnostico');
+    let box = document.getElementById('dx-live-panel');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'dx-live-panel';
+      box.style.cssText = 'position:relative; margin:8px 0; padding:12px; border:1px solid #e5e7eb; border-radius:12px; background:#fafafa;';
+      box.innerHTML = '<div style="font-weight:600;margin-bottom:6px">Diagnóstico (ao vivo)</div>\
+        <div style="display:flex;gap:16px;flex-wrap:wrap">\
+          <div><div style="font-size:12px;color:#6b7280">KPI</div><div id="dx-kpi-val" style="font-size:20px;font-weight:700">—</div></div>\
+          <div><div style="font-size:12px;color:#6b7280">Δ vs período ant.</div><div id="dx-kpi-delta" style="font-size:16px">—</div></div>\
+          <div><div style="font-size:12px;color:#6b7280">Destaques</div><div id="dx-kpi-high" style="font-size:14px">—</div></div>\
+        </div>';
+      if (host) host.prepend(box); else document.body.appendChild(box);
+    }
+    return box;
+  }
+  function renderPanel(key, curr, prev, aggNow){
+    const el = ensurePanel();
+    const dv = document.getElementById('dx-kpi-val'); if (dv) dv.textContent = fmt(key, curr);
+    const dd = document.getElementById('dx-kpi-delta'); if (dd) { const d=delta(curr,prev); dd.textContent = d.txt; }
+    const dh = document.getElementById('dx-kpi-high'); if (dh) {
+      const pick = (map,n=2)=>{
+        const arr=[...map.entries()].map(([name,v])=>({name, val:(key==='ped'?v.ped:(key==='tkt'? (v.ped? v.fat/v.ped:0): v.fat))}));
+        arr.sort((a,b)=>(b.val)-(a.val));
+        return arr.slice(0,n).map(x=>x.name).join(', ');
+      };
+      dh.innerHTML = `<strong>Lojas:</strong> ${pick(aggNow.byStore,2) || '—'} • <strong>Hora:</strong> ${pick(aggNow.byHour,2) || '—'} • <strong>Canal:</strong> ${pick(aggNow.byCanal,1) || '—'}`;
+    }
+  }
+
+  // 4) Fetchers and runners
+  async function restFetch(de, ate, anal){
+    if (!window.SUPABASE_URL || !window.SUPABASE_KEY) return [];
+    const headers = { apikey: window.SUPABASE_KEY, Authorization: 'Bearer '+window.SUPABASE_KEY, Range: '0-999999', Prefer: 'count=exact' };
+    const qs = [
+      'select=dia,hora,loja,canal,fat,des,fre,cancelado',
+      `dia=gte.${encodeURIComponent(de)}`,
+      `dia=lte.${encodeURIComponent(ate)}`,
+      'order=dia.asc,hora.asc'
+    ];
+    if (anal?.cancelado==='sim') qs.push('cancelado=eq.Sim');
+    if (anal?.cancelado==='nao') qs.push('cancelado=neq.Sim');
+    const url = `${window.SUPABASE_URL}/rest/v1/vendas_canon?${qs.join('&')}`;
+    const r = await fetch(url, { headers });
+    if (!r.ok) return [];
+    return await r.json();
+  }
+
+  function uiDates(){
+    const a = $('#fxDuStart')?.value, b = $('#fxDuEnd')?.value;
+    if(!a || !b) return null;
+    const start = b>=a ? a : b, end = b>=a ? b : a;
+    return {start, end};
+  }
+
+  let lastKey='', lastA='', lastB='';
+  const recalc = debounce(async () => {
+    const dates = uiDates(); if (!dates) return;
+    const key = getK();
+    const anal = {
+      unidade: (window.ms?.unids?.get?.() ?? []),
+      loja: (window.ms?.lojas?.get?.() ?? []),
+      turno: (window.ms?.turnos?.get?.() ?? []),
+      canal: (window.ms?.canais?.get?.() ?? []),
+      pagamento: (window.ms?.pags?.get?.() ?? []),
+      cancelado: $('#fxCanceled')?.value
+    };
+
+    // Source priority: app tap -> baseQuery -> REST
+    let rowsNow = (typeof window.DX_getDataTap==='function' && window.DX_getDataTap().now) ? window.DX_getDataTap().now : null;
+    if (!rowsNow && typeof window.baseQuery==='function') {
+      try { rowsNow = await window.baseQuery(dates.start, dates.end, anal); } catch(_){}
+    }
+    if (!rowsNow) { rowsNow = await restFetch(dates.start, dates.end, anal); }
+
+    // Prev
+    let dePrev, atePrev;
+    try {
+      const pr = (window.DateHelpers && typeof DateHelpers.computePrevRangeISO==='function') ? DateHelpers.computePrevRangeISO(dates.start, dates.end) : null;
+      dePrev = pr?.dePrev; atePrev = pr?.atePrev;
+    } catch(_) {}
+    let rowsPrev = null;
+    if (dePrev && atePrev) {
+      if (typeof window.DX_getDataTap==='function' && window.DX_getDataTap().prev) rowsPrev = window.DX_getDataTap().prev;
+      if (!rowsPrev && typeof window.baseQuery==='function') { try { rowsPrev = await window.baseQuery(dePrev, atePrev, anal); } catch(_){ } }
+      if (!rowsPrev) rowsPrev = await restFetch(dePrev, atePrev, anal);
+    } else {
+      rowsPrev = [];
+    }
+
+    const aggNow = agg(rowsNow), aggPrev = agg(rowsPrev);
+    const mode = (typeof window.effectiveMode==='function' ? window.effectiveMode() : 'total');
+    const curr = (mode==='media')
+      ? valBy(key, { ...aggNow.tot, fat:(aggNow.tot.dias? aggNow.tot.fat/aggNow.tot.dias:0), fre:(aggNow.tot.ped? aggNow.tot.fre/aggNow.tot.ped:0) })
+      : valBy(key, aggNow.tot);
+    const prev = (mode==='media')
+      ? valBy(key, { ...aggPrev.tot, fat:(aggPrev.tot.dias? aggPrev.tot.fat/aggPrev.tot.dias:0), fre:(aggPrev.tot.ped? aggPrev.tot.fre/aggPrev.tot.ped:0) })
+      : valBy(key, aggPrev.tot);
+
+    renderPanel(key, curr, prev, aggNow);
+
+    lastKey = key; lastA = dates.start; lastB = dates.end;
+  }, 200);
+
+  // 5) Bind direct UI events (in case the app doesn't dispatch custom events)
+  const bindUI = () => {
+    ['#fxDuStart','#fxDuEnd','#fxCanceled','#kpi-select'].forEach(sel => {
+      const el = $(sel);
+      if (el && !el.__dx_bound__) {
+        el.addEventListener('input', recalc);
+        el.addEventListener('change', recalc);
+        el.__dx_bound__ = true;
+      }
+    });
+  };
+  document.addEventListener('DOMContentLoaded', () => { bindUI(); recalc(); });
+  document.addEventListener('filters:apply', recalc);
+  document.addEventListener('filters:apply:internal', recalc);
+  document.addEventListener('dx:now-ready', recalc);
+  document.addEventListener('dx:prev-ready', recalc);
+  document.addEventListener('dx:wrapped', recalc);
+
+  // 6) Poll as a last resort (lightweight, stops when panel updates)
+  let tries=0;
+  const poll = setInterval(() => {
+    bindUI();
+    recalc();
+    if (++tries > 10) clearInterval(poll);
+  }, 1000);
+})();
+</script>
 </body>
 </html>
