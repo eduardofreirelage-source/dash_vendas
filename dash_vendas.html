@@ -356,8 +356,24 @@
       height:30px; padding:4px 8px; border:1px solid var(--line); border-radius:8px; background:#fff; font:inherit; width:100%; text-align:left;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    /* CORREÇÃO DE LAYOUT: Garante que o painel multiselect se posicione corretamente */
     .msel { position: relative; }
-    .msel.open .msel-panel { z-index: 50; } 
+    .msel-panel {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        z-index: 50;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: 0 10px 24px rgba(0,0,0,.1);
+        max-height: 250px;
+        overflow: auto;
+        padding: 6px;
+    }
+    .msel.open .msel-panel { display: block; } 
 
     /* PERÍODO */
     .fx-period-line{
@@ -764,25 +780,45 @@
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
       const pNow = buildParams(de, ate, analiticos);
       const pPrev = buildParams(dePrev, atePrev, analiticos);
-      const [now,prev,cNow,cPrev] = await Promise.all([
+
+      const paramsOnlyCanceledNow = {...pNow, p_cancelado: 'Sim'};
+      const paramsOnlyCanceledPrev = {...pPrev, p_cancelado: 'Sim'};
+
+      const [now, prev, cNowResult, cPrevResult] = await Promise.all([
         supa.rpc('kpi_vendas_unificado', pNow),
         supa.rpc('kpi_vendas_unificado', pPrev),
-        supa.rpc('kpi_vendas_unificado', {...pNow, p_cancelado:'Sim'}),
-        supa.rpc('kpi_vendas_unificado', {...pPrev, p_cancelado:'Sim'}),
+        supa.rpc('kpi_vendas_unificado', paramsOnlyCanceledNow),
+        supa.rpc('kpi_vendas_unificado', paramsOnlyCanceledPrev),
       ]);
+
       if(now.error) throw now.error;
       if(prev.error) throw prev.error;
-      const N=agg(now.data||[]), P=agg(prev.data||[]);
-      const CN=agg((cNow?.data)||[]), CP=agg((cPrev?.data)||[]);
+
+      const N = agg(now.data || []);
+      const P = agg(prev.data || []);
+      const CN = agg(cNowResult.data || []);
+      const CP = agg(cPrevResult.data || []);
+      
+      let totalPedidosNow, totalPedidosPrev;
+      if (analiticos.cancelado === 'sim') {
+          totalPedidosNow = N.ped;
+          totalPedidosPrev = P.ped;
+      } else if (analiticos.cancelado === 'nao') {
+          totalPedidosNow = N.ped + CN.ped;
+          totalPedidosPrev = P.ped + CP.ped;
+      } else { // ambos
+          totalPedidosNow = N.ped;
+          totalPedidosPrev = P.ped;
+      }
+
       const len = DateHelpers.daysLen(de, ate);
       const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
       const fatMedN = len? (N.fat/len) : 0,     fatMedP = len? (P.fat/len) : 0;
       const desPercN = N.fat? (N.des/N.fat) : 0, desPercP = P.fat? (P.des/P.fat) : 0;
       const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/N.ped) : 0;
-      const totalPedidosNow = N.ped + CN.ped;
-      const totalPedidosPrev = P.ped + CP.ped;
       const partCancN = totalPedidosNow > 0 ? (CN.ped / totalPedidosNow) : 0;
       const partCancP = totalPedidosPrev > 0 ? (CP.ped / totalPedidosPrev) : 0;
+      
       $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
       $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
       $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
