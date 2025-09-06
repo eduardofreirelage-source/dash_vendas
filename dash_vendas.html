@@ -1487,50 +1487,54 @@
   });
   </script>
 
-
 <script>
-/* ================= DIAGNÓSTICO (DADOS REAIS) — SAFE v4 =================
-   - Não altera nada do fluxo existente.
-   - Só escuta `filters:apply` (e DOMContentLoaded) e preenche a aba Diagnóstico se os elementos existirem.
-   - Usa suas funções/variáveis existentes: baseQuery, DateHelpers.computePrevRangeISO, effectiveMode, ms.*, fxCanceled.
-   - Namespaced em DX_ para evitar colisões.
+/* ================= DIAGNÓSTICO (REAL DATA) — SAFE v5 =================
+   - Não altera nada do que existe; apenas escuta eventos e renderiza.
+   - Garante carga: DOMContentLoaded, filters:apply, filters:apply:internal, e quando a aba fica visível.
+   - Tenta novamente se baseQuery ainda não estiver pronta (retry com backoff pequeno).
+   - Usa campos reais: fat, des, fre, ped, dia, hora, loja, canal, cancelado.
 ------------------------------------------------------------------------- */
 (function(){
   'use strict';
   const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+  const TAB_ID = 'tab-diagnostico';
 
-  function DX_kpiValue(key, acc){
-    switch(key){
-      case 'fat':      return acc.fat;
-      case 'des':      return acc.des;
-      case 'fre':      return acc.fre;
-      case 'ped':      return acc.ped;
-      case 'tkt':      return (acc.ped>0? acc.fat/acc.ped : 0);
-      case 'fatmed':   return (acc.dias>0? acc.fat/acc.dias : 0);
-      case 'fremed':   return (acc.ped>0? acc.fre/acc.ped : 0);
-      case 'desperc':  return (acc.fat>0? acc.des/acc.fat : 0);
-      case 'canc_ped': return acc.canc_ped||0;
-      case 'canc_val': return acc.canc_val||0;
-      case 'roi':      return (acc.des>0 ? (acc.fat-acc.des)/acc.des : NaN);
-      default: return 0;
-    }
+  // ---- Guardas de containers
+  function hasDiagDom(){
+    return !!(document.getElementById(TAB_ID) && $('.hero-value-number') && $('.ins-list') && $('.proj-value'));
   }
-  function DX_fmt(key, v){
+
+  // ---- Utilitários
+  function fmtKPI(key, v){
     const m = (window.KPI_META?.[key]?.fmt) || 'money';
     if(m==='money')   return (isFinite(v)? ('R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})) : '—');
     if(m==='count')   return (isFinite(v)? (+v).toLocaleString('pt-BR') : '—');
     if(m==='percent') return (isFinite(v)? ((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%' : '—');
     return String(v);
   }
-  function DX_aggregate(rows){
+  function valByKey(key, acc){
+    switch(key){
+      case 'fat':return acc.fat; case 'des':return acc.des; case 'fre':return acc.fre; case 'ped':return acc.ped;
+      case 'tkt': return (acc.ped>0? acc.fat/acc.ped:0);
+      case 'fatmed': return (acc.dias>0? acc.fat/acc.dias:0);
+      case 'fremed': return (acc.ped>0? acc.fre/acc.ped:0);
+      case 'desperc': return (acc.fat>0? acc.des/acc.fat:0);
+      case 'canc_ped': return acc.canc_ped||0;
+      case 'canc_val': return acc.canc_val||0;
+      case 'roi': return (acc.des>0? (acc.fat-acc.des)/acc.des : NaN);
+      default: return 0;
+    }
+  }
+  function aggRows(rows){
     const byDay=new Map(), byStore=new Map(), byHour=new Map(), byCanal=new Map();
     let canc_val=0, canc_ped=0;
     for(const r of rows){
-      const dia=r.dia, loja=r.loja??'—', hora=(r.hora??'—').toString().padStart(2,'0'), canal=r.canal??'—';
+      const dia=r.dia, loja=r.loja??'—', h=(r.hora??'—').toString().padStart(2,'0'), canal=r.canal??'—';
       const v={fat:+r.fat||0, des:+r.des||0, fre:+r.fre||0, ped:1};
       if(!byDay.has(dia)) byDay.set(dia,{fat:0,des:0,fre:0,ped:0}); const d=byDay.get(dia); d.fat+=v.fat; d.des+=v.des; d.fre+=v.fre; d.ped+=1;
       if(!byStore.has(loja)) byStore.set(loja,{fat:0,des:0,fre:0,ped:0}); const s=byStore.get(loja); s.fat+=v.fat; s.des+=v.des; s.fre+=v.fre; s.ped+=1;
-      if(!byHour.has(hora)) byHour.set(hora,{fat:0,des:0,fre:0,ped:0}); const h=byHour.get(hora); h.fat+=v.fat; h.des+=v.des; h.fre+=v.fre; h.ped+=1;
+      if(!byHour.has(h)) byHour.set(h,{fat:0,des:0,fre:0,ped:0}); const hh=byHour.get(h); hh.fat+=v.fat; hh.des+=v.des; hh.fre+=v.fre; hh.ped+=1;
       if(!byCanal.has(canal)) byCanal.set(canal,{fat:0,des:0,fre:0,ped:0}); const c=byCanal.get(canal); c.fat+=v.fat; c.des+=v.des; c.fre+=v.fre; c.ped+=1;
       if(String(r.cancelado)==='Sim'){ canc_ped+=1; canc_val+=v.fat; }
     }
@@ -1539,185 +1543,176 @@
     for(const v of byDay.values()){ tot.fat+=v.fat; tot.des+=v.des; tot.fre+=v.fre; tot.ped+=v.ped; }
     return {byDay,byStore,byHour,byCanal,tot};
   }
-  function DX_topN(map, metaKey, n=3){
+  function topN(map, key, n=3){
     const arr=[...map.entries()].map(([k,v])=>({k, ...v, tkt:(v.ped>0? v.fat/v.ped:0), desperc:(v.fat>0? v.des/v.fat:0)}));
-    const key = (window.KPI_META?.[metaKey]?.fmt==='count' && metaKey!=='tkt') ? 'ped'
-               : (metaKey==='desperc' || metaKey==='roi') ? 'fat'
-               : (metaKey==='tkt' ? 'tkt' : (metaKey==='fremed' ? 'fre' : metaKey));
-    arr.sort((a,b)=> (b[key]??0)-(a[key]??0));
+    const sortKey = (window.KPI_META?.[key]?.fmt==='count' && key!=='tkt') ? 'ped'
+                  : (key==='desperc'||key==='roi') ? 'fat'
+                  : (key==='tkt' ? 'tkt' : (key==='fremed' ? 'fre' : key));
+    arr.sort((a,b)=>(b[sortKey]??0)-(a[sortKey]??0));
     return arr.slice(0,n);
   }
-  function DX_classifyDelta(now, prev){
-    if(!isFinite(prev) || prev===0) return {deltaText:'—', cls:'flat'};
+  function deltaTxt(now, prev){
+    if(!isFinite(prev)||prev===0) return {txt:'—', cls:'flat'};
     const p=((now-prev)/prev)*100;
-    return {deltaText:(p>=0?'▲ ':'▼ ')+Math.abs(p).toFixed(1)+'%', cls:(p>=0?'up':'down')};
+    return {txt:(p>=0?'▲ ':'▼ ')+Math.abs(p).toFixed(1)+'%', cls:(p>=0?'up':'down')};
   }
 
-  async function DX_computeKPI(selectedKey, de, ate, dePrev, atePrev, analiticos){
+  async function compute(selectedKey, de, ate, dePrev, atePrev, analiticos){
     const forced = window.KPI_META?.[selectedKey]?.needsCancel ?? null;
-    const applyCancel = (a) => ({...a, cancelado: (forced==='Sim'?'sim': forced==='Não'?'nao': a.cancelado)});
-    const aNow=applyCancel(analiticos), aPrev=applyCancel(analiticos);
-    const rowsNow = await baseQuery(de, ate, aNow);
-    const rowsPrev= await baseQuery(dePrev, atePrev, aPrev);
-    const aggNow=DX_aggregate(rowsNow), aggPrev=DX_aggregate(rowsPrev);
-    const mode = (typeof effectiveMode==='function' ? effectiveMode() : 'total');
+    const patch = (a)=>({...a, cancelado:(forced==='Sim'?'sim': forced==='Não'?'nao': a.cancelado)});
+    const rowsNow = await baseQuery(de, ate, patch(analiticos));
+    const rowsPrev= await baseQuery(dePrev, atePrev, patch(analiticos));
+    const aggNow=aggRows(rowsNow), aggPrev=aggRows(rowsPrev);
+    const mode = (typeof effectiveMode==='function'? effectiveMode() : 'total');
     if(mode==='media'){
       const avgNow={...aggNow.tot}, avgPrev={...aggPrev.tot};
       avgNow.fat=(aggNow.tot.dias>0? aggNow.tot.fat/aggNow.tot.dias:0);
       avgPrev.fat=(aggPrev.tot.dias>0? aggPrev.tot.fat/aggPrev.tot.dias:0);
       avgNow.fre=(aggNow.tot.ped>0? aggNow.tot.fre/aggNow.tot.ped:0);
       avgPrev.fre=(aggPrev.tot.ped>0? aggPrev.tot.fre/aggPrev.tot.ped:0);
-      return { now:DX_kpiValue(selectedKey,avgNow), prev:DX_kpiValue(selectedKey,avgPrev), aggNow, aggPrev };
+      return { now:valByKey(selectedKey,avgNow), prev:valByKey(selectedKey,avgPrev), aggNow, aggPrev };
     }
-    return { now:DX_kpiValue(selectedKey,aggNow.tot), prev:DX_kpiValue(selectedKey,aggPrev.tot), aggNow, aggPrev };
+    return { now:valByKey(selectedKey,aggNow.tot), prev:valByKey(selectedKey,aggPrev.tot), aggNow, aggPrev };
   }
 
-  function DX_fillHero(selectedKey, nowVal, prevVal, aggNow){
-    const heroVal = $('.hero-value-number');
-    const heroDelta = heroVal ? (heroVal.parentElement?.querySelector('.delta') || $('.delta')) : $('.delta');
-    const heroSub = $('.hero-sub-value');
-    const ctx = $('.hero-context');
-    if(heroVal) heroVal.textContent = DX_fmt(selectedKey, nowVal);
-    if(heroDelta){
-      const {deltaText, cls}=DX_classifyDelta(nowVal, prevVal);
-      heroDelta.textContent = deltaText.replace(/^./,'');
-      heroDelta.innerHTML = (cls==='up'?'▲ ':'▼ ')+heroDelta.textContent;
-      heroDelta.classList.remove('up','down','flat');
-      if(cls!=='flat') heroDelta.classList.add(cls);
+  function renderHero(k, nowVal, prevVal, aggNow){
+    const elVal=$('.hero-value-number'), elDelta=$('.hero .delta, .delta');
+    const elSub=$('.hero-sub-value'), ctx=$('.hero-context');
+    if(elVal) elVal.textContent=fmtKPI(k, nowVal);
+    if(elDelta){
+      const {txt, cls}=deltaTxt(nowVal, prevVal);
+      elDelta.textContent = txt.replace(/^./,'');
+      elDelta.innerHTML = (cls==='up'?'▲ ':'▼ ')+elDelta.textContent;
+      elDelta.classList.remove('up','down','flat'); if(cls!=='flat') elDelta.classList.add(cls);
     }
-    if(heroSub) heroSub.textContent = 'Período anterior: '+DX_fmt(selectedKey, prevVal);
+    if(elSub) elSub.textContent='Período anterior: '+fmtKPI(k, prevVal);
     if(ctx){
-      const topLojas  = DX_topN(aggNow.byStore, selectedKey, 2).map(x=>x.k).join(' e ') || '—';
-      const topHoras  = DX_topN(aggNow.byHour,  selectedKey, 2).map(x=>x.k+'h').join('–') || '—';
-      const topCanais = DX_topN(aggNow.byCanal, selectedKey, 1).map(x=>x.k).join(', ') || '—';
-      ctx.innerHTML = `<strong>Destaques:</strong> Lojas ${topLojas} • <strong>Horário:</strong> ${topHoras} • <strong>Canal:</strong> ${topCanais}`;
+      const lojas=topN(aggNow.byStore,k,2).map(x=>x.k).join(' e ')||'—';
+      const horas=topN(aggNow.byHour,k,2).map(x=>x.k+'h').join('–')||'—';
+      const canais=topN(aggNow.byCanal,k,1).map(x=>x.k).join(', ')||'—';
+      ctx.innerHTML=`<strong>Destaques:</strong> Lojas ${lojas} • <strong>Horário:</strong> ${horas} • <strong>Canal:</strong> ${canais}`;
     }
   }
-  function DX_renderInsights(selectedKey, aggNow, aggPrev){
-    const box = $('.ins-list'); if(!box) return;
-    box.innerHTML = '';
-    // 4 semanas vs 4 anteriores
-    const byDay=[...aggNow.byDay.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+  function renderInsights(k, aNow, aPrev){
+    const box=$('.ins-list'); if(!box) return; box.innerHTML='';
+    const byDay=[...aNow.byDay.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
     const N=28, tail=byDay.slice(-N), prev=byDay.slice(-2*N,-N);
     const sumFat=arr=>arr.reduce((s,[,v])=>s+v.fat,0);
     const nowFat=sumFat(tail), prevFat=sumFat(prev);
     if(nowFat>0||prevFat>0){
-      const up = nowFat>=prevFat;
-      const el=document.createElement('div');
+      const up=nowFat>=prevFat, el=document.createElement('div');
       el.className='ins-card '+(up?'up':'down');
       el.innerHTML=`<div class="dot"></div><div>
         <div class="ins-title">${up?'Aceleração':'Desaceleração'} nas últimas 4 semanas</div>
         <div class="ins-sub">Δ ${((nowFat-prevFat)/Math.max(1,prevFat)*100).toFixed(1)}% em receita agregada.</div>
         <div class="ins-action">Ação: ${up?'reforçar':'ajustar'} mix de <strong>combos almoço</strong> nas Top Lojas.</div>
-      </div>`;
-      box.appendChild(el);
+      </div>`; box.appendChild(el);
     }
     // Subsídio
-    const desperc=(aggNow.tot.fat>0? aggNow.tot.des/aggNow.tot.fat : 0);
-    {
-      const warn=desperc>=0.12;
-      const el=document.createElement('div');
+    const desperc=(aNow.tot.fat>0? aNow.tot.des/aNow.tot.fat:0);
+    { const warn=desperc>=0.12, el=document.createElement('div');
       el.className='ins-card '+(warn?'down':'up');
       el.innerHTML=`<div class="dot"></div><div>
         <div class="ins-title">${warn?'Subsídio acima do ideal':'Subsídio dentro do alvo'}</div>
         <div class="ins-sub">% Incentivos atual: ${(desperc*100).toFixed(1)}%.</div>
         <div class="ins-action">Ação: ${warn?'migrar para <strong>tiers 60/90/120</strong>':'manter tiers atuais e testar horário-alvo (11–14h)'}.</div>
-      </div>`;
-      box.appendChild(el);
+      </div>`; box.appendChild(el);
     }
     // Elasticidade 11–14h
-    function sliceHour(map,h0,h1){ let fat=0,ped=0; for(const [h,v] of map.entries()){ const hh=parseInt(h,10); if(hh>=h0&&hh<=h1){ fat+=v.fat; ped+=v.ped; } } return {fat,ped}; }
-    const almNow=sliceHour(aggNow.byHour,11,14), almPrev=sliceHour(aggPrev.byHour,11,14);
-    const cond=(almNow.ped>almPrev.ped) && ((almNow.ped>0? almNow.fat/almNow.ped:0) >= (almPrev.ped>0? almPrev.fat/almPrev.ped:0));
-    {
-      const el=document.createElement('div');
-      el.className='ins-card '+(cond?'up':'down');
+    const sel=(map,h0,h1)=>{ let fat=0,ped=0; for(const [h,v] of map.entries()){ const hh=parseInt(h,10); if(hh>=h0&&hh<=h1){ fat+=v.fat; ped+=v.ped; } } return {fat,ped}; };
+    const n=sel(aNow.byHour,11,14), p=sel(aPrev.byHour,11,14);
+    const ok=(n.ped>p.ped) && ((n.ped>0? n.fat/n.ped:0) >= (p.ped>0? p.fat/p.ped:0));
+    { const el=document.createElement('div'); el.className='ins-card '+(ok?'up':'down');
       el.innerHTML=`<div class="dot"></div><div>
-        <div class="ins-title">${cond?'Elasticidade positiva no almoço':'Almoço sem elasticidade (ticket ou volume caíram)'}</div>
-        <div class="ins-sub">Pedidos ${cond?'+':'−'} e ticket ${cond?'+':'−'} vs. período anterior (11–14h).</div>
-        <div class="ins-action">Ação: ${cond?'bundle com sobremesa sábado':'rever preço/combos do horário'}.</div>
-      </div>`;
-      box.appendChild(el);
+        <div class="ins-title">${ok?'Elasticidade positiva no almoço':'Almoço sem elasticidade (ticket ou volume caíram)'}</div>
+        <div class="ins-sub">Pedidos ${ok?'+':'−'} e ticket ${ok?'+':'−'} vs. período anterior (11–14h).</div>
+        <div class="ins-action">Ação: ${ok?'bundle com sobremesa sábado':'rever preço/combos do horário'}.</div>
+      </div>`; box.appendChild(el);
     }
   }
-  function DX_projectNext(aggNow){
-    const byDay=[...aggNow.byDay.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+  function renderProj(aNow){
+    const byDay=[...aNow.byDay.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
     const N=28, tail=byDay.slice(-N), prev=byDay.slice(-2*N,-N);
-    const sumFat=a=>a.reduce((s,[,v])=>s+v.fat,0); const sumPed=a=>a.reduce((s,[,v])=>s+v.ped,0);
-    const fatTail=sumFat(tail), fatPrev=sumFat(prev), mmFat=fatTail/Math.max(1,tail.length);
-    const pedTail=sumPed(tail), mmPed=pedTail/Math.max(1,tail.length);
+    const sFat=a=>a.reduce((s,[,v])=>s+v.fat,0), sPed=a=>a.reduce((s,[,v])=>s+v.ped,0);
+    const fatTail=sFat(tail), fatPrev=sFat(prev), mmFat=fatTail/Math.max(1,tail.length);
+    const pedTail=sPed(tail), mmPed=pedTail/Math.max(1,tail.length);
     const trend=(isFinite(fatPrev)&&fatPrev>0)? ((fatTail-fatPrev)/fatPrev):0, boost=1+(trend*0.5);
-    return { fat30:mmFat*30*boost, fat60:mmFat*60*boost, ped30:Math.round(mmPed*30*boost), ped60:Math.round(mmPed*60*boost), tkt:(aggNow.tot.ped>0? aggNow.tot.fat/aggNow.tot.ped:0) };
+    const fat30=mmFat*30*boost, ped30=Math.round(mmPed*30*boost), tkt=(aNow.tot.ped>0? aNow.tot.fat/aNow.tot.ped:0);
+    const pv=$('.proj-value'); if(pv) pv.textContent='R$ '+fat30.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const a=$('.proj-kpi-sub .sub-kpi:nth-child(1) .proj-value-small');
+    const b=$('.proj-kpi-sub .sub-kpi:nth-child(2) .proj-value-small');
+    if(a) a.textContent = ped30.toLocaleString('pt-BR');
+    if(b) b.textContent = 'R$ '+tkt.toFixed(2).replace('.',',');
   }
 
-  async function DX_load(payload){
+  async function runDiag(payload){
+    if(!hasDiagDom()) return;
+    // retry se baseQuery ainda não existe
+    let tries=0;
+    while(typeof baseQuery!=='function' && tries<20){
+      await new Promise(r=>setTimeout(r, 100));
+      tries++;
+    }
+    if(typeof baseQuery!=='function') return; // não interfere no app
+
+    const {start:de, end:ate, analiticos} = payload;
+    const { dePrev, atePrev } = DateHelpers.computePrevRangeISO(de, ate);
+    const key = (window.selectedKPI || ($('#kpi-select')?.value) || 'fat');
     try{
-      const de=payload.start, ate=payload.end;
-      const { dePrev, atePrev } = DateHelpers.computePrevRangeISO(de, ate);
-      const anal=payload.analiticos;
-      const key=(window.selectedKPI || 'fat');
-      const { now, prev, aggNow, aggPrev } = await DX_computeKPI(key,de,ate,dePrev,atePrev,anal);
-      DX_fillHero(key, now, prev, aggNow);
-      DX_renderInsights(key, aggNow, aggPrev);
-      const pj=DX_projectNext(aggNow);
-      const pv=$('.proj-value'); if(pv) pv.textContent='R$ '+pj.fat30.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-      const subs=$('.proj-kpi-sub');
-      if(subs){
-        const a=subs.querySelector('.sub-kpi:nth-child(1) .proj-value-small');
-        const b=subs.querySelector('.sub-kpi:nth-child(2) .proj-value-small');
-        if(a) a.textContent = pj.ped30.toLocaleString('pt-BR');
-        if(b) b.textContent = 'R$ '+pj.tkt.toFixed(2).replace('.',',');
-      }
-    }catch(err){
-      console.error('Diagnóstico erro:', err);
-    }
+      const { now, prev, aggNow, aggPrev } = await compute(key, de, ate, dePrev, atePrev, analiticos);
+      renderHero(key, now, prev, aggNow);
+      renderInsights(key, aggNow, aggPrev);
+      renderProj(aggNow);
+    }catch(err){ console.error('Diagnóstico erro:', err); }
   }
 
-  // Só liga se a aba existir para não impactar nada
-  const hasDiag = document.getElementById('tab-diagnostico') || document.querySelector('.ins-list') || document.querySelector('.hero-value-number');
-  if(hasDiag){
-    const ksel=document.getElementById('kpi-select');
-    if(ksel){
-      ksel.addEventListener('change', ()=>{ window.selectedKPI=ksel.value; document.dispatchEvent(new Event('filters:apply:internal')); });
-      window.selectedKPI = ksel.value;
+  // Eventos
+  document.addEventListener('filters:apply', (e)=>{ if(e.detail) runDiag(e.detail); });
+  document.addEventListener('filters:apply:internal', ()=>{
+    const start=$('#fxDuStart')?.value, end=$('#fxDuEnd')?.value;
+    if(start&&end){
+      runDiag({
+        start:end>=start?start:end, end:end>=start?end:start,
+        analiticos:{
+          unidade: ms.unids.get(), loja: ms.lojas.get(), turno: ms.turnos.get(),
+          canal: ms.canais.get(), pagamento: ms.pags.get(), cancelado: $('#fxCanceled')?.value
+        }
+      });
     }
-    document.addEventListener('filters:apply', (e)=>{ if(e.detail) DX_load(e.detail); });
-    document.addEventListener('filters:apply:internal', ()=>{
-      const start=document.getElementById('fxDuStart')?.value;
-      const end  =document.getElementById('fxDuEnd')?.value;
-      if(start&&end){
-        DX_load({
-          start:end>=start?start:end, end:end>=start?end:start,
-          analiticos:{
-            unidade: ms.unids.get(),
-            loja: ms.lojas.get(),
-            turno: ms.turnos.get(),
-            canal: ms.canais.get(),
-            pagamento: ms.pags.get(),
-            cancelado: document.getElementById('fxCanceled')?.value
+  });
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const start=$('#fxDuStart')?.value, end=$('#fxDuEnd')?.value;
+    if(start&&end){
+      runDiag({
+        start:end>=start?start:end, end:end>=start?end:start,
+        analiticos:{
+          unidade: ms.unids.get(), loja: ms.lojas.get(), turno: ms.turnos.get(),
+          canal: ms.canais.get(), pagamento: ms.pags.get(), cancelado: $('#fxCanceled')?.value
+        }
+      });
+    }
+    // Observa quando a aba fica visível
+    const tab=document.getElementById(TAB_ID);
+    if(tab){
+      const obs=new MutationObserver(()=>{
+        const vis = getComputedStyle(tab).display!=='none';
+        if(vis){
+          const start=$('#fxDuStart')?.value, end=$('#fxDuEnd')?.value;
+          if(start&&end){
+            runDiag({
+              start:end>=start?start:end, end:end>=start?end:start,
+              analiticos:{
+                unidade: ms.unids.get(), loja: ms.lojas.get(), turno: ms.turnos.get(),
+                canal: ms.canais.get(), pagamento: ms.pags.get(), cancelado: $('#fxCanceled')?.value
+              }
+            });
           }
-        });
-      }
-    });
-    document.addEventListener('DOMContentLoaded', ()=>{
-      const start=document.getElementById('fxDuStart')?.value;
-      const end  =document.getElementById('fxDuEnd')?.value;
-      if(start&&end){
-        DX_load({
-          start:end>=start?start:end, end:end>=start?end:start,
-          analiticos:{
-            unidade: ms.unids.get(),
-            loja: ms.lojas.get(),
-            turno: ms.turnos.get(),
-            canal: ms.canais.get(),
-            pagamento: ms.pags.get(),
-            cancelado: document.getElementById('fxCanceled')?.value
-          }
-        });
-      }
-    });
-  }
-})(); 
+        }
+      });
+      obs.observe(tab, { attributes:true, attributeFilter:['style','class'] });
+    }
+  });
+})();
 </script>
 
 </body>
