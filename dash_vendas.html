@@ -102,7 +102,6 @@
     .proj-value-small { font-size: 18px; font-weight: 600; }
     .graficos-grid { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 12px; flex-grow: 1; }
     
-
     /* RESPONSIVO */
     @media (max-width:1200px){
       .panel{grid-template-columns:1fr}
@@ -764,9 +763,7 @@
     
     /* ===================== ESTADO / FILTROS ===================== */
     let firstDay='', lastDay='';
-    
     const fxDispatchApplyDebounced = debounce(() => fxDispatchApply(), 500);
-
     const ms={
       unids:  MultiSelect('fxUnit', 'Todas', fxDispatchApplyDebounced),
       lojas:  MultiSelect('fxStore', 'Todas', fxDispatchApplyDebounced),
@@ -782,7 +779,7 @@
       let p_cancelado = null;
       if (analiticos.cancelado === 'sim') p_cancelado = 'Sim';
       if (analiticos.cancelado === 'nao') p_cancelado = 'Não';
-      const params = {
+      return {
         p_dini: de, p_dfim: ate,
         p_unids_in:  isActive(analiticos.unidade) ? analiticos.unidade : null,
         p_lojas_in:  isActive(analiticos.loja) ? analiticos.loja : null,
@@ -791,16 +788,16 @@
         p_pags_in:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
         p_cancelado
       };
-      return params;
     }
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
       const pNow = buildParams(de, ate, analiticos);
       const pPrev = buildParams(dePrev, atePrev, analiticos);
 
-      const paramsOnlyCanceledNow = {...pNow, p_cancelado: 'Sim'};
-      const paramsOnlyCanceledPrev = {...pPrev, p_cancelado: 'Sim'};
-      const paramsOnlyValidNow = {...pNow, p_cancelado: 'Não'};
-      const paramsOnlyValidPrev = {...pPrev, p_cancelado: 'Não'};
+      // CORREÇÃO LÓGICA: Consultas separadas para garantir a precisão dos totais
+      const paramsOnlyCanceledNow = {...pNow, p_unids_in:null, p_lojas_in:null, p_turnos_in:null, p_canais_in:null, p_pags_in:null, p_cancelado: 'Sim'};
+      const paramsOnlyCanceledPrev = {...pPrev, p_unids_in:null, p_lojas_in:null, p_turnos_in:null, p_canais_in:null, p_pags_in:null, p_cancelado: 'Sim'};
+      const paramsOnlyValidNow = {...pNow, p_unids_in:null, p_lojas_in:null, p_turnos_in:null, p_canais_in:null, p_pags_in:null, p_cancelado: 'Não'};
+      const paramsOnlyValidPrev = {...pPrev, p_unids_in:null, p_lojas_in:null, p_turnos_in:null, p_canais_in:null, p_pags_in:null, p_cancelado: 'Não'};
       
       const [nowResult, prevResult, cNowResult, cPrevResult, vNowResult, vPrevResult] = await Promise.all([
         supa.rpc('kpi_vendas_unificado', pNow),
@@ -929,23 +926,22 @@
       
       const isActive = (val) => val && val.length > 0;
       
-      const filterConditions = [];
-
-      if (isActive(analiticos.unidade)) filterConditions.push(`unidade.in.("${analiticos.unidade.join('","')}")`);
-      if (isActive(analiticos.loja)) filterConditions.push(`loja.in.("${analiticos.loja.join('","')}")`);
-      if (isActive(analiticos.turno)) filterConditions.push(`turno.in.("${analiticos.turno.join('","')}")`);
+      if (isActive(analiticos.unidade)) q = q.in('unidade', analiticos.unidade);
+      if (isActive(analiticos.loja)) q = q.in('loja', analiticos.loja);
+      if (isActive(analiticos.turno)) q = q.in('turno', analiticos.turno);
+      
+      const orFilters = [];
       if (isActive(analiticos.canal)) {
-          const canalFilters = analiticos.canal.map(c => `canal.ilike.%${c}%`).join(',');
-          filterConditions.push(`or(${canalFilters})`);
+          const canalFilters = analiticos.canal.map(c => `canal.ilike.%${c.replace(/%/g, '%25')}%`).join(',');
+          orFilters.push(`or(${canalFilters})`);
       }
       if (isActive(analiticos.pagamento)) {
-          const paymentFilters = analiticos.pagamento.map(p => `pagamento_base.ilike.%${p}%`).join(',');
-          filterConditions.push(`or(${paymentFilters})`);
+          const paymentFilters = analiticos.pagamento.map(p => `pagamento_base.ilike.%${p.replace(/%/g, '%25')}%`).join(',');
+          orFilters.push(`or(${paymentFilters})`);
       }
 
-      if (filterConditions.length > 0) {
-          const combinedFilter = filterConditions.join(',');
-          q = q.or(combinedFilter);
+      if (orFilters.length > 0) {
+        q = q.or(orFilters.join(','));
       }
 
       const forcedCancel = wantedCancelFilterForKPI();
@@ -1048,35 +1044,42 @@
               baseQuery(dePrev, atePrev, analiticos)
           ]);
           const tip = `Período anterior: ${dePrev} → ${atePrev}`;
+          
+          // Dia da Semana
           {
-              const lab = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+              const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+              const nArr = Array(7).fill(0), pArr = Array(7).fill(0);
               const cur = computeByBucket(rowsNow, 'dow', selectedKPI, mode);
               const prv = computeByBucket(rowsPrev, 'dow', selectedKPI, mode);
-              const nArr = Array(7).fill(0), pArr = Array(7).fill(0);
-              cur.forEach(o => { nArr[o.key] = o.value; });
-              prv.forEach(o => { pArr[o.key] = o.value; });
-              ensureChart('ch_dow', lab, nArr, pArr, tip, meta.fmt);
+              cur.forEach(o => { if(o.key >= 0 && o.key <= 6) nArr[o.key] = o.value; });
+              prv.forEach(o => { if(o.key >= 0 && o.key <= 6) pArr[o.key] = o.value; });
+              ensureChart('ch_dow', labels, nArr, pArr, tip, meta.fmt);
           }
+          // Hora
           {
-              const all = Array.from({ length: 24 }, (_, h) => h);
+              const nArr = Array(24).fill(0), pArr = Array(24).fill(0);
               const cur = computeByBucket(rowsNow, 'hour', selectedKPI, mode);
               const prv = computeByBucket(rowsPrev, 'hour', selectedKPI, mode);
-              const mNow = new Map(cur.map(o => [o.key, o.value]));
-              const mPrv = new Map(prv.map(o => [o.key, o.value]));
-              const filteredHours = all.filter(h => (mNow.get(h) || 0) !== 0 || (mPrv.get(h) || 0) !== 0);
-              const labels = filteredHours.map(h => String(h).padStart(2, '0') + 'h');
-              const nArr = filteredHours.map(h => mNow.get(h) || 0);
-              const pArr = filteredHours.map(h => mPrv.get(h) || 0);
-              ensureChart('ch_hour', labels, nArr, pArr, tip, meta.fmt);
+              cur.forEach(o => { if(o.key >= 0 && o.key <= 23) nArr[o.key] = o.value; });
+              prv.forEach(o => { if(o.key >= 0 && o.key <= 23) pArr[o.key] = o.value; });
+
+              const activeHours = Array.from({length: 24}, (_, i) => i).filter(h => nArr[h] > 0 || pArr[h] > 0);
+              const labels = activeHours.map(h => String(h).padStart(2, '0') + 'h');
+              const nowData = activeHours.map(h => nArr[h]);
+              const prevData = activeHours.map(h => pArr[h]);
+              ensureChart('ch_hour', labels, nowData, prevData, tip, meta.fmt);
           }
+          // Turno
           {
-              const ord = ['Dia', 'Noite'];
+              const labels = ['Dia', 'Noite'];
+              const nMap = new Map(), pMap = new Map();
               const cur = computeByBucket(rowsNow, 'turno', selectedKPI, mode);
               const prv = computeByBucket(rowsPrev, 'turno', selectedKPI, mode);
-              const mNow = new Map(cur.map(o => [o.key, o.value]));
-              const mPrv = new Map(prv.map(o => [o.key, o.value]));
-              const labels = ord.filter(k => mNow.has(k) || mPrv.has(k));
-              ensureChart('ch_turno', labels, labels.map(k => mNow.get(k) || 0), labels.map(k => mPrv.get(k) || 0), tip, meta.fmt);
+              cur.forEach(o => nMap.set(o.key, o.value));
+              prv.forEach(o => pMap.set(o.key, o.value));
+              const nArr = labels.map(l => nMap.get(l) || 0);
+              const pArr = labels.map(l => pMap.get(l) || 0);
+              ensureChart('ch_turno', labels, nArr, pArr, tip, meta.fmt);
           }
       } catch (e) {
           console.error(e); setDiag('Erro ao atualizar gráficos');
@@ -1114,7 +1117,7 @@
         console.error(e); setDiag('Erro ao atualizar gráfico mensal');
       }
     }
-    const wine = ["#7b1e3a","#8c2947","#9c3554","#ad4061","#bd4c6e","#ce577b"];
+    const wine = ["#7b1e3a","#8c2947","#9c3554","#ad4061","#bd4c6e","#ce577b", "#e5e7eb"];
     function ensureDonutTop6(labels, values, centerText, fmt='money'){
       const cvs = $('ch_top6'); if(!cvs) return;
       if(cvs.__chart){ try{cvs.__chart.destroy();}catch(e){} cvs.__chart=null; }
@@ -1140,56 +1143,61 @@
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
         const data = await baseQuery(de, ate, analiticos);
         const m = new Map();
-        const daySets = new Map();
         (data||[]).forEach(r=>{
           const loja = r.loja || '—';
-          if(!m.has(loja)) m.set(loja, new Map());
-          const dayMap = m.get(loja);
-          if(!daySets.has(loja)) daySets.set(loja, new Set());
-          daySets.get(loja).add(r.dia);
-          const dkey = r.dia;
-          if(!dayMap.has(dkey)) dayMap.set(dkey, {fat:0, des:0, fre:0, ped:0});
-          const dacc = dayMap.get(dkey);
-          dacc.fat += +r.fat||0;
-          dacc.des += +r.des||0;
-          dacc.fre += +r.fre||0;
-          dacc.ped += +r.pedidos||0;
+          if(!m.has(loja)) m.set(loja, {fat:0, des:0, fre:0, ped:0, dias: new Set()});
+          const acc = m.get(loja);
+          acc.fat += +r.fat||0;
+          acc.des += +r.des||0;
+          acc.fre += +r.fre||0;
+          acc.ped += +r.pedidos||0;
+          acc.dias.add(r.dia);
         });
-        function metricVal(loja){
-          const dailyMap = m.get(loja);
-          const numDays = daySets.get(loja)?.size || 1;
+
+        function metricVal(aggData){
           const mode = effectiveMode();
           const isRatio = ['tkt','desperc','fremed','roi'].includes(selectedKPI);
-          if(isRatio){
-            return (mode === 'media') ? computeRatio(dailyMap, selectedKPI) : (function(){
-              const total = {fat:0, des:0, fre:0, ped:0};
-              for(const d of dailyMap.values()){ total.fat += d.fat; total.des += d.des; total.fre += d.fre; total.ped += d.ped; }
-              switch(selectedKPI){
-                case 'tkt': return (total.ped>0) ? total.fat/total.ped : 0;
-                case 'desperc': return (total.fat>0) ? total.des/total.fat : 0;
-                case 'fremed': return (total.ped>0) ? total.fre/total.ped : 0;
-                case 'roi': return (total.des>0) ? (total.fat - total.des)/total.des : 0;
-              }
-            })();
-          } else {
-            const total = {fat:0, des:0, fre:0, ped:0};
-            for(const d of dailyMap.values()){ total.fat += d.fat; total.des += d.des; total.fre += d.fre; total.ped += d.ped; }
+          if (isRatio) {
             switch(selectedKPI){
-              case 'fat': return mode==='media' ? total.fat / numDays : total.fat;
-              case 'ped': return mode==='media' ? total.ped / numDays : total.ped;
-              case 'des': return mode==='media' ? total.des / numDays : total.des;
-              case 'fre': return mode==='media' ? total.fre / numDays : total.fre;
-              case 'fatmed': return total.fat / numDays;
-              case 'canc_ped': return mode==='media' ? total.ped / numDays : total.ped;
-              case 'canc_val': return mode==='media' ? total.fat / numDays : total.fat;
+                case 'tkt': return (aggData.ped>0) ? aggData.fat/aggData.ped : 0;
+                case 'desperc': return (aggData.fat>0) ? aggData.des/aggData.fat : 0;
+                case 'fremed': return (aggData.ped>0) ? aggData.fre/aggData.ped : 0;
+                case 'roi': return (aggData.des>0) ? (aggData.fat - aggData.des)/aggData.des : 0;
+            }
+          } else {
+            const numDays = aggData.dias.size || 1;
+            switch(selectedKPI){
+                case 'fat': return mode==='media' ? aggData.fat / numDays : aggData.fat;
+                case 'ped': return mode==='media' ? aggData.ped / numDays : aggData.ped;
+                case 'des': return mode==='media' ? aggData.des / numDays : aggData.des;
+                case 'fre': return mode==='media' ? aggData.fre / numDays : aggData.fre;
+                case 'fatmed': return aggData.fat / numDays;
+                case 'canc_ped': return mode==='media' ? aggData.ped / numDays : aggData.ped;
+                case 'canc_val': return mode==='media' ? aggData.fat / numDays : aggData.fat;
             }
           }
           return 0;
         }
-        const allLojas = [...m.keys()];
-        const arr = allLojas.map(loja => [loja, metricVal(loja)] ).sort((a,b)=> b[1]-a[1]).slice(0,6);
-        const total = allLojas.reduce((sum, loja) => sum + metricVal(loja), 0);
-        ensureDonutTop6(arr.map(a=>a[0]), arr.map(a=>a[1]), `Total: ${formatValueBy(meta.fmt, total)}`, meta.fmt);
+
+        const allStoresData = Array.from(m.entries()).map(([loja, aggData]) => ({ loja, valor: metricVal(aggData) }));
+        allStoresData.sort((a,b)=> b.valor - a.valor);
+        
+        let finalData = allStoresData;
+        if (allStoresData.length > 6) {
+            const top5 = allStoresData.slice(0, 5);
+            const othersValue = allStoresData.slice(5).reduce((acc, curr) => acc + curr.valor, 0);
+            if (othersValue > 0) {
+              finalData = [...top5, { loja: 'Outros', valor: othersValue }];
+            } else {
+              finalData = top5;
+            }
+        }
+        
+        const labels = finalData.map(d => d.loja);
+        const values = finalData.map(d => d.valor);
+        const total = allStoresData.reduce((sum, item) => sum + item.valor, 0);
+        ensureDonutTop6(labels, values, `Total: ${formatValueBy(meta.fmt, total)}`, meta.fmt);
+
       }catch(e){
         console.warn('top6 erro:', e.message||e);
         ensureDonutTop6([],[], 'Total: R$ 0,00','money');
