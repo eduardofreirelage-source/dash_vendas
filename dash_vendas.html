@@ -1841,5 +1841,78 @@
   document.addEventListener('filters:apply:internal', dxRenderFromTap);
   document.addEventListener('DOMContentLoaded', dxRenderFromTap);
 })();
-</script></body>
+</script>
+<script>
+// ==== DX Hardening: global error guard + debounced renderer ====
+(() => {
+  'use strict';
+  // Global error guard to avoid silent breaks
+  if (!window.__dx_error_guard__) {
+    window.__dx_error_guard__ = true;
+    window.addEventListener('error', (e) => {
+      console.warn('[DX] window error:', e?.message || e);
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      console.warn('[DX] unhandled promise rejection:', e?.reason || e);
+    });
+  }
+
+  // Debounce helper (shared)
+  if (!window.__dx_debounce__) {
+    window.__dx_debounce__ = function(fn, wait=120){
+      let t; return function(...args){ clearTimeout(t); t = setTimeout(()=>fn.apply(this,args), wait); };
+    };
+  }
+
+  // Wrap main rerender hooks to avoid re-entrancy storms
+  if (!window.__dx_bindings__) {
+    window.__dx_bindings__ = true;
+
+    const debouncedRecalc = window.__dx_debounce__(async () => {
+      try {
+        if (typeof window.DX_getDataTap === 'function') {
+          const tap = window.DX_getDataTap();
+          if (tap && tap.de && tap.ate && typeof window.run === 'function') {
+            window.run({ start: tap.de, end: tap.ate, analiticos: tap.anal || {} });
+          } else if (typeof window.payloadAtual === 'function' && typeof window.run === 'function') {
+            const p = window.payloadAtual(); if (p) window.run(p);
+          }
+        } else if (typeof window.payloadAtual === 'function' && typeof window.run === 'function') {
+          const p = window.payloadAtual(); if (p) window.run(p);
+        }
+      } catch (err) {
+        console.warn('[DX] debounced recalc error:', err);
+      }
+    }, 160);
+
+    // Safely (re)bind listeners once
+    const add = (ev) => {
+      document.removeEventListener(ev, debouncedRecalc);
+      document.addEventListener(ev, debouncedRecalc);
+    };
+    ['dx:now-ready', 'dx:prev-ready', 'filters:apply', 'filters:apply:internal', 'DOMContentLoaded'].forEach(add);
+
+    // KPI select changes
+    const sel = document.querySelector('#kpi-select');
+    if (sel) {
+      sel.removeEventListener('change', debouncedRecalc);
+      sel.addEventListener('change', debouncedRecalc);
+    }
+
+    // Tab visible
+    const tab = document.getElementById('tab-diagnostico');
+    if (tab && typeof MutationObserver!=='undefined') {
+      // avoid creating multiple observers
+      if (!tab.__dx_obs__) {
+        const obs = new MutationObserver(() => {
+          if (getComputedStyle(tab).display !== 'none') debouncedRecalc();
+        });
+        obs.observe(tab, { attributes:true, attributeFilter:['style','class'] });
+        tab.__dx_obs__ = obs;
+      }
+    }
+  }
+})();
+</script>
+</body>
 </html>
