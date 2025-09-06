@@ -1491,686 +1491,249 @@
 
   });
   </script>
-<!-- =============== DIAGNÓSTICO REAL (SAFE v7) =============== -->
+
+<!-- ===== DIAGNÓSTICO (ES5 SAFE) ===== -->
 <script>
-(() => {
+(function(){
   'use strict';
-  const $ = (s) => document.querySelector(s);
-  const msSafe = {
-    unids: () => (window.ms?.unids?.get?.() ?? []),
-    lojas: () => (window.ms?.lojas?.get?.() ?? []),
-    turnos: () => (window.ms?.turnos?.get?.() ?? []),
-    canais: () => (window.ms?.canais?.get?.() ?? []),
-    pags: ()   => (window.ms?.pags?.get?.()   ?? [])
-  };
-  if (!window.DateHelpers || typeof DateHelpers.computePrevRangeISO !== 'function') {
+  function $(s){ return document.querySelector(s); }
+
+  // Polyfills/helpers
+  if (!window.DateHelpers || typeof window.DateHelpers.computePrevRangeISO !== 'function') {
     window.DateHelpers = window.DateHelpers || {};
-    DateHelpers.computePrevRangeISO = function(deISO, ateISO){
+    window.DateHelpers.computePrevRangeISO = function(deISO, ateISO){
       try{
-        const de = new Date(deISO+'T00:00:00');
-        const ate = new Date(ateISO+'T00:00:00');
-        const span = ate - de;
-        const prevEnd = new Date(de.getTime()-86400000);
-        const prevStart = new Date(prevEnd.getTime()-span);
+        var de = new Date(deISO+'T00:00:00');
+        var ate = new Date(ateISO+'T00:00:00');
+        var span = ate - de;
+        var prevEnd = new Date(de.getTime()-86400000);
+        var prevStart = new Date(prevEnd.getTime()-span);
         return { dePrev: prevStart.toISOString().slice(0,10), atePrev: prevEnd.toISOString().slice(0,10) };
-      }catch(_){
-        const end=new Date(); const start=new Date(end); start.setDate(end.getDate()-30);
-        const prevEnd=new Date(start); prevEnd.setDate(start.getDate()-1);
-        const prevStart=new Date(prevEnd); prevStart.setDate(prevEnd.getDate()-30);
-        return { dePrev: prevStart.toISOString().slice(0,10), atePrev: prevEnd.toISOString().slice(0,10) };
+      }catch(e){
+        var end=new Date(); var start=new Date(end); start.setDate(end.getDate()-30);
+        var prevEnd2=new Date(start); prevEnd2.setDate(start.getDate()-1);
+        var prevStart2=new Date(prevEnd2); prevStart2.setDate(prevEnd2.getDate()-30);
+        return { dePrev: prevStart2.toISOString().slice(0,10), atePrev: prevEnd2.toISOString().slice(0,10) };
       }
     };
   }
-  async function dxBaseQuery(de, ate, anal) {
-    if (typeof window.baseQuery === 'function') {
-      try {
-        return await window.baseQuery(de, ate, anal);
-      } catch (e) {
-        console.warn('[DX] baseQuery falhou, tentando REST fallback.', e);
+
+  function safeGet(obj, path){
+    try{
+      for (var i=0;i<path.length;i++){ if (!obj) return null; obj = obj[path[i]]; }
+      return obj;
+    }catch(e){ return null; }
+  }
+
+  function dxFetch(de, ate, anal, cb){
+    // Try baseQuery if it exists
+    try{
+      if (typeof window.baseQuery === 'function'){
+        return window.baseQuery(de, ate, anal).then(function(rows){ cb(null, rows); }).catch(function(e){
+          console.warn('[DX ES5] baseQuery falhou, fallback REST', e);
+          return dxFetchREST(de, ate, anal, cb);
+        });
       }
-    }
-    const URL = window.SUPABASE_URL, KEY = window.SUPABASE_KEY;
-    if (!URL || !KEY) { console.warn('[DX] Sem SUPABASE_URL/KEY — sem fallback REST.'); return []; }
-    const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, Range: '0-999999', Prefer: 'count=exact' };
-    const qs = [
+    }catch(e){ console.warn('[DX ES5] baseQuery call error', e); }
+    // Else REST
+    return dxFetchREST(de, ate, anal, cb);
+  }
+
+  function dxFetchREST(de, ate, anal, cb){
+    var URL = window.SUPABASE_URL, KEY = window.SUPABASE_KEY;
+    if (!URL || !KEY){ cb(null, []); return; }
+    var headers = { apikey: KEY, Authorization: 'Bearer '+KEY, Range: '0-999999', Prefer: 'count=exact' };
+    var qs = [
       'select=dia,hora,loja,canal,fat,des,fre,cancelado',
-      `dia=gte.${encodeURIComponent(de)}`,
-      `dia=lte.${encodeURIComponent(ate)}`,
+      'dia=gte.'+encodeURIComponent(de),
+      'dia=lte.'+encodeURIComponent(ate),
       'order=dia.asc,hora.asc'
     ];
-    if (anal?.cancelado==='sim') qs.push('cancelado=eq.Sim');
-    if (anal?.cancelado==='nao') qs.push('cancelado=neq.Sim');
-    const addIn = (field, arr) => {
-      if (Array.isArray(arr) && arr.length) {
-        const vals = arr.map(v => `"${String(v).replace(/"/g,'\\"')}"`).join(',');
-        qs.push(`or=(${field}.in.(${vals}))`);
-      }
-    };
-    addIn('loja', anal?.loja); addIn('canal', anal?.canal);
-    addIn('turno', anal?.turno); addIn('unidade', anal?.unidade);
-    addIn('pagamento_base', anal?.pagamento);
-    const url = `${URL}/rest/v1/vendas_canon?${qs.join('&')}`;
-    const r = await fetch(url, { headers });
-    if (!r.ok) { console.warn('[DX] REST status', r.status); return []; }
-    const data = await r.json();
-    return data.map(x => ({
-      dia: x.dia, hora: x.hora ?? null, loja: x.loja ?? null, canal: x.canal ?? null,
-      fat: +x.fat || 0, des:+x.des || 0, fre:+x.fre || 0, cancelado: x.cancelado ?? 'Não'
-    }));
+    try{
+      if (anal && anal.cancelado==='sim') qs.push('cancelado=eq.Sim');
+      if (anal && anal.cancelado==='nao') qs.push('cancelado=neq.Sim');
+    }catch(e){}
+    var url = URL + '/rest/v1/vendas_canon?' + qs.join('&');
+    fetch(url, { headers: headers }).then(function(r){
+      if (!r.ok) return [];
+      return r.json();
+    }).then(function(data){
+      cb(null, data || []);
+    }).catch(function(e){ console.warn('[DX ES5] REST error', e); cb(null, []); });
   }
+
   function agg(rows){
-    const byDay=new Map(), byStore=new Map(), byHour=new Map(), byCanal=new Map();
-    let canc_val=0, canc_ped=0;
-    for (const r of rows){
-      const dia=r.dia, loja=r.loja??'—', h=(r.hora??'—').toString().padStart(2,'0'), canal=r.canal??'—';
-      const v={fat:+r.fat||0, des:+r.des||0, fre:+r.fre||0, ped:1};
-      if(!byDay.has(dia)) byDay.set(dia,{fat:0,des:0,fre:0,ped:0}); const d=byDay.get(dia); d.fat+=v.fat; d.des+=v.des; d.fre+=v.fre; d.ped+=1;
-      if(!byStore.has(loja)) byStore.set(loja,{fat:0,des:0,fre:0,ped:0}); const s=byStore.get(loja); s.fat+=v.fat; s.des+=v.des; s.fre+=v.fre; s.ped+=1;
-      if(!byHour.has(h)) byHour.set(h,{fat:0,des:0,fre:0,ped:0}); const hh=byHour.get(h); hh.fat+=v.fat; hh.des+=v.des; hh.fre+=v.fre; hh.ped+=1;
-      if(!byCanal.has(canal)) byCanal.set(canal,{fat:0,des:0,fre:0,ped:0}); const c=byCanal.get(canal); c.fat+=v.fat; c.des+=v.des; c.fre+=v.fre; c.ped+=1;
-      if(String(r.cancelado)==='Sim'){ canc_ped+=1; canc_val+=v.fat; }
+    var byDay={}, byStore={}, byHour={}, byCanal={};
+    var canc_val=0, canc_ped=0;
+    for (var i=0;i<(rows||[]).length;i++){
+      var r = rows[i];
+      var dia=r.dia;
+      var loja=r.loja||'—';
+      var h = (r.hora==null? '—' : String(r.hora)); if (h.length===1) h='0'+h;
+      var canal=r.canal||'—';
+      var fat=+r.fat||0, des=+r.des||0, fre=+r.fre||0;
+      if(!byDay[dia]) byDay[dia]={fat:0,des:0,fre:0,ped:0};
+      byDay[dia].fat+=fat; byDay[dia].des+=des; byDay[dia].fre+=fre; byDay[dia].ped+=1;
+      if(!byStore[loja]) byStore[loja]={fat:0,des:0,fre:0,ped:0};
+      byStore[loja].fat+=fat; byStore[loja].des+=des; byStore[loja].fre+=fre; byStore[loja].ped+=1;
+      if(!byHour[h]) byHour[h]={fat:0,des:0,fre:0,ped:0};
+      byHour[h].fat+=fat; byHour[h].des+=des; byHour[h].fre+=fre; byHour[h].ped+=1;
+      if(!byCanal[canal]) byCanal[canal]={fat:0,des:0,fre:0,ped:0};
+      byCanal[canal].fat+=fat; byCanal[canal].des+=des; byCanal[canal].fre+=fre; byCanal[canal].ped+=1;
+      if (String(r.cancelado)==='Sim'){ canc_ped+=1; canc_val+=fat; }
     }
-    const dias = byDay.size;
-    const tot = {fat:0,des:0,fre:0,ped:0,dias,canc_ped,canc_val};
-    for (const v of byDay.values()){ tot.fat+=v.fat; tot.des+=v.des; tot.fre+=v.fre; tot.ped+=v.ped; }
-    return {byDay,byStore,byHour,byCanal,tot};
+    var dias=0; for (var k in byDay) if (byDay.hasOwnProperty(k)) dias++;
+    var tot={fat:0,des:0,fre:0,ped:0,dias:dias,canc_ped:canc_ped,canc_val:canc_val};
+    for (var d in byDay){ if(!byDay.hasOwnProperty(d)) continue; tot.fat+=byDay[d].fat; tot.des+=byDay[d].des; tot.fre+=byDay[d].fre; tot.ped+=byDay[d].ped; }
+    return {byDay:byDay, byStore:byStore, byHour:byHour, byCanal:byCanal, tot:tot};
   }
+
   function valBy(key, a){
-    switch(key){
-      case 'fat':return a.fat; case 'des':return a.des; case 'fre':return a.fre; case 'ped':return a.ped;
-      case 'tkt': return (a.ped>0? a.fat/a.ped:0);
-      case 'fatmed': return (a.dias>0? a.fat/a.dias:0);
-      case 'fremed': return (a.ped>0? a.fre/a.ped:0);
-      case 'desperc': return (a.fat>0? a.des/a.fat:0);
-      case 'canc_ped': return a.canc_ped||0;
-      case 'canc_val': return a.canc_val||0;
-      case 'roi': return (a.des>0? (a.fat-a.des)/a.des: NaN);
-      default: return 0;
-    }
+    if (key==='fat') return a.fat;
+    if (key==='des') return a.des;
+    if (key==='fre') return a.fre;
+    if (key==='ped') return a.ped;
+    if (key==='tkt') return (a.ped>0? a.fat/a.ped:0);
+    if (key==='fatmed') return (a.dias>0? a.fat/a.dias:0);
+    if (key==='fremed') return (a.ped>0? a.fre/a.ped:0);
+    if (key==='desperc') return (a.fat>0? a.des/a.fat:0);
+    if (key==='canc_ped') return a.canc_ped||0;
+    if (key==='canc_val') return a.canc_val||0;
+    if (key==='roi') return (a.des>0? (a.fat-a.des)/a.des: NaN);
+    return 0;
   }
+
   function fmt(key, v){
-  // Try metadata first
-  const metaFmt = (window.KPI_META?.[key]?.fmt);
-  const fallbackFmt = (() => {
-    switch (key) {
-      case 'ped':
-      case 'canc_ped':
-        return 'count';
-      case 'desperc':
-      case 'roi':
-        return 'percent';
-      case 'tkt':
-      case 'fatmed':
-      case 'fremed':
-      case 'fat':
-      case 'des':
-      case 'fre':
-      case 'canc_val':
-        return 'money';
-      default:
-        return metaFmt || 'money';
+    var metaFmt = (window.KPI_META && window.KPI_META[key] && window.KPI_META[key].fmt) ? window.KPI_META[key].fmt : null;
+    var m;
+    if (metaFmt) m = metaFmt;
+    else {
+      if (key==='ped' || key==='canc_ped') m='count';
+      else if (key==='desperc' || key==='roi') m='percent';
+      else m='money';
     }
-  })();
-  const m = metaFmt || fallbackFmt;
-  if (m === 'money')   return (isFinite(v) ? ('R$ ' + (+v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})) : '—');
-  if (m === 'count')   return (isFinite(v) ? (+v).toLocaleString('pt-BR') : '—');
-  if (m === 'percent') return (isFinite(v) ? ((+v)*100).toLocaleString('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1}) + '%' : '—');
-  return String(v);
-})):'—';
-    if(m==='count')   return isFinite(v)? (+v).toLocaleString('pt-BR'):'—';
-    if(m==='percent') return isFinite(v)? ((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%':'—';
+    if (m==='money')   return isFinite(v)? ('R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})):'—';
+    if (m==='count')   return isFinite(v)? (+v).toLocaleString('pt-BR'):'—';
+    if (m==='percent') return isFinite(v)? ((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%':'—';
     return String(v);
   }
+
   function delta(now, prev){
     if(!isFinite(prev)||prev===0) return {txt:'—',cls:'flat'};
-    const p=((now-prev)/prev)*100;
+    var p=((now-prev)/prev)*100;
     return {txt:(p>=0?'▲ ':'▼ ')+Math.abs(p).toFixed(1)+'%', cls:(p>=0?'up':'down')};
   }
-  async function run(payload){
-    const start = payload.start, end = payload.end;
-    const { dePrev, atePrev } = DateHelpers.computePrevRangeISO(start, end);
-    const key = (window.selectedKPI || document.querySelector('#kpi-select')?.value || 'fat');
-    const forced = window.KPI_META?.[key]?.needsCancel ?? null;
-    const anal = {
-      unidade: msSafe.unids(), loja: msSafe.lojas(), turno: msSafe.turnos(),
-      canal: msSafe.canais(), pagamento: msSafe.pags(),
-      cancelado: (forced==='Sim'?'sim': forced==='Não'?'nao': document.querySelector('#fxCanceled')?.value)
-    };
-    const [rowsNow, rowsPrev] = await Promise.all([
-      dxBaseQuery(start, end, anal),
-      dxBaseQuery(dePrev, atePrev, anal)
-    ]);
-    const aggNow = agg(rowsNow), aggPrev = agg(rowsPrev);
-    const mode = (typeof window.effectiveMode==='function' ? window.effectiveMode() : 'total');
-    const curr = (mode==='media')
-      ? valBy(key, { ...aggNow.tot, fat: (aggNow.tot.dias? aggNow.tot.fat/aggNow.tot.dias:0), fre:(aggNow.tot.ped? aggNow.tot.fre/aggNow.tot.ped:0) })
-      : valBy(key, aggNow.tot);
-    const prev = (mode==='media')
-      ? valBy(key, { ...aggPrev.tot, fat: (aggPrev.tot.dias? aggPrev.tot.fat/aggPrev.tot.dias:0), fre:(aggPrev.tot.ped? aggPrev.tot.fre/aggPrev.tot.ped:0) })
-      : valBy(key, aggPrev.tot);
-    const elVal = document.querySelector('.hero-value-number'); if (elVal) elVal.textContent = fmt(key, curr);
-    const elDelta = document.querySelector('.hero .delta, .delta');
-    if (elDelta) {
-      const d = delta(curr, prev);
-      elDelta.textContent = d.txt.replace(/^./,'');
-      elDelta.innerHTML = (d.cls==='up'?'▲ ':'▼ ')+elDelta.textContent;
-      elDelta.classList.remove('up','down','flat'); if(d.cls!=='flat') elDelta.classList.add(d.cls);
+
+  function topN(mapObj, key, n){
+    var arr=[], k;
+    for (k in mapObj){ if(!mapObj.hasOwnProperty(k)) continue;
+      var v = mapObj[k];
+      var sortVal = (key==='ped'? v.ped : (key==='tkt'? (v.ped? v.fat/v.ped:0): v.fat));
+      arr.push({name:k, val:sortVal});
     }
-    const elSub = document.querySelector('.hero-sub-value'); if (elSub) elSub.textContent = 'Período anterior: ' + fmt(key, prev);
-    const top = (map, k, n=2) => {
-      const arr=[...map.entries()].map(([name,v])=>({name, fat:v.fat, des:v.des, fre:v.fre, ped:v.ped, tkt:(v.ped?v.fat/v.ped:0), desperc:(v.fat?v.des/v.fat:0)}));
-      const sortKey=(window.KPI_META?.[k]?.fmt==='count' && k!=='tkt')?'ped':(k==='desperc'||k==='roi')?'fat':(k==='tkt'?'tkt':(k==='fremed'?'fre':k));
-      arr.sort((a,b)=>(b[sortKey]??0)-(a[sortKey]??0));
-      return arr.slice(0,n).map(x=>x.name);
-    };
-    const elCtx = document.querySelector('.hero-context');
-    if (elCtx) {
-      elCtx.innerHTML = `<strong>Destaques:</strong> Lojas ${top(aggNow.byStore,key,2).join(' e ')||'—'} • <strong>Horário:</strong> ${(top(aggNow.byHour,key,2).map(h=>h+'h').join('–')||'—')} • <strong>Canal:</strong> ${top(aggNow.byCanal,key,1).join(', ')||'—'}`;
-    }
-    const byDay=[...aggNow.byDay.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
-    const N=28, tail=byDay.slice(-N), prevWin=byDay.slice(-2*N,-N);
-    const sFat=a=>a.reduce((s,[,v])=>s+v.fat,0), sPed=a=>a.reduce((s,[,v])=>s+v.ped,0);
-    const nowFat=sFat(tail), prevFat=sFat(prevWin);
-    const box=document.querySelector('.ins-list'); if (box) {
-      box.innerHTML='';
-      if(nowFat>0||prevFat>0){
-        const up=nowFat>=prevFat, el=document.createElement('div');
-        el.className='ins-card '+(up?'up':'down');
-        el.innerHTML=`<div class="dot"></div><div>
-          <div class="ins-title">${up?'Aceleração':'Desaceleração'} nas últimas 4 semanas</div>
-          <div class="ins-sub">Δ ${((nowFat-prevFat)/Math.max(1,prevFat)*100).toFixed(1)}% em receita agregada.</div>
-          <div class="ins-action">Ação: ${up?'reforçar':'ajustar'} mix de <strong>combos almoço</strong> nas Top Lojas.</div>
-        </div>`; box.appendChild(el);
-      }
-      const desperc=(aggNow.tot.fat>0? aggNow.tot.des/aggNow.tot.fat:0);
-      { const warn=desperc>=0.12, el=document.createElement('div');
-        el.className='ins-card '+(warn?'down':'up');
-        el.innerHTML=`<div class="dot"></div><div>
-          <div class="ins-title">${warn?'Subsídio acima do ideal':'Subsídio dentro do alvo'}</div>
-          <div class="ins-sub">% Incentivos atual: ${(desperc*100).toFixed(1)}%.</div>
-          <div class="ins-action">Ação: ${warn?'migrar para <strong>tiers 60/90/120</strong>':'manter tiers atuais e testar horário-alvo (11–14h)'}.</div>
-        </div>`; box.appendChild(el);
-      }
-      const slice=(map,h0,h1)=>{ let fat=0,ped=0; for(const [h,v] of map.entries()){ const hh=parseInt(h,10); if(hh>=h0&&hh<=h1){ fat+=v.fat; ped+=v.ped; } } return {fat,ped}; };
-      const almNow=slice(aggNow.byHour,11,14), almPrev=slice(aggPrev.byHour,11,14);
-      const ok=(almNow.ped>almPrev.ped)&&((almNow.ped?almNow.fat/almNow.ped:0)>=(almPrev.ped?almPrev.fat/almPrev.ped:0));
-      { const el=document.createElement('div'); el.className='ins-card '+(ok?'up':'down');
-        el.innerHTML=`<div class="dot"></div><div>
-          <div class="ins-title">${ok?'Elasticidade positiva no almoço':'Almoço sem elasticidade (ticket ou volume caíram)'}</div>
-          <div class="ins-sub">Pedidos ${ok?'+':'−'} e ticket ${ok?'+':'−'} vs. período anterior (11–14h).</div>
-          <div class="ins-action">Ação: ${ok?'bundle com sobremesa sábado':'rever preço/combos do horário'}.</div>
-        </div>`; box.appendChild(el);
-      }
-    }
-    const mmFat= nowFat/Math.max(1,tail.length), mmPed=sPed(tail)/Math.max(1,tail.length);
-    const trend=(isFinite(prevFat)&&prevFat>0)? ((nowFat-prevFat)/prevFat):0, boost=1+(trend*0.5);
-    const pv=document.querySelector('.proj-value'); if(pv) pv.textContent='R$ '+(mmFat*30*boost).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-    const a=document.querySelector('.proj-kpi-sub .sub-kpi:nth-child(1) .proj-value-small'); if(a) a.textContent = Math.round(mmPed*30*boost).toLocaleString('pt-BR');
-    const b=document.querySelector('.proj-kpi-sub .sub-kpi:nth-child(2) .proj-value-small'); if(b) b.textContent = 'R$ '+(aggNow.tot.ped? (aggNow.tot.fat/aggNow.tot.ped).toFixed(2).replace('.',',') : '0,00');
+    arr.sort(function(a,b){ return (b.val||0)-(a.val||0); });
+    var out=[];
+    for (var i=0;i<Math.min(n,arr.length);i++) out.push(arr[i].name);
+    return out;
   }
-  function payloadAtual(){
-    const start = document.querySelector('#fxDuStart')?.value, end = document.querySelector('#fxDuEnd')?.value;
-    if(!start || !end) return null;
-    return {
-      start: end>=start?start:end,
-      end:   end>=start?end:start,
-      analiticos: {
-        unidade: msSafe.unids(), loja: msSafe.lojas(), turno: msSafe.turnos(),
-        canal: msSafe.canais(), pagamento: msSafe.pags(),
-        cancelado: document.querySelector('#fxCanceled')?.value
-      }
-    };
+
+  function uiDates(){
+    var a = $('#fxDuStart') ? $('#fxDuStart').value : null;
+    var b = $('#fxDuEnd') ? $('#fxDuEnd').value : null;
+    if(!a || !b) return null;
+    var start = (b>=a)? a : b;
+    var end   = (b>=a)? b : a;
+    return {start:start, end:end};
   }
-  document.addEventListener('filters:apply', (e)=>{ if(e.detail) run(e.detail); else { const p=payloadAtual(); if(p) run(p);} });
-  document.addEventListener('filters:apply:internal', ()=>{ const p=payloadAtual(); if(p) run(p); });
-  document.addEventListener('DOMContentLoaded', ()=>{
-    const p = payloadAtual(); if(p) run(p);
-    const tab = document.getElementById('tab-diagnostico');
-    if(tab){
-      const obs = new MutationObserver(()=>{ if(getComputedStyle(tab).display!=='none'){ const p=payloadAtual(); if(p) run(p);} });
-      obs.observe(tab, { attributes:true, attributeFilter:['style','class'] });
+
+  function selectedKey(){
+    var sel = $('#kpi-select');
+    var raw = sel ? (sel.value || sel.getAttribute('data-value')) : '';
+    if (!raw && sel && sel.options && sel.selectedIndex>=0){
+      var opt = sel.options[sel.selectedIndex];
+      raw = (opt.value || opt.text || '').trim();
     }
-  });
-  window.run = window.run || run;
-  window.payloadAtual = window.payloadAtual || payloadAtual;
-})();
-</script>
-<!-- ============= FIM DIAGNÓSTICO REAL (SAFE v7) ============== -->
-<script>
-(() => {
-  'use strict';
-  const $ = (s) => document.querySelector(s);
-  function DX_getSelectedKey() {
-    const sel = $('#kpi-select');
-    let raw = (sel && (sel.value || sel.getAttribute('data-value'))) || '';
-    if (!raw) { const opt = sel?.options?.[sel.selectedIndex]; raw = (opt?.value || opt?.text || '').trim(); }
-    const norm = (s) => (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-    const r = norm(raw);
-    if (window.KPI_META && KPI_META[raw]) return raw;
-    for (const k in (window.KPI_META||{})) { if (norm(k) === r) return k; }
-    if (r.includes('fatur') || r==='fat' || r==='faturamento') return 'fat';
-    if (r.includes('pedido') || r==='ped' || r.includes('qtd')) return 'ped';
-    if (r.includes('ticket') || r==='tkt' || r.includes('medio')) return 'tkt';
-    if (r.includes('frete') || r==='fre') return 'fre';
-    if (r.includes('descon') || r==='des') return 'des';
-    if (r.includes('%') || r.includes('subs') || r.includes('perc')) return 'desperc';
-    if (r.includes('roi')) return 'roi';
-    if (r.includes('cancel') && r.includes('pedido')) return 'canc_ped';
-    if (r.includes('cancel') && r.includes('valor')) return 'canc_val';
+    var s = (raw||'').toLowerCase();
+    if (window.KPI_META && window.KPI_META[raw]) return raw;
+    if (s.indexOf('fat')>-1) return 'fat';
+    if (s.indexOf('ped')>-1 || s.indexOf('pedido')>-1) return 'ped';
+    if (s.indexOf('ticket')>-1 || s==='tkt') return 'tkt';
+    if (s.indexOf('frete')>-1 || s==='fre') return 'fre';
+    if (s.indexOf('desc')>-1 || s==='des') return 'des';
+    if (s.indexOf('%')>-1 || s.indexOf('perc')>-1) return 'desperc';
+    if (s.indexOf('roi')>-1) return 'roi';
+    if (s.indexOf('cancel')>-1 && s.indexOf('pedido')>-1) return 'canc_ped';
+    if (s.indexOf('cancel')>-1 && s.indexOf('valor')>-1) return 'canc_val';
     return 'fat';
   }
-  function DX_rerunFromUI() {
-    const start = document.querySelector('#fxDuStart')?.value;
-    const end   = document.querySelector('#fxDuEnd')?.value;
-    if (!start || !end) return;
-    window.selectedKPI = DX_getSelectedKey();
-    try { if (typeof window.payloadAtual === 'function' && typeof window.run === 'function') { const p = window.payloadAtual(); if (p) window.run(p); } }
-    catch (e) { console.warn('[DX] rerun error', e); }
-  }
-  const sel = document.querySelector('#kpi-select');
-  if (sel) { sel.addEventListener('change', DX_rerunFromUI); window.selectedKPI = DX_getSelectedKey(); }
-  const tab = document.getElementById('tab-diagnostico');
-  if (tab && typeof MutationObserver!=='undefined') {
-    const obs = new MutationObserver(() => { if (getComputedStyle(tab).display !== 'none') DX_rerunFromUI(); });
-    obs.observe(tab, { attributes:true, attributeFilter:['style','class'] });
-  }
-})();
-</script>
-<script>
-(() => {
-  'use strict';
-  const $ = (s)=>document.querySelector(s);
-  const once = '__dx_baseQuery_wrapped__';
-  if (typeof window.baseQuery === 'function' && !window[once]) {
-    const orig = window.baseQuery;
-    window[once] = true;
-    window.baseQuery = async function(...args){
-      const res = await orig.apply(this, args);
-      try {
-        const [de, ate, anal] = args || [];
-        document.dispatchEvent(new CustomEvent('dx:baseQuery', { detail: { de, ate, analiticos: anal, rows: res } }));
-      } catch(e){ /* noop */ }
-      return res;
+
+  function run(){
+    var dates = uiDates(); if (!dates) return;
+    var key = selectedKey();
+    var anal = {
+      unidade: safeGet(window, ['ms','unids','get']) ? window.ms.unids.get() : [],
+      loja:    safeGet(window, ['ms','lojas','get']) ? window.ms.lojas.get() : [],
+      turno:   safeGet(window, ['ms','turnos','get']) ? window.ms.turnos.get() : [],
+      canal:   safeGet(window, ['ms','canais','get']) ? window.ms.canais.get() : [],
+      pagamento: safeGet(window, ['ms','pags','get']) ? window.ms.pags.get() : [],
+      cancelado: $('#fxCanceled') ? $('#fxCanceled').value : null
     };
-  }
-  window.__dx_state__ = window.__dx_state__ || { now:null, prev:null, anal:null, de:null, ate:null };
-  function uiDates(){
-    const a = $('#fxDuStart')?.value, b = $('#fxDuEnd')?.value;
-    if(!a || !b) return null;
-    const start = b>=a ? a : b, end = b>=a ? b : a;
-    return {start, end};
-  }
-  function eqDate(a,b){ return String(a||'') === String(b||''); }
-  document.addEventListener('dx:baseQuery', (e)=>{
-    const d = e.detail || {};
-    const ui = uiDates(); if (!ui) return;
-    const nowMatch = eqDate(d.de, ui.start) && eqDate(d.ate, ui.end);
-    let isPrev = false;
-    try {
-      const pr = (window.DateHelpers && typeof DateHelpers.computePrevRangeISO==='function')
-        ? DateHelpers.computePrevRangeISO(ui.start, ui.end) : null;
-      if (pr) isPrev = eqDate(d.de, pr.dePrev) && eqDate(d.ate, pr.atePrev);
-    } catch(_) {}
-    if (nowMatch) {
-      window.__dx_state__.now = d.rows;
-      window.__dx_state__.anal = d.analiticos || window.__dx_state__.anal;
-      window.__dx_state__.de = d.de; window.__dx_state__.ate = d.ate;
-      document.dispatchEvent(new Event('dx:now-ready'));
-    } else if (isPrev) {
-      window.__dx_state__.prev = d.rows;
-      document.dispatchEvent(new Event('dx:prev-ready'));
-    }
-  });
-  window.DX_getDataTap = function(){ return window.__dx_state__ || { now:null, prev:null, anal:null, de:null, ate:null }; };
-})();
-</script>
-<script>
-(() => {
-  'use strict';
-  async function dxRenderFromTap(){
-    const tap = (typeof window.DX_getDataTap==='function') ? window.DX_getDataTap() : null;
-    if (!tap || !tap.now) return;
-    if (typeof window.run === 'function') {
-      const payload = { start: tap.de, end: tap.ate, analiticos: tap.anal || {} };
-      window.run(payload);
-    }
-  }
-  document.addEventListener('dx:now-ready', dxRenderFromTap);
-  document.addEventListener('dx:prev-ready', dxRenderFromTap);
-  document.addEventListener('filters:apply', dxRenderFromTap);
-  document.addEventListener('filters:apply:internal', dxRenderFromTap);
-  document.addEventListener('DOMContentLoaded', dxRenderFromTap);
-})();
-</script>
-<script>
-// ==== DX Hardening: global error guard + debounced renderer ====
-(() => {
-  'use strict';
-  // Global error guard to avoid silent breaks
-  if (!window.__dx_error_guard__) {
-    window.__dx_error_guard__ = true;
-    window.addEventListener('error', (e) => {
-      console.warn('[DX] window error:', e?.message || e);
-    });
-    window.addEventListener('unhandledrejection', (e) => {
-      console.warn('[DX] unhandled promise rejection:', e?.reason || e);
-    });
-  }
+    var prev = DateHelpers.computePrevRangeISO(dates.start, dates.end);
 
-  // Debounce helper (shared)
-  if (!window.__dx_debounce__) {
-    window.__dx_debounce__ = function(fn, wait=120){
-      let t; return function(...args){ clearTimeout(t); t = setTimeout(()=>fn.apply(this,args), wait); };
-    };
-  }
+    // Fetch now and prev, then render
+    dxFetch(dates.start, dates.end, anal, function(_e1, rowsNow){
+      dxFetch(prev.dePrev, prev.atePrev, anal, function(_e2, rowsPrev){
 
-  // Wrap main rerender hooks to avoid re-entrancy storms
-  if (!window.__dx_bindings__) {
-    window.__dx_bindings__ = true;
+        // Aggregates
+        var A = agg(rowsNow||[]), B = agg(rowsPrev||[]);
+        var mode = (typeof window.effectiveMode==='function') ? window.effectiveMode() : 'total';
+        var curr = (mode==='media') ? valBy(key, { fat:(A.tot.dias? A.tot.fat/A.tot.dias:0), fre:(A.tot.ped? A.tot.fre/A.tot.ped:0), ped:A.tot.ped, des:A.tot.des, dias:A.tot.dias, canc_ped:A.tot.canc_ped, canc_val:A.tot.canc_val })
+                                    : valBy(key, A.tot);
+        var prevv= (mode==='media') ? valBy(key, { fat:(B.tot.dias? B.tot.fat/B.tot.dias:0), fre:(B.tot.ped? B.tot.fre/B.tot.ped:0), ped:B.tot.ped, des:B.tot.des, dias:B.tot.dias, canc_ped:B.tot.canc_ped, canc_val:B.tot.canc_val })
+                                    : valBy(key, B.tot);
 
-    const debouncedRecalc = window.__dx_debounce__(async () => {
-      try {
-        if (typeof window.DX_getDataTap === 'function') {
-          const tap = window.DX_getDataTap();
-          if (tap && tap.de && tap.ate && typeof window.run === 'function') {
-            window.run({ start: tap.de, end: tap.ate, analiticos: tap.anal || {} });
-          } else if (typeof window.payloadAtual === 'function' && typeof window.run === 'function') {
-            const p = window.payloadAtual(); if (p) window.run(p);
-          }
-        } else if (typeof window.payloadAtual === 'function' && typeof window.run === 'function') {
-          const p = window.payloadAtual(); if (p) window.run(p);
+        // Render hero (painel ao vivo)
+        var pK = $('.hero-value-number'); if (pK) pK.textContent = fmt(key, curr);
+        var pD = document.querySelector('.hero .delta, .delta');
+        if (pD){
+          var dlt = delta(curr, prevv);
+          pD.textContent = dlt.txt;
+          pD.className = 'delta '+dlt.cls;
         }
-      } catch (err) {
-        console.warn('[DX] debounced recalc error:', err);
-      }
-    }, 160);
+        var pS = $('.hero-sub-value'); if (pS) pS.textContent = 'Período anterior: ' + fmt(key, prevv);
 
-    // Safely (re)bind listeners once
-    const add = (ev) => {
-      document.removeEventListener(ev, debouncedRecalc);
-      document.addEventListener(ev, debouncedRecalc);
-    };
-    ['dx:now-ready', 'dx:prev-ready', 'filters:apply', 'filters:apply:internal', 'DOMContentLoaded'].forEach(add);
-
-    // KPI select changes
-    const sel = document.querySelector('#kpi-select');
-    if (sel) {
-      sel.removeEventListener('change', debouncedRecalc);
-      sel.addEventListener('change', debouncedRecalc);
-    }
-
-    // Tab visible
-    const tab = document.getElementById('tab-diagnostico');
-    if (tab && typeof MutationObserver!=='undefined') {
-      // avoid creating multiple observers
-      if (!tab.__dx_obs__) {
-        const obs = new MutationObserver(() => {
-          if (getComputedStyle(tab).display !== 'none') debouncedRecalc();
-        });
-        obs.observe(tab, { attributes:true, attributeFilter:['style','class'] });
-        tab.__dx_obs__ = obs;
-      }
-    }
-  }
-})();
-</script>
-
-<script>
-/* ==== DX Ultimate Sync (late-binding + UI listeners + self panel) ==== */
-(() => {
-  'use strict';
-
-  // 1) Late-binding wrapper: wrap baseQuery even if it's defined AFTER this script
-  try {
-    if (!window.__dx_wrap_ready__) {
-      window.__dx_wrap_ready__ = true;
-      let _baseQuery = window.baseQuery;
-      Object.defineProperty(window, 'baseQuery', {
-        configurable: true,
-        enumerable: true,
-        get() { return _baseQuery; },
-        set(fn) {
-          if (typeof fn === 'function') {
-            const wrapped = async function(...args) {
-              const res = await fn.apply(this, args);
-              try {
-                const [de, ate, anal] = args || [];
-                document.dispatchEvent(new CustomEvent('dx:baseQuery', { detail: { de, ate, analiticos: anal, rows: res } }));
-              } catch (_) {}
-              return res;
-            };
-            _baseQuery = wrapped;
-            document.dispatchEvent(new Event('dx:wrapped'));
-          } else {
-            _baseQuery = fn;
-          }
+        var ctx = $('.hero-context');
+        if (ctx){
+          var lo = topN(A.byStore,key,2).join(' e ') || '—';
+          var ho = topN(A.byHour,key,2).join('–') || '—';
+          var ca = topN(A.byCanal,key,1).join(', ') || '—';
+          ctx.innerHTML = '<strong>Destaques:</strong> Lojas '+lo+' • <strong>Horário:</strong> '+ho+' • <strong>Canal:</strong> '+ca;
         }
       });
-      // If it already exists, trigger setter to wrap
-      if (typeof _baseQuery === 'function') { window.baseQuery = _baseQuery; }
-    }
-  } catch (e) { console.warn('[DX] late-binding wrap fail', e); }
-
-  // 2) Utility funcs
-  const $ = (s) => document.querySelector(s);
-  const $$ = (s) => Array.from(document.querySelectorAll(s));
-  const debounce = (fn, w=180)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), w); }; };
-
-  function agg(rows){
-    const byDay=new Map(), byStore=new Map(), byHour=new Map(), byCanal=new Map();
-    let canc_val=0, canc_ped=0;
-    for (const r of (rows||[])){
-      const dia=r.dia, loja=r.loja??'—', h=(r.hora??'—').toString().padStart(2,'0'), canal=r.canal??'—';
-      const v={fat:+r.fat||0, des:+r.des||0, fre:+r.fre||0, ped:1};
-      if(!byDay.has(dia)) byDay.set(dia,{fat:0,des:0,fre:0,ped:0}); const d=byDay.get(dia); d.fat+=v.fat; d.des+=v.des; d.fre+=v.fre; d.ped+=1;
-      if(!byStore.has(loja)) byStore.set(loja,{fat:0,des:0,fre:0,ped:0}); const s=byStore.get(loja); s.fat+=v.fat; s.des+=v.des; s.fre+=v.fre; s.ped+=1;
-      if(!byHour.has(h)) byHour.set(h,{fat:0,des:0,fre:0,ped:0}); const hh=byHour.get(h); hh.fat+=v.fat; hh.des+=v.des; hh.fre+=v.fre; hh.ped+=1;
-      if(!byCanal.has(canal)) byCanal.set(canal,{fat:0,des:0,fre:0,ped:0}); const c=byCanal.get(canal); c.fat+=v.fat; c.des+=v.des; c.fre+=v.fre; c.ped+=1;
-      if(String(r.cancelado)==='Sim'){ canc_ped+=1; canc_val+=v.fat; }
-    }
-    const dias = byDay.size;
-    const tot={fat:0,des:0,fre:0,ped:0,dias,canc_ped,canc_val};
-    for (const v of byDay.values()){ tot.fat+=v.fat; tot.des+=v.des; tot.fre+=v.fre; tot.ped+=v.ped; }
-    return {byDay,byStore,byHour,byCanal,tot};
-  }
-  function valBy(key, a){
-    switch(key){
-      case 'fat':return a.fat; case 'des':return a.des; case 'fre':return a.fre; case 'ped':return a.ped;
-      case 'tkt': return (a.ped>0? a.fat/a.ped:0);
-      case 'fatmed': return (a.dias>0? a.fat/a.dias:0);
-      case 'fremed': return (a.ped>0? a.fre/a.ped:0);
-      case 'desperc': return (a.fat>0? a.des/a.fat:0);
-      case 'canc_ped': return a.canc_ped||0;
-      case 'canc_val': return a.canc_val||0;
-      case 'roi': return (a.des>0? (a.fat-a.des)/a.des: NaN);
-      default: return 0;
-    }
-  }
-  function fmt(key, v){
-    const metaFmt = (window.KPI_META?.[key]?.fmt);
-    const fallbackFmt = (() => {
-      switch (key) {
-        case 'ped':
-        case 'canc_ped':
-          return 'count';
-        case 'desperc':
-        case 'roi':
-          return 'percent';
-        case 'tkt':
-        case 'fatmed':
-        case 'fremed':
-        case 'fat':
-        case 'des':
-        case 'fre':
-        case 'canc_val':
-          return 'money';
-        default:
-          return metaFmt || 'money';
-      }
-    })();
-    const m = metaFmt || fallbackFmt;
-    if (m === 'money')   return (isFinite(v) ? ('R$ ' + (+v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})) : '—');
-    if (m === 'count')   return (isFinite(v) ? (+v).toLocaleString('pt-BR') : '—');
-    if (m === 'percent') return (isFinite(v) ? ((+v)*100).toLocaleString('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1}) + '%' : '—');
-    return String(v);
-  }
-  function delta(now, prev){
-    if(!isFinite(prev)||prev===0) return {txt:'—',cls:'flat'};
-    const p=((now-prev)/prev)*100;
-    return {txt:(p>=0?'▲ ':'▼ ')+Math.abs(p).toFixed(1)+'%', cls:(p>=0?'up':'down')};
-  }
-  function norm(s){ return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
-  function getK(){
-    const sel = document.querySelector('#kpi-select');
-    const raw = sel?.value || sel?.getAttribute?.('data-value') || sel?.options?.[sel?.selectedIndex||0]?.value || sel?.options?.[sel?.selectedIndex||0]?.text || '';
-    const r = norm(raw);
-    if (window.selectedKPI) return window.selectedKPI;
-    if (window.KPI_META && KPI_META[raw]) return raw;
-    for (const k in (window.KPI_META||{})) { if (norm(k)===r) return k; }
-    if (r.includes('fatur') || r==='fat' || r==='faturamento') return 'fat';
-    if (r.includes('pedido') || r==='ped' || r.includes('qtd')) return 'ped';
-    if (r.includes('ticket') || r==='tkt' || r.includes('medio')) return 'tkt';
-    if (r.includes('frete') || r==='fre') return 'fre';
-    if (r.includes('descon') || r==='des') return 'des';
-    if (r.includes('%') || r.includes('subs') || r.includes('perc')) return 'desperc';
-    if (r.includes('roi')) return 'roi';
-    if (r.includes('cancel') && r.includes('pedido')) return 'canc_ped';
-    if (r.includes('cancel') && r.includes('valor')) return 'canc_val';
-    return 'fat';
-  }
-
-  // 3) Self panel (non-invasive): render numbers into #tab-diagnostico or as a floating box
-  function ensurePanel(){
-    let host = document.getElementById('tab-diagnostico');
-    let box = document.getElementById('dx-live-panel');
-    if (!box) {
-      box = document.createElement('div');
-      box.id = 'dx-live-panel';
-      box.style.cssText = 'position:relative; margin:8px 0; padding:12px; border:1px solid #e5e7eb; border-radius:12px; background:#fafafa;';
-      box.innerHTML = '<div style="font-weight:600;margin-bottom:6px">Diagnóstico (ao vivo)</div>\
-        <div style="display:flex;gap:16px;flex-wrap:wrap">\
-          <div><div style="font-size:12px;color:#6b7280">KPI</div><div id="dx-kpi-val" style="font-size:20px;font-weight:700">—</div></div>\
-          <div><div style="font-size:12px;color:#6b7280">Δ vs período ant.</div><div id="dx-kpi-delta" style="font-size:16px">—</div></div>\
-          <div><div style="font-size:12px;color:#6b7280">Destaques</div><div id="dx-kpi-high" style="font-size:14px">—</div></div>\
-        </div>';
-      if (host) host.prepend(box); else document.body.appendChild(box);
-    }
-    return box;
-  }
-  function renderPanel(key, curr, prev, aggNow){
-    const el = ensurePanel();
-    const dv = document.getElementById('dx-kpi-val'); if (dv) dv.textContent = fmt(key, curr);
-    const dd = document.getElementById('dx-kpi-delta'); if (dd) { const d=delta(curr,prev); dd.textContent = d.txt; }
-    const dh = document.getElementById('dx-kpi-high'); if (dh) {
-      const pick = (map,n=2)=>{
-        const arr=[...map.entries()].map(([name,v])=>({name, val:(key==='ped'?v.ped:(key==='tkt'? (v.ped? v.fat/v.ped:0): v.fat))}));
-        arr.sort((a,b)=>(b.val)-(a.val));
-        return arr.slice(0,n).map(x=>x.name).join(', ');
-      };
-      dh.innerHTML = `<strong>Lojas:</strong> ${pick(aggNow.byStore,2) || '—'} • <strong>Hora:</strong> ${pick(aggNow.byHour,2) || '—'} • <strong>Canal:</strong> ${pick(aggNow.byCanal,1) || '—'}`;
-    }
-  }
-
-  // 4) Fetchers and runners
-  async function restFetch(de, ate, anal){
-    if (!window.SUPABASE_URL || !window.SUPABASE_KEY) return [];
-    const headers = { apikey: window.SUPABASE_KEY, Authorization: 'Bearer '+window.SUPABASE_KEY, Range: '0-999999', Prefer: 'count=exact' };
-    const qs = [
-      'select=dia,hora,loja,canal,fat,des,fre,cancelado',
-      `dia=gte.${encodeURIComponent(de)}`,
-      `dia=lte.${encodeURIComponent(ate)}`,
-      'order=dia.asc,hora.asc'
-    ];
-    if (anal?.cancelado==='sim') qs.push('cancelado=eq.Sim');
-    if (anal?.cancelado==='nao') qs.push('cancelado=neq.Sim');
-    const url = `${window.SUPABASE_URL}/rest/v1/vendas_canon?${qs.join('&')}`;
-    const r = await fetch(url, { headers });
-    if (!r.ok) return [];
-    return await r.json();
-  }
-
-  function uiDates(){
-    const a = $('#fxDuStart')?.value, b = $('#fxDuEnd')?.value;
-    if(!a || !b) return null;
-    const start = b>=a ? a : b, end = b>=a ? b : a;
-    return {start, end};
-  }
-
-  let lastKey='', lastA='', lastB='';
-  const recalc = debounce(async () => {
-    const dates = uiDates(); if (!dates) return;
-    const key = getK();
-    const anal = {
-      unidade: (window.ms?.unids?.get?.() ?? []),
-      loja: (window.ms?.lojas?.get?.() ?? []),
-      turno: (window.ms?.turnos?.get?.() ?? []),
-      canal: (window.ms?.canais?.get?.() ?? []),
-      pagamento: (window.ms?.pags?.get?.() ?? []),
-      cancelado: $('#fxCanceled')?.value
-    };
-
-    // Source priority: app tap -> baseQuery -> REST
-    let rowsNow = (typeof window.DX_getDataTap==='function' && window.DX_getDataTap().now) ? window.DX_getDataTap().now : null;
-    if (!rowsNow && typeof window.baseQuery==='function') {
-      try { rowsNow = await window.baseQuery(dates.start, dates.end, anal); } catch(_){}
-    }
-    if (!rowsNow) { rowsNow = await restFetch(dates.start, dates.end, anal); }
-
-    // Prev
-    let dePrev, atePrev;
-    try {
-      const pr = (window.DateHelpers && typeof DateHelpers.computePrevRangeISO==='function') ? DateHelpers.computePrevRangeISO(dates.start, dates.end) : null;
-      dePrev = pr?.dePrev; atePrev = pr?.atePrev;
-    } catch(_) {}
-    let rowsPrev = null;
-    if (dePrev && atePrev) {
-      if (typeof window.DX_getDataTap==='function' && window.DX_getDataTap().prev) rowsPrev = window.DX_getDataTap().prev;
-      if (!rowsPrev && typeof window.baseQuery==='function') { try { rowsPrev = await window.baseQuery(dePrev, atePrev, anal); } catch(_){ } }
-      if (!rowsPrev) rowsPrev = await restFetch(dePrev, atePrev, anal);
-    } else {
-      rowsPrev = [];
-    }
-
-    const aggNow = agg(rowsNow), aggPrev = agg(rowsPrev);
-    const mode = (typeof window.effectiveMode==='function' ? window.effectiveMode() : 'total');
-    const curr = (mode==='media')
-      ? valBy(key, { ...aggNow.tot, fat:(aggNow.tot.dias? aggNow.tot.fat/aggNow.tot.dias:0), fre:(aggNow.tot.ped? aggNow.tot.fre/aggNow.tot.ped:0) })
-      : valBy(key, aggNow.tot);
-    const prev = (mode==='media')
-      ? valBy(key, { ...aggPrev.tot, fat:(aggPrev.tot.dias? aggPrev.tot.fat/aggPrev.tot.dias:0), fre:(aggPrev.tot.ped? aggPrev.tot.fre/aggPrev.tot.ped:0) })
-      : valBy(key, aggPrev.tot);
-
-    renderPanel(key, curr, prev, aggNow);
-
-    lastKey = key; lastA = dates.start; lastB = dates.end;
-  }, 200);
-
-  // 5) Bind direct UI events (in case the app doesn't dispatch custom events)
-  const bindUI = () => {
-    ['#fxDuStart','#fxDuEnd','#fxCanceled','#kpi-select'].forEach(sel => {
-      const el = $(sel);
-      if (el && !el.__dx_bound__) {
-        el.addEventListener('input', recalc);
-        el.addEventListener('change', recalc);
-        el.__dx_bound__ = true;
-      }
     });
-  };
-  document.addEventListener('DOMContentLoaded', () => { bindUI(); recalc(); });
-  document.addEventListener('filters:apply', recalc);
-  document.addEventListener('filters:apply:internal', recalc);
-  document.addEventListener('dx:now-ready', recalc);
-  document.addEventListener('dx:prev-ready', recalc);
-  document.addEventListener('dx:wrapped', recalc);
+  }
 
-  // 6) Poll as a last resort (lightweight, stops when panel updates)
-  let tries=0;
-  const poll = setInterval(() => {
-    bindUI();
-    recalc();
-    if (++tries > 10) clearInterval(poll);
-  }, 1000);
+  // Bind UI changes
+  function bind(){
+    var ids = ['#fxDuStart','#fxDuEnd','#fxCanceled','#kpi-select'];
+    for (var i=0;i<ids.length;i++){
+      var el = $(ids[i]); if (!el) continue;
+      if (!el.__dx_es5__){
+        el.addEventListener('change', run);
+        el.addEventListener('input', run);
+        el.__dx_es5__ = true;
+      }
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    bind(); run();
+  });
+  document.addEventListener('filters:apply', run);
+  document.addEventListener('filters:apply:internal', run);
 })();
 </script>
+<!-- ===== FIM DIAGNÓSTICO (ES5 SAFE) ===== -->
+
 </body>
 </html>
