@@ -913,12 +913,25 @@
         .gte('dia', de).lte('dia', ate)
         .order('dia', { ascending:true })
         .limit(200000);
+      
       const isActive = (val) => val && val.length > 0;
-      if(isActive(analiticos.unidade)) q = q.in('unidade', analiticos.unidade);
-      if(isActive(analiticos.loja)) q = q.in('loja', analiticos.loja);
-      if(isActive(analiticos.turno)) q = q.in('turno', analiticos.turno);
-      if(isActive(analiticos.canal)) q = q.in('canal', analiticos.canal);
-      if(isActive(analiticos.pagamento)) q = q.in('pagamento_base', analiticos.pagamento);
+      
+      // Lógica de filtro OR para campos que podem ter múltiplos valores
+      const orFilters = [];
+      if (isActive(analiticos.unidade)) orFilters.push(`unidade.in.("${analiticos.unidade.join('","')}")`);
+      if (isActive(analiticos.loja)) orFilters.push(`loja.in.("${analiticos.loja.join('","')}")`);
+      if (isActive(analiticos.turno)) orFilters.push(`turno.in.("${analiticos.turno.join('","')}")`);
+      if (isActive(analiticos.canal)) orFilters.push(`canal.in.("${analiticos.canal.join('","')}")`);
+      
+      // CORREÇÃO: Lógica de filtro para campos com múltiplos valores por vírgula
+      if (isActive(analiticos.pagamento)) {
+          const paymentFilters = analiticos.pagamento.map(p => `pagamento_base.ilike.%${p}%`).join(',');
+          orFilters.push(`or(${paymentFilters})`);
+      }
+      if(orFilters.length > 0) {
+        q = q.or(orFilters.join(',and(') + ')'.repeat(orFilters.length -1));
+      }
+
       const forcedCancel = wantedCancelFilterForKPI();
       if(forcedCancel){
         q = q.eq('cancelado', forcedCancel);
@@ -926,6 +939,7 @@
         if (analiticos.cancelado === 'sim') q = q.eq('cancelado', 'Sim');
         if (analiticos.cancelado === 'nao') q = q.eq('cancelado', 'Não');
       }
+      
       const { data, error } = await q;
       if(error){ console.error('[REST baseQuery]', error); throw error; }
       return data||[];
@@ -1084,7 +1098,6 @@
         console.error(e); setDiag('Erro ao atualizar gráfico mensal');
       }
     }
-    const wine = ["#7b1e3a","#8c2947","#9c3554","#ad4061","#bd4c6e","#ce577b"];
     function ensureDonutTop6(labels, values, centerText, fmt='money'){
       const cvs = $('ch_top6'); if(!cvs) return;
       if(cvs.__chart){ try{cvs.__chart.destroy();}catch(e){} cvs.__chart=null; }
