@@ -344,7 +344,7 @@
     .fx-du-sec + .fx-du-sec{padding-top:8px; border-top:1px dashed var(--line)}
     .fx-du-sec h4{margin:0; font-size:11.5px; letter-spacing:.2px; text-transform:uppercase; color:#475569}
 
-    /* CORREÇÃO DE LAYOUT: Grid responsivo para filtros */
+    /* Grid responsivo para filtros */
     .fx-du-grid{
       display:grid; 
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -356,7 +356,6 @@
       height:30px; padding:4px 8px; border:1px solid var(--line); border-radius:8px; background:#fff; font:inherit; width:100%; text-align:left;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    /* CORREÇÃO DE LAYOUT: Garante que o painel multiselect se posicione corretamente */
     .msel { position: relative; }
     .msel.open .msel-panel { z-index: 50; } 
 
@@ -534,26 +533,87 @@
     const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
     const num =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
     const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
-    function iso(d){return d.toISOString().slice(0,10);}
-    function addDaysISO(isoStr,n){const d=new Date(isoStr+'T00:00:00'); d.setDate(d.getDate()+n); return iso(d);}
-    function daysLen(de,ate){const d1=new Date(de+'T00:00:00'), d2=new Date(ate+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24))+1;}
-    function monthStartISO(isoStr){ const d=new Date(isoStr+'T00:00:00'); d.setDate(1); return iso(d); }
-    function monthEndISO(isoStr){ const d=new Date(isoStr+'T00:00:00'); d.setMonth(d.getMonth()+1,0); return iso(d); }
-    function addMonthsISO(isoStr, delta){ const d=new Date(isoStr+'T00:00:00'); const day=d.getDate(); d.setDate(1); d.setMonth(d.getMonth()+delta); const last=new Date(d.getFullYear(), d.getMonth()+1, 0).getDate(); d.setDate(Math.min(day,last)); return iso(d); }
-    function formatYM(isoStr){ const d=new Date(isoStr+'T00:00:00'); const m=d.getMonth(); const y=String(d.getFullYear()).slice(-2); const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return `${n[m]}/${y}`; }
+    
+    /* ===================== DATE HELPERS (REATORADO) ===================== */
+    const DateHelpers = {
+      iso: (d) => d.toISOString().slice(0, 10),
+      addDaysISO: (isoStr, n) => {
+          const d = new Date(isoStr + 'T12:00:00');
+          d.setDate(d.getDate() + n);
+          return d.toISOString().slice(0, 10);
+      },
+      daysLen: (de, ate) => {
+          const d1 = new Date(de + 'T12:00:00');
+          const d2 = new Date(ate + 'T12:00:00');
+          return Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
+      },
+      monthStartISO: (isoStr) => {
+          const d = new Date(isoStr + 'T12:00:00');
+          d.setDate(1);
+          return d.toISOString().slice(0, 10);
+      },
+      monthEndISO: (isoStr) => {
+          const d = new Date(isoStr + 'T12:00:00');
+          d.setMonth(d.getMonth() + 1, 0);
+          return d.toISOString().slice(0, 10);
+      },
+      addMonthsISO: (isoStr, delta) => {
+          const d = new Date(isoStr + 'T12:00:00');
+          const day = d.getDate();
+          d.setDate(1);
+          d.setMonth(d.getMonth() + delta);
+          const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+          d.setDate(Math.min(day, last));
+          return d.toISOString().slice(0, 10);
+      },
+      formatYM: (isoStr) => {
+          const d = new Date(isoStr + 'T12:00:00');
+          const m = d.getMonth();
+          const y = String(d.getFullYear()).slice(-2);
+          const n = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+          return `${n[m]}/${y}`;
+      },
+      lastDayOfMonth: (y, m) => new Date(y, m + 1, 0).getDate(),
+      isFullYear: (d1, d2) => d1.getMonth() === 0 && d1.getDate() === 1 && d2.getMonth() === 11 && d2.getDate() === 31 && d1.getFullYear() === d2.getFullYear(),
+      isFullMonthsAligned: function(d1, d2) {
+          // CORREÇÃO: Ordem dos parâmetros corrigida
+          return d1.getDate() === 1 && d2.getDate() === this.lastDayOfMonth(d2.getFullYear(), d2.getMonth());
+      },
+      shiftYear: function(date, delta) {
+          const d = new Date(date);
+          d.setFullYear(d.getFullYear() + delta);
+          const ld = this.lastDayOfMonth(d.getFullYear(), d.getMonth());
+          if (d.getDate() > ld) d.setDate(ld);
+          return d;
+      },
+      computePrevRangeISO: function(deISO, ateISO) {
+          const d1 = new Date(deISO + 'T12:00:00');
+          const d2 = new Date(ateISO + 'T12:00:00');
+          if (this.isFullYear(d1, d2) || this.isFullMonthsAligned(d1, d2)) {
+              const p1 = this.shiftYear(d1, -1);
+              const p2 = this.shiftYear(d2, -1);
+              return { dePrev: this.iso(p1), atePrev: this.iso(p2) };
+          }
+          const len = this.daysLen(deISO, ateISO);
+          const atePrev = new Date(d1.getTime() - 86400000);
+          const dePrev = new Date(atePrev.getTime() - (len - 1) * 86400000);
+          return { dePrev: this.iso(dePrev), atePrev: this.iso(atePrev) };
+      }
+    };
+
     const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     const normHeader = (s)=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
     function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
     function displayNormalize(s){ return cleanSpaces(s); }
     
-    /* ===================== MULTISELECT (CORRIGIDO) ===================== */
+    /* ===================== MULTISELECT ===================== */
     function MultiSelect(rootId, placeholder){
       const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
-      let options=[], selected=new Set(), filtered=[], q; // CORREÇÃO: 'q' movido para o escopo da função
+      let options=[], selected=new Set(), filtered=[], q;
 
       function render(){ 
         panel.innerHTML=''; 
-        q = document.createElement('input'); // CORREÇÃO: Atribui a 'q' no escopo superior
+        q = document.createElement('input');
         q.className='msel-search'; 
         q.placeholder='Filtrar…';
         q.style.cssText = 'width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 6px;';
@@ -573,7 +633,6 @@
         const box=document.createElement('div');
         box.className = 'msel-opts-box';
         
-        // CORREÇÃO: Lógica robusta para decidir qual lista renderizar
         const listToRender = (q && q.value) ? filtered : options;
 
         listToRender.forEach((v)=>{
@@ -592,12 +651,11 @@
           lb.textContent=v;
           lb.style.cursor = 'pointer';
 
-          const handleRowClick = () => {
+          row.onclick = () => {
             cb.checked = !cb.checked;
             cb.dispatchEvent(new Event('change'));
           };
 
-          row.onclick = handleRowClick;
           cb.onchange = (e) => {
             e.stopPropagation();
             cb.checked ? selected.add(v) : selected.delete(v); 
@@ -654,7 +712,6 @@
     const fxCanceled = $('fxCanceled');
     
     /* ===================== LÓGICA DE DADOS (KPIs, Gráficos, etc.) ===================== */
-    // (O restante da lógica de dados permanece o mesmo das versões anteriores)
     function buildParams(de, ate, analiticos) {
       const isActive = (val) => val && val.length > 0;
       let p_cancelado = null;
@@ -684,7 +741,7 @@
       if(prev.error) throw prev.error;
       const N=agg(now.data||[]), P=agg(prev.data||[]);
       const CN=agg((cNow?.data)||[]), CP=agg((cPrev?.data)||[]);
-      const len=daysLen(de,ate);
+      const len = DateHelpers.daysLen(de, ate);
       const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
       const fatMedN = len? (N.fat/len) : 0,     fatMedP = len? (P.fat/len) : 0;
       const desPercN = N.fat? (N.des/N.fat) : 0, desPercP = P.fat? (P.des/P.fat) : 0;
@@ -709,12 +766,6 @@
       $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
       $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
       deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
-    }
-    function computePrevRangeISO(deISO, ateISO){
-      const d1=new Date(deISO+'T00:00:00'), d2=new Date(ateISO+'T00:00:00');
-      if(isFullYear(d1,d2) || isFullMonthsAligned(d1,d2)){ const p1=shiftYear(d1,-1), p2=shiftYear(d2,-1); return { dePrev: iso(p1), atePrev: iso(p2) }; }
-      const len=daysLen(deISO,ateISO); const atePrev=new Date(d1.getTime()-86400000); const dePrev=new Date(atePrev.getTime()-(len-1)*86400000);
-      return { dePrev: iso(dePrev), atePrev: iso(atePrev) };
     }
     let chartModeGlobal = 'total';
     const segGlobal = $('segGlobal');
@@ -845,10 +896,7 @@
       function computeNonRatio(dailyMap, metric, numDays){
         const total = {fat:0, des:0, fre:0, ped:0};
         for(const d of dailyMap.values()){
-          total.fat += d.fat;
-          total.des += d.des;
-          total.fre += d.fre;
-          total.ped += d.ped;
+          total.fat += d.fat; total.des += d.des; total.fre += d.fre; total.ped += d.ped;
         }
         switch(metric){
           case 'fat': return mode==='media' ? (total.fat / numDays) : total.fat;
@@ -937,17 +985,17 @@
     }
     async function updateMonth12x12(analiticos){
       try{
-        const end = lastDay || iso(new Date());
-        const endMonthStart = monthStartISO(end);
-        const last12Start = addMonthsISO(endMonthStart, -11);
-        const prev12Start = addMonthsISO(endMonthStart, -23);
-        const last12End   = monthEndISO(end);
-        const prev12EndAdj= monthEndISO(addMonthsISO(endMonthStart, -12));
+        const end = lastDay || DateHelpers.iso(new Date());
+        const endMonthStart = DateHelpers.monthStartISO(end);
+        const last12Start = DateHelpers.addMonthsISO(endMonthStart, -11);
+        const prev12Start = DateHelpers.addMonthsISO(endMonthStart, -23);
+        const last12End   = DateHelpers.monthEndISO(end);
+        const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
         const mode = effectiveMode();
         let labels = [];
         let cur = last12Start;
-        for(let i=0;i<12;i++){ labels.push(formatYM(cur)); cur = addMonthsISO(cur, 1); }
+        for(let i=0;i<12;i++){ labels.push(DateHelpers.formatYM(cur)); cur = DateHelpers.addMonthsISO(cur, 1); }
         const [rowsNow, rowsPrev] = await Promise.all([
           baseQuery(last12Start,last12End, analiticos),
           baseQuery(prev12Start,prev12EndAdj, analiticos)
@@ -957,7 +1005,7 @@
         const mNow = new Map(curNow.map(o=>[o.key,o.value]));
         const mPrv = new Map(curPrv.map(o=>[o.key,o.value]));
         const ymsNow = []; cur = last12Start;
-        for(let i=0;i<12;i++){ const d=new Date(cur+'T00:00:00'); const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; ymsNow.push(ym); cur=addMonthsISO(cur,1); }
+        for(let i=0;i<12;i++){ const d=new Date(cur+'T12:00:00'); const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; ymsNow.push(ym); cur=DateHelpers.addMonthsISO(cur,1); }
         const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
         const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
         const prevArr = ymsPrev.map(ym => mPrv.get(ym)||0);
@@ -1074,7 +1122,7 @@
     }
     async function reloadStaticOptions(){
       const de = firstDay || '1900-01-01';
-      const ate= lastDay  || iso(new Date());
+      const ate= lastDay  || DateHelpers.iso(new Date());
       const TOPN = 50;
       const [topUnids, topLojas, topPags, topCanais] = await Promise.allSettled([
         supa.rpc('opt_unidades_ranked',  { p_dini: de, p_dfim: ate, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
@@ -1115,7 +1163,7 @@
             return;
         }
         
-        const {dePrev, atePrev} = computePrevRangeISO(de,ate);
+        const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
         setStatus('Consultando…');
         let kpiOk=true;
         await updateKPIs(de,ate,dePrev,atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
@@ -1134,10 +1182,9 @@
 
 
     // ===================================================================================
-    // Bloco 2: LÓGICA DA INTERFACE DE FILTROS E ABAS
+    // LÓGICA DA INTERFACE DE FILTROS E ABAS
     // ===================================================================================
 
-    // Lógica das Abas
     const tabsContainer = $('tabs');
     if (tabsContainer) {
       tabsContainer.addEventListener('click', (e)=>{
@@ -1147,7 +1194,6 @@
       });
     }
 
-    // LÓGICA DO NOVO FILTRO (FOOTER/DROP-UP)
     function fxLocalMidday(d){ const x=new Date(d); x.setHours(12,0,0,0); return x }
     function fxFmt(date){ const y=date.getFullYear(), m=String(date.getMonth()+1).padStart(2,'0'), d=String(date.getDate()).padStart(2,'0'); return `${y}-${m}-${d}` }
     function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
@@ -1269,7 +1315,6 @@
         bindKPIClick();
         updateChartTitles();
 
-        // Estado inicial de data e disparo da primeira carga
         fxLastNDays(30);
         fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
         fxDispatchApply();
