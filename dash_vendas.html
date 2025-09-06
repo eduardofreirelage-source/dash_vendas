@@ -793,17 +793,16 @@
       const pNow = buildParams(de, ate, analiticos);
       const pPrev = buildParams(dePrev, atePrev, analiticos);
 
-      // CORREÇÃO LÓGICA: Consultas separadas para garantir a precisão dos totais
       const baseParamsNow = { p_dini: de, p_dfim: ate };
       const baseParamsPrev = { p_dini: dePrev, p_dfim: atePrev };
 
       const [nowResult, prevResult, cNowResult, cPrevResult, vNowResult, vPrevResult] = await Promise.all([
         supa.rpc('kpi_vendas_unificado', pNow),
         supa.rpc('kpi_vendas_unificado', pPrev),
-        supa.rpc('kpi_vendas_unificado', {...baseParamsNow, ...{p_cancelado: 'Sim'} }),
-        supa.rpc('kpi_vendas_unificado', {...baseParamsPrev, ...{p_cancelado: 'Sim'} }),
-        supa.rpc('kpi_vendas_unificado', {...baseParamsNow, ...{p_cancelado: 'Não'} }),
-        supa.rpc('kpi_vendas_unificado', {...baseParamsPrev, ...{p_cancelado: 'Não'} })
+        supa.rpc('kpi_vendas_unificado', {...baseParamsNow, p_cancelado: 'Sim'}),
+        supa.rpc('kpi_vendas_unificado', {...baseParamsPrev, p_cancelado: 'Sim'}),
+        supa.rpc('kpi_vendas_unificado', {...baseParamsNow, p_cancelado: 'Não'}),
+        supa.rpc('kpi_vendas_unificado', {...baseParamsPrev, p_cancelado: 'Não'})
       ]);
 
       if(nowResult.error) throw nowResult.error;
@@ -1010,7 +1009,6 @@
           ]);
           const tip = `Período anterior: ${dePrev} → ${atePrev}`;
           
-          // Dia da Semana
           {
               const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
               const nArr = Array(7).fill(0), pArr = Array(7).fill(0);
@@ -1020,21 +1018,31 @@
               prv.forEach(o => { if(o.key >= 0 && o.key <= 6) pArr[o.key] = o.value; });
               ensureChart('ch_dow', labels, nArr, pArr, tip, meta.fmt);
           }
-          // Hora
           {
               const nArr = Array(24).fill(0), pArr = Array(24).fill(0);
               const cur = computeByBucket(rowsNow, 'hour', selectedKPI, mode);
               const prv = computeByBucket(rowsPrev, 'hour', selectedKPI, mode);
-              cur.forEach(o => { if(o.key >= 0 && o.key <= 23) nArr[o.key] = o.value; });
-              prv.forEach(o => { if(o.key >= 0 && o.key <= 23) pArr[o.key] = o.value; });
+              cur.forEach(o => { if (o.key !== null && o.key >= 0 && o.key <= 23) nArr[o.key] = o.value; });
+              prv.forEach(o => { if (o.key !== null && o.key >= 0 && o.key <= 23) pArr[o.key] = o.value; });
 
-              const activeHours = Array.from({length: 24}, (_, i) => i).filter(h => nArr[h] > 0 || pArr[h] > 0);
-              const labels = activeHours.map(h => String(h).padStart(2, '0') + 'h');
-              const nowData = activeHours.map(h => nArr[h]);
-              const prevData = activeHours.map(h => pArr[h]);
-              ensureChart('ch_hour', labels, nowData, prevData, tip, meta.fmt);
+              let minHour = 24, maxHour = -1;
+              for (let i = 0; i < 24; i++) {
+                  if (nArr[i] > 0 || pArr[i] > 0) {
+                      if (i < minHour) minHour = i;
+                      if (i > maxHour) maxHour = i;
+                  }
+              }
+
+              if (minHour > maxHour) {
+                  ensureChart('ch_hour', [], [], [], tip, meta.fmt);
+              } else {
+                  const range = Array.from({length: maxHour - minHour + 1}, (_, i) => i + minHour);
+                  const labels = range.map(h => String(h).padStart(2, '0') + 'h');
+                  const nowData = range.map(h => nArr[h]);
+                  const prevData = range.map(h => pArr[h]);
+                  ensureChart('ch_hour', labels, nowData, prevData, tip, meta.fmt);
+              }
           }
-          // Turno
           {
               const labels = ['Dia', 'Noite'];
               const nMap = new Map(), pMap = new Map();
@@ -1151,7 +1159,7 @@
         if (allStoresData.length > 6) {
             const top5 = allStoresData.slice(0, 5);
             const othersValue = allStoresData.slice(5).reduce((acc, curr) => acc + curr.valor, 0);
-            if (othersValue > 0) {
+            if (othersValue > 0.01) { // Evita fatias "Outros" com valor residual
               finalData = [...top5, { loja: 'Outros', valor: othersValue }];
             } else {
               finalData = top5;
@@ -1333,7 +1341,7 @@
     });
 
     fx.$days.addEventListener('click', (e)=>{
-      const b=e.target.closest('.fx-chip'); if(!b) return;
+      const b=e.target.closest('button'); if(!b) return;
       fx.$days.querySelectorAll('button').forEach(x=> x.classList.toggle('fx-active', x===b));
       fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('fx-active'));
       const n=parseInt(b.dataset.win,10); if(!isNaN(n)) fxLastNDays(n);
