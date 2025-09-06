@@ -47,14 +47,11 @@
     .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;min-height:272px}
     .card .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
     .title{font-weight:700}
-    /* LAYOUT: Botão Total/Média menor e mais discreto */
-    .seg{border-radius: 6px;}
-    .seg button{padding: 2px 8px; font-size: 10px; font-weight: 600; height: 24px;}
+    .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+    .seg button{padding:5px 9px;border:0;background:#fff;font-weight:700;color:#475569;cursor:pointer}
     .seg button.active{background:var(--wine);color:#fff}
     .chart-box{position:relative;flex-grow:1;min-height:250px}
-    /* LAYOUT: Altura do painel do gráfico principal reduzida */
-    .panel > .card:first-child { height: 330px; }
-    .panel > .card:first-child .chart-box { min-height: 0; }
+    .panel > .card .chart-box{min-height: 240px !important;}
     .chart-box canvas{display:block;width:100%;height:100%}
     .side{display:flex;flex-direction:column;gap:10px}
     .card.mini{min-height:auto;padding:10px}
@@ -568,7 +565,7 @@
     function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
     function displayNormalize(s){ return cleanSpaces(s); }
     const agg = (rows) => {
-      let ped = rows?.length || 0;
+      const ped = rows?.length || 0; // Contagem de pedidos é pelo número de linhas.
       let fat=0,des=0,fre=0; 
       for(const r of (rows||[])){ fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } 
       return {ped,fat,des,fre};
@@ -831,16 +828,6 @@
         const pNow = buildParams(de, ate, analiticos);
         const pPrev = buildParams(dePrev, atePrev, analiticos);
         
-        const otherFilters = {
-          unidade: analiticos.unidade,
-          loja: analiticos.loja,
-          turno: analiticos.turno,
-          canal: analiticos.canal,
-          pagamento: analiticos.pagamento
-        };
-        const pOtherNow = buildParams(de, ate, otherFilters);
-        const pOtherPrev = buildParams(dePrev, atePrev, otherFilters);
-
         const [
           finNowResult, finPrevResult,
           { count: pedNowCount, error: errPedNow },
@@ -852,10 +839,10 @@
             supa.rpc(RPC_KPI_FUNC, pPrev),
             supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate),
             supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev),
-            supa.rpc(RPC_FILTER_FUNC, { ...pOtherNow, p_cancelado: 'Sim' }, { count: 'exact' }),
-            supa.rpc(RPC_FILTER_FUNC, { ...pOtherNow, p_cancelado: 'Não' }, { count: 'exact' }),
-            supa.rpc(RPC_FILTER_FUNC, { ...pOtherPrev, p_cancelado: 'Sim' }, { count: 'exact' }),
-            supa.rpc(RPC_FILTER_FUNC, { ...pOtherPrev, p_cancelado: 'Não' }, { count: 'exact' })
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Sim'),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Não'),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Sim'),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Não')
         ]);
 
         if(finNowResult.error) throw finNowResult.error;
@@ -879,6 +866,7 @@
         const totalPedidosNow = vnCount + cnCount;
         const totalPedidosPrev = vpCount + cpCount;
         
+        // Busca o valor cancelado separadamente
         const {data: cancDataNow} = await supa.rpc(RPC_KPI_FUNC, { ...pNow, p_cancelado: 'Sim' });
         const {data: cancDataPrev} = await supa.rpc(RPC_KPI_FUNC, { ...pPrev, p_cancelado: 'Sim' });
         const CN_val = { fat: +(cancDataNow[0]?.fat || 0) };
@@ -1437,7 +1425,7 @@
     });
 
     fx.$days.addEventListener('click', (e)=>{
-      const b=e.target.closest('button'); if(!b) return;
+      const b=e.target.closest('.fx-chip'); if(!b) return;
       fx.$days.querySelectorAll('button').forEach(x=> x.classList.toggle('active', x===b));
       fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('fx-active'));
       const n=parseInt(b.dataset.win,10); if(!isNaN(n)) fxLastNDays(n);
