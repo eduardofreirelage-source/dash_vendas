@@ -1487,39 +1487,33 @@
   });
   </script>
 
+<!-- =============== DIAGNÓSTICO REAL (SAFE v7) =============== -->
 <script>
-/* ================= DIAGNÓSTICO (REAL DATA) — SAFE v6 =================
-   Melhorias:
-   1) Polyfill de DateHelpers.computePrevRangeISO se não existir.
-   2) DX_baseQuery: usa baseQuery original; se 404/ausente, tenta REST fallback em views conhecidas.
-   3) Totalmente isolado (DX_*), não redeclara nada global. 
-   4) Carrega em DOMContentLoaded, filters:apply e quando a aba fica visível.
------------------------------------------------------------------------ */
-(function(){
+(() => {
   'use strict';
-  const $ = (sel) => document.querySelector(sel);
-  const TAB_ID = 'tab-diagnostico';
+  const $ = (s) => document.querySelector(s);
 
-  // ---- (1) Polyfill DateHelpers.computePrevRangeISO se faltar
-  if(!window.DateHelpers || typeof DateHelpers.computePrevRangeISO!=='function'){
+  // Guards for filters object (ms) – no crash on load order
+  const msSafe = {
+    unids: () => (window.ms?.unids?.get?.() ?? []),
+    lojas: () => (window.ms?.lojas?.get?.() ?? []),
+    turnos: () => (window.ms?.turnos?.get?.() ?? []),
+    canais: () => (window.ms?.canais?.get?.() ?? []),
+    pags: ()   => (window.ms?.pags?.get?.()   ?? [])
+  };
+
+  // Polyfill: DateHelpers.computePrevRangeISO
+  if (!window.DateHelpers || typeof DateHelpers.computePrevRangeISO !== 'function') {
     window.DateHelpers = window.DateHelpers || {};
     DateHelpers.computePrevRangeISO = function(deISO, ateISO){
       try{
         const de = new Date(deISO+'T00:00:00');
         const ate = new Date(ateISO+'T00:00:00');
-        if(!(de instanceof Date) || isNaN(de) || !(ate instanceof Date) || isNaN(ate)) {
-          // fallback 30 dias
-          const end=new Date(); const start=new Date(end); start.setDate(end.getDate()-30);
-          const prevEnd=new Date(start); prevEnd.setDate(start.getDate()-1);
-          const prevStart=new Date(prevEnd); prevStart.setDate(prevEnd.getDate()-30);
-          return { dePrev: prevStart.toISOString().slice(0,10), atePrev: prevEnd.toISOString().slice(0,10) };
-        }
-        // janela anterior do mesmo tamanho (inclusive)
-        const ms = ate - de;
-        const prevEnd = new Date(de.getTime()-24*3600*1000);
-        const prevStart = new Date(prevEnd.getTime() - ms);
+        const span = ate - de;
+        const prevEnd = new Date(de.getTime()-86400000);
+        const prevStart = new Date(prevEnd.getTime()-span);
         return { dePrev: prevStart.toISOString().slice(0,10), atePrev: prevEnd.toISOString().slice(0,10) };
-      }catch(_){ 
+      }catch(_){
         const end=new Date(); const start=new Date(end); start.setDate(end.getDate()-30);
         const prevEnd=new Date(start); prevEnd.setDate(start.getDate()-1);
         const prevStart=new Date(prevEnd); prevStart.setDate(prevEnd.getDate()-30);
@@ -1528,108 +1522,61 @@
     };
   }
 
-  // ---- (2) DX_baseQuery wrapper com fallback REST
-  async function DX_baseQuery(de, ate, anal){
-    // Tenta baseQuery original se existir
-    if(typeof window.baseQuery === 'function'){
-      try{
+  // Prefer your existing baseQuery; if absent or fails, try REST on vendas_canon
+  async function dxBaseQuery(de, ate, anal) {
+    if (typeof window.baseQuery === 'function') {
+      try {
         return await window.baseQuery(de, ate, anal);
-      }catch(err){
-        console.warn('[DX] baseQuery falhou, tentando REST fallback...', err);
+      } catch (e) {
+        console.warn('[DX] baseQuery falhou, tentando REST fallback.', e);
       }
     }
-    // Fallback via REST
-    const urlBase = (window.SUPABASE_URL || (window.SUPABASE?.url)) || '';
-    const key = (window.SUPABASE_KEY || window?.SUPABASE?.anonKey || window?.SUPABASE?.serviceKey || '');
-    if(!urlBase || !key){
-      console.warn('[DX] Sem SUPABASE_URL/KEY — não é possível REST fallback.');
+    // REST fallback needs SUPABASE_URL/KEY
+    const URL = window.SUPABASE_URL;
+    const KEY = window.SUPABASE_KEY;
+    if (!URL || !KEY) {
+      console.warn('[DX] Sem SUPABASE_URL/KEY — sem fallback REST.');
       return [];
     }
-    const headers = {
-      'apikey': key,
-      'Authorization': 'Bearer '+key
-    };
-    // views/tabelas candidatas (ordem de preferência)
-    const candidates = [
-      'vendas_canon',
-      'vendas',
-      'vw_vendas',
-      'vendas_mv'
-    ];
-    // monta filtros básicos (dia, cancelado e listas)
-    const qsParts = [
+    const headers = { apikey: KEY, Authorization: 'Bearer '+KEY };
+    const qs = [
       'select=dia,hora,loja,canal,fat,des,fre,cancelado',
-      'order=dia.asc,hora.asc',
       `dia=gte.${encodeURIComponent(de)}`,
-      `dia=lte.${encodeURIComponent(ate)}`
+      `dia=lte.${encodeURIComponent(ate)}`,
+      'order=dia.asc,hora.asc'
     ];
-    if(anal?.cancelado==='sim') qsParts.push('cancelado=eq.Sim');
-    if(anal?.cancelado==='nao') qsParts.push('cancelado=neq.Sim');
-    function addIn(param, arr){
-      if(Array.isArray(arr) && arr.length){
-        // Supabase or operator para string lists
-        const vals = arr.map(v=>`"${String(v).replace('"','\"')}"`).join(',');
-        qsParts.push(`or=(${param}.in.(${vals}))`);
+    if (anal?.cancelado==='sim') qs.push('cancelado=eq.Sim');
+    if (anal?.cancelado==='nao') qs.push('cancelado=neq.Sim');
+    const addIn = (field, arr) => {
+      if (Array.isArray(arr) && arr.length) {
+        const vals = arr.map(v => `"${String(v).replace(/"/g,'\"')}"`).join(',');
+        qs.push(`or=(${field}.in.(${vals}))`);
       }
-    }
-    addIn('loja', anal?.loja);
-    addIn('canal', anal?.canal);
-    addIn('turno', anal?.turno);
-    addIn('unidade', anal?.unidade);
+    };
+    addIn('loja', anal?.loja); addIn('canal', anal?.canal);
+    addIn('turno', anal?.turno); addIn('unidade', anal?.unidade);
     addIn('pagamento_base', anal?.pagamento);
 
-    // Tenta cada endpoint até obter 200
-    for(const table of candidates){
-      const url = `${urlBase}/rest/v1/${table}?${qsParts.join('&')}`;
-      try{
-        const r = await fetch(url, { headers });
-        if(r.ok){
-          const data = await r.json();
-          // normaliza campos esperados
-          return data.map(x=>({
-            dia: x.dia, hora: (x.hora ?? x.hr ?? x.hour ?? null),
-            loja: x.loja ?? x.unidade ?? x.NomeDaLoja ?? null,
-            canal: x.canal ?? x.plataforma ?? null,
-            fat: + (x.fat ?? x.faturamento ?? x.valor_total ?? x.total ?? 0),
-            des: + (x.des ?? x.descontos ?? x.incentivo ?? 0),
-            fre: + (x.fre ?? x.frete ?? 0),
-            cancelado: String(x.cancelado ?? x.is_cancelado ?? 'Não') === 'true' ? 'Sim' : (x.cancelado ?? 'Não')
-          }));
-        }else{
-          console.warn('[DX] REST fallback', table, 'status:', r.status);
-        }
-      }catch(err){
-        console.warn('[DX] REST erro', table, err);
-      }
-    }
-    return []; // sem dados no fallback
+    const url = `${URL}/rest/v1/vendas_canon?${qs.join('&')}`;
+    const r = await fetch(url, { headers });
+    if (!r.ok) { console.warn('[DX] REST status', r.status); return []; }
+    const data = await r.json();
+    return data.map(x => ({
+      dia: x.dia,
+      hora: x.hora ?? null,
+      loja: x.loja ?? null,
+      canal: x.canal ?? null,
+      fat: +x.fat || 0,
+      des: +x.des || 0,
+      fre: +x.fre || 0,
+      cancelado: x.cancelado ?? 'Não'
+    }));
   }
 
-  // ---- Aggregators/formatters (iguais aos anteriores)
-  function fmtKPI(key, v){
-    const m = (window.KPI_META?.[key]?.fmt) || 'money';
-    if(m==='money')   return (isFinite(v)? ('R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})) : '—');
-    if(m==='count')   return (isFinite(v)? (+v).toLocaleString('pt-BR') : '—');
-    if(m==='percent') return (isFinite(v)? ((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%' : '—');
-    return String(v);
-  }
-  function valByKey(key, acc){
-    switch(key){
-      case 'fat':return acc.fat; case 'des':return acc.des; case 'fre':return acc.fre; case 'ped':return acc.ped;
-      case 'tkt': return (acc.ped>0? acc.fat/acc.ped:0);
-      case 'fatmed': return (acc.dias>0? acc.fat/acc.dias:0);
-      case 'fremed': return (acc.ped>0? acc.fre/acc.ped:0);
-      case 'desperc': return (acc.fat>0? acc.des/acc.fat:0);
-      case 'canc_ped': return acc.canc_ped||0;
-      case 'canc_val': return acc.canc_val||0;
-      case 'roi': return (acc.des>0? (acc.fat-acc.des)/acc.des : NaN);
-      default: return 0;
-    }
-  }
-  function aggRows(rows){
+  function agg(rows){
     const byDay=new Map(), byStore=new Map(), byHour=new Map(), byCanal=new Map();
     let canc_val=0, canc_ped=0;
-    for(const r of rows){
+    for (const r of rows){
       const dia=r.dia, loja=r.loja??'—', h=(r.hora??'—').toString().padStart(2,'0'), canal=r.canal??'—';
       const v={fat:+r.fat||0, des:+r.des||0, fre:+r.fre||0, ped:1};
       if(!byDay.has(dia)) byDay.set(dia,{fat:0,des:0,fre:0,ped:0}); const d=byDay.get(dia); d.fat+=v.fat; d.des+=v.des; d.fre+=v.fre; d.ped+=1;
@@ -1639,176 +1586,155 @@
       if(String(r.cancelado)==='Sim'){ canc_ped+=1; canc_val+=v.fat; }
     }
     const dias = byDay.size;
-    let tot={fat:0,des:0,fre:0,ped:0,dias,canc_ped,canc_val};
-    for(const v of byDay.values()){ tot.fat+=v.fat; tot.des+=v.des; tot.fre+=v.fre; tot.ped+=v.ped; }
+    const tot = {fat:0,des:0,fre:0,ped:0,dias,canc_ped,canc_val};
+    for (const v of byDay.values()){ tot.fat+=v.fat; tot.des+=v.des; tot.fre+=v.fre; tot.ped+=v.ped; }
     return {byDay,byStore,byHour,byCanal,tot};
   }
-  function topN(map, key, n=3){
-    const arr=[...map.entries()].map(([k,v])=>({k, ...v, tkt:(v.ped>0? v.fat/v.ped:0), desperc:(v.fat>0? v.des/v.fat:0)}));
-    const sortKey = (window.KPI_META?.[key]?.fmt==='count' && key!=='tkt') ? 'ped'
-                  : (key==='desperc'||key==='roi') ? 'fat'
-                  : (key==='tkt' ? 'tkt' : (key==='fremed' ? 'fre' : key));
-    arr.sort((a,b)=>(b[sortKey]??0)-(a[sortKey]??0));
-    return arr.slice(0,n);
+  function valBy(key, a){
+    switch(key){
+      case 'fat':return a.fat; case 'des':return a.des; case 'fre':return a.fre; case 'ped':return a.ped;
+      case 'tkt': return (a.ped>0? a.fat/a.ped:0);
+      case 'fatmed': return (a.dias>0? a.fat/a.dias:0);
+      case 'fremed': return (a.ped>0? a.fre/a.ped:0);
+      case 'desperc': return (a.fat>0? a.des/a.fat:0);
+      case 'canc_ped': return a.canc_ped||0;
+      case 'canc_val': return a.canc_val||0;
+      case 'roi': return (a.des>0? (a.fat-a.des)/a.des: NaN);
+      default: return 0;
+    }
   }
-  function deltaTxt(now, prev){
-    if(!isFinite(prev)||prev===0) return {txt:'—', cls:'flat'};
+  function fmt(key, v){
+    const m=(window.KPI_META?.[key]?.fmt)||'money';
+    if(m==='money')   return isFinite(v)? ('R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})):'—';
+    if(m==='count')   return isFinite(v)? (+v).toLocaleString('pt-BR'):'—';
+    if(m==='percent') return isFinite(v)? ((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%':'—';
+    return String(v);
+  }
+  function delta(now, prev){
+    if(!isFinite(prev)||prev===0) return {txt:'—',cls:'flat'};
     const p=((now-prev)/prev)*100;
     return {txt:(p>=0?'▲ ':'▼ ')+Math.abs(p).toFixed(1)+'%', cls:(p>=0?'up':'down')};
   }
 
-  async function compute(selectedKey, de, ate, dePrev, atePrev, analiticos){
-    const forced = window.KPI_META?.[selectedKey]?.needsCancel ?? null;
-    const patch = (a)=>({...a, cancelado:(forced==='Sim'?'sim': forced==='Não'?'nao': a.cancelado)});
-    const rowsNow = await DX_baseQuery(de, ate, patch(analiticos));
-    const rowsPrev= await DX_baseQuery(dePrev, atePrev, patch(analiticos));
-    const aggNow=aggRows(rowsNow), aggPrev=aggRows(rowsPrev);
-    const mode = (typeof effectiveMode==='function'? effectiveMode() : 'total');
-    if(mode==='media'){
-      const avgNow={...aggNow.tot}, avgPrev={...aggPrev.tot};
-      avgNow.fat=(aggNow.tot.dias>0? aggNow.tot.fat/aggNow.tot.dias:0);
-      avgPrev.fat=(aggPrev.tot.dias>0? aggPrev.tot.fat/aggPrev.tot.dias:0);
-      avgNow.fre=(aggNow.tot.ped>0? aggNow.tot.fre/aggNow.tot.ped:0);
-      avgPrev.fre=(aggPrev.tot.ped>0? aggPrev.tot.fre/aggPrev.tot.ped:0);
-      return { now:valByKey(selectedKey,avgNow), prev:valByKey(selectedKey,avgPrev), aggNow, aggPrev };
-    }
-    return { now:valByKey(selectedKey,aggNow.tot), prev:valByKey(selectedKey,aggPrev.tot), aggNow, aggPrev };
-  }
+  async function run(payload){
+    const start = payload.start, end = payload.end;
+    const { dePrev, atePrev } = DateHelpers.computePrevRangeISO(start, end);
+    const key = (window.selectedKPI || $('#kpi-select')?.value || 'fat');
 
-  function renderHero(k, nowVal, prevVal, aggNow){
-    const elVal=$('.hero-value-number'), elDelta=document.querySelector('.hero .delta, .delta');
-    const elSub=$('.hero-sub-value'), ctx=$('.hero-context');
-    if(elVal) elVal.textContent=fmtKPI(k, nowVal);
-    if(elDelta){
-      const {txt, cls}=deltaTxt(nowVal, prevVal);
-      elDelta.textContent = txt.replace(/^./,'');
-      elDelta.innerHTML = (cls==='up'?'▲ ':'▼ ')+elDelta.textContent;
-      elDelta.classList.remove('up','down','flat'); if(cls!=='flat') elDelta.classList.add(cls);
+    const forced = window.KPI_META?.[key]?.needsCancel ?? null;
+    const anal = {
+      unidade: msSafe.unids(), loja: msSafe.lojas(), turno: msSafe.turnos(),
+      canal: msSafe.canais(), pagamento: msSafe.pags(),
+      cancelado: (forced==='Sim'?'sim': forced==='Não'?'nao': $('#fxCanceled')?.value)
+    };
+
+    const [rowsNow, rowsPrev] = await Promise.all([
+      dxBaseQuery(start, end, anal),
+      dxBaseQuery(dePrev, atePrev, anal)
+    ]);
+
+    const aggNow = agg(rowsNow), aggPrev = agg(rowsPrev);
+    const mode = (typeof window.effectiveMode==='function' ? window.effectiveMode() : 'total');
+    const curr = (mode==='media')
+      ? valBy(key, { ...aggNow.tot, fat: (aggNow.tot.dias? aggNow.tot.fat/aggNow.tot.dias:0), fre:(aggNow.tot.ped? aggNow.tot.fre/aggNow.tot.ped:0) })
+      : valBy(key, aggNow.tot);
+    const prev = (mode==='media')
+      ? valBy(key, { ...aggPrev.tot, fat: (aggPrev.tot.dias? aggPrev.tot.fat/aggPrev.tot.dias:0), fre:(aggPrev.tot.ped? aggPrev.tot.fre/aggPrev.tot.ped:0) })
+      : valBy(key, aggPrev.tot);
+
+    // Hero
+    const elVal = $('.hero-value-number'); if (elVal) elVal.textContent = fmt(key, curr);
+    const elDelta = document.querySelector('.hero .delta, .delta');
+    if (elDelta) {
+      const d = delta(curr, prev);
+      elDelta.textContent = d.txt.replace(/^./,'');
+      elDelta.innerHTML = (d.cls==='up'?'▲ ':'▼ ')+elDelta.textContent;
+      elDelta.classList.remove('up','down','flat'); if(d.cls!=='flat') elDelta.classList.add(d.cls);
     }
-    if(elSub) elSub.textContent='Período anterior: '+fmtKPI(k, prevVal);
-    if(ctx){
-      const lojas=topN(aggNow.byStore,k,2).map(x=>x.k).join(' e ')||'—';
-      const horas=topN(aggNow.byHour,k,2).map(x=>x.k+'h').join('–')||'—';
-      const canais=topN(aggNow.byCanal,k,1).map(x=>x.k).join(', ')||'—';
-      ctx.innerHTML=`<strong>Destaques:</strong> Lojas ${lojas} • <strong>Horário:</strong> ${horas} • <strong>Canal:</strong> ${canais}`;
+    const elSub = $('.hero-sub-value'); if (elSub) elSub.textContent = 'Período anterior: ' + fmt(key, prev);
+
+    // Destaques
+    const top = (map, k, n=2) => {
+      const arr=[...map.entries()].map(([name,v])=>({name, fat:v.fat, des:v.des, fre:v.fre, ped:v.ped, tkt:(v.ped?v.fat/v.ped:0), desperc:(v.fat?v.des/v.fat:0)}));
+      const sortKey=(window.KPI_META?.[k]?.fmt==='count' && k!=='tkt')?'ped':(k==='desperc'||k==='roi')?'fat':(k==='tkt'?'tkt':(k==='fremed'?'fre':k));
+      arr.sort((a,b)=>(b[sortKey]??0)-(a[sortKey]??0));
+      return arr.slice(0,n).map(x=>x.name);
+    };
+    const elCtx = $('.hero-context');
+    if (elCtx) {
+      elCtx.innerHTML = `<strong>Destaques:</strong> Lojas ${top(aggNow.byStore,key,2).join(' e ')||'—'} • <strong>Horário:</strong> ${(top(aggNow.byHour,key,2).map(h=>h+'h').join('–')||'—')} • <strong>Canal:</strong> ${top(aggNow.byCanal,key,1).join(', ')||'—'}`;
     }
-  }
-  function renderInsights(k, aNow, aPrev){
-    const box=$('.ins-list'); if(!box) return; box.innerHTML='';
-    const byDay=[...aNow.byDay.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
-    const N=28, tail=byDay.slice(-N), prev=byDay.slice(-2*N,-N);
-    const sumFat=arr=>arr.reduce((s,[,v])=>s+v.fat,0);
-    const nowFat=sumFat(tail), prevFat=sumFat(prev);
-    if(nowFat>0||prevFat>0){
-      const up=nowFat>=prevFat, el=document.createElement('div');
-      el.className='ins-card '+(up?'up':'down');
-      el.innerHTML=`<div class="dot"></div><div>
-        <div class="ins-title">${up?'Aceleração':'Desaceleração'} nas últimas 4 semanas</div>
-        <div class="ins-sub">Δ ${((nowFat-prevFat)/Math.max(1,prevFat)*100).toFixed(1)}% em receita agregada.</div>
-        <div class="ins-action">Ação: ${up?'reforçar':'ajustar'} mix de <strong>combos almoço</strong> nas Top Lojas.</div>
-      </div>`; box.appendChild(el);
-    }
-    // Subsídio
-    const desperc=(aNow.tot.fat>0? aNow.tot.des/aNow.tot.fat:0);
-    { const warn=desperc>=0.12, el=document.createElement('div');
-      el.className='ins-card '+(warn?'down':'up');
-      el.innerHTML=`<div class="dot"></div><div>
-        <div class="ins-title">${warn?'Subsídio acima do ideal':'Subsídio dentro do alvo'}</div>
-        <div class="ins-sub">% Incentivos atual: ${(desperc*100).toFixed(1)}%.</div>
-        <div class="ins-action">Ação: ${warn?'migrar para <strong>tiers 60/90/120</strong>':'manter tiers atuais e testar horário-alvo (11–14h)'}.</div>
-      </div>`; box.appendChild(el);
-    }
-    // Elasticidade 11–14h
-    const sel=(map,h0,h1)=>{ let fat=0,ped=0; for(const [h,v] of map.entries()){ const hh=parseInt(h,10); if(hh>=h0&&hh<=h1){ fat+=v.fat; ped+=v.ped; } } return {fat,ped}; };
-    const n=sel(aNow.byHour,11,14), p=sel(aPrev.byHour,11,14);
-    const ok=(n.ped>p.ped) && ((n.ped>0? n.fat/n.ped:0) >= (p.ped>0? p.fat/p.ped:0));
-    { const el=document.createElement('div'); el.className='ins-card '+(ok?'up':'down');
-      el.innerHTML=`<div class="dot"></div><div>
-        <div class="ins-title">${ok?'Elasticidade positiva no almoço':'Almoço sem elasticidade (ticket ou volume caíram)'}</div>
-        <div class="ins-sub">Pedidos ${ok?'+':'−'} e ticket ${ok?'+':'−'} vs. período anterior (11–14h).</div>
-        <div class="ins-action">Ação: ${ok?'bundle com sobremesa sábado':'rever preço/combos do horário'}.</div>
-      </div>`; box.appendChild(el);
-    }
-  }
-  function renderProj(aNow){
-    const byDay=[...aNow.byDay.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
-    const N=28, tail=byDay.slice(-N), prev=byDay.slice(-2*N,-N);
+
+    // Insights e Projeção
+    const byDay=[...aggNow.byDay.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+    const N=28, tail=byDay.slice(-N), prevWin=byDay.slice(-2*N,-N);
     const sFat=a=>a.reduce((s,[,v])=>s+v.fat,0), sPed=a=>a.reduce((s,[,v])=>s+v.ped,0);
-    const fatTail=sFat(tail), fatPrev=sFat(prev), mmFat=fatTail/Math.max(1,tail.length);
-    const pedTail=sPed(tail), mmPed=pedTail/Math.max(1,tail.length);
-    const trend=(isFinite(fatPrev)&&fatPrev>0)? ((fatTail-fatPrev)/fatPrev):0, boost=1+(trend*0.5);
-    const fat30=mmFat*30*boost, ped30=Math.round(mmPed*30*boost), tkt=(aNow.tot.ped>0? aNow.tot.fat/aNow.tot.ped:0);
-    const pv=$('.proj-value'); if(pv) pv.textContent='R$ '+fat30.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-    const a=$('.proj-kpi-sub .sub-kpi:nth-child(1) .proj-value-small');
-    const b=$('.proj-kpi-sub .sub-kpi:nth-child(2) .proj-value-small');
-    if(a) a.textContent = ped30.toLocaleString('pt-BR');
-    if(b) b.textContent = 'R$ '+tkt.toFixed(2).replace('.',',');
-  }
-
-  async function runDiag(payload){
-    const tab=document.getElementById(TAB_ID);
-    if(!tab) return;
-    // espera o baseQuery disponível (máx 2s)
-    let t=0; while(typeof window.baseQuery!=='function' && t<20){ await new Promise(r=>setTimeout(r,100)); t++; }
-    const {start:de, end:ate, analiticos} = payload;
-    const { dePrev, atePrev } = DateHelpers.computePrevRangeISO(de, ate);
-    const key = (window.selectedKPI || ($('#kpi-select')?.value) || 'fat');
-    try{
-      const { now, prev, aggNow, aggPrev } = await compute(key, de, ate, dePrev, atePrev, analiticos);
-      renderHero(key, now, prev, aggNow);
-      renderInsights(key, aggNow, aggPrev);
-      renderProj(aggNow);
-    }catch(err){ console.error('Diagnóstico erro:', err); }
-  }
-
-  // Eventos
-  document.addEventListener('filters:apply', (e)=>{ if(e.detail) runDiag(e.detail); });
-  document.addEventListener('filters:apply:internal', ()=>{
-    const start=$('#fxDuStart')?.value, end=$('#fxDuEnd')?.value;
-    if(start&&end){
-      runDiag({
-        start:end>=start?start:end, end:end>=start?end:start,
-        analiticos:{
-          unidade: ms.unids.get(), loja: ms.lojas.get(), turno: ms.turnos.get(),
-          canal: ms.canais.get(), pagamento: ms.pags.get(), cancelado: $('#fxCanceled')?.value
-        }
-      });
+    const nowFat=sFat(tail), prevFat=sFat(prevWin);
+    const box=$('.ins-list'); if (box) {
+      box.innerHTML='';
+      if(nowFat>0||prevFat>0){
+        const up=nowFat>=prevFat, el=document.createElement('div');
+        el.className='ins-card '+(up?'up':'down');
+        el.innerHTML=`<div class="dot"></div><div>
+          <div class="ins-title">${up?'Aceleração':'Desaceleração'} nas últimas 4 semanas</div>
+          <div class="ins-sub">Δ ${((nowFat-prevFat)/Math.max(1,prevFat)*100).toFixed(1)}% em receita agregada.</div>
+          <div class="ins-action">Ação: ${up?'reforçar':'ajustar'} mix de <strong>combos almoço</strong> nas Top Lojas.</div>
+        </div>`; box.appendChild(el);
+      }
+      const desperc=(aggNow.tot.fat>0? aggNow.tot.des/aggNow.tot.fat:0);
+      { const warn=desperc>=0.12, el=document.createElement('div');
+        el.className='ins-card '+(warn?'down':'up');
+        el.innerHTML=`<div class="dot"></div><div>
+          <div class="ins-title">${warn?'Subsídio acima do ideal':'Subsídio dentro do alvo'}</div>
+          <div class="ins-sub">% Incentivos atual: ${(desperc*100).toFixed(1)}%.</div>
+          <div class="ins-action">Ação: ${warn?'migrar para <strong>tiers 60/90/120</strong>':'manter tiers atuais e testar horário-alvo (11–14h)'}.</div>
+        </div>`; box.appendChild(el);
+      }
+      const slice=(map,h0,h1)=>{ let fat=0,ped=0; for(const [h,v] of map.entries()){ const hh=parseInt(h,10); if(hh>=h0&&hh<=h1){ fat+=v.fat; ped+=v.ped; } } return {fat,ped}; };
+      const almNow=slice(aggNow.byHour,11,14), almPrev=slice(aggPrev.byHour,11,14);
+      const ok=(almNow.ped>almPrev.ped)&&((almNow.ped?almNow.fat/almNow.ped:0)>=(almPrev.ped?almPrev.fat/almPrev.ped:0));
+      { const el=document.createElement('div'); el.className='ins-card '+(ok?'up':'down');
+        el.innerHTML=`<div class="dot"></div><div>
+          <div class="ins-title">${ok?'Elasticidade positiva no almoço':'Almoço sem elasticidade (ticket ou volume caíram)'}</div>
+          <div class="ins-sub">Pedidos ${ok?'+':'−'} e ticket ${ok?'+':'−'} vs. período anterior (11–14h).</div>
+          <div class="ins-action">Ação: ${ok?'bundle com sobremesa sábado':'rever preço/combos do horário'}.</div>
+        </div>`; box.appendChild(el);
+      }
     }
-  });
+    const mmFat= nowFat/Math.max(1,tail.length), mmPed=sPed(tail)/Math.max(1,tail.length);
+    const trend=(isFinite(prevFat)&&prevFat>0)? ((nowFat-prevFat)/prevFat):0, boost=1+(trend*0.5);
+    const pv=$('.proj-value'); if(pv) pv.textContent='R$ '+(mmFat*30*boost).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const a=$('.proj-kpi-sub .sub-kpi:nth-child(1) .proj-value-small'); if(a) a.textContent = Math.round(mmPed*30*boost).toLocaleString('pt-BR');
+    const b=$('.proj-kpi-sub .sub-kpi:nth-child(2) .proj-value-small'); if(b) b.textContent = 'R$ '+(aggNow.tot.ped? (aggNow.tot.fat/aggNow.tot.ped).toFixed(2).replace('.',',') : '0,00');
+  }
+
+  function payloadAtual(){
+    const start = $('#fxDuStart')?.value, end = $('#fxDuEnd')?.value;
+    if(!start || !end) return null;
+    return {
+      start: end>=start?start:end,
+      end:   end>=start?end:start,
+      analiticos: {
+        unidade: msSafe.unids(), loja: msSafe.lojas(), turno: msSafe.turnos(),
+        canal: msSafe.canais(), pagamento: msSafe.pags(),
+        cancelado: $('#fxCanceled')?.value
+      }
+    };
+  }
+
+  document.addEventListener('filters:apply', (e)=>{ if(e.detail) run(e.detail); else { const p=payloadAtual(); if(p) run(p);} });
+  document.addEventListener('filters:apply:internal', ()=>{ const p=payloadAtual(); if(p) run(p); });
   document.addEventListener('DOMContentLoaded', ()=>{
-    const start=$('#fxDuStart')?.value, end=$('#fxDuEnd')?.value;
-    if(start&&end){
-      runDiag({
-        start:end>=start?start:end, end:end>=start?end:start,
-        analiticos:{
-          unidade: ms.unids.get(), loja: ms.lojas.get(), turno: ms.turnos.get(),
-          canal: ms.canais.get(), pagamento: ms.pags.get(), cancelado: $('#fxCanceled')?.value
-        }
-      });
-    }
-    // Observa quando a aba fica visível
-    const tab=document.getElementById(TAB_ID);
+    const p = payloadAtual(); if(p) run(p);
+    const tab = document.getElementById('tab-diagnostico');
     if(tab){
-      const obs=new MutationObserver(()=>{
-        const vis = getComputedStyle(tab).display!=='none';
-        if(vis){
-          const start=$('#fxDuStart')?.value, end=$('#fxDuEnd')?.value;
-          if(start&&end){
-            runDiag({
-              start:end>=start?start:end, end:end>=start?end:start,
-              analiticos:{
-                unidade: ms.unids.get(), loja: ms.lojas.get(), turno: ms.turnos.get(),
-                canal: ms.canais.get(), pagamento: ms.pags.get(), cancelado: $('#fxCanceled')?.value
-              }
-            });
-          }
-        }
-      });
+      const obs = new MutationObserver(()=>{ if(getComputedStyle(tab).display!=='none'){ const p=payloadAtual(); if(p) run(p);} });
       obs.observe(tab, { attributes:true, attributeFilter:['style','class'] });
     }
   });
 })();
 </script>
+<!-- ============= FIM DIAGNÓSTICO REAL (SAFE v7) ============== -->
 
 </body>
 </html>
