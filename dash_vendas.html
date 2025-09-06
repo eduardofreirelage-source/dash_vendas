@@ -345,13 +345,21 @@
     .fx-du-sec + .fx-du-sec{padding-top:8px; border-top:1px dashed var(--line)}
     .fx-du-sec h4{margin:0; font-size:11.5px; letter-spacing:.2px; text-transform:uppercase; color:#475569}
 
-    .fx-du-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; align-items:end}
+    /* CORREÇÃO DE LAYOUT: Grid responsivo para filtros */
+    .fx-du-grid{
+      display:grid; 
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap:8px; 
+    }
     .fx-field{display:flex; flex-direction:column; gap:4px; min-width:0}
     .fx-label{font-size:10px; color:#64748b}
-    .fx-input, .fx-select, .fx-msel .msel-btn {
+    .fx-input, .fx-select, .msel .msel-btn {
       height:30px; padding:4px 8px; border:1px solid var(--line); border-radius:8px; background:#fff; font:inherit; width:100%; text-align:left;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .msel.open .msel-panel { z-index: 50; } /* Garante que o painel do multiselect apareça sobre outros elementos */
+    /* CORREÇÃO DE LAYOUT: Garante que o painel multiselect se posicione corretamente */
+    .msel { position: relative; }
+    .msel.open .msel-panel { z-index: 50; } 
 
     /* PERÍODO */
     .fx-period-line{
@@ -370,7 +378,6 @@
     .fx-seg button.fx-active{background:var(--wine); color:#fff}
 
     @media (max-width:768px){
-      .fx-du-grid{grid-template-columns:1fr}
       .fx-period-line{grid-template-columns: 1fr}
       .fx-sep{display:none}
       .fx-quickwrap{justify-self:start; margin-left:0; margin-top:2px}
@@ -465,7 +472,11 @@
           </div>
           <div class="fx-field">
             <label class="fx-label">Cancelado</label>
-            <div id="fxCanceled" class="msel"><button class="msel-btn"></button><div class="msel-panel"></div></div>
+            <select id="fxCanceled" class="fx-select">
+              <option value="nao" selected>Não</option>
+              <option value="sim">Sim</option>
+              <option value="ambos">Ambos</option>
+            </select>
           </div>
         </div>
       </section>
@@ -478,7 +489,6 @@
   
   <script>
   // ======================= CÓDIGO JS PRINCIPAL =======================
-  // CORREÇÃO: Envolvido em DOMContentLoaded para garantir que o DOM esteja pronto.
   document.addEventListener('DOMContentLoaded', () => {
     /* ===================== CONFIG ===================== */
     const READ_VIEW       = 'vendas_canon';
@@ -616,19 +626,18 @@
         set(vals){
           selected=new Set((vals||[]).map(String)); 
           refresh(); 
-          render(); // Re-render to update checkboxes
+          render();
         },
         clear() {
           selected.clear();
           refresh();
-          render(); // Re-render to update checkboxes
+          render();
         }
       };
     }
     
     /* ===================== ESTADO / FILTROS ===================== */
     let firstDay='', lastDay='';
-    const fDe=$('fxDuStart'), fAte=$('fxDuEnd');
     
     const ms={
       unids:  MultiSelect('fxUnit', 'Todas'),
@@ -636,21 +645,18 @@
       canais: MultiSelect('fxChannel', 'Todos'),
       turnos: MultiSelect('fxShift', 'Todos'),
       pags:   MultiSelect('fxPay', 'Todos'),
-      cancel: MultiSelect('fxCanceled', 'Não')
     };
+    const fxCanceled = $('fxCanceled');
     
     /* ===================== KPI (cálculos) ===================== */
     function buildParams(de, ate, analiticos) {
-      const isActive = (val) => val && val.length > 0 && !['Todos', 'Todas'].includes(val[0]);
+      const isActive = (val) => val && val.length > 0;
 
-      const canc = analiticos.cancelado;
       let p_cancelado = null;
-      if (canc && canc.length === 1) {
-          if (canc[0] === 'Sim') p_cancelado = 'Sim';
-          if (canc[0] === 'Não') p_cancelado = 'Não';
-      }
-
-      return {
+      if (analiticos.cancelado === 'sim') p_cancelado = 'Sim';
+      if (analiticos.cancelado === 'nao') p_cancelado = 'Não';
+      
+      const params = {
         p_dini: de, p_dfim: ate,
         p_unids_in:  isActive(analiticos.unidade) ? analiticos.unidade : null,
         p_lojas_in:  isActive(analiticos.loja) ? analiticos.loja : null,
@@ -659,24 +665,13 @@
         p_pags_in:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
         p_cancelado
       };
+      
+      // console.log("Parâmetros para RPC:", JSON.stringify(params, null, 2));
+      return params;
     }
 
     function agg(rows){ let ped=0,fat=0,des=0,fre=0; for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } return {ped,fat,des,fre}; }
-
-    async function kpiCancelFallback(de,ate,dePrev,atePrev, analiticos){
-      const currentAnaliticos = {...analiticos, cancelado: ['Sim']};
-      const pNow = buildParams(de, ate, currentAnaliticos);
-      const pPrev = buildParams(dePrev, atePrev, currentAnaliticos);
-
-      const [rowsNow, rowsPrev] = await Promise.all([
-        supa.rpc('kpi_vendas_unificado', pNow),
-        supa.rpc('kpi_vendas_unificado', pPrev)
-      ]);
-      
-      const sum = (res) => (res.data || []).reduce((acc,x)=>({ ped:acc.ped+(+x.pedidos||0), fat:acc.fat+(+x.fat||0) }), {ped:0,fat:0});
-      return { CN:sum(rowsNow), CP:sum(rowsPrev) };
-    }
-
+    
     function upSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4l5 6h-3v6H8v-6H5l5-6z"/></svg>';}
     function downSVG(){return '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 16l-5-6h3V4h4v6h3l-5 6z"/></svg>';}
     function deltaBadge(el,curr,prev){
@@ -697,21 +692,18 @@
       if(now.error) throw now.error;
       if(prev.error) throw prev.error;
       const N=agg(now.data||[]), P=agg(prev.data||[]);
-      let CN=agg((cNow?.data)||[]), CP=agg((cPrev?.data)||[]);
+      const CN=agg((cNow?.data)||[]), CP=agg((cPrev?.data)||[]);
       
-      if((!cNow || cNow.error || (!CN.ped && !CN.fat)) && (N.ped>0 || N.fat>0)){
-        try{ const fb = await kpiCancelFallback(de,ate,dePrev,atePrev, analiticos);
-          CN = { ped: fb.CN.ped, fat: fb.CN.fat, des:0, fre:0 };
-          CP = { ped: fb.CP.ped, fat: fb.CP.fat, des:0, fre:0 };
-        }catch(_e){}
-      }
-
       const len=daysLen(de,ate);
       const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
       const fatMedN = len? (N.fat/len) : 0,     fatMedP = len? (P.fat/len) : 0;
       const desPercN = N.fat? (N.des/N.fat) : 0, desPercP = P.fat? (P.des/P.fat) : 0;
       const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/N.ped) : 0;
-      const partCancN = N.ped>0 ? (CN.ped/(N.ped + CN.ped)) : 0, partCancP = P.ped>0 ? (CP.ped/(P.ped+CP.ped)) : 0;
+      const totalPedidosNow = N.ped + CN.ped;
+      const totalPedidosPrev = P.ped + CP.ped;
+      const partCancN = totalPedidosNow > 0 ? (CN.ped / totalPedidosNow) : 0;
+      const partCancP = totalPedidosPrev > 0 ? (CP.ped / totalPedidosPrev) : 0;
+
       
       $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
       $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
@@ -795,8 +787,8 @@
     let selectedKPI = 'fat';  // padrão
     const KPI_META = {
       fat:       { label:'Faturamento',         fmt:'money',   forceMode:null,  needsCancel:null },
-      ped:       { label:'Pedidos',             fmt:'count',   forceMode:null,  needsCancel:null },
-      tkt:       { label:'Ticket Médio',        fmt:'money',   forceMode:'media',needsCancel:null },
+      ped:       { label:'Pedidos',             fmt:'count',   forceMode:null,  needsCancel:'Não' },
+      tkt:       { label:'Ticket Médio',        fmt:'money',   forceMode:'media',needsCancel:'Não' },
       des:       { label:'Incentivos',          fmt:'money',   forceMode:null,  needsCancel:null },
       desperc:   { label:'% de incentivos',     fmt:'percent', forceMode:'media',needsCancel:null },
       fre:       { label:'Frete',               fmt:'money',   forceMode:null,  needsCancel:null },
@@ -814,7 +806,7 @@
       const m=KPI_META[selectedKPI];
       return m?.forceMode || chartModeGlobal;
     }
-    function updateChartTitles(){
+    window.updateChartTitles = function(){
       const m=KPI_META[selectedKPI]||KPI_META.fat;
       const mode = effectiveMode()==='media' ? ' (média)' : '';
       $('title_month').textContent = `${m.label}${mode} por mês — últimos 12M vs. 12M anteriores`;
@@ -841,7 +833,7 @@
         .order('dia', { ascending:true })
         .limit(200000);
         
-      const isActive = (val) => val && val.length > 0 && !['Todos', 'Todas'].includes(val[0]);
+      const isActive = (val) => val && val.length > 0;
       if(isActive(analiticos.unidade)) q = q.in('unidade', analiticos.unidade);
       if(isActive(analiticos.loja)) q = q.in('loja', analiticos.loja);
       if(isActive(analiticos.turno)) q = q.in('turno', analiticos.turno);
@@ -852,10 +844,8 @@
       if(forcedCancel){
         q = q.eq('cancelado', forcedCancel);
       } else {
-        const canc = analiticos.cancelado;
-        if(canc && canc.length === 1) {
-          if(canc[0] === 'Sim' || canc[0] === 'Não') q = q.eq('cancelado', canc[0]);
-        }
+        if (analiticos.cancelado === 'sim') q = q.eq('cancelado', 'Sim');
+        if (analiticos.cancelado === 'nao') q = q.eq('cancelado', 'Não');
       }
       
       const { data, error } = await q;
@@ -964,8 +954,6 @@
           ]);
           
           const tip = `Período anterior: ${dePrev} → ${atePrev}`;
-
-          // Dia da semana
           {
               const lab = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
               const cur = computeByBucket(rowsNow, 'dow', selectedKPI, mode);
@@ -975,21 +963,18 @@
               prv.forEach(o => { pArr[o.key] = o.value; });
               ensureChart('ch_dow', lab, nArr, pArr, tip, meta.fmt);
           }
-
-          // Hora
           {
               const all = Array.from({ length: 24 }, (_, h) => h);
               const cur = computeByBucket(rowsNow, 'hour', selectedKPI, mode);
               const prv = computeByBucket(rowsPrev, 'hour', selectedKPI, mode);
               const mNow = new Map(cur.map(o => [o.key, o.value]));
               const mPrv = new Map(prv.map(o => [o.key, o.value]));
-              const labels = all.filter(h => mNow.has(h) || mPrv.has(h)).map(h => String(h).padStart(2, '0') + 'h');
-              const nArr = all.filter(h => mNow.has(h) || mPrv.has(h)).map(h => mNow.get(h) || 0);
-              const pArr = all.filter(h => mNow.has(h) || mPrv.has(h)).map(h => mPrv.get(h) || 0);
+              const filteredHours = all.filter(h => (mNow.get(h) || 0) !== 0 || (mPrv.get(h) || 0) !== 0);
+              const labels = filteredHours.map(h => String(h).padStart(2, '0') + 'h');
+              const nArr = filteredHours.map(h => mNow.get(h) || 0);
+              const pArr = filteredHours.map(h => mPrv.get(h) || 0);
               ensureChart('ch_hour', labels, nArr, pArr, tip, meta.fmt);
           }
-
-          // Turno
           {
               const ord = ['Dia', 'Noite'];
               const cur = computeByBucket(rowsNow, 'turno', selectedKPI, mode);
@@ -999,7 +984,6 @@
               const labels = ord.filter(k => mNow.has(k) || mPrv.has(k));
               ensureChart('ch_turno', labels, labels.map(k => mNow.get(k) || 0), labels.map(k => mPrv.get(k) || 0), tip, meta.fmt);
           }
-
           setStatus('OK — gráficos atualizados', 'ok');
       } catch (e) {
           console.error(e);
@@ -1045,7 +1029,6 @@
         
         const tip = `Comparação fixa: Últimos 12M vs 12M anteriores`;
         ensureChart('ch_month', labels, nowArr, prevArr, tip, meta.fmt);
-        setStatus('OK — gráfico mensal 12x12','ok');
       }catch(e){
         console.error(e);
         setStatus('OK (mensal 12x12 indisponível)','ok');
@@ -1130,7 +1113,6 @@
         const arr = allLojas.map(loja => [loja, metricVal(loja)] ).sort((a,b)=> b[1]-a[1]).slice(0,6);
         const total = allLojas.reduce((sum, loja) => sum + metricVal(loja), 0);
         ensureDonutTop6(arr.map(a=>a[0]), arr.map(a=>a[1]), `Total: ${formatValueBy(meta.fmt, total)}`, meta.fmt);
-        setStatus('OK — Top 6','ok');
       }catch(e){
         console.warn('top6 erro:', e.message||e);
         ensureDonutTop6([],[], 'Total: R$ 0,00','money');
@@ -1308,12 +1290,10 @@
       ms.canais.setOptions(mergeRankedAll(tCanais, allCanais), true );
       ms.pags.setOptions(  mergeRankedAll(tPags, allPags), true );
       ms.turnos.setOptions(['Dia','Noite'], true);
-      ms.cancel.setOptions(['','Não','Sim']);
-      ms.cancel.set(['Não']);
     }
     
     /* ===================== LOOP PRINCIPAL ===================== */
-    async function applyAll(details){
+    window.applyAll = async function(details){
       try{
         const de = details.start;
         const ate = details.end;
@@ -1353,8 +1333,7 @@
         bindKPIClick();
         updateChartTitles();
         
-        // Dispara a primeira carga de dados
-        document.querySelector('#fxBtnApply').click();
+        $('fxBtnApply').click();
       }catch(e){
         console.error('Erro na inicialização:', e);
         setStatus('Erro ao iniciar: '+(e.message||e),'err');
@@ -1411,7 +1390,7 @@
     function fxShowDrop(show){
       fx.$drop.classList.toggle('fx-show', show);
       fx.$btnMore.setAttribute('aria-expanded', show?'true':'false');
-      if(show) (fx.$start || fx.$end)?.focus();
+      if(show) fx.$start?.focus();
     }
     fx.$btnMore.addEventListener('click', ()=> fxShowDrop(!fx.$drop.classList.contains('fx-show')));
     fx.$duClose.addEventListener('click', ()=> fxShowDrop(false));
@@ -1435,25 +1414,7 @@
       const n=parseInt(b.dataset.win,10); if(!isNaN(n)) fxLastNDays(n);
     });
 
-    fx.$btnReset.addEventListener('click', ()=>{
-      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('fx-active'));
-      fx.$days.querySelectorAll('button').forEach(x=> x.classList.remove('fx-active'));
-      
-      // Reset multiselects from the global `ms` object
-      if (window.ms) {
-          Object.values(window.ms).forEach(m => m.clear());
-          window.ms.cancel.set(['Não']); // Default state for cancel
-      }
-      
-      fxLastNDays(30);
-      fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
-
-      document.dispatchEvent(new CustomEvent('filters:reset'));
-      fxDispatchApply(); // Re-apply default filters
-    });
-
     function fxDispatchApply(){
-      // Check if `ms` is available before trying to access it
       if (!window.ms) {
         console.error("Filter objects (ms) not initialized.");
         return;
@@ -1467,38 +1428,50 @@
           turno: window.ms.turnos.get(),
           canal: window.ms.canais.get(),
           pagamento: window.ms.pags.get(),
-          cancelado: window.ms.cancel.get()
+          cancelado: document.getElementById('fxCanceled').value
         }
       };
       document.dispatchEvent(new CustomEvent('filters:apply', { detail: payload }));
     }
 
+    fx.$btnReset.addEventListener('click', ()=>{
+      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('fx-active'));
+      fx.$days.querySelectorAll('button').forEach(x=> x.classList.remove('fx-active'));
+      
+      if (window.ms) {
+          Object.values(window.ms).forEach(m => m.clear());
+      }
+      document.getElementById('fxCanceled').value = 'nao';
+      
+      fxLastNDays(30);
+      fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
+      fxDispatchApply();
+    });
+
     fx.$btnApply.addEventListener('click', fxDispatchApply);
     fx.$duApply.addEventListener('click', ()=>{ fxDispatchApply(); fxShowDrop(false) });
 
-    // Conectar eventos do filtro com a função principal de dados
     document.addEventListener('filters:apply', (e) => {
         if(e.detail && window.applyAll) {
             window.applyAll(e.detail);
         }
     });
 
-    // Evento interno para redesenhar gráficos sem alterar filtros (ex: clique em KPI)
     document.addEventListener('filters:apply:internal', () => {
-        if (!window.ms) return;
+        if (!window.ms || !window.updateChartTitles || !window.applyAll) return;
         window.updateChartTitles();
         const payload = {
           start: fx.$start.value,
           end: fx.$end.value,
           analiticos: {
             unidade: window.ms.unids.get(), loja: window.ms.lojas.get(), turno: window.ms.turnos.get(),
-            canal: window.ms.canais.get(), pagamento: window.ms.pags.get(), cancelado: window.ms.cancel.get()
+            canal: window.ms.canais.get(), pagamento: window.ms.pags.get(), cancelado: document.getElementById('fxCanceled').value
           }
         };
-        if(window.applyAll) window.applyAll(payload);
+        window.applyAll(payload);
     });
 
-    // Estado inicial: últimos 30 dias
+    // Estado inicial
     fxLastNDays(30);
     fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
   });
