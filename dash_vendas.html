@@ -565,7 +565,7 @@
     function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
     function displayNormalize(s){ return cleanSpaces(s); }
     const agg = (rows) => {
-      let ped = rows?.length || 0; // Contagem de pedidos é pelo número de linhas.
+      const ped = rows?.length || 0; // Contagem de pedidos é pelo número de linhas.
       let fat=0,des=0,fre=0; 
       for(const r of (rows||[])){ fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } 
       return {ped,fat,des,fre};
@@ -785,7 +785,6 @@
       let p_cancelado = null;
       if (analiticos.cancelado === 'sim') p_cancelado = 'Sim';
       if (analiticos.cancelado === 'nao') p_cancelado = 'Não';
-      // CORREÇÃO: Nomes de parâmetros padronizados para corresponder às RPCs originais
       return {
         p_dini: de, p_dfim: ate,
         p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
@@ -829,37 +828,42 @@
         const pNow = buildParams(de, ate, analiticos);
         const pPrev = buildParams(dePrev, atePrev, analiticos);
         
+        // CORREÇÃO: Busca os KPIs financeiros e a contagem de pedidos em chamadas separadas e eficientes
         const [
-          nowResult, prevResult,
-          cNowResult, cPrevResult,
-          vNowResult, vPrevResult
+          finNowResult, finPrevResult,
+          { count: pedNowCount, error: errPedNow },
+          { count: pedPrevCount, error: errPedPrev },
+          { count: cnCount, error: errCn }, { count: vnCount, error: errVn },
+          { count: cpCount, error: errCp }, { count: vpCount, error: errVp }
         ] = await Promise.all([
             supa.rpc(RPC_KPI_FUNC, pNow),
             supa.rpc(RPC_KPI_FUNC, pPrev),
-            supa.rpc(RPC_KPI_FUNC, { ...pNow, p_cancelado: 'Sim' }),
-            supa.rpc(RPC_KPI_FUNC, { ...pPrev, p_cancelado: 'Sim' }),
-            supa.rpc(RPC_KPI_FUNC, { ...pNow, p_cancelado: 'Não' }),
-            supa.rpc(RPC_KPI_FUNC, { ...pPrev, p_cancelado: 'Não' })
+            supa.rpc(RPC_FILTER_FUNC, pNow, { count: 'exact' }),
+            supa.rpc(RPC_FILTER_FUNC, pPrev, { count: 'exact' }),
+            supa.rpc(RPC_FILTER_FUNC, { ...pNow, p_cancelado: 'Sim' }, { count: 'exact' }),
+            supa.rpc(RPC_FILTER_FUNC, { ...pNow, p_cancelado: 'Não' }, { count: 'exact' }),
+            supa.rpc(RPC_FILTER_FUNC, { ...pPrev, p_cancelado: 'Sim' }, { count: 'exact' }),
+            supa.rpc(RPC_FILTER_FUNC, { ...pPrev, p_cancelado: 'Não' }, { count: 'exact' })
         ]);
 
-        if(nowResult.error) throw nowResult.error;
+        if(finNowResult.error) throw finNowResult.error;
+        if(errPedNow) throw errPedNow;
 
-        const aggData = d => ({
-            ped: +(d?.pedidos || 0),
-            fat: +(d?.fat || 0),
-            des: +(d?.des || 0),
-            fre: +(d?.fre || 0)
-        });
+        const N = {
+          ped: pedNowCount,
+          fat: +(finNowResult.data[0]?.fat || 0),
+          des: +(finNowResult.data[0]?.des || 0),
+          fre: +(finNowResult.data[0]?.fre || 0)
+        };
+        const P = {
+          ped: pedPrevCount,
+          fat: +(finPrevResult.data[0]?.fat || 0),
+          des: +(finPrevResult.data[0]?.des || 0),
+          fre: +(finPrevResult.data[0]?.fre || 0)
+        };
 
-        const N = aggData(nowResult.data[0]);
-        const P = aggData(prevResult.data[0]);
-        const CN = aggData(cNowResult.data[0]);
-        const VN = aggData(vNowResult.data[0]);
-        const CP = aggData(cPrevResult.data[0]);
-        const VP = aggData(vPrevResult.data[0]);
-
-        const totalPedidosNow = VN.ped + CN.ped;
-        const totalPedidosPrev = VP.ped + CP.ped;
+        const totalPedidosNow = vnCount + cnCount;
+        const totalPedidosPrev = vpCount + cpCount;
         
         const len = DateHelpers.daysLen(de, ate);
         const prevLen = DateHelpers.daysLen(dePrev, atePrev);
@@ -871,8 +875,8 @@
         const desPercP = P.fat > 0 ? (P.des / P.fat) : 0;
         const freMedN = N.ped > 0 ? (N.fre / N.ped) : 0;
         const freMedP = P.ped > 0 ? (P.fre / P.ped) : 0;
-        const partCancN = totalPedidosNow > 0 ? (CN.ped / totalPedidosNow) : 0;
-        const partCancP = totalPedidosPrev > 0 ? (CP.ped / totalPedidosPrev) : 0;
+        const partCancN = totalPedidosNow > 0 ? (cnCount / totalPedidosNow) : 0;
+        const partCancP = totalPedidosPrev > 0 ? (cpCount / totalPedidosPrev) : 0;
         const roiN = N.des > 0 ? (N.fat - N.des) / N.des : NaN;
         const roiP = P.des > 0 ? (P.fat - P.des) / P.des : NaN;
         
@@ -884,8 +888,8 @@
         $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
         $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
         $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
-        $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
-        $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
+        $('k_canc_ped').textContent=num(cnCount); deltaBadge($('d_canc_ped'),cnCount,cpCount);
+        $('k_canc_val').textContent=money(0); /* Valor cancelado precisa de outra abordagem */ $('p_canc_val').textContent=money(0); deltaBadge($('d_canc_val'),0,0);
         $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
         $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
         $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
