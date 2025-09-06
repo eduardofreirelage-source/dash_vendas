@@ -28,7 +28,7 @@
     /* GRID DECISÃO */
     .section{order:2;padding:0 16px 16px 16px}
     .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
-    .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;transition:.2s;position:relative}
+    .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;transition:.2s;position:relative; cursor:pointer;}
     .kpi.active{outline:3px solid rgba(123,30,58,.12);border-color:var(--wine)}
     .kpi h4{margin:0 0 6px 0;color:var(--muted);font-size:12px;display:flex;align-items:center;gap:6px;}
     .kpi h4 .spacer { flex-grow: 1; }
@@ -533,12 +533,51 @@
     const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
     const num =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
     const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+    const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    const normHeader = (s)=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+    function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
+    function displayNormalize(s){ return cleanSpaces(s); }
     
-    /* ===================== DATE HELPERS (REATORADO) ===================== */
+    // CORREÇÃO: Funções auxiliares que foram deletadas acidentalmente foram restauradas
+    const agg = (rows) => {
+      let ped=0,fat=0,des=0,fre=0; 
+      for(const r of (rows||[])){ 
+        ped+=+r.pedidos||0; 
+        fat+=+r.fat||0; 
+        des+=+r.des||0; 
+        fre+=+r.fre||0; 
+      } 
+      return {ped,fat,des,fre};
+    };
+    const formatCurrencyTick = (value) => {
+      const v=Number(value)||0;
+      if(Math.abs(v)>=1_000_000) return 'R$ '+(v/1_000_000).toFixed(1).replace('.',',')+' mi';
+      if(Math.abs(v)>=1_000)     return 'R$ '+(v/1_000).toFixed(1).replace('.',',')+' mil';
+      return 'R$ '+v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+    };
+    const formatTickBy = (fmt,v) => {
+      if(fmt==='count') return (Number(v)||0).toLocaleString('pt-BR');
+      if(fmt==='percent'){ const n=Number(v)||0; return (n*100).toFixed(0)+'%'; }
+      return formatCurrencyTick(v);
+    };
+    const formatValueBy = (fmt,v) => {
+      if(fmt==='count') return (Number(v)||0).toLocaleString('pt-BR');
+      if(fmt==='percent'){ const n=Number(v)||0; return (n*100).toFixed(1)+'%'; }
+      return money(v);
+    };
+    const bucketKey = (type, row) => {
+      if(type==='dow'){ return (new Date(row.dia+'T12:00:00')).getDay(); }
+      if(type==='hour'){ return row.hora ?? null; }
+      if(type==='turno'){ return row.turno ?? null; }
+      if(type==='month'){ const d=new Date(row.dia+'T12:00:00'); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
+      return null;
+    };
+    
+    /* ===================== DATE HELPERS (REATORADO E CORRIGIDO) ===================== */
     const DateHelpers = {
       iso: (d) => d.toISOString().slice(0, 10),
       addDaysISO: (isoStr, n) => {
-          const d = new Date(isoStr + 'T12:00:00');
+          const d = new Date(isoStr + 'T12:00:00'); // Use meio-dia para evitar problemas de fuso
           d.setDate(d.getDate() + n);
           return d.toISOString().slice(0, 10);
       },
@@ -576,7 +615,6 @@
       lastDayOfMonth: (y, m) => new Date(y, m + 1, 0).getDate(),
       isFullYear: (d1, d2) => d1.getMonth() === 0 && d1.getDate() === 1 && d2.getMonth() === 11 && d2.getDate() === 31 && d1.getFullYear() === d2.getFullYear(),
       isFullMonthsAligned: function(d1, d2) {
-          // CORREÇÃO: Ordem dos parâmetros corrigida
           return d1.getDate() === 1 && d2.getDate() === this.lastDayOfMonth(d2.getFullYear(), d2.getMonth());
       },
       shiftYear: function(date, delta) {
@@ -601,11 +639,6 @@
       }
     };
 
-    const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    const normHeader = (s)=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
-    function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
-    function displayNormalize(s){ return cleanSpaces(s); }
-    
     /* ===================== MULTISELECT ===================== */
     function MultiSelect(rootId, placeholder){
       const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
@@ -1185,17 +1218,8 @@
     // LÓGICA DA INTERFACE DE FILTROS E ABAS
     // ===================================================================================
 
-    const tabsContainer = $('tabs');
-    if (tabsContainer) {
-      tabsContainer.addEventListener('click', (e)=>{
-        const btn=e.target.closest('button'); if(!btn) return;
-        document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('active', b===btn));
-        document.querySelectorAll('.tab').forEach(t=> t.style.display = (t.id==='tab-'+btn.dataset.tab)?'block':'none');
-      });
-    }
-
     function fxLocalMidday(d){ const x=new Date(d); x.setHours(12,0,0,0); return x }
-    function fxFmt(date){ const y=date.getFullYear(), m=String(date.getMonth()+1).padStart(2,'0'), d=String(date.getDate()).padStart(2,'0'); return `${y}-${m}-${d}` }
+    function fxFmt(date){ return date.toISOString().slice(0,10); }
     function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
     function fxLastNDays(n){
       const today = fxLocalMidday(new Date());
