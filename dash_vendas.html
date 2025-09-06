@@ -52,7 +52,8 @@
     .seg button{padding:5px 9px;border:0;background:#fff;font-weight:700;color:#475569;cursor:pointer}
     .seg button.active{background:var(--wine);color:#fff}
     .chart-box{position:relative;flex-grow:1;min-height:250px}
-    .panel .card .chart-box{min-height:340px}
+    /* AJUSTE DE LAYOUT: Redução de 30% na altura do gráfico principal */
+    .panel .card .chart-box{min-height: 240px;}
     .chart-box canvas{display:block;width:100%;height:100%}
     .side{display:flex;flex-direction:column;gap:10px}
     .card.mini{min-height:auto;padding:10px}
@@ -165,7 +166,7 @@
             <div class="kpi" data-kpi="fre"><h4><span>Frete Total</span><span class="spacer"></span><span id="d_fre" class="delta flat">—</span></h4><div class="val" id="k_fre">—</div><div class="sub">Anterior: <span id="p_fre">—</span></div></div>
             <div class="kpi" data-kpi="fremed"><h4><span>Frete Médio</span><span class="spacer"></span><span id="d_fremed" class="delta flat">—</span></h4><div class="val" id="k_fremed">—</div><div class="sub">Anterior: <span id="p_fremed">—</span></div></div>
             <div class="kpi" data-kpi="canc_ped"><h4><span>Pedidos Cancelados</span><span class="spacer"></span><span id="d_canc_ped" class="delta flat">—</span></h4><div class="val" id="k_canc_ped">—</div><div class="sub">Part.: <span id="k_canc_part">—</span> (Ant.: <span id="p_canc_part">—</span>)</div></div>
-            <div class="kpi" style="opacity:.25;pointer-events:none"><h4>Slot livre</h4><div class="val">—</div><div class="sub">Expansão futura</div></div>
+            <div class="kpi" style="opacity:.25;pointer-events:none"><h4>Slot livre</h4><div class="val" id="k_ped">—</div><div class="sub">Expansão futura</div></div>
         </div>
         <div class="subgrid">
           <div class="card">
@@ -514,8 +515,6 @@
     // ===================================================================================
     
     /* ===================== CONFIG ===================== */
-    const RPC_KPI_FUNC = 'kpi_vendas_unificado';
-    const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes';
     const RPC_FILTER_FUNC = 'filter_vendas';
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
@@ -562,7 +561,6 @@
     function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
     function displayNormalize(s){ return cleanSpaces(s); }
     const agg = (rows) => {
-      // CORREÇÃO: Contagem de pedidos agora é pelo número de linhas.
       const ped = rows?.length || 0;
       let fat=0,des=0,fre=0; 
       for(const r of (rows||[])){ fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } 
@@ -979,7 +977,6 @@
         dacc.fat += +r.fat||0;
         dacc.des += +r.des||0;
         dacc.fre += +r.fre||0;
-        // CORREÇÃO: A contagem de pedidos é 1 por linha
         dacc.ped += 1;
       }
       function computeRatio(dailyMap, metric){
@@ -1111,7 +1108,6 @@
         const last12End   = DateHelpers.monthEndISO(end);
         const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
-        const mode = effectiveMode();
         
         const paramsNow = buildParams(last12Start, last12End, analiticos);
         const paramsPrev = buildParams(prev12Start, prev12EndAdj, analiticos);
@@ -1124,7 +1120,10 @@
         if (nErr) throw nErr;
         if (pErr) throw pErr;
 
-        const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, mode==='media' ? (+r.media||0) : (+r.total||0)]));
+        const mode = effectiveMode();
+        const valueKey = mode === 'media' ? 'media' : 'total';
+        
+        const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, +r[valueKey]||0]));
         const mNow = toMap(nData), mPrev = toMap(pData);
         
         let labels = [];
@@ -1182,7 +1181,6 @@
           acc.fat += +r.fat||0;
           acc.des += +r.des||0;
           acc.fre += +r.fre||0;
-          // CORREÇÃO: Contagem de pedidos é 1 por linha
           acc.ped += 1;
           acc.dias.add(r.dia);
         });
