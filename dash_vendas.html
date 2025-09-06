@@ -1527,17 +1527,24 @@
 
   
 function dxFetch(de, ate, anal, cb){
-  // Prefer REST (paged, no 1000 cap). If it returns empty, try baseQuery.
-  dxFetchREST(de, ate, anal, function(_e, rows){
-    if (rows && rows.length) { cb(null, rows); return; }
-    try{
-      if (typeof window.baseQuery === 'function'){
-        window.baseQuery(de, ate, anal).then(function(r){ cb(null, r||[]); }).catch(function(){ cb(null, rows||[]); });
-      } else {
+  // Use baseQuery (se reflete tudo do app). Se capar (~1000), buscamos tudo via REST paginado.
+  try{
+    if (typeof window.baseQuery === 'function'){
+      return window.baseQuery(de, ate, anal).then(function(rows){
+        try{
+          if (rows && rows.length >= 1000 && window.SUPABASE_URL && window.SUPABASE_KEY){
+            return dxFetchRESTPaged(de, ate, anal, cb);
+          }
+        }catch(_){}
         cb(null, rows||[]);
-      }
-    }catch(e){ cb(null, rows||[]); }
-  });
+      }).catch(function(e){
+        // baseQuery falhou: cai para REST paginado
+        return dxFetchRESTPaged(de, ate, anal, cb);
+      });
+    }
+  }catch(e){}
+  // Sem baseQuery: REST paginado direto
+  return dxFetchRESTPaged(de, ate, anal, cb);
 }
 ).catch(function(e){
           console.warn('[DX ES5] baseQuery falhou, fallback REST', e);
@@ -1549,7 +1556,43 @@ function dxFetch(de, ate, anal, cb){
     return dxFetchREST(de, ate, anal, cb);
   }
 
-  function dxFetchREST(de, ate, anal, cb){
+  function dxFetchRESTPaged(de, ate, anal, cb){
+  var URL = window.SUPABASE_URL, KEY = window.SUPABASE_KEY;
+  if (!URL || !KEY){ cb(null, []); return; }
+  var base = URL + '/rest/v1/vendas_canon';
+  var qs = [
+    'select=dia,hora,loja,canal,fat,des,fre,cancelado',
+    'dia=gte.'+encodeURIComponent(de),
+    'dia=lte.'+encodeURIComponent(ate),
+    'order=dia.asc,hora.asc'
+  ];
+  try{
+    if (anal && anal.cancelado==='sim') qs.push('cancelado=eq.Sim');
+    if (anal && anal.cancelado==='nao') qs.push('cancelado=neq.Sim');
+  }catch(e){}
+  var url = base + '?' + qs.join('&');
+  var headers = { apikey: KEY, Authorization: 'Bearer '+KEY, 'Range-Unit': 'items', Range: '0-49999', Prefer: 'count=exact' };
+  var chunk = 50000, start = 0, rows = [], pages = 0, maxPages = 40;
+  function step(){
+    headers.Range = String(start) + '-' + String(start + chunk - 1);
+    return fetch(url, { headers: headers }).then(function(r){
+      if (!r.ok){ cb(null, rows); return; }
+      var cr = r.headers.get ? r.headers.get('content-range') : null;
+      return r.json().then(function(data){
+        var got = (data && data.length) ? data.length : 0;
+        for (var i=0;i<got;i++) rows.push(data[i]);
+        pages += 1; start += chunk;
+        var total = null;
+        if (cr){ var parts = cr.split('/'); if (parts && parts.length===2) total = parseInt(parts[1],10); }
+        var done = (got < chunk) || (total!=null && rows.length >= total) || (pages >= maxPages);
+        if (done){ cb(null, rows); return; }
+        return step();
+      });
+    }).catch(function(_e){ cb(null, rows); });
+  }
+  step();
+}
+function dxFetchREST(de, ate, anal, cb){
     var URL = window.SUPABASE_URL, KEY = window.SUPABASE_KEY;
     if (!URL || !KEY){ cb(null, []); return; }
     var headers = { apikey: KEY, Authorization: 'Bearer '+KEY, Range: '0-999999', Prefer: 'count=exact' };
