@@ -53,7 +53,7 @@
     .seg button.active{background:var(--wine);color:#fff}
     .chart-box{position:relative;flex-grow:1;min-height:250px}
     /* AJUSTE DE LAYOUT: Redução de 30% na altura do gráfico principal */
-    .panel .card .chart-box{min-height: 240px;}
+    .panel > .card .chart-box{min-height: 240px !important;}
     .chart-box canvas{display:block;width:100%;height:100%}
     .side{display:flex;flex-direction:column;gap:10px}
     .card.mini{min-height:auto;padding:10px}
@@ -561,6 +561,7 @@
     function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
     function displayNormalize(s){ return cleanSpaces(s); }
     const agg = (rows) => {
+      // CORREÇÃO: Contagem de pedidos agora é pelo número de linhas.
       const ped = rows?.length || 0;
       let fat=0,des=0,fre=0; 
       for(const r of (rows||[])){ fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } 
@@ -1108,23 +1109,18 @@
         const last12End   = DateHelpers.monthEndISO(end);
         const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
-        
-        const paramsNow = buildParams(last12Start, last12End, analiticos);
-        const paramsPrev = buildParams(prev12Start, prev12EndAdj, analiticos);
-
-        const [{data: nData, error: nErr}, {data: pData, error: pErr}] = await Promise.all([
-            supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
-            supa.rpc(RPC_CHART_MONTH_FUNC, paramsPrev)
-        ]);
-
-        if (nErr) throw nErr;
-        if (pErr) throw pErr;
-
         const mode = effectiveMode();
-        const valueKey = mode === 'media' ? 'media' : 'total';
         
-        const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, +r[valueKey]||0]));
-        const mNow = toMap(nData), mPrev = toMap(pData);
+        const [rowsNow, rowsPrev] = await Promise.all([
+          baseQuery(last12Start,last12End, analiticos),
+          baseQuery(prev12Start,prev12EndAdj, analiticos)
+        ]);
+        
+        const curNow = computeByBucket(rowsNow,'month', selectedKPI, mode);
+        const curPrv = computeByBucket(rowsPrev,'month', selectedKPI, mode);
+        
+        const mNow = new Map(curNow.map(o=>[o.key,o.value]));
+        const mPrv = new Map(curPrv.map(o=>[o.key,o.value]));
         
         let labels = [];
         const ymsNow = []; 
@@ -1140,7 +1136,7 @@
         const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
         
         const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
-        const prevArr = ymsPrev.map(ym => mPrev.get(ym)||0);
+        const prevArr = ymsPrev.map(ym => mPrv.get(ym)||0);
         const tip = `Comparação fixa: Últimos 12M vs 12M anteriores`;
         ensureChart('ch_month', labels, nowArr, prevArr, tip, meta.fmt);
       }catch(e){
@@ -1399,7 +1395,7 @@
     });
 
     fx.$days.addEventListener('click', (e)=>{
-      const b=e.target.closest('button'); if(!b) return;
+      const b=e.target.closest('.fx-chip'); if(!b) return;
       fx.$days.querySelectorAll('button').forEach(x=> x.classList.toggle('fx-active', x===b));
       fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('fx-active'));
       const n=parseInt(b.dataset.win,10); if(!isNaN(n)) fxLastNDays(n);
