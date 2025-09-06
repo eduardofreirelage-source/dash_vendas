@@ -513,7 +513,6 @@
     // ===================================================================================
     
     /* ===================== CONFIG ===================== */
-    // Funções RPC existentes no Supabase do usuário
     const RPC_FILTER_FUNC = 'filter_vendas';
     const RPC_KPI_FUNC = 'kpi_vendas_unificado';
     const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes_v1';
@@ -566,9 +565,8 @@
     function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
     function displayNormalize(s){ return cleanSpaces(s); }
     const agg = (rows) => {
-      let ped = rows?.length || 0; // Contagem de pedidos é pelo número de linhas.
-      let fat=0,des=0,fre=0; 
-      for(const r of (rows||[])){ fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } 
+      let ped = 0, fat=0,des=0,fre=0; 
+      for(const r of (rows||[])){ ped+=1; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } 
       return {ped,fat,des,fre};
     };
     const formatCurrencyTick = (value) => {
@@ -826,33 +824,37 @@
     
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
       try {
-        const otherFilters = {
-          unidade: analiticos.unidade,
-          loja: analiticos.loja,
-          turno: analiticos.turno,
-          canal: analiticos.canal,
-          pagamento: analiticos.pagamento
-        };
+        const pNow = buildParams(de, ate, analiticos);
+        const pPrev = buildParams(dePrev, atePrev, analiticos);
         
         const [
-          rowsNow, rowsPrev,
-          rowsCanceledNow, rowsValidNow,
-          rowsCanceledPrev, rowsValidPrev
+          nowResult, prevResult,
+          cNowResult, cPrevResult,
+          vNowResult, vPrevResult
         ] = await Promise.all([
-            baseQuery(de, ate, analiticos),
-            baseQuery(dePrev, atePrev, analiticos),
-            baseQuery(de, ate, { ...otherFilters, cancelado: 'sim' }),
-            baseQuery(de, ate, { ...otherFilters, cancelado: 'nao' }),
-            baseQuery(dePrev, atePrev, { ...otherFilters, cancelado: 'sim' }),
-            baseQuery(dePrev, atePrev, { ...otherFilters, cancelado: 'nao' })
+            supa.rpc(RPC_KPI_FUNC, pNow),
+            supa.rpc(RPC_KPI_FUNC, pPrev),
+            supa.rpc(RPC_KPI_FUNC, { ...pNow, p_cancelado: 'Sim' }),
+            supa.rpc(RPC_KPI_FUNC, { ...pPrev, p_cancelado: 'Sim' }),
+            supa.rpc(RPC_KPI_FUNC, { ...pNow, p_cancelado: 'Não' }),
+            supa.rpc(RPC_KPI_FUNC, { ...pPrev, p_cancelado: 'Não' })
         ]);
 
-        const N = agg(rowsNow);
-        const P = agg(rowsPrev);
-        const CN = agg(rowsCanceledNow);
-        const VN = agg(rowsValidNow);
-        const CP = agg(rowsCanceledPrev);
-        const VP = agg(rowsValidPrev);
+        if(nowResult.error) throw nowResult.error;
+
+        const aggData = d => ({
+            ped: +(d?.pedidos || 0),
+            fat: +(d?.fat || 0),
+            des: +(d?.des || 0),
+            fre: +(d?.fre || 0)
+        });
+
+        const N = aggData(nowResult.data[0]);
+        const P = aggData(prevResult.data[0]);
+        const CN = aggData(cNowResult.data[0]);
+        const VN = aggData(vNowResult.data[0]);
+        const CP = aggData(cPrevResult.data[0]);
+        const VP = aggData(vPrevResult.data[0]);
 
         const totalPedidosNow = VN.ped + CN.ped;
         const totalPedidosPrev = VP.ped + CP.ped;
@@ -965,111 +967,41 @@
         });
       });
     }
-    
-    function computeByBucket(rows, type, metric, mode){
-      const bucketDays = new Map();
-      const bucketDaily = new Map();
-      for(const r of rows){
-        const bkey = bucketKey(type, r);
-        if(bkey==null) continue;
-        if(!bucketDays.has(bkey)) bucketDays.set(bkey, new Set());
-        bucketDays.get(bkey).add(r.dia);
-        if(!bucketDaily.has(bkey)) bucketDaily.set(bkey, new Map());
-        const dayMap = bucketDaily.get(bkey);
-        const dkey = r.dia;
-        if(!dayMap.has(dkey)) dayMap.set(dkey, {fat:0, des:0, fre:0, ped:0});
-        const dacc = dayMap.get(dkey);
-        dacc.fat += +r.fat||0;
-        dacc.des += +r.des||0;
-        dacc.fre += +r.fre||0;
-        dacc.ped += 1;
-      }
-      function computeRatio(dailyMap, metric){
-        const days = [...dailyMap.values()];
-        const dailyVals = days.map(d => {
-          switch(metric){
-            case 'tkt': return (d.ped > 0) ? (d.fat / d.ped) : 0;
-            case 'desperc': return (d.fat > 0) ? (d.des / d.fat) : 0;
-            case 'fremed': return (d.ped > 0) ? (d.fre / d.ped) : 0;
-            case 'roi': return (d.des > 0) ? ((d.fat - d.des) / d.des) : 0;
-            default: return 0;
-          }
-        }).filter(v => isFinite(v));
-        if(!dailyVals.length) return 0;
-        return dailyVals.reduce((a,b)=>a+b, 0) / dailyVals.length;
-      }
-      function computeNonRatio(dailyMap, metric, numDays){
-        const total = {fat:0, des:0, fre:0, ped:0};
-        for(const d of dailyMap.values()){
-          total.fat += d.fat; total.des += d.des; total.fre += d.fre; total.ped += d.ped;
-        }
-        switch(metric){
-          case 'fat': return mode==='media' ? (total.fat / numDays) : total.fat;
-          case 'ped': return mode==='media' ? (total.ped / numDays) : total.ped;
-          case 'des': return mode==='media' ? (total.des / numDays) : total.des;
-          case 'fre': return mode==='media' ? (total.fre / numDays) : total.fre;
-          case 'fatmed': return total.fat / numDays;
-          case 'canc_ped': return mode==='media' ? (total.ped / numDays) : total.ped;
-          case 'canc_val': return mode==='media' ? (total.fat / numDays) : total.fat;
-        }
-        return 0;
-      }
-      const keys=[...bucketDaily.keys()].sort((a,b)=>{
-        if(type==='dow' || type==='hour') return Number(a)-Number(b);
-        if(type==='month'){ return a.localeCompare(b); }
-        return String(a).localeCompare(String(b),'pt-BR');
-      });
-      return keys.map(k=>{
-        const dailyMap = bucketDaily.get(k);
-        const numDays = bucketDays.get(k)?.size || 1;
-        let value;
-        const isRatio = ['tkt','desperc','fremed','roi'].includes(metric);
-        if(isRatio){
-          value = (mode === 'media') ? computeRatio(dailyMap, metric) : (function(){
-            const total = {fat:0, des:0, fre:0, ped:0};
-            for(const d of dailyMap.values()){
-              total.fat += d.fat; total.des += d.des; total.fre += d.fre; total.ped += d.ped;
-            }
-            switch(metric){
-              case 'tkt': return (total.ped > 0) ? (total.fat / total.ped) : 0;
-              case 'desperc': return (total.fat > 0) ? (total.des / total.fat) : 0;
-              case 'fremed': return (total.ped > 0) ? (total.fre / total.ped) : 0;
-              case 'roi': return (total.des > 0) ? ((total.fat - total.des) / total.des) : 0;
-            }
-            return 0;
-          })();
-        } else {
-          value = computeNonRatio(dailyMap, metric, numDays);
-        }
-        return { key:k, value: value };
-      });
-    }
     async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
-      const meta = KPI_META[selectedKPI] || KPI_META.fat;
-      const mode = effectiveMode();
       try {
-          setDiag('');
-          const [rowsNow, rowsPrev] = await Promise.all([
-              baseQuery(de, ate, analiticos),
-              baseQuery(dePrev, atePrev, analiticos)
+          const paramsNow = buildParams(de, ate, analiticos);
+          const paramsPrev = buildParams(dePrev, atePrev, analiticos);
+
+          const [
+              {data: dowData}, {data: dowDataPrev},
+              {data: hourData}, {data: hourDataPrev},
+              {data: turnoData}, {data: turnoDataPrev}
+          ] = await Promise.all([
+              supa.rpc(RPC_CHART_DOW_FUNC, paramsNow),
+              supa.rpc(RPC_CHART_DOW_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow),
+              supa.rpc(RPC_CHART_HOUR_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_TURNO_FUNC, paramsNow),
+              supa.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
           ]);
-          const tip = `Período anterior: ${dePrev} → ${atePrev}`;
           
+          const tip = `Período anterior: ${dePrev} → ${atePrev}`;
+          const mode = effectiveMode();
+          const valueKey = mode === 'media' ? 'media' : 'total';
+          
+          // Dia da Semana
           {
               const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
               const nArr = Array(7).fill(0), pArr = Array(7).fill(0);
-              const cur = computeByBucket(rowsNow, 'dow', selectedKPI, mode);
-              const prv = computeByBucket(rowsPrev, 'dow', selectedKPI, mode);
-              cur.forEach(o => { if(o.key >= 0 && o.key <= 6) nArr[o.key] = o.value; });
-              prv.forEach(o => { if(o.key >= 0 && o.key <= 6) pArr[o.key] = o.value; });
-              ensureChart('ch_dow', labels, nArr, pArr, tip, meta.fmt);
+              (dowData || []).forEach(r => nArr[r.dow] = r[valueKey]);
+              (dowDataPrev || []).forEach(r => pArr[r.dow] = r[valueKey]);
+              ensureChart('ch_dow', labels, nArr, pArr, tip, KPI_META[selectedKPI].fmt);
           }
+          // Hora
           {
               const nArr = Array(24).fill(0), pArr = Array(24).fill(0);
-              const cur = computeByBucket(rowsNow, 'hour', selectedKPI, mode);
-              const prv = computeByBucket(rowsPrev, 'hour', selectedKPI, mode);
-              cur.forEach(o => { if (o.key !== null && o.key >= 0 && o.key <= 23) nArr[o.key] = o.value; });
-              prv.forEach(o => { if (o.key !== null && o.key >= 0 && o.key <= 23) pArr[o.key] = o.value; });
+              (hourData || []).forEach(r => nArr[r.h] = r[valueKey]);
+              (hourDataPrev || []).forEach(r => pArr[r.h] = r[valueKey]);
 
               let minHour = 24, maxHour = -1;
               for (let i = 0; i < 24; i++) {
@@ -1080,28 +1012,28 @@
               }
 
               if (minHour > maxHour) {
-                  ensureChart('ch_hour', [], [], [], tip, meta.fmt);
+                  ensureChart('ch_hour', [], [], [], tip, KPI_META[selectedKPI].fmt);
               } else {
                   const range = Array.from({length: maxHour - minHour + 1}, (_, i) => i + minHour);
                   const labels = range.map(h => String(h).padStart(2, '0') + 'h');
                   const nowData = range.map(h => nArr[h]);
                   const prevData = range.map(h => pArr[h]);
-                  ensureChart('ch_hour', labels, nowData, prevData, tip, meta.fmt);
+                  ensureChart('ch_hour', labels, nowData, prevData, tip, KPI_META[selectedKPI].fmt);
               }
           }
+          // Turno
           {
               const labels = ['Dia', 'Noite'];
               const nMap = new Map(), pMap = new Map();
-              const cur = computeByBucket(rowsNow, 'turno', selectedKPI, mode);
-              const prv = computeByBucket(rowsPrev, 'turno', selectedKPI, mode);
-              cur.forEach(o => nMap.set(o.key, o.value));
-              prv.forEach(o => pMap.set(o.key, o.value));
+              (turnoData || []).forEach(r => nMap.set(r.turno, r[valueKey]));
+              (turnoDataPrev || []).forEach(r => pMap.set(r.turno, r[valueKey]));
               const nArr = labels.map(l => nMap.get(l) || 0);
               const pArr = labels.map(l => pMap.get(l) || 0);
-              ensureChart('ch_turno', labels, nArr, pArr, tip, meta.fmt);
+              ensureChart('ch_turno', labels, nArr, pArr, tip, KPI_META[selectedKPI].fmt);
           }
       } catch (e) {
-          console.error(e); setDiag('Erro ao atualizar gráficos');
+          console.error("Erro ao atualizar gráficos analíticos:", e); 
+          setDiag('Erro ao atualizar gráficos');
       }
     }
     async function updateMonth12x12(analiticos){
@@ -1114,17 +1046,22 @@
         const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
         
-        const [rowsNow, rowsPrev] = await Promise.all([
-          baseQuery(last12Start,last12End, analiticos),
-          baseQuery(prev12Start,prev12EndAdj, analiticos)
+        const paramsNow = buildParams(last12Start, last12End, analiticos);
+        const paramsPrev = buildParams(prev12Start, prev12EndAdj, analiticos);
+
+        const [{data: nData, error: nErr}, {data: pData, error: pErr}] = await Promise.all([
+            supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
+            supa.rpc(RPC_CHART_MONTH_FUNC, paramsPrev)
         ]);
-        
+
+        if (nErr) throw nErr;
+        if (pErr) throw pErr;
+
         const mode = effectiveMode();
-        const curNow = computeByBucket(rowsNow,'month', selectedKPI, mode);
-        const curPrv = computeByBucket(rowsPrev,'month', selectedKPI, mode);
+        const valueKey = mode === 'media' ? 'media' : 'total';
         
-        const mNow = new Map(curNow.map(o=>[o.key,o.value]));
-        const mPrv = new Map(curPrv.map(o=>[o.key,o.value]));
+        const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, +r[valueKey]||0]));
+        const mNow = toMap(nData), mPrev = toMap(pData);
         
         let labels = [];
         const ymsNow = []; 
@@ -1140,7 +1077,7 @@
         const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
         
         const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
-        const prevArr = ymsPrev.map(ym => mPrv.get(ym)||0);
+        const prevArr = ymsPrev.map(ym => mPrev.get(ym)||0);
         const tip = `Comparação fixa: Últimos 12M vs 12M anteriores`;
         ensureChart('ch_month', labels, nowArr, prevArr, tip, meta.fmt);
       }catch(e){
@@ -1392,7 +1329,7 @@
 
     fx.$chips.addEventListener('click', (e)=>{
       const b=e.target.closest('.fx-chip'); if(!b) return;
-      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.toggle('fx-active', x===b));
+      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.toggle('active', x===b));
       fx.$days.querySelectorAll('button').forEach(x=> x.classList.remove('fx-active'));
       fxNamed(b.dataset.win);
       fxDispatchApply();
