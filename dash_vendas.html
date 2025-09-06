@@ -1488,24 +1488,124 @@
   </script>
 
 <script>
-/* ================= DIAGNÓSTICO (REAL DATA) — SAFE v5 =================
-   - Não altera nada do que existe; apenas escuta eventos e renderiza.
-   - Garante carga: DOMContentLoaded, filters:apply, filters:apply:internal, e quando a aba fica visível.
-   - Tenta novamente se baseQuery ainda não estiver pronta (retry com backoff pequeno).
-   - Usa campos reais: fat, des, fre, ped, dia, hora, loja, canal, cancelado.
-------------------------------------------------------------------------- */
+/* ================= DIAGNÓSTICO (REAL DATA) — SAFE v6 =================
+   Melhorias:
+   1) Polyfill de DateHelpers.computePrevRangeISO se não existir.
+   2) DX_baseQuery: usa baseQuery original; se 404/ausente, tenta REST fallback em views conhecidas.
+   3) Totalmente isolado (DX_*), não redeclara nada global. 
+   4) Carrega em DOMContentLoaded, filters:apply e quando a aba fica visível.
+----------------------------------------------------------------------- */
 (function(){
   'use strict';
   const $ = (sel) => document.querySelector(sel);
-  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
   const TAB_ID = 'tab-diagnostico';
 
-  // ---- Guardas de containers
-  function hasDiagDom(){
-    return !!(document.getElementById(TAB_ID) && $('.hero-value-number') && $('.ins-list') && $('.proj-value'));
+  // ---- (1) Polyfill DateHelpers.computePrevRangeISO se faltar
+  if(!window.DateHelpers || typeof DateHelpers.computePrevRangeISO!=='function'){
+    window.DateHelpers = window.DateHelpers || {};
+    DateHelpers.computePrevRangeISO = function(deISO, ateISO){
+      try{
+        const de = new Date(deISO+'T00:00:00');
+        const ate = new Date(ateISO+'T00:00:00');
+        if(!(de instanceof Date) || isNaN(de) || !(ate instanceof Date) || isNaN(ate)) {
+          // fallback 30 dias
+          const end=new Date(); const start=new Date(end); start.setDate(end.getDate()-30);
+          const prevEnd=new Date(start); prevEnd.setDate(start.getDate()-1);
+          const prevStart=new Date(prevEnd); prevStart.setDate(prevEnd.getDate()-30);
+          return { dePrev: prevStart.toISOString().slice(0,10), atePrev: prevEnd.toISOString().slice(0,10) };
+        }
+        // janela anterior do mesmo tamanho (inclusive)
+        const ms = ate - de;
+        const prevEnd = new Date(de.getTime()-24*3600*1000);
+        const prevStart = new Date(prevEnd.getTime() - ms);
+        return { dePrev: prevStart.toISOString().slice(0,10), atePrev: prevEnd.toISOString().slice(0,10) };
+      }catch(_){ 
+        const end=new Date(); const start=new Date(end); start.setDate(end.getDate()-30);
+        const prevEnd=new Date(start); prevEnd.setDate(start.getDate()-1);
+        const prevStart=new Date(prevEnd); prevStart.setDate(prevEnd.getDate()-30);
+        return { dePrev: prevStart.toISOString().slice(0,10), atePrev: prevEnd.toISOString().slice(0,10) };
+      }
+    };
   }
 
-  // ---- Utilitários
+  // ---- (2) DX_baseQuery wrapper com fallback REST
+  async function DX_baseQuery(de, ate, anal){
+    // Tenta baseQuery original se existir
+    if(typeof window.baseQuery === 'function'){
+      try{
+        return await window.baseQuery(de, ate, anal);
+      }catch(err){
+        console.warn('[DX] baseQuery falhou, tentando REST fallback...', err);
+      }
+    }
+    // Fallback via REST
+    const urlBase = (window.SUPABASE_URL || (window.SUPABASE?.url)) || '';
+    const key = (window.SUPABASE_KEY || window?.SUPABASE?.anonKey || window?.SUPABASE?.serviceKey || '');
+    if(!urlBase || !key){
+      console.warn('[DX] Sem SUPABASE_URL/KEY — não é possível REST fallback.');
+      return [];
+    }
+    const headers = {
+      'apikey': key,
+      'Authorization': 'Bearer '+key
+    };
+    // views/tabelas candidatas (ordem de preferência)
+    const candidates = [
+      'vendas_canon',
+      'vendas',
+      'vw_vendas',
+      'vendas_mv'
+    ];
+    // monta filtros básicos (dia, cancelado e listas)
+    const qsParts = [
+      'select=dia,hora,loja,canal,fat,des,fre,cancelado',
+      'order=dia.asc,hora.asc',
+      `dia=gte.${encodeURIComponent(de)}`,
+      `dia=lte.${encodeURIComponent(ate)}`
+    ];
+    if(anal?.cancelado==='sim') qsParts.push('cancelado=eq.Sim');
+    if(anal?.cancelado==='nao') qsParts.push('cancelado=neq.Sim');
+    function addIn(param, arr){
+      if(Array.isArray(arr) && arr.length){
+        // Supabase or operator para string lists
+        const vals = arr.map(v=>`"${String(v).replace('"','\"')}"`).join(',');
+        qsParts.push(`or=(${param}.in.(${vals}))`);
+      }
+    }
+    addIn('loja', anal?.loja);
+    addIn('canal', anal?.canal);
+    addIn('turno', anal?.turno);
+    addIn('unidade', anal?.unidade);
+    addIn('pagamento_base', anal?.pagamento);
+
+    // Tenta cada endpoint até obter 200
+    for(const table of candidates){
+      const url = `${urlBase}/rest/v1/${table}?${qsParts.join('&')}`;
+      try{
+        const r = await fetch(url, { headers });
+        if(r.ok){
+          const data = await r.json();
+          // normaliza campos esperados
+          return data.map(x=>({
+            dia: x.dia, hora: (x.hora ?? x.hr ?? x.hour ?? null),
+            loja: x.loja ?? x.unidade ?? x.NomeDaLoja ?? null,
+            canal: x.canal ?? x.plataforma ?? null,
+            fat: + (x.fat ?? x.faturamento ?? x.valor_total ?? x.total ?? 0),
+            des: + (x.des ?? x.descontos ?? x.incentivo ?? 0),
+            fre: + (x.fre ?? x.frete ?? 0),
+            cancelado: String(x.cancelado ?? x.is_cancelado ?? 'Não') === 'true' ? 'Sim' : (x.cancelado ?? 'Não')
+          }));
+        }else{
+          console.warn('[DX] REST fallback', table, 'status:', r.status);
+        }
+      }catch(err){
+        console.warn('[DX] REST erro', table, err);
+      }
+    }
+    return []; // sem dados no fallback
+  }
+
+  // ---- Aggregators/formatters (iguais aos anteriores)
   function fmtKPI(key, v){
     const m = (window.KPI_META?.[key]?.fmt) || 'money';
     if(m==='money')   return (isFinite(v)? ('R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})) : '—');
@@ -1560,8 +1660,8 @@
   async function compute(selectedKey, de, ate, dePrev, atePrev, analiticos){
     const forced = window.KPI_META?.[selectedKey]?.needsCancel ?? null;
     const patch = (a)=>({...a, cancelado:(forced==='Sim'?'sim': forced==='Não'?'nao': a.cancelado)});
-    const rowsNow = await baseQuery(de, ate, patch(analiticos));
-    const rowsPrev= await baseQuery(dePrev, atePrev, patch(analiticos));
+    const rowsNow = await DX_baseQuery(de, ate, patch(analiticos));
+    const rowsPrev= await DX_baseQuery(dePrev, atePrev, patch(analiticos));
     const aggNow=aggRows(rowsNow), aggPrev=aggRows(rowsPrev);
     const mode = (typeof effectiveMode==='function'? effectiveMode() : 'total');
     if(mode==='media'){
@@ -1576,7 +1676,7 @@
   }
 
   function renderHero(k, nowVal, prevVal, aggNow){
-    const elVal=$('.hero-value-number'), elDelta=$('.hero .delta, .delta');
+    const elVal=$('.hero-value-number'), elDelta=document.querySelector('.hero .delta, .delta');
     const elSub=$('.hero-sub-value'), ctx=$('.hero-context');
     if(elVal) elVal.textContent=fmtKPI(k, nowVal);
     if(elDelta){
@@ -1646,15 +1746,10 @@
   }
 
   async function runDiag(payload){
-    if(!hasDiagDom()) return;
-    // retry se baseQuery ainda não existe
-    let tries=0;
-    while(typeof baseQuery!=='function' && tries<20){
-      await new Promise(r=>setTimeout(r, 100));
-      tries++;
-    }
-    if(typeof baseQuery!=='function') return; // não interfere no app
-
+    const tab=document.getElementById(TAB_ID);
+    if(!tab) return;
+    // espera o baseQuery disponível (máx 2s)
+    let t=0; while(typeof window.baseQuery!=='function' && t<20){ await new Promise(r=>setTimeout(r,100)); t++; }
     const {start:de, end:ate, analiticos} = payload;
     const { dePrev, atePrev } = DateHelpers.computePrevRangeISO(de, ate);
     const key = (window.selectedKPI || ($('#kpi-select')?.value) || 'fat');
