@@ -1741,5 +1741,81 @@
 </script>
 <!-- ============= FIM DIAGNÓSTICO REAL (SAFE v7) ============== -->
 
+
+<script>
+// --- DX Addon: KPI selection sync ---
+(() => {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+
+  function DX_getSelectedKey() {
+    const sel = $('#kpi-select');
+    let raw = (sel && (sel.value || sel.getAttribute('data-value'))) || '';
+    if (!raw) {
+      const opt = sel?.options?.[sel.selectedIndex];
+      raw = (opt?.value || opt?.text || '').trim();
+    }
+    const norm = (s) => (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+    const r = norm(raw);
+    if (window.KPI_META && KPI_META[raw]) return raw;
+    for (const k in (window.KPI_META||{})) {
+      if (norm(k) === r) return k;
+    }
+    if (r.includes('fatur') || r==='fat' || r==='faturamento') return 'fat';
+    if (r.includes('pedido') || r==='ped' || r.includes('qtd')) return 'ped';
+    if (r.includes('ticket') || r==='tkt' || r.includes('medio')) return 'tkt';
+    if (r.includes('frete') || r==='fre') return 'fre';
+    if (r.includes('descon') || r==='des') return 'des';
+    if (r.includes('%') || r.includes('subs') || r.includes('perc')) return 'desperc';
+    if (r.includes('roi')) return 'roi';
+    if (r.includes('cancel') && r.includes('pedido')) return 'canc_ped';
+    if (r.includes('cancel') && r.includes('valor')) return 'canc_val';
+    return 'fat';
+  }
+
+  function DX_rerunFromUI() {
+    const start = document.querySelector('#fxDuStart')?.value;
+    const end   = document.querySelector('#fxDuEnd')?.value;
+    if (!start || !end) return;
+    window.selectedKPI = DX_getSelectedKey();
+    const ms = window.ms || {};
+    const safe = (g) => g && typeof g.get==='function' ? g.get() : [];
+    const payload = {
+      start: end>=start?start:end,
+      end:   end>=start?end:start,
+      analiticos: {
+        unidade: safe(ms.unids), loja: safe(ms.lojas), turno: safe(ms.turnos),
+        canal: safe(ms.canais), pagamento: safe(ms.pags),
+        cancelado: document.querySelector('#fxCanceled')?.value
+      }
+    };
+    try {
+      if (typeof window.payloadAtual === 'function' && typeof window.run === 'function') {
+        const p = window.payloadAtual(); if (p) window.run(p);
+      } else if (typeof window.run === 'function') {
+        window.run(payload);
+      }
+    } catch (e) {
+      console.warn('[DX] rerun error', e);
+    }
+  }
+
+  const sel = document.querySelector('#kpi-select');
+  if (sel) {
+    sel.addEventListener('change', DX_rerunFromUI);
+    window.selectedKPI = DX_getSelectedKey();
+  }
+
+  const tab = document.getElementById('tab-diagnostico');
+  if (tab && typeof MutationObserver!=='undefined') {
+    const obs = new MutationObserver(() => {
+      if (getComputedStyle(tab).display !== 'none') {
+        DX_rerunFromUI();
+      }
+    });
+    obs.observe(tab, { attributes:true, attributeFilter:['style','class'] });
+  }
+})();
+</script>
 </body>
 </html>
