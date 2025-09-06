@@ -562,18 +562,27 @@
     function fxFmt(date){ const y=date.getFullYear(), m=String(date.getMonth()+1).padStart(2,'0'), d=String(date.getDate()).padStart(2,'0'); return `${y}-${m}-${d}` }
     function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
     
+    function safeParseISO(isoStr) {
+        if (!isoStr) return new Date();
+        const [y, m, d] = isoStr.split('-').map(Number);
+        return new Date(y, m - 1, d, 12); // Use midday to avoid timezone shifts
+    }
+
     function setNamedPeriod(win) {
-        const base = lastDay ? new Date(lastDay + 'T12:00:00Z') : new Date();
+        const base = safeParseISO(lastDay);
         let start, end;
         if (win === 'today') {
             start = end = base;
         } else if (win === 'yesterday') {
-            start = end = new Date(base.setDate(base.getDate() - 1));
+            const yesterday = new Date(base);
+            yesterday.setDate(base.getDate() - 1);
+            start = end = yesterday;
         } else if (win === 'lastMonth') {
-            const y = base.getFullYear();
-            const m = base.getMonth();
-            start = new Date(y, m - 1, 1);
-            end = new Date(y, m, 0);
+            const tempDate = new Date(base);
+            tempDate.setDate(1); 
+            tempDate.setMonth(tempDate.getMonth() - 1);
+            start = new Date(tempDate.getFullYear(), tempDate.getMonth(), 1);
+            end = new Date(tempDate.getFullYear(), tempDate.getMonth() + 1, 0);
         } else if (win === 'lastYear') {
             const y = base.getFullYear() - 1;
             start = new Date(y, 0, 1);
@@ -584,20 +593,20 @@
             fxDispatchApply();
         }
     }
+    
+    function fxLastNDays(n){
+      const end = safeParseISO(lastDay);
+      const start = new Date(end);
+      start.setDate(end.getDate() - (n - 1));
+      fxSetRange(start, end);
+    }
 
     function fxShowDrop(show){
       fx.$drop.classList.toggle('fx-show', show);
       fx.$btnMore.setAttribute('aria-expanded', show?'true':'false');
       if(show) fx.$start?.focus();
     }
-
-    function fxLastNDays(n){
-      const today = lastDay ? new Date(lastDay + 'T12:00:00Z') : new Date();
-      const end = today;
-      const start = new Date(new Date().setDate(end.getDate()-(n-1)));
-      fxSetRange(start,end);
-    }
-
+    
     fx.$btnMore.addEventListener('click', ()=> fxShowDrop(!fx.$drop.classList.contains('fx-show')));
     document.addEventListener('click', (e)=>{ if(!fx.$drop.classList.contains('fx-show')) return; if(!(fx.$drop.contains(e.target) || fx.$btnMore.contains(e.target))) fxShowDrop(false); });
     document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && fx.$drop.classList.contains('fx-show')) fxShowDrop(false) });
