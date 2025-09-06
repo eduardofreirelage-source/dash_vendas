@@ -514,6 +514,8 @@
     // ===================================================================================
     
     /* ===================== CONFIG ===================== */
+    const RPC_KPI_FUNC = 'kpi_vendas_unificado';
+    const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes';
     const RPC_FILTER_FUNC = 'filter_vendas';
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
@@ -560,8 +562,10 @@
     function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
     function displayNormalize(s){ return cleanSpaces(s); }
     const agg = (rows) => {
-      let ped=0,fat=0,des=0,fre=0; 
-      for(const r of (rows||[])){ ped+=+r.pedidos||0; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } 
+      // CORREÇÃO: Contagem de pedidos agora é pelo número de linhas.
+      const ped = rows?.length || 0;
+      let fat=0,des=0,fre=0; 
+      for(const r of (rows||[])){ fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } 
       return {ped,fat,des,fre};
     };
     const formatCurrencyTick = (value) => {
@@ -800,14 +804,12 @@
       while (keepFetching) {
           const { data, error } = await supa.rpc(RPC_FILTER_FUNC, params)
                                           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-
           if (error) {
               console.error(`[RPC ${RPC_FILTER_FUNC}]`, error);
               throw error;
           }
-
           if (data && data.length > 0) {
-              allRows.push(...data); // Use spread syntax for efficiency
+              allRows.push(...data);
               page++;
               if (data.length < PAGE_SIZE) {
                   keepFetching = false;
@@ -977,7 +979,8 @@
         dacc.fat += +r.fat||0;
         dacc.des += +r.des||0;
         dacc.fre += +r.fre||0;
-        dacc.ped += +r.pedidos||0;
+        // CORREÇÃO: A contagem de pedidos é 1 por linha
+        dacc.ped += 1;
       }
       function computeRatio(dailyMap, metric){
         const days = [...dailyMap.values()];
@@ -1109,22 +1112,36 @@
         const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
         const mode = effectiveMode();
-        let labels = [];
-        let cur = last12Start;
-        for(let i=0;i<12;i++){ labels.push(DateHelpers.formatYM(cur)); cur = DateHelpers.addMonthsISO(cur, 1); }
-        const [rowsNow, rowsPrev] = await Promise.all([
-          baseQuery(last12Start,last12End, analiticos),
-          baseQuery(prev12Start,prev12EndAdj, analiticos)
+        
+        const paramsNow = buildParams(last12Start, last12End, analiticos);
+        const paramsPrev = buildParams(prev12Start, prev12EndAdj, analiticos);
+
+        const [{data: nData, error: nErr}, {data: pData, error: pErr}] = await Promise.all([
+            supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
+            supa.rpc(RPC_CHART_MONTH_FUNC, paramsPrev)
         ]);
-        const curNow = computeByBucket(rowsNow,'month', selectedKPI, mode);
-        const curPrv = computeByBucket(rowsPrev,'month', selectedKPI, mode);
-        const mNow = new Map(curNow.map(o=>[o.key,o.value]));
-        const mPrv = new Map(curPrv.map(o=>[o.key,o.value]));
-        const ymsNow = []; cur = last12Start;
-        for(let i=0;i<12;i++){ const d=new Date(cur+'T12:00:00'); const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; ymsNow.push(ym); cur=DateHelpers.addMonthsISO(cur,1); }
+
+        if (nErr) throw nErr;
+        if (pErr) throw pErr;
+
+        const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, mode==='media' ? (+r.media||0) : (+r.total||0)]));
+        const mNow = toMap(nData), mPrev = toMap(pData);
+        
+        let labels = [];
+        const ymsNow = []; 
+        let cur = last12Start;
+        for(let i=0;i<12;i++){ 
+            labels.push(DateHelpers.formatYM(cur)); 
+            const d=new Date(cur+'T12:00:00'); 
+            const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; 
+            ymsNow.push(ym); 
+            cur=DateHelpers.addMonthsISO(cur,1); 
+        }
+
         const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
+        
         const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
-        const prevArr = ymsPrev.map(ym => mPrv.get(ym)||0);
+        const prevArr = ymsPrev.map(ym => mPrev.get(ym)||0);
         const tip = `Comparação fixa: Últimos 12M vs 12M anteriores`;
         ensureChart('ch_month', labels, nowArr, prevArr, tip, meta.fmt);
       }catch(e){
@@ -1165,7 +1182,8 @@
           acc.fat += +r.fat||0;
           acc.des += +r.des||0;
           acc.fre += +r.fre||0;
-          acc.ped += +r.pedidos||0;
+          // CORREÇÃO: Contagem de pedidos é 1 por linha
+          acc.ped += 1;
           acc.dias.add(r.dia);
         });
 
