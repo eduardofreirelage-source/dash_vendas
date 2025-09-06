@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Dashboard Executivo (v10.13) — Presets sem 'D' + Analíticos</title>
+  <title>Dashboard Executivo (v10.14) — Presets com lógica de datas</title>
   <style>
     :root{
       --bg:#f7f7fa; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e5e7eb;
       --wine:#7b1e3a; --ok:#0b5d47;
     }
     *{box-sizing:border-box}
-    html,body{margin:0;background:var(--bg);color:var(--ink);font:11px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+    html,body{margin:0;background:var(--bg);color:#0f172a;font:11px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
     .wrap{display:flex;min-height:100vh;flex-direction:column}
     .main{flex:1;display:flex;flex-direction:column;min-width:0}
     .top{position:sticky;top:0;z-index:10;background:#fff;padding:8px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
@@ -257,6 +257,51 @@
   </div>
 
   <script>
+    // Helpers de data
+    function toLocalMidnight(d){
+      const x = new Date(d);
+      x.setHours(12,0,0,0); // meio-dia evita problemas de DST ao subtrair dias
+      return x;
+    }
+    function fmt(date){
+      // yyyy-mm-dd para <input type="date">
+      const y = date.getFullYear();
+      const m = String(date.getMonth()+1).padStart(2,'0');
+      const d = String(date.getDate()).padStart(2,'0');
+      return `${y}-${m}-${d}`;
+    }
+    function setRange(start,end){
+      document.getElementById('duStart').value = fmt(start);
+      document.getElementById('duEnd').value   = fmt(end);
+    }
+
+    function setLastNDays(n){
+      const today = toLocalMidnight(new Date());
+      const end = today;
+      const start = new Date(end);
+      start.setDate(end.getDate()-(n-1));
+      setRange(start,end);
+    }
+    function setNamed(win){
+      const today = toLocalMidnight(new Date());
+      if(win==='today'){
+        setRange(today,today);
+      }else if(win==='yesterday'){
+        const y = new Date(today); y.setDate(today.getDate()-1);
+        setRange(y,y);
+      }else if(win==='lastMonth'){
+        const y = today.getFullYear(), m = today.getMonth(); // mês atual 0-11
+        const start = new Date(y, m-1, 1);
+        const end   = new Date(y, m, 0); // dia 0 do mês atual = último do mês anterior
+        setRange(start,end);
+      }else if(win==='lastYear'){
+        const yy = today.getFullYear()-1;
+        const start = new Date(yy,0,1);
+        const end   = new Date(yy,11,31);
+        setRange(start,end);
+      }
+    }
+
     // Tabs
     document.getElementById('tabs').addEventListener('click', (e)=>{
       const b=e.target.closest('button'); if(!b) return;
@@ -265,18 +310,25 @@
       window.scrollTo({top:0,behavior:'smooth'});
     });
 
-    // Footer: atalhos nomeados
+    // Footer: atalhos nomeados -> define intervalo e estado visual
     const quickChips = document.getElementById('quickChips');
     quickChips.addEventListener('click',(e)=>{
       const c=e.target.closest('.chip'); if(!c) return;
       quickChips.querySelectorAll('.chip').forEach(x=> x.classList.toggle('active', x===c));
+      // limpar seleção de dias do drop-up
+      document.querySelectorAll('#duQuickDays button').forEach(b=> b.classList.remove('active'));
+      setNamed(c.dataset.win);
     });
 
-    // Drop-up: dias (sem 'D')
+    // Drop-up: dias (7,15,30,60,90,120) -> define últimos N dias
     const duQuickDays = document.getElementById('duQuickDays');
     duQuickDays.addEventListener('click',(e)=>{
       const b=e.target.closest('button'); if(!b) return;
       duQuickDays.querySelectorAll('button').forEach(x=> x.classList.toggle('active', x===b));
+      // limpar seleção do rodapé
+      quickChips.querySelectorAll('.chip').forEach(ch=> ch.classList.remove('active'));
+      const n = parseInt(b.dataset.win,10);
+      if(!isNaN(n)) setLastNDays(n);
     });
 
     // Drop-up
@@ -306,8 +358,11 @@
     });
 
     // Stubs
-    btnApply.addEventListener('click', ()=> alert('Aplicar filtros (rodapé)'));
-    duApply.addEventListener('click', ()=> { alert('Aplicar filtros (drop-up)'); showDropup(false); });
+    btnApply.addEventListener('click', ()=> alert(`Aplicar filtros | De: ${document.getElementById('duStart').value} Até: ${document.getElementById('duEnd').value}`));
+    duApply.addEventListener('click', ()=> { 
+      alert(`Aplicar filtros (drop-up) | De: ${document.getElementById('duStart').value} Até: ${document.getElementById('duEnd').value}`); 
+      showDropup(false); 
+    });
     btnReset.addEventListener('click', ()=> { 
       alert('Reset filtros'); 
       quickChips.querySelectorAll('.chip').forEach(x=> x.classList.remove('active'));
@@ -315,6 +370,10 @@
       document.getElementById('duStart').value=''; 
       document.getElementById('duEnd').value=''; 
     });
+
+    // Opcional: definir um valor inicial (ex.: últimos 30 dias)
+    setLastNDays(30);
+    document.querySelector('#duQuickDays button[data-win="30"]').classList.add('active');
   </script>
 </body>
 </html>
