@@ -25,7 +25,6 @@
     .upload-bar { display: flex; align-items: center; gap: 12px; }
     .filter-toggle{display:none}
 
-
     /* GRID DECISÃO */
     .section{order:2;padding:0 16px 16px 16px}
     .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
@@ -349,7 +348,7 @@
     .fx-du-grid{
       display:grid; 
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap:8px; 
+      gap:12px 8px; 
     }
     .fx-field{display:flex; flex-direction:column; gap:4px; min-width:0}
     .fx-label{font-size:10px; color:#64748b}
@@ -488,8 +487,11 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
   
   <script>
-  // ======================= CÓDIGO JS PRINCIPAL =======================
   document.addEventListener('DOMContentLoaded', () => {
+    // ===================================================================================
+    // Bloco 1: LÓGICA PRINCIPAL DO DASHBOARD (Config, Gráficos, Dados)
+    // ===================================================================================
+    
     /* ===================== CONFIG ===================== */
     const READ_VIEW       = 'vendas_canon';
     const DEST_INSERT_TABLE= 'vendas_xlsx';
@@ -570,7 +572,8 @@
         const box=document.createElement('div');
         box.className = 'msel-opts-box';
 
-        (filtered.length > 0 || q.value === '' ? (filtered.length > 0 ? filtered : options) : []).forEach((v)=>{
+        const listToRender = (q.value === '' && filtered.length === 0) ? options : filtered;
+        listToRender.forEach((v)=>{
           const row=document.createElement('div'); 
           row.className='msel-opt';
           row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:5px; border-radius:6px; font-size: 13px; cursor:pointer;';
@@ -666,7 +669,6 @@
         p_cancelado
       };
       
-      // console.log("Parâmetros para RPC:", JSON.stringify(params, null, 2));
       return params;
     }
 
@@ -806,7 +808,7 @@
       const m=KPI_META[selectedKPI];
       return m?.forceMode || chartModeGlobal;
     }
-    window.updateChartTitles = function(){
+    function updateChartTitles(){
       const m=KPI_META[selectedKPI]||KPI_META.fat;
       const mode = effectiveMode()==='media' ? ' (média)' : '';
       $('title_month').textContent = `${m.label}${mode} por mês — últimos 12M vs. 12M anteriores`;
@@ -984,11 +986,9 @@
               const labels = ord.filter(k => mNow.has(k) || mPrv.has(k));
               ensureChart('ch_turno', labels, labels.map(k => mNow.get(k) || 0), labels.map(k => mPrv.get(k) || 0), tip, meta.fmt);
           }
-          setStatus('OK — gráficos atualizados', 'ok');
       } catch (e) {
           console.error(e);
-          setStatus('OK (sem gráficos — erro na consulta)', 'ok');
-          setDiag('');
+          setDiag('Erro ao atualizar gráficos');
       }
     }
     
@@ -1031,7 +1031,7 @@
         ensureChart('ch_month', labels, nowArr, prevArr, tip, meta.fmt);
       }catch(e){
         console.error(e);
-        setStatus('OK (mensal 12x12 indisponível)','ok');
+        setDiag('Erro ao atualizar gráfico mensal');
       }
     }
 
@@ -1244,7 +1244,7 @@
         info(`Gravado/atualizado: ${rows.length} linhas.`);
         try{ await supa.rpc(REFRESH_RPC); }catch(_e){}
         await reloadStaticOptions();
-        document.dispatchEvent(new Event('filters:apply:internal')); // Refresh data after upload
+        document.dispatchEvent(new Event('filters:apply:internal'));
       }catch(e){
         console.error(e);
         setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
@@ -1293,7 +1293,7 @@
     }
     
     /* ===================== LOOP PRINCIPAL ===================== */
-    window.applyAll = async function(details){
+    async function applyAll(details){
       try{
         const de = details.start;
         const ate = details.end;
@@ -1320,31 +1320,11 @@
       }
     }
 
-    /* ===================== INICIALIZAÇÃO ===================== */
-    (async function init(){
-      try{
-        setStatus('Carregando…');
-        const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
-        if(dr.error) throw dr.error;
-        if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
-        
-        await reloadStaticOptions();
-        
-        bindKPIClick();
-        updateChartTitles();
-        
-        $('fxBtnApply').click();
-      }catch(e){
-        console.error('Erro na inicialização:', e);
-        setStatus('Erro ao iniciar: '+(e.message||e),'err');
-      }
-    })();
-  });
-  </script>
 
-  <script>
-  // ======================= LÓGICA PARA INTERFACE (FILTROS E ABAS) =======================
-  document.addEventListener('DOMContentLoaded', () => {
+    // ===================================================================================
+    // Bloco 2: LÓGICA DA INTERFACE DE FILTROS E ABAS
+    // ===================================================================================
+
     // Lógica das Abas
     const tabsContainer = document.getElementById('tabs');
     if (tabsContainer) {
@@ -1355,7 +1335,7 @@
       });
     }
 
-    // ====================== LÓGICA DO NOVO FILTRO (FOOTER/DROP-UP) ======================
+    // LÓGICA DO NOVO FILTRO (FOOTER/DROP-UP)
     function fxLocalMidday(d){ const x=new Date(d); x.setHours(12,0,0,0); return x }
     function fxFmt(date){ const y=date.getFullYear(), m=String(date.getMonth()+1).padStart(2,'0'), d=String(date.getDate()).padStart(2,'0'); return `${y}-${m}-${d}` }
     function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
@@ -1375,16 +1355,16 @@
     }
 
     const fx = {
-      $drop: document.getElementById('fxDropup'),
-      $btnMore: document.getElementById('fxBtnMore'),
-      $btnReset: document.getElementById('fxBtnReset'),
-      $btnApply: document.getElementById('fxBtnApply'),
-      $duClose: document.getElementById('fxDuClose'),
-      $duApply: document.getElementById('fxDuApply'),
-      $start: document.getElementById('fxDuStart'),
-      $end: document.getElementById('fxDuEnd'),
-      $days: document.getElementById('fxDuQuickDays'),
-      $chips: document.getElementById('fxQuickChips'),
+      $drop: $('fxDropup'),
+      $btnMore: $('fxBtnMore'),
+      $btnReset: $('fxBtnReset'),
+      $btnApply: $('fxBtnApply'),
+      $duClose: $('fxDuClose'),
+      $duApply: $('fxDuApply'),
+      $start: $('fxDuStart'),
+      $end: $('fxDuEnd'),
+      $days: $('fxDuQuickDays'),
+      $chips: $('fxQuickChips'),
     };
 
     function fxShowDrop(show){
@@ -1415,20 +1395,16 @@
     });
 
     function fxDispatchApply(){
-      if (!window.ms) {
-        console.error("Filter objects (ms) not initialized.");
-        return;
-      }
       const payload = {
         start: fx.$start.value, 
         end: fx.$end.value,
         analiticos: {
-          unidade: window.ms.unids.get(),
-          loja: window.ms.lojas.get(),
-          turno: window.ms.turnos.get(),
-          canal: window.ms.canais.get(),
-          pagamento: window.ms.pags.get(),
-          cancelado: document.getElementById('fxCanceled').value
+          unidade: ms.unids.get(),
+          loja: ms.lojas.get(),
+          turno: ms.turnos.get(),
+          canal: ms.canais.get(),
+          pagamento: ms.pags.get(),
+          cancelado: fxCanceled.value
         }
       };
       document.dispatchEvent(new CustomEvent('filters:apply', { detail: payload }));
@@ -1438,10 +1414,8 @@
       fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('fx-active'));
       fx.$days.querySelectorAll('button').forEach(x=> x.classList.remove('fx-active'));
       
-      if (window.ms) {
-          Object.values(window.ms).forEach(m => m.clear());
-      }
-      document.getElementById('fxCanceled').value = 'nao';
+      Object.values(ms).forEach(m => m.clear());
+      fxCanceled.value = 'nao';
       
       fxLastNDays(30);
       fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
@@ -1452,28 +1426,47 @@
     fx.$duApply.addEventListener('click', ()=>{ fxDispatchApply(); fxShowDrop(false) });
 
     document.addEventListener('filters:apply', (e) => {
-        if(e.detail && window.applyAll) {
-            window.applyAll(e.detail);
+        if(e.detail) {
+            applyAll(e.detail);
         }
     });
 
     document.addEventListener('filters:apply:internal', () => {
-        if (!window.ms || !window.updateChartTitles || !window.applyAll) return;
-        window.updateChartTitles();
+        updateChartTitles();
         const payload = {
           start: fx.$start.value,
           end: fx.$end.value,
           analiticos: {
-            unidade: window.ms.unids.get(), loja: window.ms.lojas.get(), turno: window.ms.turnos.get(),
-            canal: window.ms.canais.get(), pagamento: window.ms.pags.get(), cancelado: document.getElementById('fxCanceled').value
+            unidade: ms.unids.get(), loja: ms.lojas.get(), turno: ms.turnos.get(),
+            canal: ms.canais.get(), pagamento: ms.pags.get(), cancelado: fxCanceled.value
           }
         };
-        window.applyAll(payload);
+        applyAll(payload);
     });
+    
+    /* ===================== INICIALIZAÇÃO ===================== */
+    (async function init(){
+      try{
+        setStatus('Carregando…');
+        const dr = await supa.from('vw_vendas_daterange').select('*').limit(1);
+        if(dr.error) throw dr.error;
+        if(dr.data?.length){ firstDay=dr.data[0].min_dia; lastDay=dr.data[0].max_dia; }
+        
+        await reloadStaticOptions();
+        
+        bindKPIClick();
+        updateChartTitles();
 
-    // Estado inicial
-    fxLastNDays(30);
-    fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
+        // Estado inicial de data e disparo da primeira carga
+        fxLastNDays(30);
+        fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
+        fxDispatchApply();
+      }catch(e){
+        console.error('Erro na inicialização:', e);
+        setStatus('Erro ao iniciar: '+(e.message||e),'err');
+      }
+    })();
+
   });
   </script>
 </body>
