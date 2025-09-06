@@ -47,8 +47,8 @@
     .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;min-height:272px}
     .card .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
     .title{font-weight:700}
-    .seg{border-radius: 6px;}
-    .seg button{padding: 2px 8px; font-size: 10px; font-weight: 600; height: 24px; border:0; background:transparent; cursor:pointer}
+    .seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;}
+    .seg button{padding:2px 8px;font-size:10px;font-weight:600;height:24px;border:0;background:transparent;cursor:pointer}
     .seg button.active{background:var(--wine);color:#fff}
     .chart-box{position:relative;flex-grow:1;min-height:0}
     section#tab-vendas .panel > .card .chart-box { min-height: 240px !important; }
@@ -363,7 +363,6 @@
       height:30px; padding:4px 8px; border:1px solid var(--line); border-radius:8px; background:#fff; font:inherit; width:100%; text-align:left;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    /* CORREÇÃO DE LAYOUT: Garante que o painel multiselect se posicione corretamente */
     .msel { position: relative; }
     .msel-panel {
         display: none;
@@ -565,7 +564,7 @@
     function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
     function displayNormalize(s){ return cleanSpaces(s); }
     const agg = (rows) => {
-      const ped = rows?.length || 0; 
+      let ped = rows?.length || 0; 
       let fat=0,des=0,fre=0; 
       for(const r of (rows||[])){ fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } 
       return {ped,fat,des,fre};
@@ -797,37 +796,25 @@
     }
 
     async function baseQuery(de, ate, analiticos){
-      let q = supa.from(READ_VIEW)
-        .select()
-        .gte('dia', de).lte('dia', ate);
-
-      const isActive = (val) => val && val.length > 0;
-      if (isActive(analiticos.unidade)) q = q.in('unidade', analiticos.unidade);
-      if (isActive(analiticos.loja)) q = q.in('loja', analiticos.loja);
-      if (isActive(analiticos.turno)) q = q.in('turno', analiticos.turno);
-      if (isActive(analiticos.canal)) {
-          const canalFilters = analiticos.canal.map(c => `canal.ilike.%${c.replace(/%/g, '%25')}%`).join(',');
-          q = q.or(canalFilters);
-      }
-      if (isActive(analiticos.pagamento)) {
-          const paymentFilters = analiticos.pagamento.map(p => `pagamento_base.ilike.%${p.replace(/%/g, '%25')}%`).join(',');
-          q = q.or(paymentFilters);
-      }
-      if (analiticos.cancelado === 'sim') q = q.eq('cancelado', 'Sim');
-      if (analiticos.cancelado === 'nao') q = q.eq('cancelado', 'Não');
-
-      // Paginação para buscar todos os dados
       const PAGE_SIZE = 1000;
       let allRows = [];
       let page = 0;
       let keepFetching = true;
+      const params = buildParams(de, ate, analiticos);
+
       while (keepFetching) {
-          const { data, error } = await q.range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-          if (error) { console.error(`[baseQuery]`, error); throw error; }
+          const { data, error } = await supa.rpc(RPC_FILTER_FUNC, params)
+                                          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+          if (error) {
+              console.error(`[RPC ${RPC_FILTER_FUNC}]`, error);
+              throw error;
+          }
           if (data && data.length > 0) {
               allRows.push(...data);
               page++;
-              if (data.length < PAGE_SIZE) keepFetching = false;
+              if (data.length < PAGE_SIZE) {
+                  keepFetching = false;
+              }
           } else {
               keepFetching = false;
           }
@@ -840,51 +827,26 @@
         const pNow = buildParams(de, ate, analiticos);
         const pPrev = buildParams(dePrev, atePrev, analiticos);
         
-        let qNow = supa.from(READ_VIEW).select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate);
-        let qPrev = supa.from(READ_VIEW).select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev);
-        let qCancNow = supa.from(READ_VIEW).select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Sim');
-        let qValidNow = supa.from(READ_VIEW).select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Não');
-        let qCancPrev = supa.from(READ_VIEW).select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Sim');
-        let qValidPrev = supa.from(READ_VIEW).select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Não');
-
-        // Aplicar filtros de texto dinamicamente
-        const queries = [qNow, qPrev, qCancNow, qValidNow, qCancPrev, qValidPrev];
-        const isActive = (val) => val && val.length > 0;
-        
-        queries.forEach(q => {
-            if (isActive(analiticos.unidade)) q.in('unidade', analiticos.unidade);
-            if (isActive(analiticos.loja)) q.in('loja', analiticos.loja);
-            if (isActive(analiticos.turno)) q.in('turno', analiticos.turno);
-            if (isActive(analiticos.canal)) {
-              const canalFilters = analiticos.canal.map(c => `canal.ilike.%${c.replace(/%/g, '%25')}%`).join(',');
-              q.or(canalFilters);
-            }
-            if (isActive(analiticos.pagamento)) {
-              const paymentFilters = analiticos.pagamento.map(p => `pagamento_base.ilike.%${p.replace(/%/g, '%25')}%`).join(',');
-              q.or(paymentFilters);
-            }
-        });
-
-        if(analiticos.cancelado === 'sim') qNow.eq('cancelado', 'Sim');
-        if(analiticos.cancelado === 'nao') qNow.eq('cancelado', 'Não');
-        if(analiticos.cancelado === 'sim') qPrev.eq('cancelado', 'Sim');
-        if(analiticos.cancelado === 'nao') qPrev.eq('cancelado', 'Não');
-
         const [
           finNowResult, finPrevResult,
-          { count: pedNowCount }, { count: pedPrevCount },
-          { count: cnCount }, { count: vnCount },
-          { count: cpCount }, { count: vpCount }
+          { count: pedNowCount, error: errPedNow },
+          { count: pedPrevCount, error: errPedPrev },
+          { count: cnCount, error: errCn }, { count: vnCount, error: errVn },
+          { count: cpCount, error: errCp }, { count: vpCount, error: errVp }
         ] = await Promise.all([
             supa.rpc(RPC_KPI_FUNC, pNow),
             supa.rpc(RPC_KPI_FUNC, pPrev),
-            qNow, qPrev,
-            qCancNow, qValidNow,
-            qCancPrev, qValidPrev
+            supa.rpc(RPC_FILTER_FUNC, pNow, { count: 'exact' }),
+            supa.rpc(RPC_FILTER_FUNC, pPrev, { count: 'exact' }),
+            supa.rpc(RPC_FILTER_FUNC, { ...pNow, p_cancelado: 'Sim' }, { count: 'exact' }),
+            supa.rpc(RPC_FILTER_FUNC, { ...pNow, p_cancelado: 'Não' }, { count: 'exact' }),
+            supa.rpc(RPC_FILTER_FUNC, { ...pPrev, p_cancelado: 'Sim' }, { count: 'exact' }),
+            supa.rpc(RPC_FILTER_FUNC, { ...pPrev, p_cancelado: 'Não' }, { count: 'exact' })
         ]);
 
         if(finNowResult.error) throw finNowResult.error;
-
+        if(errPedNow) throw errPedNow;
+        
         const N = {
             ped: pedNowCount,
             fat: +(finNowResult.data[0]?.fat || 0),
