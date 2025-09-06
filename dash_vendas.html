@@ -40,7 +40,6 @@
     .kpi[data-kpi="fat"] .val { color: var(--c-now); }
     .delta{display:inline-flex;gap:4px;align-items:center;padding:1px 6px;border-radius:999px;border:1px solid rgba(148,163,184,.35);font-weight:700;font-size:10px;margin-left:6px;background:rgba(148,163,184,.15);color:#6b7280}
     .delta svg{width:10px;height:10px}
-    /* CORREÇÃO DE COR */
     .delta.up{background:rgba(6,95,70,.1);border-color:rgba(6,95,70,.25);color:var(--ok-dark)}
     .delta.down{background:rgba(136,19,55,.1);border-color:rgba(136,19,55,.25);color:var(--wine-dark)}
 
@@ -799,7 +798,6 @@
     }
     
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
-      // UNIFICAÇÃO: Esta função agora usa baseQuery e agg para garantir consistência total com os gráficos.
       try {
         const [
           rowsNow,
@@ -828,10 +826,11 @@
         const totalPedidosPrev = VP.ped + CP.ped;
         
         const len = DateHelpers.daysLen(de, ate);
+        const prevLen = DateHelpers.daysLen(dePrev, atePrev);
         const tktN = (N.ped > 0) ? (N.fat / N.ped) : 0;
         const tktP = (P.ped > 0) ? (P.fat / P.ped) : 0;
-        const fatMedN = len? (N.fat/len) : 0;
-        const fatMedP = len? (DateHelpers.daysLen(dePrev, atePrev) / len) : 0;
+        const fatMedN = len > 0 ? (N.fat/len) : 0;
+        const fatMedP = prevLen > 0 ? (P.fat / prevLen) : 0;
         const desPercN = N.fat > 0 ? (N.des / N.fat) : 0;
         const desPercP = P.fat > 0 ? (P.des / P.fat) : 0;
         const freMedN = N.ped > 0 ? (N.fre / N.ped) : 0;
@@ -858,7 +857,8 @@
 
       } catch (e) {
         console.error("Erro detalhado em updateKPIs:", e);
-        document.querySelectorAll('.kpi .val, .kpi .sub span').forEach(el => el.textContent = '—');
+        document.querySelectorAll('.kpi .val').forEach(el => el.textContent = '—');
+        document.querySelectorAll('.kpi .sub span').forEach(el => el.textContent = '—');
         document.querySelectorAll('.kpi .delta').forEach(el => { el.textContent = '—'; el.className = 'delta flat'; });
         throw e;
       }
@@ -934,6 +934,7 @@
         });
       });
     }
+    
     function computeByBucket(rows, type, metric, mode){
       const bucketDays = new Map();
       const bucketDaily = new Map();
@@ -1101,7 +1102,8 @@
         const tip = `Comparação fixa: Últimos 12M vs 12M anteriores`;
         ensureChart('ch_month', labels, nowArr, prevArr, tip, meta.fmt);
       }catch(e){
-        console.error(e); setDiag('Erro ao atualizar gráfico mensal');
+        console.error("Erro detalhado em updateMonth12x12:", e); 
+        setDiag('Erro ao atualizar gráfico mensal');
       }
     }
     const wine = ["#7b1e3a","#8c2947","#9c3554","#ad4061","#bd4c6e","#ce577b", "#e5e7eb"];
@@ -1260,8 +1262,6 @@
         const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
         setStatus('Consultando…');
         let kpiOk=true;
-        // As duas chamadas abaixo agora usam a mesma fonte de dados (baseQuery > filter_vendas)
-        // e as mesmas lógicas de agregação em JS, garantindo consistência.
         await updateKPIs(de,ate,dePrev,atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
         await Promise.all([
           updateCharts(de,ate,dePrev,atePrev, analiticos),
