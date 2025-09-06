@@ -32,7 +32,6 @@
     .delta.up{background:rgba(123,30,58,.10);border-color:rgba(123,30,58,.25);color:var(--wine)}
     .delta.down{background:rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.25); color: var(--down); }
     
-    /* CORREÇÃO LAYOUT GRÁFICOS: Grade de 3 colunas para todos os gráficos */
     .charts-grid{display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px;}
     .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;min-height:280px}
     .card .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
@@ -68,6 +67,12 @@
           <div class="kpi"><h4><span>Pratos/Itens Únicos</span><span class="spacer"></span><span id="d_pratos_unicos" class="delta flat">—</span></h4><div class="val" id="k_pratos_unicos">—</div><div class="sub">Anterior: <span id="p_pratos_unicos">—</span></div></div>
           <div class="kpi"><h4><span>Média Diária</span><span class="spacer"></span><span id="d_media_diaria" class="delta flat">—</span></h4><div class="val" id="k_media_diaria">—</div><div class="sub">Anterior: <span id="p_media_diaria">—</span></div></div>
         </div>
+        
+        <div class="card" style="margin-bottom: 12px;">
+            <div class="head"><div class="title">Vendas por Mês</div></div>
+            <div class="chart-box" style="min-height: 300px;"><canvas id="ch_month"></canvas></div>
+        </div>
+
         <div class="charts-grid">
             <div class="card"><div class="head"><div class="title">Top 10 Mais Vendidos</div></div><div class="chart-box"><canvas id="ch_top10_mais"></canvas></div></div>
             <div class="card"><div class="head"><div class="title">Top 10 Menos Vendidos</div></div><div class="chart-box"><canvas id="ch_top10_menos"></canvas></div></div>
@@ -81,8 +86,6 @@
               </div>
               <div class="chart-box"><canvas id="ch_dow"></canvas></div>
             </div>
-            <div class="card"><div class="head"><div class="title">Vendas por Categoria</div></div><div class="chart-box"><canvas id="ch_cat"></canvas></div></div>
-            <div class="card"><div class="head"><div class="title">Vendas por Mês</div></div><div class="chart-box"><canvas id="ch_month"></canvas></div></div>
         </div>
       </section>
     </main>
@@ -199,7 +202,6 @@
   Chart.defaults.datasets.bar.borderRadius = 6;
   Chart.defaults.datasets.bar.borderSkipped = false;
   Chart.defaults.devicePixelRatio = Math.max(1, window.devicePixelRatio || 1);
-  const CHART_COLORS_PIE = ["#7b1e3a","#8c2947","#9c3554","#ad4061","#bd4c6e","#ce577b","#e07a94","#f2a9c1", "#9ca3af","#a9b6c8"];
 
   /* ===================== HELPERS ===================== */
   const $ = id => document.getElementById(id);
@@ -344,7 +346,8 @@
     const prevItensUnicos = new Set(prevRows.map(r => r.prato)).size;
 
     const mediaDiaria = len > 0 ? Math.round(totalQtd / len) : 0;
-    const prevMediaDiaria = len > 0 ? Math.round(prevTotalQtd / len) : 0;
+    const prevLen = daysLen(computePrevRangeISO(iso(new Date(rows[0]?.data)), iso(new Date(rows[rows.length-1]?.data))).dePrev, computePrevRangeISO(iso(new Date(rows[0]?.data)), iso(new Date(rows[rows.length-1]?.data))).atePrev);
+    const prevMediaDiaria = prevLen > 0 ? Math.round(prevTotalQtd / prevLen) : 0;
 
     $('k_qtd').textContent = num(totalQtd);
     $('p_qtd').textContent = num(prevTotalQtd);
@@ -409,13 +412,6 @@
     const dsNow = { label: 'Atual', data: nowData, backgroundColor: '#7b1e3a' };
     const dsPrev = { label: 'Anterior', data: prevData, backgroundColor: '#9ca3af' };
     renderChart('ch_dow', 'bar', dowLabels, [dsNow, dsPrev]);
-  }
-
-  function updateCategoryChart(rows) {
-    const byCat = new Map();
-    rows.forEach(r => { byCat.set(r.categoria, (byCat.get(r.categoria) || 0) + r.quantidade); });
-    const sorted = [...byCat.entries()].sort((a,b) => b[1] - a[1]).slice(0, 10);
-    renderChart('ch_cat', 'doughnut', sorted.map(x => x[0]), [{ data: sorted.map(x => x[1]), backgroundColor: CHART_COLORS_PIE }], {cutout: '60%', plugins: {legend: {position: 'right', labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 10, padding: 16 }}}});
   }
 
   async function updateMonthChart(selectedEndISO) {
@@ -497,7 +493,6 @@
         updateKPIs(rows, prevRows, len),
         updateTopPratosCharts(rows),
         updateDowChart(rows, prevRows, de, ate),
-        updateCategoryChart(rows),
         updateMonthChart(ate)
       ]);
       setStatus('Dashboard atualizado!', 'ok');
@@ -512,8 +507,8 @@
       supa.from('vendas_pratos_pratos').select('prato')
     ]);
     ms.unids.setOptions((unids.data?.map(r => canonUnidade(r.unidade)) || []).filter(Boolean));
-    ms.cats.setOptions(cats.data?.map(r => r.categoria) || []);
-    ms.pratos.setOptions(pratos.data?.map(r => r.prato) || []);
+    ms.cats.setOptions(cats.data?.map(r => r.categoria).filter(c => c !== null) || []);
+    ms.pratos.setOptions(pratos.data?.map(r => r.prato).filter(p => p !== null) || []);
   }
 
   async function init() {
