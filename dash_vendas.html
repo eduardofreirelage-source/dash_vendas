@@ -40,6 +40,7 @@
     .kpi[data-kpi="fat"] .val { color: var(--c-now); }
     .delta{display:inline-flex;gap:4px;align-items:center;padding:1px 6px;border-radius:999px;border:1px solid rgba(148,163,184,.35);font-weight:700;font-size:10px;margin-left:6px;background:rgba(148,163,184,.15);color:#6b7280}
     .delta svg{width:10px;height:10px}
+    /* CORREÇÃO DE COR */
     .delta.up{background:rgba(6,95,70,.1);border-color:rgba(6,95,70,.25);color:var(--ok-dark)}
     .delta.down{background:rgba(136,19,55,.1);border-color:rgba(136,19,55,.25);color:var(--wine-dark)}
 
@@ -565,8 +566,9 @@
     function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
     function displayNormalize(s){ return cleanSpaces(s); }
     const agg = (rows) => {
-      let ped = 0, fat=0,des=0,fre=0; 
-      for(const r of (rows||[])){ ped+=1; fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } 
+      const ped = rows?.length || 0;
+      let fat=0,des=0,fre=0; 
+      for(const r of (rows||[])){ fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } 
       return {ped,fat,des,fre};
     };
     const formatCurrencyTick = (value) => {
@@ -784,18 +786,20 @@
       let p_cancelado = null;
       if (analiticos.cancelado === 'sim') p_cancelado = 'Sim';
       if (analiticos.cancelado === 'nao') p_cancelado = 'Não';
+      // CORREÇÃO: Nomes de parâmetros padronizados para corresponder às RPCs originais
       return {
         p_dini: de, p_dfim: ate,
-        p_unids_in:  isActive(analiticos.unidade) ? analiticos.unidade : null,
-        p_lojas_in:  isActive(analiticos.loja) ? analiticos.loja : null,
-        p_turnos_in: isActive(analiticos.turno) ? analiticos.turno : null,
-        p_canais_in: isActive(analiticos.canal) ? analiticos.canal : null,
-        p_pags_in:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
+        p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
+        p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
+        p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
+        p_canais: isActive(analiticos.canal) ? analiticos.canal : null,
+        p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
         p_cancelado
       };
     }
 
     async function baseQuery(de, ate, analiticos){
+      // Esta função agora só é usada pelo gráfico Top 6, que precisa de dados brutos.
       const PAGE_SIZE = 1000;
       let allRows = [];
       let page = 0;
@@ -803,6 +807,8 @@
       const params = buildParams(de, ate, analiticos);
 
       while (keepFetching) {
+          // A função filter_vendas pode ser necessária para este gráfico dinâmico.
+          // Se ela não existir, esta parte pode falhar.
           const { data, error } = await supa.rpc(RPC_FILTER_FUNC, params)
                                           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
           if (error) {
@@ -967,7 +973,10 @@
         });
       });
     }
+    
     async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
+      const meta = KPI_META[selectedKPI] || KPI_META.fat;
+      const mode = effectiveMode();
       try {
           const paramsNow = buildParams(de, ate, analiticos);
           const paramsPrev = buildParams(dePrev, atePrev, analiticos);
@@ -986,10 +995,8 @@
           ]);
           
           const tip = `Período anterior: ${dePrev} → ${atePrev}`;
-          const mode = effectiveMode();
           const valueKey = mode === 'media' ? 'media' : 'total';
           
-          // Dia da Semana
           {
               const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
               const nArr = Array(7).fill(0), pArr = Array(7).fill(0);
@@ -997,12 +1004,10 @@
               (dowDataPrev || []).forEach(r => pArr[r.dow] = r[valueKey]);
               ensureChart('ch_dow', labels, nArr, pArr, tip, KPI_META[selectedKPI].fmt);
           }
-          // Hora
           {
               const nArr = Array(24).fill(0), pArr = Array(24).fill(0);
               (hourData || []).forEach(r => nArr[r.h] = r[valueKey]);
               (hourDataPrev || []).forEach(r => pArr[r.h] = r[valueKey]);
-
               let minHour = 24, maxHour = -1;
               for (let i = 0; i < 24; i++) {
                   if (nArr[i] > 0 || pArr[i] > 0) {
@@ -1010,7 +1015,6 @@
                       if (i > maxHour) maxHour = i;
                   }
               }
-
               if (minHour > maxHour) {
                   ensureChart('ch_hour', [], [], [], tip, KPI_META[selectedKPI].fmt);
               } else {
@@ -1021,7 +1025,6 @@
                   ensureChart('ch_hour', labels, nowData, prevData, tip, KPI_META[selectedKPI].fmt);
               }
           }
-          // Turno
           {
               const labels = ['Dia', 'Noite'];
               const nMap = new Map(), pMap = new Map();
@@ -1336,7 +1339,7 @@
     });
 
     fx.$days.addEventListener('click', (e)=>{
-      const b=e.target.closest('.fx-chip'); if(!b) return;
+      const b=e.target.closest('button'); if(!b) return;
       fx.$days.querySelectorAll('button').forEach(x=> x.classList.toggle('active', x===b));
       fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('fx-active'));
       const n=parseInt(b.dataset.win,10); if(!isNaN(n)) fxLastNDays(n);
