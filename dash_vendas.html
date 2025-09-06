@@ -515,6 +515,7 @@
     
     /* ===================== CONFIG ===================== */
     const READ_VIEW       = 'vendas_canon';
+    const RPC_FILTER_FUNC = 'filter_vendas';
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
     const SUPABASE_URL  = 'https://msmyfxgrnuusnvoqyeuo.supabase.co';
@@ -789,59 +790,78 @@
         p_cancelado
       };
     }
+
+    async function baseQuery(de, ate, analiticos){
+      const params = buildParams(de, ate, analiticos);
+      const { data, error } = await supa.rpc(RPC_FILTER_FUNC, params);
+      if (error) { console.error(`[RPC ${RPC_FILTER_FUNC}]`, error); throw error; }
+      return data || [];
+    }
+    
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
-      const pNow = buildParams(de, ate, analiticos);
-      const pPrev = buildParams(dePrev, atePrev, analiticos);
+      // UNIFICAÇÃO: Esta função agora usa baseQuery e agg para garantir consistência total com os gráficos.
+      try {
+        const [
+          rowsNow,
+          rowsPrev,
+          rowsCanceledNow,
+          rowsValidNow,
+          rowsCanceledPrev,
+          rowsValidPrev
+        ] = await Promise.all([
+            baseQuery(de, ate, analiticos),
+            baseQuery(dePrev, atePrev, analiticos),
+            baseQuery(de, ate, { ...analiticos, cancelado: 'sim' }),
+            baseQuery(de, ate, { ...analiticos, cancelado: 'nao' }),
+            baseQuery(dePrev, atePrev, { ...analiticos, cancelado: 'sim' }),
+            baseQuery(dePrev, atePrev, { ...analiticos, cancelado: 'nao' })
+        ]);
 
-      const baseParamsNow = { p_dini: de, p_dfim: ate };
-      const baseParamsPrev = { p_dini: dePrev, p_dfim: atePrev };
+        const N = agg(rowsNow);
+        const P = agg(rowsPrev);
+        const CN = agg(rowsCanceledNow);
+        const VN = agg(rowsValidNow);
+        const CP = agg(rowsCanceledPrev);
+        const VP = agg(rowsValidPrev);
 
-      const [nowResult, prevResult, cNowResult, cPrevResult, vNowResult, vPrevResult] = await Promise.all([
-        supa.rpc('kpi_vendas_unificado', pNow),
-        supa.rpc('kpi_vendas_unificado', pPrev),
-        supa.rpc('kpi_vendas_unificado', {...baseParamsNow, p_cancelado: 'Sim'}),
-        supa.rpc('kpi_vendas_unificado', {...baseParamsPrev, p_cancelado: 'Sim'}),
-        supa.rpc('kpi_vendas_unificado', {...baseParamsNow, p_cancelado: 'Não'}),
-        supa.rpc('kpi_vendas_unificado', {...baseParamsPrev, p_cancelado: 'Não'})
-      ]);
+        const totalPedidosNow = VN.ped + CN.ped;
+        const totalPedidosPrev = VP.ped + CP.ped;
+        
+        const len = DateHelpers.daysLen(de, ate);
+        const tktN = (N.ped > 0) ? (N.fat / N.ped) : 0;
+        const tktP = (P.ped > 0) ? (P.fat / P.ped) : 0;
+        const fatMedN = len? (N.fat/len) : 0;
+        const fatMedP = len? (DateHelpers.daysLen(dePrev, atePrev) / len) : 0;
+        const desPercN = N.fat > 0 ? (N.des / N.fat) : 0;
+        const desPercP = P.fat > 0 ? (P.des / P.fat) : 0;
+        const freMedN = N.ped > 0 ? (N.fre / N.ped) : 0;
+        const freMedP = P.ped > 0 ? (P.fre / P.ped) : 0;
+        const partCancN = totalPedidosNow > 0 ? (CN.ped / totalPedidosNow) : 0;
+        const partCancP = totalPedidosPrev > 0 ? (CP.ped / totalPedidosPrev) : 0;
+        const roiN = N.des > 0 ? (N.fat - N.des) / N.des : NaN;
+        const roiP = P.des > 0 ? (P.fat - P.des) / P.des : NaN;
+        
+        $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
+        $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
+        $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
+        $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
+        $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
+        $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
+        $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
+        $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
+        $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
+        $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
+        $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
+        $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
+        $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
+        deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
 
-      if(nowResult.error) throw nowResult.error;
-      if(prevResult.error) throw prevResult.error;
-
-      const N = agg(nowResult.data || []);
-      const P = agg(prevResult.data || []);
-      const CN = agg(cNowResult.data || []);
-      const CP = agg(cPrevResult.data || []);
-      const VN = agg(vNowResult.data || []);
-      const VP = agg(vPrevResult.data || []);
-      
-      const totalPedidosNow = VN.ped + CN.ped;
-      const totalPedidosPrev = VP.ped + CP.ped;
-
-      const len = DateHelpers.daysLen(de, ate);
-      const tktN = (N.ped>0)? (N.fat/N.ped) : 0, tktP = (P.ped>0)? (P.fat/P.ped) : 0;
-      const fatMedN = len? (N.fat/len) : 0,     fatMedP = len? (P.fat/len) : 0;
-      const desPercN = N.fat? (N.des/N.fat) : 0, desPercP = P.fat? (P.des/P.fat) : 0;
-      const freMedN = N.ped? (N.fre/N.ped) : 0, freMedP = P.ped? (P.fre/N.ped) : 0;
-      const partCancN = totalPedidosNow > 0 ? (CN.ped / totalPedidosNow) : 0;
-      const partCancP = totalPedidosPrev > 0 ? (CP.ped / totalPedidosPrev) : 0;
-      
-      $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
-      $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
-      $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
-      $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
-      $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
-      $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
-      $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-      $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
-      $('k_canc_ped').textContent=num(CN.ped); deltaBadge($('d_canc_ped'),CN.ped,CP.ped);
-      $('k_canc_val').textContent=money(CN.fat); $('p_canc_val').textContent=money(CP.fat); deltaBadge($('d_canc_val'),CN.fat,CP.fat);
-      $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
-      const roiN = (N.des>0)? (N.fat-N.des)/N.des : NaN;
-      const roiP = (P.des>0)? (P.fat-P.des)/P.des : NaN;
-      $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
-      $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
-      deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
+      } catch (e) {
+        console.error("Erro detalhado em updateKPIs:", e);
+        document.querySelectorAll('.kpi .val, .kpi .sub span').forEach(el => el.textContent = '—');
+        document.querySelectorAll('.kpi .delta').forEach(el => { el.textContent = '—'; el.className = 'delta flat'; });
+        throw e;
+      }
     }
     let chartModeGlobal = 'total';
     const segGlobal = $('segGlobal');
@@ -913,12 +933,6 @@
           document.dispatchEvent(new Event('filters:apply:internal'));
         });
       });
-    }
-    async function baseQuery(de, ate, analiticos){
-      const params = buildParams(de, ate, analiticos);
-      const { data, error } = await supa.rpc('filter_vendas', params);
-      if (error) { console.error('[RPC filter_vendas]', error); throw error; }
-      return data || [];
     }
     function computeByBucket(rows, type, metric, mode){
       const bucketDays = new Map();
@@ -1159,7 +1173,7 @@
         if (allStoresData.length > 6) {
             const top5 = allStoresData.slice(0, 5);
             const othersValue = allStoresData.slice(5).reduce((acc, curr) => acc + curr.valor, 0);
-            if (othersValue > 0.01) { // Evita fatias "Outros" com valor residual
+            if (othersValue > 0.01) { 
               finalData = [...top5, { loja: 'Outros', valor: othersValue }];
             } else {
               finalData = top5;
@@ -1246,6 +1260,8 @@
         const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
         setStatus('Consultando…');
         let kpiOk=true;
+        // As duas chamadas abaixo agora usam a mesma fonte de dados (baseQuery > filter_vendas)
+        // e as mesmas lógicas de agregação em JS, garantindo consistência.
         await updateKPIs(de,ate,dePrev,atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
         await Promise.all([
           updateCharts(de,ate,dePrev,atePrev, analiticos),
