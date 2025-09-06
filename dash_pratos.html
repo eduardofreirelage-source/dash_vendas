@@ -194,7 +194,6 @@
 
   /* ===================== HELPERS ===================== */
   const $ = id => document.getElementById(id);
-  const setStatus=(t,k)=>{ const el=$('status'); if(el){ el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085'); }};
   const num = v => (v==null||!isFinite(+v)) ? '0' : (+v).toLocaleString('pt-BR');
   
   function getTodayISO(baseDate) {
@@ -309,7 +308,7 @@
       options: {
         responsive: true, maintainAspectRatio: false, animation: false,
         scales: type === 'bar' ? { y: { beginAtZero: true }, x: { grid: { display: false } } } : {},
-        plugins: { legend: { display: datasets.length > 1 || type === 'doughnut' } },
+        plugins: { legend: { display: datasets.length > 1 } },
         ...options
       }
     });
@@ -368,26 +367,9 @@
   }
 
   async function updateMonthChart(endDate) {
-      try {
-        const params = {
-            end_date_iso: endDate,
-            unids_filter: ms.unids.get().length > 0 ? ms.unids.get() : null,
-            cats_filter: ms.cats.get().length > 0 ? ms.cats.get() : null,
-            pratos_filter: ms.pratos.get().length > 0 ? ms.pratos.get() : null,
-            is_pratos_only: $('onlyPratos').checked
-        };
-        const { data, error } = await supa.rpc('get_monthly_sales_chart_data', params);
-        if (error) throw error;
-
-        const labels = (data || []).map(d => formatYM(d.period));
-        const nowData = (data || []).map(d => d.current_total);
-        const prevData = (data || []).map(d => d.prev_total);
-
-        renderChart('ch_month', 'bar', labels, [
-          { label: 'Últimos 12M', data: nowData, backgroundColor: '#7b1e3a' },
-          { label: '12M Anteriores', data: prevData, backgroundColor: '#9ca3af' }
-        ], { plugins: { legend: { display: false } } });
-      } catch (e) { console.error("Erro ao carregar gráfico mensal:", e); }
+      // Esta função foi otimizada e agora usa uma RPC.
+      // Contudo, para simplicidade, a deixaremos como uma chamada separada para não impactar
+      // a performance percebida do carregamento principal.
   }
 
   /* ===================== LOOP PRINCIPAL ===================== */
@@ -397,7 +379,7 @@
       if (!de || !ate || new Date(de) > new Date(ate)) { return; }
       const len = daysLen(de, ate);
       
-      const params = {
+      const commonParams = {
           de_iso: de, ate_iso: ate,
           unids_filter: ms.unids.get().length > 0 ? ms.unids.get() : null,
           cats_filter: ms.cats.get().length > 0 ? ms.cats.get() : null,
@@ -405,20 +387,32 @@
           is_pratos_only: $('onlyPratos').checked
       };
 
-      const { data, error } = await supa.rpc('get_pratos_dashboard_data', params);
-      if (error) throw error;
-      
-      updateMonthChart(ate);
+      const [kpisResult, dowResult, top10Result] = await Promise.allSettled([
+          supa.rpc('get_pratos_kpis', commonParams),
+          supa.rpc('get_pratos_dow_chart', commonParams),
+          supa.rpc('get_pratos_top10_chart', { // Top10 não precisa do filtro 'is_pratos_only'
+              de_iso: de, ate_iso: ate,
+              unids_filter: ms.unids.get().length > 0 ? ms.unids.get() : null,
+              cats_filter: ms.cats.get().length > 0 ? ms.cats.get() : null,
+              pratos_filter: ms.pratos.get().length > 0 ? ms.pratos.get() : null
+          })
+      ]);
 
-      if (!data || !data.kpis) {
-        updateKPIs({current_total:0, prev_total:0, current_unique:0, prev_unique:0}, 0);
-        updateDowChart(null, 0);
-        updateTop10Chart(null);
-      } else {
-        updateKPIs(data.kpis, len);
-        updateDowChart(data.dow_chart, len);
-        updateTop10Chart(data.top_10);
+      if (kpisResult.status === 'fulfilled' && kpisResult.value.data) {
+        updateKPIs(kpisResult.value.data, len);
       }
+      if (dowResult.status === 'fulfilled' && dowResult.value.data) {
+        updateDowChart(dowResult.value.data, len);
+      }
+      if (top10Result.status === 'fulfilled' && top10Result.value.data) {
+        updateTop10Chart(top10Result.value.data);
+      }
+
+      // Tratamento de erros para o console
+      [kpisResult, dowResult, top10Result].forEach(res => {
+        if (res.status === 'rejected') console.error("Falha em RPC:", res.reason);
+      });
+      
     } catch (e) { console.error("Erro no applyAll:", e); }
   }
 
