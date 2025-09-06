@@ -41,7 +41,8 @@
     .seg button.active{background:var(--wine);color:#fff}
     .chart-box{position:relative;flex-grow:1;min-height:180px;} /* Adjusted min-height */
     .chart-box canvas{display:block;width:100%;height:100%}
-    
+    .upload-info{font-size:11px;color:var(--muted);}
+
     @media (max-width:1200px){ 
       .kpis{grid-template-columns:repeat(2,1fr)} 
       .charts-grid{grid-template-columns:1fr} 
@@ -199,8 +200,7 @@
   /* ===================== CONFIG ===================== */
   const VIEW_ALL        = 'vendas_pratos_view';
   const VIEW_ONLY       = 'vendas_pratos_view_only_pratos';
-  let   READ_VIEW       = VIEW_ALL;
-
+  
   const DEST_INSERT_TABLE = 'vendas_pratos_raw';
   const REFRESH_RPC       = 'refresh_pratos_view';
 
@@ -229,38 +229,10 @@
     return d.toISOString().split('T')[0];
   }
 
-  function addDaysISO(isoStr, n) {
-    const d = new Date(isoStr + 'T12:00:00Z');
-    d.setDate(d.getDate() + n);
-    return d.toISOString().split('T')[0];
-  }
-
   function daysLen(de, ate) {
     const d1 = new Date(de + 'T12:00:00Z');
     const d2 = new Date(ate + 'T12:00:00Z');
     return Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
-  }
-
-  function addMonthsISO(isoStr, delta) {
-    const d = new Date(isoStr + 'T12:00:00Z');
-    const day = d.getDate();
-    d.setDate(1); 
-    d.setMonth(d.getMonth() + delta);
-    const lastDayOfMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-    d.setDate(Math.min(day, lastDayOfMonth));
-    return d.toISOString().split('T')[0];
-  }
-
-  function monthStartISO(isoStr) {
-    const d = new Date(isoStr + 'T12:00:00Z');
-    d.setDate(1);
-    return d.toISOString().split('T')[0];
-  }
-
-  function monthEndISO(isoStr) {
-    const d = new Date(isoStr + 'T12:00:00Z');
-    d.setMonth(d.getMonth() + 1, 0);
-    return d.toISOString().split('T')[0];
   }
 
   function formatYM(isoStr){
@@ -272,7 +244,6 @@
   }
 
   const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  const cleanSpaces = (s) => String(s||'').replace(/\s+/g,' ').trim();
   
   function fxDispatchApply(){
       const payload = { start: $('fxDuStart').value, end: $('fxDuEnd').value };
@@ -318,7 +289,7 @@
   }
 
   /* ===================== ESTADO ===================== */
-  let firstDay='', lastDay='';
+  let lastDay='';
   let dowMode = 'TOTAL';
   let top10Mode = 'MAIS';
   const ms = {
@@ -327,18 +298,13 @@
     pratos: MultiSelect('ms-pratos', 'Todos os Pratos')
   };
 
-  $('onlyPratos').addEventListener('change', ()=>{
-    READ_VIEW = $('onlyPratos').checked ? VIEW_ONLY : VIEW_ALL;
-    fxDispatchApply();
-  });
-
+  $('onlyPratos').addEventListener('change', fxDispatchApply);
   $('segDow').addEventListener('click', (e)=>{
     const btn = e.target.closest('button'); if(!btn) return;
     [...e.currentTarget.children].forEach(b=>b.classList.toggle('active', b===btn));
     dowMode = btn.dataset.mode;
     fxDispatchApply();
   });
-
   $('segTop10').addEventListener('click', (e)=>{
     const btn = e.target.closest('button'); if(!btn) return;
     [...e.currentTarget.children].forEach(b=>b.classList.toggle('active', b===btn));
@@ -372,8 +338,6 @@
       }
     });
   }
-  
-  /* ===================== LÓGICA DE ATUALIZAÇÃO ===================== */
   
   function updateKPIs(kpis, len) {
     const mediaDiaria = len > 0 ? Math.round(kpis.current_total / len) : 0;
@@ -438,6 +402,31 @@
     renderChart('ch_dow', 'bar', dowLabels, [dsNow, dsPrev]);
   }
 
+  async function updateMonthChart(endDate) {
+      try {
+        const params = {
+            end_date_iso: endDate,
+            unids_filter: ms.unids.get().length > 0 ? ms.unids.get() : null,
+            cats_filter: ms.cats.get().length > 0 ? ms.cats.get() : null,
+            pratos_filter: ms.pratos.get().length > 0 ? ms.pratos.get() : null,
+            is_pratos_only: $('onlyPratos').checked
+        };
+        const { data, error } = await supa.rpc('get_monthly_sales_chart_data', params);
+        if (error) throw error;
+
+        const labels = (data || []).map(d => formatYM(d.period + '-01'));
+        const nowData = (data || []).map(d => d.current_total);
+        const prevData = (data || []).map(d => d.prev_total);
+
+        renderChart('ch_month', 'bar', labels, [
+          { label: 'Últimos 12M', data: nowData, backgroundColor: '#7b1e3a' },
+          { label: '12M Anteriores', data: prevData, backgroundColor: '#9ca3af' }
+        ], { plugins: { legend: { display: false } } });
+      } catch (e) {
+        console.error("Erro ao carregar gráfico mensal:", e);
+      }
+  }
+
   /* ===================== LOOP PRINCIPAL ===================== */
   async function applyAll(details) {
     setStatus('Consultando...');
@@ -458,16 +447,21 @@
 
       const { data, error } = await supa.rpc('get_pratos_dashboard_data', params);
       
-      if(error) { throw error; }
+      if (error) throw error;
 
       if (!data || !data.kpis) {
         setStatus('Nenhum dado para o período.', 'err');
+        // Limpa os gráficos se não houver dados
+        updateKPIs({current_total:0, prev_total:0, current_unique:0, prev_unique:0}, 0);
+        updateDowChart([], 0);
+        updateTop10Chart({mais_vendidos:[], menos_vendidos:[]});
       } else {
         updateKPIs(data.kpis, len);
         updateDowChart(data.dow_chart, len);
         updateTop10Chart(data.top_10);
         setStatus('Dashboard atualizado!', 'ok');
       }
+      // O gráfico de mês é sempre chamado, mesmo que de forma assíncrona.
       updateMonthChart(ate);
 
     } catch (e) { 
@@ -478,7 +472,6 @@
 
   /* ===================== INICIALIZAÇÃO E CONTROLES DA UI ===================== */
   async function reloadFilterOptions() {
-    // Esta função agora carrega apenas as opções dos filtros.
     const [unids, cats, pratos] = await Promise.all([
       supa.from('vendas_pratos_unidades').select('unidade'),
       supa.from('vendas_pratos_categorias').select('categoria'),
@@ -495,8 +488,7 @@
       const { data, error } = await supa.from('vendas_pratos_daterange').select('max_data').limit(1);
       if (error) throw error;
       
-      if (data?.length && data[0].max_data) { lastDay = data[0].max_data; }
-      else { lastDay = getTodayISO(); } 
+      lastDay = (data?.length && data[0].max_data) ? data[0].max_data : getTodayISO();
       
       await reloadFilterOptions();
       document.dispatchEvent(new Event('filters:init'));
@@ -560,16 +552,12 @@
     fx.$chips.addEventListener('click', e => {
         const btn = e.target.closest('button');
         if (!btn) return;
-        fx.$chips.querySelectorAll('button').forEach(b => b.classList.remove('active'));
-        fx.$days.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        [...fx.$chips.children, ...fx.$days.children].forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         setNamedPeriod(btn.dataset.win);
     });
 
-    const clearActiveChips = () => {
-        fx.$chips.querySelectorAll('button').forEach(b => b.classList.remove('active'));
-        fx.$days.querySelectorAll('button').forEach(b => b.classList.remove('active'));
-    };
+    const clearActiveChips = () => [...fx.$chips.children, ...fx.$days.children].forEach(b => b.classList.remove('active'));
     
     fx.$start.addEventListener('change', () => { clearActiveChips(); fxDispatchApply(); });
     fx.$end.addEventListener('change', () => { clearActiveChips(); fxDispatchApply(); });
@@ -606,52 +594,6 @@
     init();
   });
   
-  // O código para o gráfico de mês e upload permanecem inalterados e independentes.
-  // Gráfico de Mês (independente para não bloquear a UI principal)
-  async function updateMonthChart(selectedEndISO) {
-    const canvas = $('ch_month');
-    if (!canvas) return;
-    try {
-        const end = selectedEndISO || getTodayISO();
-        const endMonthStart = monthStartISO(end);
-        const last12Start = addMonthsISO(endMonthStart, -11);
-        const prev12Start = addMonthsISO(endMonthStart, -23);
-        const last12End   = monthEndISO(end);
-        const prev12End   = monthEndISO(addMonthsISO(endMonthStart, -12));
-        
-        const { data: nowRows, error: nowError } = await supa.from(VIEW_ALL).select('data, quantidade').gte('data', last12Start).lte('data', last12End);
-        if (nowError) throw nowError;
-
-        const { data: prevRows, error: prevError } = await supa.from(VIEW_ALL).select('data, quantidade').gte('data', prev12Start).lte('data', prev12End);
-        if (prevError) throw prevError;
-        
-        const labels = [];
-        let cur = last12Start;
-        for(let i=0;i<12;i++){ labels.push(formatYM(cur)); cur = addMonthsISO(cur, 1); }
-        
-        const nowMap = new Map();
-        (nowRows || []).forEach(r => { if (r.data){ const ym=r.data.slice(0,7); nowMap.set(ym,(nowMap.get(ym)||0)+r.quantidade); }});
-        
-        const prevMap = new Map();
-        (prevRows || []).forEach(r => { if (r.data){ const shifted = addMonthsISO(r.data, 12); const ym=shifted.slice(0,7); prevMap.set(ym,(prevMap.get(ym)||0)+r.quantidade); }});
-        
-        const nowData = [], prevData = [];
-        cur = last12Start;
-        for (let i = 0; i < 12; i++) {
-          const ym = cur.slice(0, 7);
-          nowData.push(nowMap.get(ym) || 0);
-          prevData.push(prevMap.get(ym) || 0);
-          cur = addMonthsISO(cur, 1);
-        }
-        
-        renderChart('ch_month', 'bar', labels, [
-          { label: 'Últimos 12M', data: nowData, backgroundColor: '#7b1e3a' },
-          { label: '12M Anteriores', data: prevData, backgroundColor: '#9ca3af' }
-        ], { plugins: { legend: { display: false } } });
-
-    } catch(e) { console.error("Erro ao carregar gráfico mensal:", e); }
-  }
-
   // Upload (independente)
   $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev)=>{
