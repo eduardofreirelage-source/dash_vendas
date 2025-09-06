@@ -956,12 +956,14 @@
     };
 
 
-// ===================== DIAGNÓSTICO (DADOS REAIS) =====================
-(function(){
-  const $q = (sel, root=document) => root.querySelector(sel);
 
-  // Mapeia o que é "valor" por KPI
-  function kpiValue(meta, acc){
+// ===================== DIAGNÓSTICO (DADOS REAIS) — v3 (namespaced, seguro) =====================
+;(() => {
+  'use strict';
+  const $one = (sel) => document.querySelector(sel);
+
+  // Helpers
+  function DX_kpiValue(meta, acc){
     switch(meta){
       case 'fat':       return acc.fat;
       case 'des':       return acc.des;
@@ -977,225 +979,110 @@
       default: return 0;
     }
   }
-
-  function fmtBy(metaKey, v){
-    const m = KPI_META[metaKey]?.fmt || 'money';
+  function DX_fmt(metaKey, v){
+    const m = (window.KPI_META?.[metaKey]?.fmt) || 'money';
     if(m==='money')   return (isFinite(v)? ('R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})) : '—');
     if(m==='count')   return (isFinite(v)? (+v).toLocaleString('pt-BR') : '—');
     if(m==='percent') return (isFinite(v)? ((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%' : '—');
     return String(v);
   }
-
-  // Agrega linhas por dia/loja/hora/canal
-  function aggregate(rows){
-    const byDay = new Map(); // dia => {fat,des,fre,ped}
-    const byStore = new Map(); // loja => {fat,des,fre,ped}
-    const byHour = new Map();  // hora => {fat,des,fre,ped}
-    const byCanal= new Map();  // canal => {fat,des,fre,ped}
-
-    let canc_val = 0, canc_ped = 0;
+  function DX_aggregate(rows){
+    const byDay=new Map(), byStore=new Map(), byHour=new Map(), byCanal=new Map();
+    let canc_val=0, canc_ped=0;
     for(const r of rows){
-      const dia = r.dia;
-      const loja= r.loja ?? '—';
-      const hora= (r.hora??'—').toString().padStart(2,'0');
-      const canal = r.canal ?? '—';
-
-      const val = {
-        fat: +r.fat||0, des:+r.des||0, fre:+r.fre||0, ped:1
-      };
-      // dia
-      if(!byDay.has(dia)) byDay.set(dia,{fat:0,des:0,fre:0,ped:0});
-      const d=byDay.get(dia); d.fat+=val.fat; d.des+=val.des; d.fre+=val.fre; d.ped+=1;
-      // loja
-      if(!byStore.has(loja)) byStore.set(loja,{fat:0,des:0,fre:0,ped:0});
-      const s=byStore.get(loja); s.fat+=val.fat; s.des+=val.des; s.fre+=val.fre; s.ped+=1;
-      // hora
-      if(!byHour.has(hora)) byHour.set(hora,{fat:0,des:0,fre:0,ped:0});
-      const h=byHour.get(hora); h.fat+=val.fat; h.des+=val.des; h.fre+=val.fre; h.ped+=1;
-      // canal
-      if(!byCanal.has(canal)) byCanal.set(canal,{fat:0,des:0,fre:0,ped:0});
-      const c=byCanal.get(canal); c.fat+=val.fat; c.des+=val.des; c.fre+=val.fre; c.ped+=1;
-
-      if(String(r.cancelado)=='Sim'){ canc_ped+=1; canc_val += val.fat; }
+      const dia=r.dia, loja=r.loja??'—', hora=(r.hora??'—').toString().padStart(2,'0'), canal=r.canal??'—';
+      const v={fat:+r.fat||0, des:+r.des||0, fre:+r.fre||0, ped:1};
+      if(!byDay.has(dia)) byDay.set(dia,{fat:0,des:0,fre:0,ped:0}); const d=byDay.get(dia); d.fat+=v.fat; d.des+=v.des; d.fre+=v.fre; d.ped+=1;
+      if(!byStore.has(loja)) byStore.set(loja,{fat:0,des:0,fre:0,ped:0}); const s=byStore.get(loja); s.fat+=v.fat; s.des+=v.des; s.fre+=v.fre; s.ped+=1;
+      if(!byHour.has(hora)) byHour.set(hora,{fat:0,des:0,fre:0,ped:0}); const h=byHour.get(hora); h.fat+=v.fat; h.des+=v.des; h.fre+=v.fre; h.ped+=1;
+      if(!byCanal.has(canal)) byCanal.set(canal,{fat:0,des:0,fre:0,ped:0}); const c=byCanal.get(canal); c.fat+=v.fat; c.des+=v.des; c.fre+=v.fre; c.ped+=1;
+      if(String(r.cancelado)==='Sim'){ canc_ped+=1; canc_val+=v.fat; }
     }
     const dias = byDay.size;
-    // totals:
-    let tot = {fat:0,des:0,fre:0,ped:0, dias, canc_ped, canc_val};
+    let tot={fat:0,des:0,fre:0,ped:0,dias,canc_ped,canc_val};
     for(const v of byDay.values()){ tot.fat+=v.fat; tot.des+=v.des; tot.fre+=v.fre; tot.ped+=v.ped; }
-
-    return {byDay, byStore, byHour, byCanal, tot};
+    return {byDay,byStore,byHour,byCanal,tot};
   }
-
-  function topN(map, metaKey, n=3){
-    const arr=[...map.entries()].map(([k,v])=>{
-      return {k, fat:v.fat, des:v.des, fre:v.fre, ped:v.ped,
-        tkt: (v.ped>0? v.fat/v.ped:0),
-        desperc: (v.fat>0? v.des/v.fat:0)
-      };
-    });
-    const key = (KPI_META[metaKey]?.fmt==='count' && metaKey!=='tkt') ? 'ped'
-               : (metaKey==='desperc' || metaKey==='roi') ? 'fat' // ordena por relevância de valor base
+  function DX_topN(map, metaKey, n=3){
+    const arr=[...map.entries()].map(([k,v])=>({k, ...v, tkt:(v.ped>0? v.fat/v.ped:0), desperc:(v.fat>0? v.des/v.fat:0)}));
+    const key = (window.KPI_META?.[metaKey]?.fmt==='count' && metaKey!=='tkt') ? 'ped'
+               : (metaKey==='desperc' || metaKey==='roi') ? 'fat'
                : (metaKey==='tkt' ? 'tkt' : (metaKey==='fremed' ? 'fre' : metaKey));
-    arr.sort((a,b)=> (b[key]??0) - (a[key]??0));
+    arr.sort((a,b)=> (b[key]??0)-(a[key]??0));
     return arr.slice(0,n);
   }
-
-  function classifyDelta(now, prev){
+  function DX_classifyDelta(now, prev){
     if(!isFinite(prev) || prev===0) return {deltaText:'—', cls:'flat'};
-    const p = ((now - prev)/prev)*100;
-    return {deltaText: (p>=0?'▲ ':'▼ ')+Math.abs(p).toFixed(1)+'%', cls:(p>=0?'up':'down')};
+    const p=((now-prev)/prev)*100;
+    return {deltaText:(p>=0?'▲ ':'▼ ')+Math.abs(p).toFixed(1)+'%', cls:(p>=0?'up':'down')};
   }
-
-  async function computeKPI(selectedKey, de, ate, dePrev, atePrev, analiticos){
-    // aplica "needsCancel" (Seletor Diagnóstico e cards já respeitam via buildParams,
-    // mas aqui forçamos para o KPI selecionado)
-    const forced = KPI_META[selectedKey]?.needsCancel ?? null;
+  async function DX_computeKPI(selectedKey, de, ate, dePrev, atePrev, analiticos){
+    const forced = window.KPI_META?.[selectedKey]?.needsCancel ?? null;
     const applyCancel = (a) => ({...a, cancelado: (forced==='Sim'?'sim': forced==='Não'?'nao': a.cancelado)});
-    const aNow  = applyCancel(analiticos);
-    const aPrev = applyCancel(analiticos);
-
-    // puxar linhas para análises (baseQuery faz paginação)
-    const rowsNow  = await baseQuery(de, ate, aNow);
-    const rowsPrev = await baseQuery(dePrev, atePrev, aPrev);
-    const aggNow   = aggregate(rowsNow);
-    const aggPrev  = aggregate(rowsPrev);
-
-    // Se o KPI força modo "media", tratamos accordingly
-    const mode = effectiveMode(); // usa chartModeGlobal + KPI_META.forceMode
+    const aNow=applyCancel(analiticos), aPrev=applyCancel(analiticos);
+    const rowsNow = await baseQuery(de, ate, aNow);
+    const rowsPrev= await baseQuery(dePrev, atePrev, aPrev);
+    const aggNow=DX_aggregate(rowsNow), aggPrev=DX_aggregate(rowsPrev);
+    const mode = (typeof effectiveMode==='function' ? effectiveMode() : 'total');
     if(mode==='media'){
-      // convertemos totais em médias: dia-a-dia
-      const avgNow  = {...aggNow.tot};
-      const avgPrev = {...aggPrev.tot};
-      avgNow.fat    = (aggNow.tot.dias>0?  aggNow.tot.fat/aggNow.tot.dias:0);
-      avgPrev.fat   = (aggPrev.tot.dias>0? aggPrev.tot.fat/aggPrev.tot.dias:0);
-      avgNow.fre    = (aggNow.tot.ped>0?  aggNow.tot.fre/aggNow.tot.ped:0);
-      avgPrev.fre   = (aggPrev.tot.ped>0? aggPrev.tot.fre/aggPrev.tot.ped:0);
-      // demais derivados saem de kpiValue
-      return {
-        now:  kpiValue(selectedKey, avgNow),
-        prev: kpiValue(selectedKey, avgPrev),
-        rowsNow, rowsPrev, aggNow, aggPrev
-      };
-    }else{
-      return {
-        now:  kpiValue(selectedKey, aggNow.tot),
-        prev: kpiValue(selectedKey, aggPrev.tot),
-        rowsNow, rowsPrev, aggNow, aggPrev
-      };
+      const avgNow={...aggNow.tot}, avgPrev={...aggPrev.tot};
+      avgNow.fat=(aggNow.tot.dias>0? aggNow.tot.fat/aggNow.tot.dias:0);
+      avgPrev.fat=(aggPrev.tot.dias>0? aggPrev.tot.fat/aggPrev.tot.dias:0);
+      avgNow.fre=(aggNow.tot.ped>0? aggNow.tot.fre/aggNow.tot.ped:0);
+      avgPrev.fre=(aggPrev.tot.ped>0? aggPrev.tot.fre/aggPrev.tot.ped:0);
+      return { now:DX_kpiValue(selectedKey,avgNow), prev:DX_kpiValue(selectedKey,avgPrev), aggNow, aggPrev };
+    }
+    return { now:DX_kpiValue(selectedKey,aggNow.tot), prev:DX_kpiValue(selectedKey,aggPrev.tot), aggNow, aggPrev };
+  }
+  function DX_fillHero(selectedKey, nowVal, prevVal, aggNow){
+    const heroVal=$one('.hero-value-number');
+    const heroDelta = heroVal ? (heroVal.parentElement?.querySelector('.delta') || $one('.delta')) : $one('.delta');
+    const heroSub=$one('.hero-sub-value');
+    const ctx=$one('.hero-context');
+    if(heroVal) heroVal.textContent = DX_fmt(selectedKey, nowVal);
+    if(heroDelta){
+      const {deltaText, cls}=DX_classifyDelta(nowVal, prevVal);
+      heroDelta.textContent = deltaText.replace(/^./,'');
+      heroDelta.innerHTML = (cls==='up'?'▲ ':'▼ ')+heroDelta.textContent;
+      heroDelta.classList.remove('up','down','flat');
+      if(cls!=='flat') heroDelta.classList.add(cls);
+    }
+    if(heroSub) heroSub.textContent = 'Período anterior: '+DX_fmt(selectedKey, prevVal);
+    if(ctx){
+      const topLojas  = DX_topN(aggNow.byStore, selectedKey, 2).map(x=>x.k).join(' e ') || '—';
+      const topHoras  = DX_topN(aggNow.byHour,  selectedKey, 2).map(x=>x.k+'h').join('–') || '—';
+      const topCanais = DX_topN(aggNow.byCanal, selectedKey, 1).map(x=>x.k).join(', ') || '—';
+      ctx.innerHTML = `<strong>Destaques:</strong> Lojas ${topLojas} • <strong>Horário:</strong> ${topHoras} • <strong>Canal:</strong> ${topCanais}`;
     }
   }
-
-  function fillHero(selectedKey, nowVal, prevVal, aggNow){
-  const heroVal = document.querySelector('.hero-value-number');
-  const heroDelta = heroVal ? (heroVal.parentElement?.querySelector('.delta') || document.querySelector('.delta')) : document.querySelector('.delta');
-  const heroSub = document.querySelector('.hero-sub-value');
-  const ctx = document.querySelector('.hero-context');
-
-  if(heroVal){
-    heroVal.textContent = fmtBy(selectedKey, nowVal);
-  }
-  if(heroDelta){
-    const {deltaText, cls} = classifyDelta(nowVal, prevVal);
-    heroDelta.textContent = deltaText.replace(/^./,'');
-    heroDelta.innerHTML = (cls==='up'?'▲ ':'▼ ')+heroDelta.textContent;
-    heroDelta.classList.remove('up','down','flat');
-    if(cls!=='flat') heroDelta.classList.add(cls);
-  }
-  if(heroSub){
-    heroSub.textContent = 'Período anterior: '+fmtBy(selectedKey, prevVal);
-  }
-  if(ctx){
-    const topLojas  = topN(aggNow.byStore, selectedKey, 2).map(x=>x.k).join(' e ') || '—';
-    const topHoras  = topN(aggNow.byHour,  selectedKey, 2).map(x=>x.k+'h').join('–') || '—';
-    const topCanais = topN(aggNow.byCanal, selectedKey, 1).map(x=>x.k).join(', ') || '—';
-    ctx.innerHTML = `<strong>Destaques:</strong> Lojas ${topLojas} • <strong>Horário:</strong> ${topHoras} • <strong>Canal:</strong> ${topCanais}`;
-  }
-}
-      return {fat,ped};
-    }
-    const almNow = sliceHour(aggNow.byHour, 11, 14);
-    const almPrev= sliceHour(aggPrev.byHour,11, 14);
-    const cond = (almNow.ped>almPrev.ped) && ((almNow.ped>0?almNow.fat/almNow.ped:0) >= (almPrev.ped>0?almPrev.fat/almPrev.ped:0));
-    {
-      const el = document.createElement('div');
-      el.className = 'ins-card '+(cond?'up':'down');
-      el.innerHTML = `
-        <div class="dot"></div>
-        <div>
-          <div class="ins-title">${cond?'Elasticidade positiva no almoço':'Almoço sem elasticidade (ticket ou volume caíram)'}</div>
-          <div class="ins-sub">Pedidos ${cond?'+':'−'} e ticket ${cond?'+':'−'} vs. período anterior (11–14h).</div>
-          <div class="ins-action">Ação: ${cond?'bundle com sobremesa sábado':'rever preço/combos do horário'}.</div>
-        </div>`;
-      box.appendChild(el);
-    }
-  }
-
-  function projectNext(aggNow){
-    // projeção 30/60 dias com base na média das últimas 4 semanas e um “boost” pela tendência x 0.5
-    const byDay = [...aggNow.byDay.entries()].sort(([a],[b])=>a.localeCompare(b));
-    const N=28, tail = byDay.slice(-N), prev = byDay.slice(-2*N,-N);
-    const sumFat = arr => arr.reduce((s,[,v])=> s+v.fat,0);
-    const sumPed = arr => arr.reduce((s,[,v])=> s+v.ped,0);
-    const fatTail = sumFat(tail), fatPrev = sumFat(prev);
-    const pedTail = sumPed(tail), pedPrev = sumPed(prev);
-    const mmFat = fatTail/Math.max(1,tail.length);
-    const mmPed = pedTail/Math.max(1,tail.length);
-    const trend = (isFinite(fatPrev)&&fatPrev>0)? ((fatTail-fatPrev)/fatPrev) : 0; // variação 4w vs 4w anteriores
-    const boost = 1 + (trend*0.5);
-
-    const fat30 = mmFat*30*boost;
-    const fat60 = mmFat*60*boost;
-    const ped30 = Math.round(mmPed*30*boost);
-    const ped60 = Math.round(mmPed*60*boost);
-    const tkt   = (aggNow.tot.ped>0? aggNow.tot.fat/aggNow.tot.ped : 0);
-
-    return { fat30, fat60, ped30, ped60, tkt };
-  }
-
-  async function loadDiagnostico(payload){
-    const de = payload.start, ate = payload.end;
-    const { dePrev, atePrev } = DateHelpers.computePrevRangeISO(de, ate);
-    const anal = payload.analiticos;
-
-    const key = (window.selectedKPI || 'fat');
-    const { now, prev, rowsNow, rowsPrev, aggNow, aggPrev } = await computeKPI(key, de, ate, dePrev, atePrev, anal);
-
-    // HERO
-    fillHero(key, now, prev, aggNow);
-
-    // INSIGHTS
-    renderInsights(key, aggNow, aggPrev);
-
-    // PROJEÇÕES
-    const pj = projectNext(aggNow);
-    $q('.proj-value').textContent = 'R$ '+pj.fat30.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-    const subs = $q('.proj-kpi-sub');
-    if(subs){
-      subs.querySelector('.sub-kpi:nth-child(1) .proj-value-small').textContent = pj.ped30.toLocaleString('pt-BR');
-      subs.querySelector('.sub-kpi:nth-child(2) .proj-value-small').textContent = 'R$ '+pj.tkt.toFixed(2).replace('.',',');
-    }
-  }
-
-  // Binding: seletor de KPI da aba Diagnóstico
-  const ksel = document.getElementById('kpi-select');
-  if(ksel){
-    ksel.addEventListener('change', ()=>{
-      window.selectedKPI = ksel.value;
-      document.dispatchEvent(new Event('filters:apply:internal'));
-    });
-    // inicial
-    window.selectedKPI = ksel.value;
-  }
-
-  // Reagir a mudanças de filtros / modo / cliques nos KPIs
-  // Garantir 1ª carga mesmo se o evento inicial disparou antes do listener
+  function DX_renderInsights(selectedKey, aggNow, aggPrev){
+    const box=$one('.document.addEventListener('filters:apply', async (e)=>{ try{ if(e.detail) await DX_loadDiagnostico(e.detail);}catch(err){ console.error('Diagnóstico load error', err);} });
+  document.addEventListener('filters:apply:internal', async ()=>{
+    try{
+      const start=document.getElementById('fxDuStart')?.value;
+      const end  =document.getElementById('fxDuEnd')?.value;
+      if(start&&end){
+        await DX_loadDiagnostico({
+          start:end>=start?start:end, end:end>=start?end:start,
+          analiticos:{
+            unidade: ms.unids.get(),
+            loja: ms.lojas.get(),
+            turno: ms.turnos.get(),
+            canal: ms.canais.get(),
+            pagamento: ms.pags.get(),
+            cancelado: document.getElementById('fxCanceled')?.value
+          }
+        });
+      }
+    }catch(err){ console.error('Diagnóstico internal error', err); }
+  });
   document.addEventListener('DOMContentLoaded', ()=>{
-    const start = document.getElementById('fxDuStart')?.value;
-    const end   = document.getElementById('fxDuEnd')?.value;
-    if(start && end){
-      const payload = {
-        start, end,
-        analiticos: {
+    const start=document.getElementById('fxDuStart')?.value;
+    const end  =document.getElementById('fxDuEnd')?.value;
+    if(start&&end){
+      DX_loadDiagnostico({
+        start:end>=start?start:end, end:end>=start?end:start,
+        analiticos:{
           unidade: ms.unids.get(),
           loja: ms.lojas.get(),
           turno: ms.turnos.get(),
@@ -1203,482 +1090,11 @@
           pagamento: ms.pags.get(),
           cancelado: document.getElementById('fxCanceled')?.value
         }
-      };
-      try{ await loadDiagnostico(payload); }catch(err){ console.error('Diagnóstico internal error', err);}
+      }).catch(err=>console.error('Diagnóstico DOMContentLoaded error', err));
     }
   });
-
-  document.addEventListener('filters:apply', async (e)=>{ try{ if(e.detail) await loadDiagnostico(e.detail);}catch(err){ console.error('Diagnóstico load error', err);} });
-  document.addEventListener('filters:apply:internal', async ()=>{
-    // reexecuta usando últimos filtros aplicados
-    const start = document.getElementById('fxDuStart')?.value;
-    const end   = document.getElementById('fxDuEnd')?.value;
-    if(start && end){
-      const payload = {
-        start, end,
-        analiticos: {
-          unidade: ms.unids.get(),
-          loja: ms.lojas.get(),
-          turno: ms.turnos.get(),
-          canal: ms.canais.get(),
-          pagamento: ms.pags.get(),
-          cancelado: document.getElementById('fxCanceled').value
-        }
-      };
-      try{ await loadDiagnostico(payload); }catch(err){ console.error('Diagnóstico internal error', err);}
-    }
-  });
-
-})();
-
-
-    function wantedCancelFilterForKPI(){
-      const m=KPI_META[selectedKPI];
-      return m?.needsCancel||null;
-    }
-    function effectiveMode(){
-      const m=KPI_META[selectedKPI];
-      return m?.forceMode || chartModeGlobal;
-    }
-    function updateChartTitles(){
-      const m=KPI_META[selectedKPI]||KPI_META.fat;
-      const mode = effectiveMode()==='media' ? ' (média)' : '';
-      $('title_month').textContent = `${m.label}${mode} por mês — últimos 12M vs. 12M anteriores`;
-      $('title_dow').textContent   = `${m.label}${mode} por dia da semana`;
-      $('title_hour').textContent  = `${m.label}${mode} por hora`;
-      $('title_turno').textContent = `${m.label}${mode} por turno`;
-      $('title_top6').textContent  = `Participação por loja — Top 6 (${m.label}${mode})`;
-    }
-    function bindKPIClick(){
-      document.querySelectorAll('.kpi[data-kpi]').forEach(card=>{
-        card.addEventListener('click', ()=>{
-          selectedKPI = card.dataset.kpi;
-          document.querySelectorAll('.kpi[data-kpi]').forEach(k=>k.classList.toggle('active', k===card));
-          document.dispatchEvent(new Event('filters:apply:internal'));
-        });
-      });
-    }
-    
-    function computeByBucket(rows, type, metric, mode){
-      const bucketDays = new Map();
-      const bucketDaily = new Map();
-      for(const r of rows){
-        const bkey = bucketKey(type, r);
-        if(bkey==null) continue;
-        if(!bucketDays.has(bkey)) bucketDays.set(bkey, new Set());
-        bucketDays.get(bkey).add(r.dia);
-        if(!bucketDaily.has(bkey)) bucketDaily.set(bkey, new Map());
-        const dayMap = bucketDaily.get(bkey);
-        const dkey = r.dia;
-        if(!dayMap.has(dkey)) dayMap.set(dkey, {fat:0, des:0, fre:0, ped:0});
-        const dacc = dayMap.get(dkey);
-        dacc.fat += +r.fat||0;
-        dacc.des += +r.des||0;
-        dacc.fre += +r.fre||0;
-        dacc.ped += 1;
-      }
-      function computeRatio(dailyMap, metric){
-        const days = [...dailyMap.values()];
-        const dailyVals = days.map(d => {
-          switch(metric){
-            case 'tkt': return (d.ped > 0) ? (d.fat / d.ped) : 0;
-            case 'desperc': return (d.fat > 0) ? (d.des / d.fat) : 0;
-            case 'fremed': return (d.ped > 0) ? (d.fre / d.ped) : 0;
-            case 'roi': return (d.des > 0) ? ((d.fat - d.des) / d.des) : 0;
-            default: return 0;
-          }
-        }).filter(v => isFinite(v));
-        if(!dailyVals.length) return 0;
-        return dailyVals.reduce((a,b)=>a+b, 0) / dailyVals.length;
-      }
-      function computeNonRatio(dailyMap, metric, numDays){
-        const total = {fat:0, des:0, fre:0, ped:0};
-        for(const d of dailyMap.values()){
-          total.fat += d.fat; total.des += d.des; total.fre += d.fre; total.ped += d.ped;
-        }
-        switch(metric){
-          case 'fat': return mode==='media' ? (total.fat / numDays) : total.fat;
-          case 'ped': return mode==='media' ? (total.ped / numDays) : total.ped;
-          case 'des': return mode==='media' ? (total.des / numDays) : total.des;
-          case 'fre': return mode==='media' ? (total.fre / numDays) : total.fre;
-          case 'fatmed': return total.fat / numDays;
-          case 'canc_ped': return mode==='media' ? (total.ped / numDays) : total.ped;
-          case 'canc_val': return mode==='media' ? (total.fat / numDays) : total.fat;
-        }
-        return 0;
-      }
-      const keys=[...bucketDaily.keys()].sort((a,b)=>{
-        if(type==='dow' || type==='hour') return Number(a)-Number(b);
-        if(type==='month'){ return a.localeCompare(b); }
-        return String(a).localeCompare(String(b),'pt-BR');
-      });
-      return keys.map(k=>{
-        const dailyMap = bucketDaily.get(k);
-        const numDays = bucketDays.get(k)?.size || 1;
-        let value;
-        const isRatio = ['tkt','desperc','fremed','roi'].includes(metric);
-        if(isRatio){
-          value = (mode === 'media') ? computeRatio(dailyMap, metric) : (function(){
-            const total = {fat:0, des:0, fre:0, ped:0};
-            for(const d of dailyMap.values()){
-              total.fat += d.fat; total.des += d.des; total.fre += d.fre; total.ped += d.ped;
-            }
-            switch(metric){
-              case 'tkt': return (total.ped > 0) ? (total.fat / total.ped) : 0;
-              case 'desperc': return (total.fat > 0) ? (total.des / total.fat) : 0;
-              case 'fremed': return (total.ped > 0) ? (total.fre / total.ped) : 0;
-              case 'roi': return (total.des > 0) ? ((total.fat - total.des) / total.des) : 0;
-            }
-            return 0;
-          })();
-        } else {
-          value = computeNonRatio(dailyMap, metric, numDays);
-        }
-        return { key:k, value: value };
-      });
-    }
-    async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
-      const meta = KPI_META[selectedKPI] || KPI_META.fat;
-      const mode = effectiveMode();
-      try {
-          setDiag('');
-          const paramsNow = buildParams(de, ate, analiticos);
-          const paramsPrev = buildParams(dePrev, atePrev, analiticos);
-
-          const [
-              {data: dowData}, {data: dowDataPrev},
-              {data: hourData}, {data: hourDataPrev},
-              {data: turnoData}, {data: turnoDataPrev}
-          ] = await Promise.all([
-              supa.rpc(RPC_CHART_DOW_FUNC, paramsNow),
-              supa.rpc(RPC_CHART_DOW_FUNC, paramsPrev),
-              supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow),
-              supa.rpc(RPC_CHART_HOUR_FUNC, paramsPrev),
-              supa.rpc(RPC_CHART_TURNO_FUNC, paramsNow),
-              supa.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
-          ]);
-          
-          const tip = `Período anterior: ${dePrev} → ${atePrev}`;
-          const valueKey = mode === 'media' ? 'media' : 'total';
-          
-          {
-              const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-              const nArr = Array(7).fill(0), pArr = Array(7).fill(0);
-              (dowData || []).forEach(r => nArr[r.dow] = r[valueKey]);
-              (dowDataPrev || []).forEach(r => pArr[r.dow] = r[valueKey]);
-              ensureChart('ch_dow', labels, nArr, pArr, tip, KPI_META[selectedKPI].fmt);
-          }
-          {
-              const nArr = Array(24).fill(0), pArr = Array(24).fill(0);
-              (hourData || []).forEach(r => nArr[r.h] = r[valueKey]);
-              (hourDataPrev || []).forEach(r => pArr[r.h] = r[valueKey]);
-              let minHour = 24, maxHour = -1;
-              for (let i = 0; i < 24; i++) {
-                  if (nArr[i] > 0 || pArr[i] > 0) {
-                      if (i < minHour) minHour = i;
-                      if (i > maxHour) maxHour = i;
-                  }
-              }
-              if (minHour > maxHour) {
-                  ensureChart('ch_hour', [], [], [], tip, KPI_META[selectedKPI].fmt);
-              } else {
-                  const range = Array.from({length: maxHour - minHour + 1}, (_, i) => i + minHour);
-                  const labels = range.map(h => String(h).padStart(2, '0') + 'h');
-                  const nowData = range.map(h => nArr[h]);
-                  const prevData = range.map(h => pArr[h]);
-                  ensureChart('ch_hour', labels, nowData, prevData, tip, KPI_META[selectedKPI].fmt);
-              }
-          }
-          {
-              const labels = ['Dia', 'Noite'];
-              const nMap = new Map(), pMap = new Map();
-              (turnoData || []).forEach(r => nMap.set(r.turno, r[valueKey]));
-              (turnoDataPrev || []).forEach(r => pMap.set(r.turno, r[valueKey]));
-              const nArr = labels.map(l => nMap.get(l) || 0);
-              const pArr = labels.map(l => pMap.get(l) || 0);
-              ensureChart('ch_turno', labels, nArr, pArr, tip, KPI_META[selectedKPI].fmt);
-          }
-      } catch (e) {
-          console.error("Erro ao atualizar gráficos analíticos:", e); 
-          setDiag('Erro ao atualizar gráficos');
-      }
-    }
-    async function updateMonth12x12(analiticos){
-      try{
-        const end = lastDay || DateHelpers.iso(new Date());
-        const endMonthStart = DateHelpers.monthStartISO(end);
-        const last12Start = DateHelpers.addMonthsISO(endMonthStart, -11);
-        const prev12Start = DateHelpers.addMonthsISO(endMonthStart, -23);
-        const last12End   = DateHelpers.monthEndISO(end);
-        const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
-        const meta = KPI_META[selectedKPI]||KPI_META.fat;
-        
-        const paramsNow = buildParams(last12Start, last12End, analiticos);
-        const paramsPrev = buildParams(prev12Start, prev12EndAdj, analiticos);
-
-        const [{data: nData, error: nErr}, {data: pData, error: pErr}] = await Promise.all([
-            supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
-            supa.rpc(RPC_CHART_MONTH_FUNC, paramsPrev)
-        ]);
-
-        if (nErr) throw nErr;
-        if (pErr) throw pErr;
-
-        const mode = effectiveMode();
-        const valueKey = mode === 'media' ? 'media' : 'total';
-        
-        const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, +r[valueKey]||0]));
-        const mNow = toMap(nData), mPrev = toMap(pData);
-        
-        let labels = [];
-        const ymsNow = []; 
-        let cur = last12Start;
-        for(let i=0;i<12;i++){ 
-            labels.push(DateHelpers.formatYM(cur)); 
-            const d=new Date(cur+'T12:00:00'); 
-            const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; 
-            ymsNow.push(ym); 
-            cur=DateHelpers.addMonthsISO(cur,1); 
-        }
-
-        const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
-        
-        const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
-        const prevArr = ymsPrev.map(ym => mPrev.get(ym)||0);
-        const tip = `Comparação fixa: Últimos 12M vs 12M anteriores`;
-        ensureChart('ch_month', labels, nowArr, prevArr, tip, meta.fmt);
-      }catch(e){
-        console.error("Erro detalhado em updateMonth12x12:", e); 
-        setDiag('Erro ao atualizar gráfico mensal');
-      }
-    }
-    const wine = ["#7b1e3a","#8c2947","#9c3554","#ad4061","#bd4c6e","#ce577b", "#e5e7eb"];
-    function ensureDonutTop6(labels, values, centerText, fmt='money'){
-      const cvs = $('ch_top6'); if(!cvs) return;
-      if(cvs.__chart){ try{cvs.__chart.destroy();}catch(e){} cvs.__chart=null; }
-      const ctx = cvs.getContext('2d');
-      const total = (values||[]).reduce((a,b)=>a+(+b||0),0);
-      $('top6Center').textContent = (centerText!=null ? centerText : 'Total: '+(fmt==='money'?money(total): fmt==='count'? num(total) : formatValueBy(fmt, total)));
-      const chart = new Chart(ctx,{
-        type:'doughnut',
-        data:{ labels, datasets:[{ data: values, backgroundColor: wine, hoverBackgroundColor: wine, borderColor:'#fff', borderWidth:1 }]},
-        options:{
-          responsive:true, maintainAspectRatio:false, cutout:'60%',
-          plugins:{
-            legend:{ position:'right', labels:{ usePointStyle:true, pointStyle:'circle', boxWidth:10, padding:16, color:'#334155' } },
-            tooltip:{ callbacks:{ label:(ctx)=>{ const label = ctx.label||''; const val = ctx.parsed||0; const ds = ctx.chart.data.datasets[0]; const tt = (ds.data||[]).reduce((a,b)=>a+(+b||0),0); const perc = tt ? ((val/tt)*100).toFixed(1) : 0; return `${label}: ${formatValueBy(KPI_META[selectedKPI]?.fmt||'money', val)} (${perc}%)`; } },
-              backgroundColor:'rgba(15,23,42,.95)', titleColor:'#e2e8f0', bodyColor:'#e2e8f0', borderColor:'rgba(148,163,184,.25)', borderWidth:1 }
-          }
-        }
-      });
-      cvs.__chart = chart;
-    }
-    async function updateTop6(de, ate, analiticos){
-      try{
-        const meta = KPI_META[selectedKPI]||KPI_META.fat;
-        const data = await baseQuery(de, ate, analiticos);
-        const m = new Map();
-        (data||[]).forEach(r=>{
-          const loja = r.loja || '—';
-          if(!m.has(loja)) m.set(loja, {fat:0, des:0, fre:0, ped:0, dias: new Set()});
-          const acc = m.get(loja);
-          acc.fat += +r.fat||0;
-          acc.des += +r.des||0;
-          acc.fre += +r.fre||0;
-          acc.ped += 1;
-          acc.dias.add(r.dia);
-        });
-
-        function metricVal(aggData){
-          const mode = effectiveMode();
-          const isRatio = ['tkt','desperc','fremed','roi'].includes(selectedKPI);
-          if (isRatio) {
-            switch(selectedKPI){
-                case 'tkt': return (aggData.ped>0) ? aggData.fat/aggData.ped : 0;
-                case 'desperc': return (aggData.fat>0) ? aggData.des/aggData.fat : 0;
-                case 'fremed': return (aggData.ped>0) ? aggData.fre/aggData.ped : 0;
-                case 'roi': return (aggData.des>0) ? (aggData.fat - aggData.des)/aggData.des : 0;
-            }
-          } else {
-            const numDays = aggData.dias.size || 1;
-            switch(selectedKPI){
-                case 'fat': return mode==='media' ? aggData.fat / numDays : aggData.fat;
-                case 'ped': return mode==='media' ? aggData.ped / numDays : aggData.ped;
-                case 'des': return mode==='media' ? aggData.des / numDays : aggData.des;
-                case 'fre': return mode==='media' ? aggData.fre / numDays : aggData.fre;
-                case 'fatmed': return aggData.fat / numDays;
-                case 'canc_ped': return mode==='media' ? aggData.ped / numDays : aggData.ped;
-                case 'canc_val': return mode==='media' ? aggData.fat / numDays : aggData.fat;
-            }
-          }
-          return 0;
-        }
-
-        const allStoresData = Array.from(m.entries()).map(([loja, aggData]) => ({ loja, valor: metricVal(aggData) }));
-        allStoresData.sort((a,b)=> b.valor - a.valor);
-        
-        let finalData = allStoresData;
-        if (allStoresData.length > 6) {
-            const top5 = allStoresData.slice(0, 5);
-            const othersValue = allStoresData.slice(5).reduce((acc, curr) => acc + curr.valor, 0);
-            if (othersValue > 0.01) { 
-              finalData = [...top5, { loja: 'Outros', valor: othersValue }];
-            } else {
-              finalData = top5;
-            }
-        }
-        
-        const labels = finalData.map(d => d.loja);
-        const values = finalData.map(d => d.valor);
-        const total = allStoresData.reduce((sum, item) => sum + item.valor, 0);
-        ensureDonutTop6(labels, values, `Total: ${formatValueBy(meta.fmt, total)}`, meta.fmt);
-
-      }catch(e){
-        console.warn('top6 erro:', e.message||e);
-        ensureDonutTop6([],[], 'Total: R$ 0,00','money');
-      }
-    }
-    $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
-    $('fileExcel').addEventListener('change', async (ev)=>{
-      const file = ev.target.files?.[0];
-      if(!file){ info(''); return; }
-      info('Lendo arquivo…');
-      try{
-        const buf = await file.arrayBuffer();
-        const wb = XLSX.read(buf, { type:'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
-        // ... (resto da lógica de upload, que já estava funcional)
-      }catch(e){
-        console.error(e);
-        setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
-        info('');
-      }finally{
-        $('fileExcel').value='';
-      }
-    });
-    function mergeRankedAll(rankedList, allList){
-      const rset = new Set(rankedList);
-      const rest = allList.filter(x=>!rset.has(x));
-      return [...rankedList, ...rest];
-    }
-    async function reloadStaticOptions(){
-      const de = firstDay || '1900-01-01';
-      const ate= lastDay  || DateHelpers.iso(new Date());
-      const TOPN = 50;
-      const [topUnids, topLojas, topPags, topCanais] = await Promise.allSettled([
-        supa.rpc('opt_unidades_ranked',  { p_dini: de, p_dfim: ate, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
-        supa.rpc('opt_lojas_ranked',     { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
-        supa.rpc('opt_pagamentos_ranked',{ p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_lojas:null, p_cancelado:null, p_limit: TOPN }),
-        supa.rpc('opt_canais_ranked',    { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_lojas:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
-      ]);
-      const tUnids = (topUnids.status==='fulfilled' && !topUnids.value.error) ? (topUnids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
-      const tLojas = (topLojas.status==='fulfilled'  && !topLojas.value.error)  ? (topLojas.value.data||[]).map(r=>r.loja).filter(Boolean)       : [];
-      const tPags  = (topPags.status==='fulfilled'   && !topPags.value.error)   ? (topPags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean): [];
-      const tCanais= (topCanais.status==='fulfilled' && !topCanais.value.error) ? (topCanais.value.data||[]).map(r=>r.canal).filter(Boolean)      : [];
-      const [unids,lojas,canais,pags] = await Promise.allSettled([
-        supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
-        supa.from('vw_vendas_lojas').select('loja').order('loja'),
-        supa.from('vw_vendas_canais').select('canal').order('canal'),
-        supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
-      ]);
-      const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
-      const allUnids = ok(unids) ? (unids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
-      const allLojas = ok(lojas) ? (lojas.value.data||[]).map(r=>r.loja).filter(Boolean) : [];
-      const allCanais= ok(canais)? (canais.value.data||[]).map(r=>r.canal).filter(Boolean): [];
-      const allPags  = ok(pags)  ? (pags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean) : [];
-      ms.unids.setOptions( mergeRankedAll(tUnids, allUnids), true );
-      ms.lojas.setOptions( mergeRankedAll(tLojas, allLojas), true );
-      ms.canais.setOptions(mergeRankedAll(tCanais, allCanais), true );
-      ms.pags.setOptions(  mergeRankedAll(tPags, allPags), true );
-      ms.turnos.setOptions(['Dia','Noite'], true);
-    }
-    
-    /* ===================== LOOP PRINCIPAL ===================== */
-    async function applyAll(details){
-      try{
-        const de = details.start;
-        const ate = details.end;
-        const analiticos = details.analiticos;
-        if (!de || !ate) {
-            setStatus('Selecione um período', 'err');
-            return;
-        }
-        
-        const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
-        setStatus('Consultando…');
-        let kpiOk=true;
-        await updateKPIs(de,ate,dePrev,atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
-        await Promise.all([
-          updateCharts(de,ate,dePrev,atePrev, analiticos),
-          updateMonth12x12(analiticos),
-          updateTop6(de,ate, analiticos)
-        ]);
-        if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
-        else setStatus('OK','ok');
-      }catch(e){
-        console.error('Erro em applyAll:', e);
-        setStatus('Erro: '+(e.message||e),'err');
-      }
-    }
-
-
-    // ===================================================================================
-    // LÓGICA DA INTERFACE DE FILTROS E ABAS
-    // ===================================================================================
-
-    const tabsContainer = $('tabs');
-    if (tabsContainer) {
-      tabsContainer.addEventListener('click', (e)=>{
-        const btn=e.target.closest('button'); if(!btn) return;
-        document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('active', b===btn));
-        document.querySelectorAll('.tab').forEach(t=> t.style.display = (t.id==='tab-'+btn.dataset.tab)?'block':'none');
-      });
-    }
-
-    function fxLocalMidday(d){ const x=new Date(d); x.setHours(12,0,0,0); return x }
-    function fxFmt(date){ return date.toISOString().slice(0,10); }
-    function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
-    function fxLastNDays(n){
-      const baseDate = lastDay ? fxLocalMidday(new Date(lastDay)) : fxLocalMidday(new Date());
-      const end = new Date(baseDate);
-      const start = new Date(baseDate);
-      start.setDate(baseDate.getDate()-(n-1));
-      fxSetRange(start,end);
-    }
-    function fxNamed(win){
-      const baseDate = lastDay ? fxLocalMidday(new Date(lastDay)) : fxLocalMidday(new Date());
-      if(win==='today'){ fxSetRange(baseDate,baseDate) }
-      else if(win==='yesterday'){ const y=new Date(baseDate); y.setDate(baseDate.getDate()-1); fxSetRange(y,y) }
-      else if(win==='lastMonth'){ const y=baseDate.getFullYear(), m=baseDate.getMonth(); fxSetRange(new Date(y,m-1,1), new Date(y,m,0)) }
-      else if(win==='lastYear'){ const yy=baseDate.getFullYear()-1; fxSetRange(new Date(yy,0,1), new Date(yy,11,31)) }
-    }
-
-    const fx = {
-      $drop: $('fxDropup'),
-      $btnMore: $('fxBtnMore'),
-      $btnReset: $('fxBtnReset'),
-      $duClose: $('fxDuClose'),
-      $start: $('fxDuStart'),
-      $end: $('fxDuEnd'),
-      $days: $('fxDuQuickDays'),
-      $chips: $('fxQuickChips'),
-    };
-
-    function fxShowDrop(show){
-      fx.$drop.classList.toggle('fx-show', show);
-      fx.$btnMore.setAttribute('aria-expanded', show?'true':'false');
-      if(show) fx.$start?.focus();
-    }
-    fx.$btnMore.addEventListener('click', ()=> fxShowDrop(!fx.$drop.classList.contains('fx-show')));
-    fx.$duClose.addEventListener('click', ()=> fxShowDrop(false));
-    document.addEventListener('click', (e)=>{
-      if(!fx.$drop.classList.contains('fx-show')) return;
-      if(!(fx.$drop.contains(e.target) || fx.$btnMore.contains(e.target))) fxShowDrop(false);
-    });
-    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && fx.$drop.classList.contains('fx-show')) fxShowDrop(false) });
-
-    function fxDispatchApply(){
+})(); // end DX
+function fxDispatchApply(){
       const payload = {
         start: fx.$start.value, 
         end: fx.$end.value,
