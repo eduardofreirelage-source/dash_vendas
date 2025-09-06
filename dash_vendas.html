@@ -1527,23 +1527,24 @@
 
   
 function dxFetch(de, ate, anal, cb){
-  // Use baseQuery (se reflete tudo do app). Se capar (~1000), buscamos tudo via REST paginado.
   try{
     if (typeof window.baseQuery === 'function'){
       return window.baseQuery(de, ate, anal).then(function(rows){
-        try{
-          if (rows && rows.length >= 1000 && window.SUPABASE_URL && window.SUPABASE_KEY){
+        rows = rows || [];
+        // Pergunta ao REST o total esperado via HEAD (barato). Se maior que baseQuery, pagina REST e usa tudo.
+        dxHeadCount(de, ate, anal, function(total){
+          if (total!=null && rows.length < total && window.SUPABASE_URL && window.SUPABASE_KEY){
             return dxFetchRESTPaged(de, ate, anal, cb);
           }
-        }catch(_){}
-        cb(null, rows||[]);
+          cb(null, rows);
+        });
       }).catch(function(e){
-        // baseQuery falhou: cai para REST paginado
+        console.warn('[DX ES5] baseQuery falhou, usando REST paginado.', e);
         return dxFetchRESTPaged(de, ate, anal, cb);
       });
     }
-  }catch(e){}
-  // Sem baseQuery: REST paginado direto
+  }catch(e){ console.warn('[DX ES5] baseQuery error', e); }
+  // Sem baseQuery: vai direto no REST paginado
   return dxFetchRESTPaged(de, ate, anal, cb);
 }
 ).catch(function(e){
@@ -1572,7 +1573,7 @@ function dxFetch(de, ate, anal, cb){
   }catch(e){}
   var url = base + '?' + qs.join('&');
   var headers = { apikey: KEY, Authorization: 'Bearer '+KEY, 'Range-Unit': 'items', Range: '0-49999', Prefer: 'count=exact' };
-  var chunk = 50000, start = 0, rows = [], pages = 0, maxPages = 40;
+  var chunk = 50000, start = 0, rows = [], pages = 0, maxPages = 200;
   function step(){
     headers.Range = String(start) + '-' + String(start + chunk - 1);
     return fetch(url, { headers: headers }).then(function(r){
@@ -1591,6 +1592,28 @@ function dxFetch(de, ate, anal, cb){
     }).catch(function(_e){ cb(null, rows); });
   }
   step();
+}
+function dxHeadCount(de, ate, anal, cb){
+  var URL = window.SUPABASE_URL, KEY = window.SUPABASE_KEY;
+  if (!URL || !KEY){ cb(null); return; }
+  var base = URL + '/rest/v1/vendas_canon';
+  var qs = [
+    'select=dia',
+    'dia=gte.'+encodeURIComponent(de),
+    'dia=lte.'+encodeURIComponent(ate)
+  ];
+  try{
+    if (anal && anal.cancelado==='sim') qs.push('cancelado=eq.Sim');
+    if (anal && anal.cancelado==='nao') qs.push('cancelado=neq.Sim');
+  }catch(e){}
+  var url = base + '?' + qs.join('&');
+  var headers = { apikey: KEY, Authorization: 'Bearer '+KEY, 'Range-Unit': 'items', Range: '0-0', Prefer: 'count=exact' };
+  fetch(url, { headers: headers }).then(function(r){
+    var cr = r && r.headers && r.headers.get ? r.headers.get('content-range') : null;
+    if (!cr){ cb(null); return; }
+    var parts = cr.split('/');
+    if (parts && parts.length===2){ cb(parseInt(parts[1],10)); } else { cb(null); }
+  }).catch(function(){ cb(null); });
 }
 function dxFetchREST(de, ate, anal, cb){
     var URL = window.SUPABASE_URL, KEY = window.SUPABASE_KEY;
