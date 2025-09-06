@@ -1531,7 +1531,7 @@
     }
     const URL = window.SUPABASE_URL, KEY = window.SUPABASE_KEY;
     if (!URL || !KEY) { console.warn('[DX] Sem SUPABASE_URL/KEY — sem fallback REST.'); return []; }
-    const headers = { apikey: KEY, Authorization: 'Bearer '+KEY };
+    const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, Range: '0-999999', Prefer: 'count=exact' };
     const qs = [
       'select=dia,hora,loja,canal,fat,des,fre,cancelado',
       `dia=gte.${encodeURIComponent(de)}`,
@@ -1589,8 +1589,34 @@
     }
   }
   function fmt(key, v){
-    const m=(window.KPI_META?.[key]?.fmt)||'money';
-    if(m==='money')   return isFinite(v)? ('R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})):'—';
+  // Try metadata first
+  const metaFmt = (window.KPI_META?.[key]?.fmt);
+  const fallbackFmt = (() => {
+    switch (key) {
+      case 'ped':
+      case 'canc_ped':
+        return 'count';
+      case 'desperc':
+      case 'roi':
+        return 'percent';
+      case 'tkt':
+      case 'fatmed':
+      case 'fremed':
+      case 'fat':
+      case 'des':
+      case 'fre':
+      case 'canc_val':
+        return 'money';
+      default:
+        return metaFmt || 'money';
+    }
+  })();
+  const m = metaFmt || fallbackFmt;
+  if (m === 'money')   return (isFinite(v) ? ('R$ ' + (+v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})) : '—');
+  if (m === 'count')   return (isFinite(v) ? (+v).toLocaleString('pt-BR') : '—');
+  if (m === 'percent') return (isFinite(v) ? ((+v)*100).toLocaleString('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1}) + '%' : '—');
+  return String(v);
+})):'—';
     if(m==='count')   return isFinite(v)? (+v).toLocaleString('pt-BR'):'—';
     if(m==='percent') return isFinite(v)? ((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%':'—';
     return String(v);
