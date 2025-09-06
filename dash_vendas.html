@@ -2056,5 +2056,51 @@ function dxFetchREST(de, ate, anal, cb){
 })();
 </script>
 
+
+<script>
+(function(){
+  'use strict';
+  function $(s){ return document.querySelector(s); }
+  function hasCreds(){ return !!(window.SUPABASE_URL && window.SUPABASE_KEY); }
+  function uiDates(){
+    var a = document.getElementById('fxDuStart'), b = document.getElementById('fxDuEnd');
+    if(!a||!b||!a.value||!b.value) return null;
+    var A=a.value, B=b.value; var s=(B>=A?A:B), e=(B>=A?B:A); return {start:s,end:e};
+  }
+  function headTotal(de, ate, anal, cb){
+    if(!hasCreds()){ cb(null); return; }
+    var URL = window.SUPABASE_URL, KEY = window.SUPABASE_KEY;
+    var base = URL + '/rest/v1/vendas_canon';
+    var qs = ['select=dia','dia=gte.'+encodeURIComponent(de),'dia=lte.'+encodeURIComponent(ate)];
+    try{ if (anal && anal.cancelado==='sim') qs.push('cancelado=eq.Sim'); if (anal && anal.cancelado==='nao') qs.push('cancelado=neq.Sim'); }catch(e){}
+    var url = base + '?' + qs.join('&');
+    var headers = { apikey: KEY, Authorization: 'Bearer '+KEY, 'Range-Unit': 'items', Range: '0-0', Prefer: 'count=exact' };
+    fetch(url, { headers: headers }).then(function(r){
+      var cr = r && r.headers && r.headers.get ? r.headers.get('content-range') : null;
+      if (!cr){ cb(null); return; }
+      var parts = cr.split('/');
+      if (parts && parts.length===2){ cb(parseInt(parts[1],10)); } else { cb(null); }
+    }).catch(function(){ cb(null); });
+  }
+  function runTest(){
+    var elBtn = $('#dx-run-test'), out = $('#dx-test-result');
+    if(out) out.textContent = 'Executando...';
+    var dates = uiDates(); if(!dates){ if(out) out.textContent='Defina Início/Fim.'; return; }
+    var anal = { cancelado: (document.getElementById('fxCanceled')||{}).value || null };
+    headTotal(dates.start, dates.end, anal, function(total){
+      if(out) out.textContent = (total!=null? ('Total via HEAD: '+total.toLocaleString('pt-BR')) : 'Sem total (HEAD)');
+      console.log('[DX TEST] Total esperado (HEAD):', total);
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    var el = document.getElementById('dx-run-test');
+    if (el && !el.__dx_test__){
+      el.addEventListener('click', runTest);
+      el.__dx_test__ = true;
+    }
+  });
+})();
+</script>
+
 </body>
 </html>
