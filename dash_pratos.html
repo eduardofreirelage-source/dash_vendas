@@ -93,7 +93,6 @@
     @keyframes fx-pop{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
     .fx-du-head{position:sticky; top:0; background:#fff; border-bottom:1px solid var(--line); padding:8px 10px; display:flex; align-items:center; justify-content:space-between; border-top-left-radius:12px; border-top-right-radius:12px}
     .fx-du-title{font-weight:900; color:#334155; font-size:12px}
-    /* CORREÇÃO SCROLL: Removido max-height e overflow do corpo do drop-up */
     .fx-du-body{padding:10px 10px; display:flex; flex-direction:column; gap:10px;}
     .fx-du-sec{display:flex; flex-direction:column; gap:8px}
     .fx-du-sec + .fx-du-sec{padding-top:8px; border-top:1px dashed var(--line)}
@@ -222,7 +221,6 @@
     return cleanSpaces(v||'Unidade');
   }
   
-  // Função central para despachar o evento de aplicação de filtros
   function fxDispatchApply(){
       const payload = { start: $('fxDuStart').value, end: $('fxDuEnd').value };
       document.dispatchEvent(new CustomEvent('filters:apply', { detail: payload }));
@@ -246,7 +244,6 @@
         const row=document.createElement('div'); row.className='msel-opt';
         const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v; cb.checked=selected.has(v);
         const lb=document.createElement('label'); lb.textContent=v;
-        // CORREÇÃO "APLICAR": Chama a atualização do dashboard instantaneamente
         cb.addEventListener('change',()=>{
             cb.checked?selected.add(v):selected.delete(v); 
             refresh();
@@ -490,6 +487,18 @@
   }
 
   /* ===================== INICIALIZAÇÃO E CONTROLES DA UI ===================== */
+  // CORREÇÃO: A função foi reinserida no código.
+  async function reloadFilterOptions() {
+    const [unids, cats, pratos] = await Promise.all([
+      supa.from('vendas_pratos_unidades').select('unidade'),
+      supa.from('vendas_pratos_categorias').select('categoria'),
+      supa.from('vendas_pratos_pratos').select('prato')
+    ]);
+    ms.unids.setOptions((unids.data?.map(r => canonUnidade(r.unidade)) || []).filter(Boolean));
+    ms.cats.setOptions(cats.data?.map(r => r.categoria) || []);
+    ms.pratos.setOptions(pratos.data?.map(r => r.prato) || []);
+  }
+
   async function init() {
     setStatus('Carregando...');
     try {
@@ -497,7 +506,7 @@
       if (dr.error) throw dr.error;
       if (dr.data?.length && dr.data[0].min_data) { firstDay = dr.data[0].min_data; lastDay  = dr.data[0].max_data; }
       else { const today=new Date(); lastDay=iso(today); const start=new Date(); start.setDate(start.getDate()-29); firstDay=iso(start); }
-      await reloadFilterOptions();
+      await reloadFilterOptions(); // Esta chamada agora funciona corretamente.
       $('onlyPratos').checked = false;
       READ_VIEW = VIEW_ALL;
       document.dispatchEvent(new Event('filters:init'));
