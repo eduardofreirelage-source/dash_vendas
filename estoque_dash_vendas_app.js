@@ -111,7 +111,6 @@ document.addEventListener('DOMContentLoaded', () => {
           return d.toISOString().slice(0, 10);
       },
       daysLen: (de, ate) => {
-          if (!de || !ate) return 0;
           const d1 = new Date(de + 'T12:00:00');
           const d2 = new Date(ate + 'T12:00:00');
           return Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
@@ -173,10 +172,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function matchPanelHeights() {
       const panel = document.querySelector('.panel');
       if (!panel) return;
+
       const chartCard = panel.querySelector('.card:first-child');
       const sideBar = panel.querySelector('.side');
+
       if (!chartCard || !sideBar) return;
+      
       chartCard.style.height = 'auto';
+
       requestAnimationFrame(() => {
         const sideBarHeight = sideBar.offsetHeight;
         if (sideBarHeight > 0) {
@@ -289,74 +292,122 @@ document.addEventListener('DOMContentLoaded', () => {
     const fxCanceled = $('fxCanceled');
     
     /* ===================== LÓGICA DE DADOS (KPIs, Gráficos, etc.) ===================== */
-    // MODULARIZADO: Função para buscar dados brutos
-    async function fetchKpiData(de, ate, analiticos) {
-        if (!de || !ate) return { fat: 0, ped: 0, des: 0, fre: 0, canc_val: 0, canc_ped: 0 };
-        const params = buildParams(de, ate, analiticos);
-        const paramsCanceled = buildParams(de, ate, { ...analiticos, cancelado: 'sim' });
+    function buildParams(de, ate, analiticos) {
+      const isActive = (val) => val && val.length > 0;
+      let p_cancelado = null;
+      if (analiticos.cancelado === 'sim') p_cancelado = 'Sim';
+      if (analiticos.cancelado === 'nao') p_cancelado = 'Não';
+      return {
+        p_dini: de, p_dfim: ate,
+        p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
+        p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
+        p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
+        p_canais: isActive(analiticos.canal) ? analiticos.canal : null,
+        p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
+        p_cancelado
+      };
+    }
 
-        const [finResult, { count: pedCount }, { data: cancData }] = await Promise.all([
-            supa.rpc(RPC_KPI_FUNC, params),
-            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate)
-                .in('unidade', params.p_unids || [])
-                .in('loja', params.p_lojas || [])
-                .in('turno', params.p_turnos || [])
-                .in('canal', params.p_canais || [])
-                .in('pagamento_base', params.p_pags || [])
-                .eq('cancelado', params.p_cancelado === null ? 'Não' : params.p_cancelado), // Simplificado
-            supa.rpc(RPC_KPI_FUNC, paramsCanceled)
-        ]);
+    async function baseQuery(de, ate, analiticos){
+      const PAGE_SIZE = 1000;
+      let allRows = [];
+      let page = 0;
+      let keepFetching = true;
+      const params = buildParams(de, ate, analiticos);
 
-        return {
-            fat: +(finResult.data[0]?.fat || 0),
-            ped: pedCount,
-            des: +(finResult.data[0]?.des || 0),
-            fre: +(finResult.data[0]?.fre || 0),
-            canc_val: +(cancData[0]?.fat || 0),
-            canc_ped: +(cancData[0]?.ped || 0),
-        };
+      while (keepFetching) {
+          const { data, error } = await supa.rpc(RPC_FILTER_FUNC, params)
+                                          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+          if (error) {
+              console.error(`[RPC ${RPC_FILTER_FUNC}]`, error);
+              throw error;
+          }
+          if (data && data.length > 0) {
+              allRows.push(...data);
+              page++;
+              if (data.length < PAGE_SIZE) {
+                  keepFetching = false;
+              }
+          } else {
+              keepFetching = false;
+          }
+      }
+      return allRows;
     }
     
-    // MODULARIZADO: Função para calcular todos os KPIs a partir de dados brutos
-    function calculateAllKpisFromRaw(now, prev, lenNow, lenPrev) {
-        const tktN = (now.ped > 0) ? (now.fat / now.ped) : 0;
-        const tktP = (prev.ped > 0) ? (prev.fat / prev.ped) : 0;
-        const fatMedN = lenNow > 0 ? (now.fat / lenNow) : 0;
-        const fatMedP = lenPrev > 0 ? (prev.fat / lenPrev) : 0;
-        const desPercN = now.fat > 0 ? (now.des / now.fat) : 0;
-        const desPercP = prev.fat > 0 ? (prev.des / prev.fat) : 0;
-        const freMedN = now.ped > 0 ? (now.fre / now.ped) : 0;
-        const freMedP = prev.ped > 0 ? (prev.fre / prev.ped) : 0;
-        const roiN = now.des > 0 ? (now.fat - now.des) / now.des : NaN;
-        const roiP = prev.des > 0 ? (prev.fat - prev.des) / prev.des : NaN;
+    async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
+      let allKpiValues = {};
+      try {
+        const pNow = buildParams(de, ate, analiticos);
+        const pPrev = buildParams(dePrev, atePrev, analiticos);
+        
+        const [
+          finNowResult, finPrevResult,
+          { count: pedNowCount, error: errPedNow },
+          { count: pedPrevCount, error: errPedPrev },
+          { count: cnCount, error: errCn }, { count: vnCount, error: errVn },
+          { count: cpCount, error: errCp }, { count: vpCount, error: errVp }
+        ] = await Promise.all([
+            supa.rpc(RPC_KPI_FUNC, pNow),
+            supa.rpc(RPC_KPI_FUNC, pPrev),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Sim'),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Não'),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Sim'),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Não')
+        ]);
 
-        return {
-            fat: { current: now.fat, previous: prev.fat },
-            ped: { current: now.ped, previous: prev.ped },
+        if(finNowResult.error) throw finNowResult.error;
+        if(errPedNow) throw errPedNow;
+        
+        const pedTotalNow = analiticos.cancelado === 'sim' ? cnCount : analiticos.cancelado === 'nao' ? vnCount : pedNowCount;
+
+        const N = {
+            ped: pedTotalNow,
+            fat: +(finNowResult.data[0]?.fat || 0),
+            des: +(finNowResult.data[0]?.des || 0),
+            fre: +(finNowResult.data[0]?.fre || 0)
+        };
+        const P = {
+            ped: pedPrevCount,
+            fat: +(finPrevResult.data[0]?.fat || 0),
+            des: +(finPrevResult.data[0]?.des || 0),
+            fre: +(finPrevResult.data[0]?.fre || 0)
+        };
+
+        const {data: cancDataNow} = await supa.rpc(RPC_KPI_FUNC, { ...pNow, p_cancelado: 'Sim' });
+        const {data: cancDataPrev} = await supa.rpc(RPC_KPI_FUNC, { ...pPrev, p_cancelado: 'Sim' });
+        
+        const len = DateHelpers.daysLen(de, ate);
+        const prevLen = DateHelpers.daysLen(dePrev, atePrev);
+
+        const tktN = (N.ped > 0) ? (N.fat / N.ped) : 0;
+        const tktP = (P.ped > 0) ? (P.fat / P.ped) : 0;
+        const fatMedN = len > 0 ? (N.fat / len) : 0;
+        const fatMedP = prevLen > 0 ? (P.fat / prevLen) : 0;
+        const desPercN = N.fat > 0 ? (N.des / N.fat) : 0;
+        const desPercP = P.fat > 0 ? (P.des / P.fat) : 0;
+        const freMedN = N.ped > 0 ? (N.fre / N.ped) : 0;
+        const freMedP = P.ped > 0 ? (P.fre / P.ped) : 0;
+        const cancValN = +(cancDataNow[0]?.fat || 0);
+        const cancValP = +(cancDataPrev[0]?.fat || 0);
+        const roiN = N.des > 0 ? (N.fat - N.des) / N.des : NaN;
+        const roiP = P.des > 0 ? (P.fat - P.des) / P.des : NaN;
+
+        allKpiValues = {
+            fat: { current: N.fat, previous: P.fat },
+            ped: { current: N.ped, previous: P.ped },
             tkt: { current: tktN, previous: tktP },
-            des: { current: now.des, previous: prev.des },
+            des: { current: N.des, previous: P.des },
             fatmed: { current: fatMedN, previous: fatMedP },
             roi: { current: roiN, previous: roiP },
             desperc: { current: desPercN, previous: desPercP },
-            canc_val: { current: now.canc_val, previous: prev.canc_val },
-            fre: { current: now.fre, previous: prev.fre },
+            canc_val: { current: cancValN, previous: cancValP },
+            fre: { current: N.fre, previous: P.fre },
             fremed: { current: freMedN, previous: freMedP },
-            canc_ped: { current: now.canc_ped, previous: prev.canc_ped },
+            canc_ped: { current: cnCount, previous: cpCount },
         };
-    }
-
-    // REFEITA para usar a nova estrutura modular
-    async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
-      try {
-        const [rawDataNow, rawDataPrev] = await Promise.all([
-          fetchKpiData(de, ate, analiticos),
-          fetchKpiData(dePrev, atePrev, analiticos)
-        ]);
-
-        const lenNow = DateHelpers.daysLen(de, ate);
-        const lenPrev = DateHelpers.daysLen(dePrev, atePrev);
-        
-        const allKpiValues = calculateAllKpisFromRaw(rawDataNow, rawDataPrev, lenNow, lenPrev);
 
         Object.keys(allKpiValues).forEach(key => {
             const kpi = allKpiValues[key];
@@ -367,14 +418,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (prevEl) prevEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.previous);
             if (deltaEl) deltaBadge(deltaEl, kpi.current, kpi.previous);
         });
-        return allKpiValues;
+
       } catch (e) {
         console.error("Erro detalhado em updateKPIs:", e);
         document.querySelectorAll('.kpi .val, .kpi .sub span').forEach(el => el.textContent = '—');
         document.querySelectorAll('.kpi .delta').forEach(el => { el.textContent = '—'; el.className = 'delta flat'; });
         throw e;
       }
+      return allKpiValues;
     }
+
     let chartModeGlobal = 'total';
     const segGlobal = $('segGlobal');
     segGlobal.addEventListener('click',(e)=>{
@@ -447,7 +500,84 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
     
-    // ... (funções de gráfico como updateCharts, updateMonth12x12, updateTop6 permanecem as mesmas)
+    function computeByBucket(rows, type, metric, mode){
+      const bucketDays = new Map();
+      const bucketDaily = new Map();
+      for(const r of rows){
+        const bkey = bucketKey(type, r);
+        if(bkey==null) continue;
+        if(!bucketDays.has(bkey)) bucketDays.set(bkey, new Set());
+        bucketDays.get(bkey).add(r.dia);
+        if(!bucketDaily.has(bkey)) bucketDaily.set(bkey, new Map());
+        const dayMap = bucketDaily.get(bkey);
+        const dkey = r.dia;
+        if(!dayMap.has(dkey)) dayMap.set(dkey, {fat:0, des:0, fre:0, ped:0});
+        const dacc = dayMap.get(dkey);
+        dacc.fat += +r.fat||0;
+        dacc.des += +r.des||0;
+        dacc.fre += +r.fre||0;
+        dacc.ped += 1;
+      }
+      function computeRatio(dailyMap, metric){
+        const days = [...dailyMap.values()];
+        const dailyVals = days.map(d => {
+          switch(metric){
+            case 'tkt': return (d.ped > 0) ? (d.fat / d.ped) : 0;
+            case 'desperc': return (d.fat > 0) ? (d.des / d.fat) : 0;
+            case 'fremed': return (d.ped > 0) ? (d.fre / d.ped) : 0;
+            case 'roi': return (d.des > 0) ? ((d.fat - d.des) / d.des) : 0;
+            default: return 0;
+          }
+        }).filter(v => isFinite(v));
+        if(!dailyVals.length) return 0;
+        return dailyVals.reduce((a,b)=>a+b, 0) / dailyVals.length;
+      }
+      function computeNonRatio(dailyMap, metric, numDays){
+        const total = {fat:0, des:0, fre:0, ped:0};
+        for(const d of dailyMap.values()){
+          total.fat += d.fat; total.des += d.des; total.fre += d.fre; total.ped += d.ped;
+        }
+        switch(metric){
+          case 'fat': return mode==='media' ? (total.fat / numDays) : total.fat;
+          case 'ped': return mode==='media' ? (total.ped / numDays) : total.ped;
+          case 'des': return mode==='media' ? (total.des / numDays) : total.des;
+          case 'fre': return mode==='media' ? (total.fre / numDays) : total.fre;
+          case 'fatmed': return total.fat / numDays;
+          case 'canc_ped': return mode==='media' ? (total.ped / numDays) : total.ped;
+          case 'canc_val': return mode==='media' ? (total.fat / numDays) : total.fat;
+        }
+        return 0;
+      }
+      const keys=[...bucketDaily.keys()].sort((a,b)=>{
+        if(type==='dow' || type==='hour') return Number(a)-Number(b);
+        if(type==='month'){ return a.localeCompare(b); }
+        return String(a).localeCompare(String(b),'pt-BR');
+      });
+      return keys.map(k=>{
+        const dailyMap = bucketDaily.get(k);
+        const numDays = bucketDays.get(k)?.size || 1;
+        let value;
+        const isRatio = ['tkt','desperc','fremed','roi'].includes(metric);
+        if(isRatio){
+          value = (mode === 'media') ? computeRatio(dailyMap, metric) : (function(){
+            const total = {fat:0, des:0, fre:0, ped:0};
+            for(const d of dailyMap.values()){
+              total.fat += d.fat; total.des += d.des; total.fre += d.fre; total.ped += d.ped;
+            }
+            switch(metric){
+              case 'tkt': return (total.ped > 0) ? (total.fat / total.ped) : 0;
+              case 'desperc': return (total.fat > 0) ? (total.des / total.fat) : 0;
+              case 'fremed': return (total.ped > 0) ? (total.fre / total.ped) : 0;
+              case 'roi': return (total.des > 0) ? ((total.fat - total.des) / total.des) : 0;
+            }
+            return 0;
+          })();
+        } else {
+          value = computeNonRatio(dailyMap, metric, numDays);
+        }
+        return { key:k, value: value };
+      });
+    }
     async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
       const meta = KPI_META[selectedKPI] || KPI_META.fat;
       const mode = effectiveMode();
@@ -649,7 +779,6 @@ document.addEventListener('DOMContentLoaded', () => {
         ensureDonutTop6([],[], 'Total: R$ 0,00','money');
       }
     }
-
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
     $('fileExcel').addEventListener('change', async (ev)=>{
       const file = ev.target.files?.[0];
@@ -709,33 +838,61 @@ document.addEventListener('DOMContentLoaded', () => {
     // LÓGICA PARA A ABA DE DIAGNÓSTICO
     // ===================================================================================
 
-    // REFEITA para usar a nova estrutura modular
-    async function getUnitKPIs(de, ate, dePrev, atePrev, analiticos) {
-      try {
-        const fetchAndCalcForUnit = async (unitName) => {
+    // NOVA FUNÇÃO para buscar KPIs por unidade
+    async function getUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
+      const kpiMeta = KPI_META[kpi_key] || {};
+      
+      const fetchUnitData = async (unitName) => {
+        try {
           const unitAnaliticos = { ...analiticos, unidade: [unitName] };
-          const [rawDataNow, rawDataPrev] = await Promise.all([
-            fetchKpiData(de, ate, unitAnaliticos),
-            fetchKpiData(dePrev, atePrev, unitAnaliticos)
+          const pNow = buildParams(de, ate, unitAnaliticos);
+          const pPrev = buildParams(dePrev, atePrev, unitAnaliticos);
+          
+          const [
+            {data: finNow, error: errNow}, 
+            {data: finPrev, error: errPrev},
+            {count: pedNow},
+            {count: pedPrev}
+          ] = await Promise.all([
+            supa.rpc(RPC_KPI_FUNC, pNow),
+            supa.rpc(RPC_KPI_FUNC, pPrev),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).match({unidade: unitName}).gte('dia', de).lte('dia', ate),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).match({unidade: unitName}).gte('dia', dePrev).lte('dia', atePrev),
           ]);
-          const lenNow = DateHelpers.daysLen(de, ate);
-          const lenPrev = DateHelpers.daysLen(dePrev, atePrev);
-          return calculateAllKpisFromRaw(rawDataNow, rawDataPrev, lenNow, lenPrev);
-        };
+          
+          if (errNow || errPrev) throw (errNow || errPrev);
 
-        const [rajaKpis, savassiKpis] = await Promise.all([
-          fetchAndCalcForUnit('Uni. Raja'),
-          fetchAndCalcForUnit('Uni. Savassi')
-        ]);
+          const N = { ped: pedNow, fat: +(finNow[0]?.fat || 0), des: +(finNow[0]?.des || 0) };
+          const P = { ped: pedPrev, fat: +(finPrev[0]?.fat || 0), des: +(finPrev[0]?.des || 0) };
 
-        return { raja: rajaKpis, savassi: savassiKpis };
-      } catch (e) {
-        console.error("Erro ao buscar KPIs das unidades:", e);
-        return { raja: {}, savassi: {} };
-      }
+          let current = N[kpi_key] ?? N.fat; // Default to fat if key not direct
+          let previous = P[kpi_key] ?? P.fat;
+          
+          // Lógica para KPIs calculados
+          if (kpi_key === 'tkt') {
+            current = N.ped > 0 ? (N.fat / N.ped) : 0;
+            previous = P.ped > 0 ? (P.fat / P.ped) : 0;
+          } else if (kpi_key === 'desperc') {
+            current = N.fat > 0 ? (N.des / N.fat) : 0;
+            previous = P.fat > 0 ? (P.des / P.fat) : 0;
+          }
+
+          return { current, previous };
+        } catch(e) {
+          console.error(`Erro ao buscar dados para unidade ${unitName}:`, e);
+          return { current: 0, previous: 0 };
+        }
+      };
+
+      const [rajaData, savassiData] = await Promise.all([
+        fetchUnitData('Uni. Raja'),
+        fetchUnitData('Uni. Savassi')
+      ]);
+
+      return { raja: rajaData, savassi: savassiData };
     }
 
-    // REFEITA para o novo layout e estrutura de dados
+    // MODIFICADO para aceitar e processar os dados das unidades
     function updateDiagnosticTab(kpi_key, allKpiValues, unitKpis) {
       const heroCard = document.querySelector('#tab-diagnostico .hero');
       if (!heroCard || !allKpiValues || !allKpiValues[kpi_key]) return;
@@ -750,19 +907,18 @@ document.addEventListener('DOMContentLoaded', () => {
         deltaBadge(heroCard.querySelector('.hero-main-value .delta'), kpiData.current, kpiData.previous);
 
         // Renderiza os MINI KPIs
-        if (unitKpis && unitKpis.raja && unitKpis.savassi) {
-          const renderUnit = (unitId, unitData) => {
-            const card = $(unitId);
-            const data = unitData[kpi_key];
-            if (card && data) {
-              card.querySelector('.unit-kpi-value').textContent = formatValueBy(kpiMeta.fmt, data.current);
-              card.querySelector('.unit-kpi-sub').textContent = 'Anterior: ' + formatValueBy(kpiMeta.fmt, data.previous, true);
-              deltaBadge(card.querySelector('.delta'), data.current, data.previous);
-            }
-          };
-          renderUnit('unit-kpi-raja', unitKpis.raja);
-          renderUnit('unit-kpi-savassi', unitKpis.savassi);
+        if (unitKpis) {
+          const { raja, savassi } = unitKpis;
+          const rajaCard = $('mini-kpi-raja');
+          const savassiCard = $('mini-kpi-savassi');
+
+          rajaCard.querySelector('.mini-kpi-value').textContent = formatValueBy(kpiMeta.fmt, raja.current);
+          deltaBadge(rajaCard.querySelector('.delta'), raja.current, raja.previous);
+
+          savassiCard.querySelector('.mini-kpi-value').textContent = formatValueBy(kpiMeta.fmt, savassi.current);
+          deltaBadge(savassiCard.querySelector('.delta'), savassi.current, savassi.previous);
         }
+        
       } catch (e) {
         console.error('Erro ao atualizar aba de diagnóstico:', e);
       }
@@ -783,10 +939,13 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
         setStatus('Consultando…');
-        
+        let kpiOk=true;
+        const selectedKpiForDiag = $('kpi-select').value;
+
+        // Executa todas as buscas de dados em paralelo
         const [allKpiValues, unitKpiValues] = await Promise.all([
-          updateKPIs(de, ate, dePrev, atePrev, analiticos),
-          getUnitKPIs(de, ate, dePrev, atePrev, analiticos)
+          updateKPIs(de, ate, dePrev, atePrev, analiticos).catch(e => { console.error('Erro em KPIs:', e); kpiOk = false; return {}; }),
+          getUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos)
         ]);
         
         await Promise.all([
@@ -795,10 +954,11 @@ document.addEventListener('DOMContentLoaded', () => {
           updateTop6(de,ate, analiticos)
         ]);
         
-        const selectedKpiForDiag = $('kpi-select').value;
         updateDiagnosticTab(selectedKpiForDiag, allKpiValues, unitKpiValues);
 
-        setStatus('OK','ok');
+        if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
+        else setStatus('OK','ok');
+        
         matchPanelHeights();
       }catch(e){
         console.error('Erro em applyAll:', e);
