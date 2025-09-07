@@ -1,483 +1,426 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-br">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dash de Vendas — Diagnóstico (Autodiscovery)</title>
-  <!-- Favicon embutido (evita 404 do /favicon.ico em muitos navegadores) -->
-  <link rel="icon" type="image/svg+xml" 
-        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b6cff'/%3E%3Cpath d='M14 42c7 0 10-4 14-10s7-10 14-10' stroke='%23fff' stroke-width='6' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='42' cy='22' r='5' fill='%23fff'/%3E%3C/svg%3E">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dash de Vendas — Diagnóstico (REST + OpenAPI)</title>
+  <!-- Favicon inline para evitar 404 -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Crect width='128' height='128' rx='24' fill='%231433E6'/%3E%3Cpath d='M30 88c0-18 14-32 32-32s32 14 32 32' stroke='white' stroke-width='10' fill='none'/%3E%3Ccircle cx='62' cy='44' r='12' fill='white'/%3E%3C/svg%3E">
   <style>
     :root{
-      --bg:#f7f7fb;--card:#ffffff;--muted:#6b7280;--text:#0f172a;--brand:#0b6cff;--ok:#10b981;--warn:#f59e0b;--err:#ef4444;
-      --border:#e5e7eb;
+      --bg:#f7f7fb; --panel:#fff; --muted:#6b7280; --fg:#111827; --primary:#2563eb;
+      --ok:#059669; --warn:#d97706; --err:#dc2626; --border:#e5e7eb;
     }
     *{box-sizing:border-box}
-    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text)}
-    .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
-    h1{font-size:28px;margin:0 0 8px}
-    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
-    .pill{padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--card)}
-    .btn{background:var(--brand);color:#fff;border:none;border-radius:10px;padding:8px 12px;cursor:pointer;font-weight:600}
-    .btn.ghost{background:#eaf2ff;color:var(--brand)}
-    .btn:disabled{opacity:.6;cursor:not-allowed}
-    .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px}
-    .title{font-weight:700;margin-bottom:6px}
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue','Noto Sans',Arial,'Apple Color Emoji','Segoe UI Emoji';background:var(--bg);color:var(--fg)}
+    header{padding:16px 20px;border-bottom:1px solid var(--border);background:#fafafe;position:sticky;top:0;z-index:10}
+    h1{margin:0;font-size:24px;}
+    .container{max-width:1100px;margin:16px auto;padding:0 16px}
+    .row{display:flex;gap:12px;flex-wrap:wrap}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px}
+    .card h3{margin:0 0 8px 0;font-size:14px;color:#111}
     .muted{color:var(--muted)}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-    .mono{font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
-    input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:#fff;width:100%}
-    details{margin-top:8px}
-    summary{cursor:pointer}
-    .badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 8px;border-radius:999px;background:#eef2ff;color:#274acc}
-    .tag{display:inline-block;background:#f3f4f6;color:#111827;border-radius:8px;padding:2px 6px;font-size:12px;margin-right:6px}
-    .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
-    .divider{height:1px;background:var(--border);margin:12px 0}
+    .btn{appearance:none;border:1px solid var(--border);background:#fff;border-radius:8px;padding:8px 12px;cursor:pointer}
+    .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+    .btn.ghost{background:transparent}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+    input,select{border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:#fff;min-width:140px}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    @media (max-width:860px){.grid{grid-template-columns:1fr}}
+    code,kbd,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace}
+    pre{background:#0b1220;color:#e5e7eb;border-radius:10px;padding:10px;overflow:auto}
+    .pill{display:inline-flex;gap:6px;align-items:center;background:#eef2ff;border:1px solid #dbe3ff;color:#1d4ed8;border-radius:999px;padding:3px 8px;font-size:12px}
+    .stat{font-size:28px;font-weight:700}
+    .status.ok{color:var(--ok)} .status.warn{color:var(--warn)} .status.err{color:var(--err)}
     .small{font-size:12px}
-    .kpi{font-size:36px;font-weight:800}
-    pre{white-space:pre-wrap;background:#0b1220;color:#c9d1d9;padding:10px;border-radius:12px;overflow:auto}
-    .right{margin-left:auto}
+    .input-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .label{font-size:12px;color:var(--muted)}
+    .section-title{display:flex;align-items:center;gap:8px;font-weight:600;color:#111}
+    .log{white-space:pre-wrap;font-size:12px;color:#d1d5db}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Dash de Vendas <span class="badge">Diagnóstico (REST + OpenAPI)</span></h1>
+  <header>
+    <div class="container row" style="align-items:center;justify-content:space-between">
+      <h1>Dash de Vendas <span class="pill">Diagnóstico (REST + OpenAPI)</span></h1>
+      <div class="input-row">
+        <button id="btnRefresh" class="btn">Atualizar</button>
+        <button id="btnTest" class="btn">Rodar teste</button>
+      </div>
+    </div>
+  </header>
 
+  <div class="container">
     <!-- Filtros topo -->
-    <div class="row" style="margin-top:10px">
-      <div class="pill"><label class="small muted">Início<br><input type="date" id="dtIni"></label></div>
-      <div class="pill"><label class="small muted">Fim<br><input type="date" id="dtFim"></label></div>
-      <div class="pill"><label class="small muted">Cancelado<br>
-        <select id="fCancel">
-          <option value="todos">Todos</option>
-          <option value="somente_validos">Apenas válidos</option>
-          <option value="somente_cancelados">Apenas cancelados</option>
-        </select></label>
-      </div>
-      <div class="pill"><label class="small muted">KPI<br>
-        <select id="kpi">
-          <option value="fat">Faturamento</option>
-          <option value="ped">Pedidos</option>
-          <option value="ticket">Ticket Médio</option>
-        </select></label>
-      </div>
-      <button class="btn" id="btnRun">Atualizar</button>
-      <button class="btn ghost right" id="btnTest">Rodar teste</button>
-    </div>
-
-    <!-- KPI -->
-    <div class="card" style="margin-top:14px">
-      <div class="title">Faturamento</div>
-      <div class="kpi" id="kpiValue">—</div>
-      <div class="muted small" id="kpiHint">Destaques: —</div>
-    </div>
-
-    <div class="grid" style="margin-top:14px">
-      <div class="card">
-        <div class="title">Insights</div>
-        <div class="muted" id="insights">Sem dados no período.</div>
-      </div>
-      <div class="card">
-        <div class="title">Projeções</div>
-        <div class="row">
-          <div>Receita projetada (30d): <b id="pReceita">R$ 0,00</b></div>
-          <div>Pedidos: <b id="pPed">0</b></div>
-          <div>Ticket: <b id="pTicket">R$ 0,00</b></div>
+    <div class="row">
+      <div class="card" style="flex:1">
+        <div class="grid">
+          <div>
+            <div class="label">Início</div>
+            <input id="dtIni" type="date">
+          </div>
+          <div>
+            <div class="label">Fim</div>
+            <input id="dtFim" type="date">
+          </div>
+          <div>
+            <div class="label">Cancelado</div>
+            <select id="selCancel">
+              <option value="todos">Todos</option>
+              <option value="somente_nao">Somente não cancelados</option>
+              <option value="somente_sim">Somente cancelados</option>
+            </select>
+          </div>
+          <div>
+            <div class="label">KPI</div>
+            <select id="selKpi">
+              <option value="fat">Faturamento</option>
+              <option value="ped">Pedidos</option>
+              <option value="ticket">Ticket Médio</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Diagnóstico e Config -->
-    <div class="card" style="margin-top:14px">
-      <div class="title">Teste de Paginação (Diagnóstico) — <span class="muted">Total via Content-Range:</span> <b id="totalHead">0</b></div>
-      <details open>
-        <summary>⚙️ Config (ajuste se auto-detecção falhar)</summary>
-        <div class="grid" style="margin-top:8px">
-          <label>Project URL
-            <input id="projUrl" placeholder="https://xxxxx.supabase.co">
-          </label>
-          <label>Anon Key
-            <input id="anonKey" class="mono" placeholder="ey...">
-          </label>
-          <label>Tabela de vendas
-            <input id="tb" list="tbList" placeholder="ex.: vendas / vw_vendas / sales">
-            <datalist id="tbList"></datalist>
-          </label>
-          <label>Coluna de data
-            <input id="colDt" list="dtList" placeholder="ex.: data / created_at / dh / dt / hora">
-            <datalist id="dtList"></datalist>
-          </label>
-          <label>Coluna de valor (opcional)
-            <input id="colVal" list="valList" placeholder="ex.: valor_total / total / valor / receita">
-            <datalist id="valList"></datalist>
-          </label>
-          <label>Coluna de cancelado (opcional)
-            <input id="colCanc" list="cancList" placeholder="ex.: cancelado / status">
-            <datalist id="cancList"></datalist>
-          </label>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <button class="btn" id="btnSave">Salvar</button>
-          <button class="btn ghost" id="btnDiscover">Descobrir tabelas e colunas (OpenAPI)</button>
-          <span class="muted small" id="cfgMsg"></span>
-        </div>
-        <div class="divider"></div>
-        <div class="small muted">Última URL chamada:</div>
-        <pre id="lastUrl" class="mono small">(vazio)</pre>
-        <div id="debug" class="small"></div>
-      </details>
+    <!-- KPI principal -->
+    <div class="row">
+      <div class="card" style="flex:1">
+        <h3>Faturamento</h3>
+        <div class="stat" id="statMain">—</div>
+        <div class="small muted" id="highlights">Destaques: —</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card" style="flex:1">
+        <h3>Insights</h3>
+        <div class="small muted" id="insights">Erro. Informe tabela e coluna de data.</div>
+      </div>
+      <div class="card" style="flex:1">
+        <h3>Projeções</h3>
+        <div class="small">Receita projetada (30d): <b id="proj_rec">R$ 0,00</b> &nbsp; Pedidos: <b id="proj_ped">0</b> &nbsp; Ticket: <b id="proj_tick">R$ 0,00</b></div>
+      </div>
+    </div>
+
+    <!-- Diagnóstico / Config -->
+    <div class="row">
+      <div class="card" style="flex:1">
+        <h3 class="section-title">Teste de Paginação (Diagnóstico) — <span class="muted">Total via Content-Range:</span> <b id="totalHead">0</b></h3>
+        <details open>
+          <summary class="small">⚙️ Config (ajuste se auto-detecção falhar)</summary>
+          <div class="grid" style="margin-top:8px">
+            <div>
+              <div class="label">Project URL</div>
+              <input id="inProject" placeholder="https://{ref}.supabase.co">
+            </div>
+            <div>
+              <div class="label">Anon Key</div>
+              <input id="inAnon" placeholder="eyJhbGciOiJIUzI1NiIs...">
+            </div>
+            <div>
+              <div class="label">Tabela de vendas</div>
+              <input id="inTable" placeholder="ex.: vendas / sales / vw_vendas">
+            </div>
+            <div>
+              <div class="label">Coluna de data</div>
+              <input id="inDateCol" placeholder="ex.: data / created_at / dh / dt / hora">
+            </div>
+            <div>
+              <div class="label">Coluna de valor (opcional)</div>
+              <input id="inValCol" placeholder="ex.: valor_total / total / valor / receita">
+            </div>
+            <div>
+              <div class="label">Coluna de cancelado (opcional)</div>
+              <input id="inCancelCol" placeholder="ex.: cancelado / status">
+            </div>
+          </div>
+          <div class="input-row" style="margin-top:8px">
+            <button id="btnSave" class="btn">Salvar</button>
+            <button id="btnDiscover" class="btn">Descobrir tabelas e colunas (OpenAPI)</button>
+            <span id="discoverStatus" class="small muted">—</span>
+          </div>
+        </details>
+
+        <div class="small muted" style="margin-top:8px">Última URL chamada:</div>
+        <pre id="lastUrl" class="log">—</pre>
+        <pre id="log" class="log"></pre>
+      </div>
     </div>
   </div>
 
-<script>
-(function(){
-  "use strict";
+  <script>
+    // ===== Util =====
+    const $ = sel => document.querySelector(sel);
+    const fmtBRL = v => (new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'})).format(Number(v||0));
+    const sleep = (ms) => new Promise(r=>setTimeout(r,ms));
 
-  // ---------- Helpers
-  const qs = (s, el=document)=>el.querySelector(s);
-  const qsa = (s, el=document)=>[...el.querySelectorAll(s)];
-  const fmtBRL = (n)=> (isFinite(n)? n : 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
-  const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
-
-  // ---------- DOM refs
-  const elIni = qs('#dtIni'), elFim = qs('#dtFim'), elKPI = qs('#kpi'), elCancel = qs('#fCancel');
-  const elProj = qs('#projUrl'), elKey = qs('#anonKey'), elTb = qs('#tb'), elDt = qs('#colDt'), elVal = qs('#colVal'), elCanc = qs('#colCanc');
-  const elTbList = qs('#tbList'), elDtList = qs('#dtList'), elValList = qs('#valList'), elCancList = qs('#cancList');
-  const elTotalHead = qs('#totalHead'), elLastUrl = qs('#lastUrl'), elCfgMsg = qs('#cfgMsg'), elDebug = qs('#debug');
-  const elKpiValue = qs('#kpiValue'), elKpiHint = qs('#kpiHint'), elPRec = qs('#pReceita'), elPPed = qs('#pPed'), elPTick = qs('#pTicket'), elInsights = qs('#insights');
-
-  // ---------- State & defaults
-  const SKEY = 'dx_cfg_v1';
-  const guessCfg = {
-    projUrl: 'https://msmyfxgrnuusnvoqyeuo.supabase.co',
-    anonKey: '',
-    schema: 'public',
-    table: '',
-    colDate: '',
-    colVal: '',
-    colCancel: ''
-  };
-
-  function loadCfg(){
-    try{
-      const saved = JSON.parse(localStorage.getItem(SKEY)||'{}');
-      return Object.assign({}, guessCfg, saved);
-    }catch(e){return {...guessCfg};}
-  }
-  function saveCfg(cfg){
-    localStorage.setItem(SKEY, JSON.stringify(cfg));
-  }
-  function applyCfgToInputs(cfg){
-    elProj.value = cfg.projUrl||'';
-    elKey.value  = cfg.anonKey||'';
-    elTb.value   = cfg.table||'';
-    elDt.value   = cfg.colDate||'';
-    elVal.value  = cfg.colVal||'';
-    elCanc.value = cfg.colCancel||'';
-  }
-
-  // Dates init (hoje - 31d .. hoje)
-  const today = new Date();
-  const ini = new Date(today); ini.setDate(today.getDate()-31);
-  elIni.value = ini.toISOString().slice(0,10);
-  elFim.value = today.toISOString().slice(0,10);
-
-  // Load cfg
-  const CFG = loadCfg();
-  applyCfgToInputs(CFG);
-
-  // ---------- HTTP (REST/OpenAPI)
-  function headers(cfg, extra={}){
-    const h = {
-      'apikey': cfg.anonKey||'',
-      'Authorization': cfg.anonKey ? ('Bearer '+cfg.anonKey) : '',
-      'Content-Type': 'application/json',
-      'Accept-Profile': cfg.schema||'public',
-      'Content-Profile': cfg.schema||'public',
-      ...extra
-    };
-    return h;
-  }
-  function urlJoin(...parts){
-    return parts.map(p=> String(p).replace(/\/+$/,'').replace(/^\/+/,'')).join('/');
-  }
-  function setLastUrl(u){ elLastUrl.textContent = u; }
-
-  async function fetchOpenAPI(cfg){
-    const u = urlJoin(cfg.projUrl, 'rest', 'v1', '');
-    setLastUrl(u+' (OpenAPI)');
-    const res = await fetch(u, { method:'GET', headers: headers(cfg, {'Accept': 'application/openapi+json'}) });
-    if(!res.ok) throw new Error('OpenAPI error: HTTP '+res.status);
-    return res.json();
-  }
-
-  function pickBestTable(tables){
-    // prefer vendas > vw_vendas > sales > pedidos
-    const pref = ['vendas','vw_vendas','sales','pedidos'];
-    const lower = tables.map(t=>t.toLowerCase());
-    for(const p of pref){
-      const i = lower.findIndex(t=> t===p || t.includes(p));
-      if(i>=0) return tables[i];
-    }
-    return tables[0] || '';
-  }
-
-  function columnsFromSchema(openapi, table, schema='public'){
-    // PostgREST OpenAPI usually exposes components.schemas like "public_vendas" or "vendas"
-    const comp = openapi.components && openapi.components.schemas ? openapi.components.schemas : {};
-    const keys = Object.keys(comp);
-    const candidates = keys.filter(k=>{
-      const lk = k.toLowerCase();
-      const t = table.toLowerCase();
-      return lk===t || lk.endsWith('_'+t) || lk.includes('.'+t);
-    });
-    const chosen = candidates[0] || keys.find(k=>k.toLowerCase().includes(table.toLowerCase())) || null;
-    if(!chosen) return null;
-    const props = (comp[chosen] && comp[chosen].properties) ? comp[chosen].properties : {};
-    return Object.keys(props);
-  }
-
-  function guessDateColumn(cols){
-    const pref = ['data','dt','dh','created_at','hora','date','timestamp','dthr','dth'];
-    const l = cols.map(c=>c.toLowerCase());
-    for(const p of pref){
-      const i = l.findIndex(c=> c===p || c.endsWith('.'+p) || c.includes(p));
-      if(i>=0) return cols[i];
-    }
-    return cols[0]||'';
-  }
-  function guessValueColumn(cols){
-    const pref = ['valor_total','total','valor','faturamento','receita','vr_total'];
-    const l = cols.map(c=>c.toLowerCase());
-    for(const p of pref){
-      const i = l.findIndex(c=> c===p || c.includes(p));
-      if(i>=0) return cols[i];
-    }
-    return '';
-  }
-  function guessCancelColumn(cols){
-    const pref = ['cancelado','status','fl_cancelado','is_cancelled','canc'];
-    const l = cols.map(c=>c.toLowerCase());
-    for(const p of pref){
-      const i = l.findIndex(c=> c===p || c.includes(p));
-      if(i>=0) return cols[i];
-    }
-    return '';
-  }
-
-  function buildRangeQuery(cfg){
-    // Return filter string like "data=gte.2025-08-01&data=lt.2025-09-01"
-    const dtCol = cfg.colDate;
-    if(!dtCol) return '';
-    const di = elIni.value; // YYYY-MM-DD
-    const df = elFim.value;
-    // If column name suggests timestamp, add T00:00:00
-    const ts = /hora|dh|created_at|timestamp|dthr|dth/i.test(dtCol);
-    const ini = ts ? (di+'T00:00:00') : di;
-    const fim = ts ? (df+'T00:00:00') : df;
-    return encodeURIComponent(dtCol)+'=gte.'+ini+'&'+encodeURIComponent(dtCol)+'=lt.'+fim;
-  }
-
-  async function headCount(cfg){
-    // Use HEAD with Prefer: count=exact and Range: 0-0 to get total
-    if(!cfg.table || !cfg.colDate) throw new Error('Config incompleta: tabela/coluna data');
-    const q = buildRangeQuery(cfg);
-    const u = urlJoin(cfg.projUrl,'rest','v1',cfg.table)+'?select=id'+(q?('&'+q):'');
-    setLastUrl(u+' [HEAD]');
-    const res = await fetch(u, {
-      method:'HEAD',
-      headers: headers(cfg, {'Prefer':'count=exact'})
-    });
-    if(!res.ok) throw new Error('HEAD error HTTP '+res.status);
-    const cr = res.headers.get('Content-Range') || '*/0';
-    const total = parseInt(cr.split('/').pop()||'0',10) || 0;
-    return total;
-  }
-
-  async function fetchPage(cfg, from, to){
-    const q = buildRangeQuery(cfg);
-    const u = urlJoin(cfg.projUrl,'rest','v1',cfg.table)+'?select=*'+(q?('&'+q):'');
-    setLastUrl(u+' [GET '+from+'-'+to+']');
-    const res = await fetch(u, {
-      method:'GET',
-      headers: headers(cfg, {'Range': `${from}-${to}`, 'Prefer':'count=exact'})
-    });
-    if(!res.ok) throw new Error('GET error HTTP '+res.status);
-    return res.json();
-  }
-
-  async function fetchPagedAll(cfg, perPage=1000){
-    const total = await headCount(cfg);
-    elTotalHead.textContent = total.toLocaleString('pt-BR');
-    const rows = [];
-    for(let start=0; start<total; start+=perPage){
-      const end = Math.min(start+perPage-1, total-1);
-      const page = await fetchPage(cfg, start, end);
-      rows.push(...page);
-      // pequena pausa para não saturar (opcional)
-      await sleep(5);
-    }
-    return rows;
-  }
-
-  function safeNumber(v){
-    const n = Number(v);
-    return isFinite(n) ? n : 0;
-  }
-
-  function aggregate(rows, cfg){
-    const ped = rows.length;
-    let fat = 0;
-    if(cfg.colVal){
-      for(const r of rows) fat += safeNumber(r[cfg.colVal]);
-    }
-    const ticket = ped>0 ? fat/ped : 0;
-    return {ped, fat, ticket};
-  }
-
-  function showKPIs(agg){
-    if(elKPI.value==='ped'){
-      elKpiValue.textContent = (agg.ped||0).toLocaleString('pt-BR');
-      elKpiHint.textContent = 'Pedidos no período';
-    }else if(elKPI.value==='ticket'){
-      elKpiValue.textContent = fmtBRL(agg.ticket||0);
-      elKpiHint.textContent = 'Ticket médio no período';
-    }else{
-      elKpiValue.textContent = fmtBRL(agg.fat||0);
-      elKpiHint.textContent = 'Faturamento no período';
-    }
-    elPRec.textContent = fmtBRL((agg.fat||0)); // placeholder simples
-    elPPed.textContent = (agg.ped||0).toLocaleString('pt-BR');
-    elPTick.textContent = fmtBRL(agg.ticket||0);
-  }
-
-  function logDebug(msg){
-    const p = document.createElement('div');
-    p.className = 'small mono';
-    p.textContent = msg;
-    elDebug.prepend(p);
-  }
-
-  // ---------- Discover via OpenAPI
-  async function discover(){
-    elCfgMsg.textContent = 'Descobrindo tabelas/colunas via OpenAPI…';
-    try{
+    function readConfig(){
       const cfg = {
-        projUrl: elProj.value.trim(),
-        anonKey: elKey.value.trim(),
-        schema: 'public'
+        url: $('#inProject').value?.trim(),
+        key: $('#inAnon').value?.trim(),
+        table: $('#inTable').value?.trim(),
+        dateCol: $('#inDateCol').value?.trim(),
+        valCol: $('#inValCol').value?.trim() || null,
+        cancelCol: $('#inCancelCol').value?.trim() || null,
       };
-      const openapi = await fetchOpenAPI(cfg);
-      // tables from paths
-      const paths = openapi.paths ? Object.keys(openapi.paths) : [];
-      const tables = paths
-        .map(p=> p.replace(/^\//,'').split('/')[0])
-        .filter(p=> p && !p.startsWith('rpc'))
-        .filter((v,i,a)=> a.indexOf(v)===i);
-      elTbList.innerHTML = tables.map(t=>`<option value="${t}"></option>`).join('');
-      const table = elTb.value || pickBestTable(tables);
-      elTb.value = table;
-
-      // columns
-      const cols = columnsFromSchema(openapi, table) || [];
-      elDtList.innerHTML = cols.map(c=>`<option value="${c}"></option>`).join('');
-      elValList.innerHTML = elDtList.innerHTML;
-      elCancList.innerHTML = elDtList.innerHTML;
-      elDt.value = elDt.value || guessDateColumn(cols);
-      if(!elVal.value) elVal.value = guessValueColumn(cols);
-      if(!elCanc.value) elCanc.value = guessCancelColumn(cols);
-
-      elCfgMsg.textContent = 'OpenAPI OK. Tabela/colunas sugeridas.';
-      logDebug('[DISCOVER] tables='+tables.length+' cols='+cols.length);
-    }catch(e){
-      elCfgMsg.textContent = 'Falha na descoberta: '+e.message;
-      logDebug('[DISCOVER][ERR] '+e.message);
+      localStorage.setItem('dxcfg', JSON.stringify(cfg));
+      return cfg;
     }
-  }
+    function loadConfig(){
+      const def = JSON.parse(localStorage.getItem('dxcfg')||'{}');
+      if(def.url) $('#inProject').value = def.url;
+      if(def.key) $('#inAnon').value = def.key;
+      if(def.table) $('#inTable').value = def.table;
+      if(def.dateCol) $('#inDateCol').value = def.dateCol;
+      if(def.valCol) $('#inValCol').value = def.valCol;
+      if(def.cancelCol) $('#inCancelCol').value = def.cancelCol;
+    }
+    function baseHeaders(cfg){
+      return {
+        'apikey': cfg.key || '',
+        'Authorization': `Bearer ${cfg.key||''}`,
+        'Content-Type':'application/json',
+        'Accept':'application/json',
+        'Prefer':'count=exact'
+      };
+    }
+    function setLog(msg){ $('#log').textContent = msg; }
+    function appendLog(msg){ $('#log').textContent += msg + "\\n"; }
+    function setLastUrl(u){ $('#lastUrl').textContent = u; }
 
-  // ---------- Run
-  async function run(){
-    elDebug.innerHTML='';
-    const cfg = {
-      projUrl: elProj.value.trim(),
-      anonKey: elKey.value.trim(),
-      schema: 'public',
-      table: elTb.value.trim(),
-      colDate: elDt.value.trim(),
-      colVal: elVal.value.trim(),
-      colCancel: elCanc.value.trim()
-    };
-    if(!cfg.projUrl || !cfg.anonKey){
-      elKpiValue.textContent = '—'; elInsights.textContent = 'Erro. Preencha Project URL e Anon Key.';
-      return;
-    }
-    if(!cfg.table || !cfg.colDate){
-      elKpiValue.textContent = '—'; elInsights.textContent = 'Erro. Informe tabela e coluna de data.';
-      return;
-    }
-    try{
-      logDebug('[RUN] HEAD total…');
-      const total = await headCount(cfg);
-      elTotalHead.textContent = total.toLocaleString('pt-BR');
-      logDebug('[RUN] total='+total);
-      const rows = await fetchPagedAll(cfg, 1000);
-      logDebug('[RUN] rows carregadas='+rows.length);
-      const agg = aggregate(rows, cfg);
-      showKPIs(agg);
-      elInsights.textContent = 'OK • Linhas: '+rows.length.toLocaleString('pt-BR');
-    }catch(e){
-      elKpiValue.textContent = '—';
-      elInsights.textContent = 'Erro. Veja “Config” abaixo.';
-      logDebug('[RUN][ERR] '+e.message);
-    }
-  }
+    // ===== OpenAPI Discovery =====
+    async function discoverOpenAPI(cfg){
+      const url = (cfg.url||'').replace(/\\/$/,'') + '/rest/v1/';
+      setLastUrl(url + ' (OpenAPI)');
+      try{
+        const r = await fetch(url, { headers: baseHeaders(cfg) });
+        if(!r.ok){
+          $('#discoverStatus').textContent = `OpenAPI erro ${r.status}`;
+          appendLog(\`[DISCOVER][ERR] status=\${r.status} \`);
+          return {tables:[],suggestions:{}};
+        }
+        const spec = await r.json(); // OpenAPI JSON
+        // Tables as keys in "paths" where path starts with /{table}
+        const paths = Object.keys(spec.paths || {});
+        // Filter only GET on /{table}
+        const tables = Array.from(new Set(paths.map(p=>p.split('/')[1]).filter(Boolean)));
+        $('#discoverStatus').textContent = \`OpenAPI OK. Tabelas encontradas: \${tables.length}\`;
+        appendLog(\`[DISCOVER] tables=\${tables.length}\\n\`);
 
-  // ---------- Test (só HEAD + sample colunas)
-  async function test(){
-    elDebug.innerHTML='';
-    try{
-      // Primeiro, tentar descobrir automaticamente se faltarem tabela/colunas
-      if(!elTb.value || !elDt.value){
-        await discover();
+        // Try to sample first 1 row of each table to infer columns
+        let suggestions = {};
+        for(const t of tables.slice(0, 20)){ // cap 20 to be gentle
+          const sampleUrl = (cfg.url||'').replace(/\\/$/,'') + \`/rest/v1/\${t}?select=*&limit=1\`;
+          setLastUrl(sampleUrl);
+          try{
+            const rs = await fetch(sampleUrl, { headers: baseHeaders(cfg) });
+            if(rs.ok){
+              const arr = await rs.json();
+              if(Array.isArray(arr) && arr[0]){
+                const cols = Object.keys(arr[0]);
+                suggestions[t] = cols;
+                appendLog(\`[DISCOVER] \${t} cols=\${cols.length}\\n\`);
+              }else{
+                appendLog(\`[DISCOVER] \${t} sem amostra\\n\`);
+              }
+            }else{
+              appendLog(\`[DISCOVER][WARN] table=\${t} status=\${rs.status}\\n\`);
+            }
+          }catch(e){
+            appendLog(\`[DISCOVER][EXC] table=\${t} \${e}\\n\`);
+          }
+          await sleep(30);
+        }
+        return {tables, suggestions};
+      }catch(err){
+        $('#discoverStatus').textContent = 'OpenAPI falhou';
+        appendLog('[DISCOVER][EXC] ' + err);
+        return {tables:[], suggestions:{}};
       }
-      const cfg = {
-        projUrl: elProj.value.trim(),
-        anonKey: elKey.value.trim(),
-        schema: 'public',
-        table: elTb.value.trim(),
-        colDate: elDt.value.trim()
-      };
-      const total = await headCount(cfg);
-      elTotalHead.textContent = total.toLocaleString('pt-BR');
-      logDebug('[TEST] HEAD total='+total);
-
-      // Pega 1 página pequena para inspecionar colunas reais
-      const sample = await fetchPage({...cfg}, 0, Math.min(9, total-1));
-      logDebug('[TEST] sample cols='+(sample[0]? Object.keys(sample[0]).join(', ') : '(vazio)'));
-    }catch(e){
-      logDebug('[TEST][ERR] '+e.message);
     }
-  }
 
-  // ---------- Bindings
-  qs('#btnRun').onclick = run;
-  qs('#btnTest').onclick = test;
-  qs('#btnDiscover').onclick = discover;
-  qs('#btnSave').onclick = ()=>{
-    const cfg = {
-      projUrl: elProj.value.trim(),
-      anonKey: elKey.value.trim(),
-      schema: 'public',
-      table: elTb.value.trim(),
-      colDate: elDt.value.trim(),
-      colVal: elVal.value.trim(),
-      colCancel: elCanc.value.trim()
+    function guessCols(cols){
+      const lc = cols.map(c=>c.toLowerCase());
+      const dateCandidates = ['data','dt','dh','created_at','hora','date','timestamp','ts','day'];
+      const valCandidates  = ['valor_total','total','valor','venda','receita','faturamento','amount','sum','gross'];
+      const cancelCandidates = ['cancelado','status','canceled','is_canceled','cancel','st','situacao'];
+
+      const pick = (cands)=>{
+        for(const c of cands){
+          const idx = lc.indexOf(c);
+          if(idx>=0) return cols[idx];
+        }
+        return null;
+      };
+      return {
+        dateCol: pick(dateCandidates),
+        valCol: pick(valCandidates),
+        cancelCol: pick(cancelCandidates)
+      };
+    }
+
+    // ===== Paginação com Range =====
+    async function getTotalByHead(cfg, table, dateCol, ini, fim, cancelCol, cancelMode){
+      const base = (cfg.url||'').replace(/\\/$/,'') + \`/rest/v1/\${table}?select=id\`;
+      const where = [];
+      if(ini && fim){
+        // Use gte / lt para datas (compativel com date e timestamp)
+        where.push(\`\${encodeURIComponent(dateCol)}=gte.\${encodeURIComponent(ini)}\`);
+        where.push(\`\${encodeURIComponent(dateCol)}=lt.\${encodeURIComponent(fim)}\`);
+      }
+      const qs = where.length? ('&' + where.join('&')):'';
+      const url = base + qs;
+      setLastUrl(url);
+      const r = await fetch(url, { method:'HEAD', headers: baseHeaders(cfg) });
+      const cr = r.headers.get('Content-Range') || '*/0';
+      const total = Number((cr.split('/')[1]||'0'));
+      return {ok:r.ok, status:r.status, total, contentRange:cr};
+    }
+
+    async function fetchPaged(cfg, table, dateCol, ini, fim){
+      // devolve até 1e6 linhas em páginas de 1000 usando Range
+      const pageSize = 1000;
+      // 1) HEAD para total
+      const {ok, status, total, contentRange} = await getTotalByHead(cfg, table, dateCol, ini, fim);
+      $('#totalHead').textContent = String(total);
+      appendLog(\`[HEAD] status=\${status} content-range=\${contentRange}\\n\`);
+      if(!ok) throw new Error('HEAD falhou: ' + status);
+      if(total === 0) return [];
+
+      // 2) Paginado GET
+      const rows = [];
+      const base = (cfg.url||'').replace(/\\/$/,'') + \`/rest/v1/\${table}?select=*\`;
+      const where = [];
+      if(ini && fim){
+        where.push(\`\${encodeURIComponent(dateCol)}=gte.\${encodeURIComponent(ini)}\`);
+        where.push(\`\${encodeURIComponent(dateCol)}=lt.\${encodeURIComponent(fim)}\`);
+      }
+      const qs = where.length? ('&' + where.join('&')):'';
+
+      let start = 0;
+      while(start < total){
+        const end = Math.min(start + pageSize - 1, total - 1);
+        const url = base + qs;
+        setLastUrl(url + \` [Range: \${start}-\${end}]\`);
+        const headers = {...baseHeaders(cfg), 'Range': \`\${start}-\${end}\`};
+        const r = await fetch(url, { headers });
+        if(!r.ok){
+          appendLog(\`[PAGE][ERR] status=\${r.status}\\n\`);
+          throw new Error('GET falhou: ' + r.status);
+        }
+        const chunk = await r.json();
+        rows.push(...(Array.isArray(chunk)?chunk:[]));
+        appendLog(\`[PAGE] got=\${chunk.length} acc=\${rows.length}/\${total}\\n\`);
+        if(chunk.length === 0) break; // segurança
+        start = end + 1;
+        await sleep(10);
+      }
+      return rows;
+    }
+
+    // ===== KPIs (simples) =====
+    function computeKPIs(rows, cfg){
+      const ped = rows.length;
+      let fat = 0;
+      if(cfg.valCol){
+        for(const r of rows){
+          const v = Number(r?.[cfg.valCol] ?? 0);
+          if(Number.isFinite(v)) fat += v;
+        }
+      }
+      const ticket = ped ? fat / ped : 0;
+      return {ped, fat, ticket};
+    }
+
+    // ===== Run principal =====
+    async function run(loadData=true){
+      setLog('');
+      const cfg = readConfig();
+      // datas (fechas fim exclusivas)
+      const ini = $('#dtIni').value || '';
+      const fim = $('#dtFim').value || '';
+      if(!cfg.url || !cfg.key){
+        appendLog('[TEST][ERR] Informe URL e Anon Key');
+        return;
+      }
+      if(!cfg.table || !cfg.dateCol){
+        $('#insights').textContent = 'Erro. Informe tabela e coluna de data.';
+      }
+      try{
+        if(!cfg.table || !cfg.dateCol){
+          // só testa HEAD vazio para conferir auth / OpenAPI
+          const {status} = await getTotalByHead(cfg, 'qualquer', 'created_at', '1900-01-01', '1900-01-02');
+          appendLog('[TEST] HEAD dummy status='+status);
+          return;
+        }
+        const rows = await fetchPaged(cfg, cfg.table, cfg.dateCol, ini, fim);
+        const {ped, fat, ticket} = computeKPIs(rows, cfg);
+
+        // Exibe
+        $('#statMain').textContent = fmtBRL(cfg.valCol ? fat : 0);
+        $('#proj_rec').textContent = fmtBRL(cfg.valCol ? (fat/Math.max(1, (rows.length||1))) * 30 : 0);
+        $('#proj_ped').textContent = String(ped);
+        $('#proj_tick').textContent = fmtBRL(ticket);
+        $('#insights').textContent = rows.length ? 'OK' : 'Sem dados no período.';
+      }catch(err){
+        appendLog('[RUN][ERR] ' + err.message);
+      }
+    }
+
+    // ===== Eventos =====
+    $('#btnSave').onclick = ()=>{ readConfig(); appendLog('[CFG] salvo'); };
+    $('#btnRefresh').onclick = ()=> run(true);
+    $('#btnTest').onclick = async ()=>{
+      setLog('');
+      const cfg = readConfig();
+      if(!cfg.url || !cfg.key){ appendLog('[TEST][ERR] Informe URL e Anon Key'); return; }
+      // HEAD total (se tabela/coluna informadas), senão testa apenas OpenAPI
+      if(cfg.table && cfg.dateCol){
+        const ini = $('#dtIni').value || '';
+        const fim = $('#dtFim').value || '';
+        try{
+          const {status,total,contentRange} = await getTotalByHead(cfg, cfg.table, cfg.dateCol, ini, fim);
+          appendLog(\`[TEST] HEAD total=\${total} content-range=\${contentRange} status=\${status}\`);
+        }catch(e){
+          appendLog('[TEST][EXC] ' + e.message);
+        }
+      }else{
+        appendLog('[TEST] Config incompleta: tabela/coluna data');
+      }
     };
-    saveCfg(cfg);
-    elCfgMsg.textContent = 'Config salva.';
-    setTimeout(()=> elCfgMsg.textContent='', 2000);
-  };
+    $('#btnDiscover').onclick = async ()=>{
+      setLog('');
+      const cfg = readConfig();
+      if(!cfg.url || !cfg.key){ appendLog('[DISCOVER][ERR] Informe URL e Anon Key'); return; }
+      const d = await discoverOpenAPI(cfg);
+      // Pick suggestion: table with most columns and with date-like column
+      let bestTable = null, bestCols = [];
+      for(const [t, cols] of Object.entries(d.suggestions)){
+        if(cols.length > bestCols.length){ bestTable = t; bestCols = cols; }
+      }
+      if(bestTable){
+        const guesses = guessCols(bestCols);
+        if(!$('#inTable').value) $('#inTable').value = bestTable;
+        if(guesses.dateCol && !$('#inDateCol').value) $('#inDateCol').value = guesses.dateCol;
+        if(guesses.valCol && !$('#inValCol').value) $('#inValCol').value = guesses.valCol;
+        if(guesses.cancelCol && !$('#inCancelCol').value) $('#inCancelCol').value = guesses.cancelCol;
+        readConfig();
+        $('#discoverStatus').textContent = 'Sugestões preenchidas.';
+      }else{
+        $('#discoverStatus').textContent = 'OpenAPI OK, mas sem amostras com colunas.';
+      }
+    };
 
-})();</script>
+    // ===== Init =====
+    (function init(){
+      loadConfig();
+      const today = new Date();
+      const d0 = new Date(today); d0.setDate(d0.getDate()-30);
+      $('#dtIni').value = (new Date(d0.getTime()-d0.getTimezoneOffset()*60000)).toISOString().slice(0,10);
+      $('#dtFim').value = (new Date(today.getTime()-today.getTimezoneOffset()*60000)).toISOString().slice(0,10);
+      appendLog('[DX] Ready');
+    })();
+  </script>
 </body>
 </html>
