@@ -3,12 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Diagnóstico Supabase — REST + OpenAPI (v3)</title>
+<title>Diagnóstico Supabase — REST + OpenAPI (v3.1)</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2300c853'/%3E%3Ctext x='8' y='11' font-size='9' text-anchor='middle' fill='white'%3EDS%3C/text%3E%3C/svg%3E">
-
 <style>
   :root { --bg:#f7f7fb; --panel:#fff; --ink:#1a1a1a; --sub:#6b7280; --accent:#2563eb; --ok:#059669; --err:#dc2626; --chip:#eef2ff; --chipTxt:#1e40af; }
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
   .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
   h1{font-size:22px;margin:0 0 12px} .muted{color:var(--sub)}
   .grid{display:grid;grid-template-columns:1.2fr 1fr;gap:16px}
@@ -24,7 +23,7 @@
   .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
   .chip{padding:6px 10px;border-radius:999px;background:var(--chip);color:var(--chipTxt);cursor:pointer;border:1px solid #c7d2fe}
   .chip:hover{filter:brightness(.98)}
-  .log{background:#0b1220;color:#d1d5db;border-radius:10px;padding:10px;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;height:130px;overflow:auto;white-space:pre-wrap}
+  .log{background:#0b1220;color:#d1d5db;border-radius:10px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;height:130px;overflow:auto;white-space:pre-wrap}
   table{border-collapse:collapse;width:100%} thead th{position:sticky;top:0;background:#f9fafb}
   th,td{border-bottom:1px solid #e5e7eb;padding:10px;text-align:left;font-size:13px}
   .ok{color:var(--ok)} .err{color:var(--err)}
@@ -33,7 +32,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Diagnóstico Supabase — <span class="muted">REST + OpenAPI (v3)</span></h1>
+  <h1>Diagnóstico Supabase — <span class="muted">REST + OpenAPI (v3.1)</span></h1>
   <div class="grid">
     <section class="card">
       <div class="row">
@@ -58,7 +57,7 @@
 
       <div class="row" style="margin-top:14px">
         <div style="flex:1.2">
-          <label>Tabela <span class="help">(use <i>schema.tabela</i> se precisar)</span></label>
+          <label>Tabela <span class="help">(use <i>schema.tabela</i> se precisar; dica: clique num chip abaixo)</span></label>
           <input id="tb" type="text" placeholder="ex.: public.vendas_xlsx">
         </div>
         <div style="flex:1">
@@ -144,7 +143,7 @@
     state.url = qs('projectUrl').value.trim();
     state.key = qs('anonKey').value.trim();
     state.onlyPublic = qs('onlyPublic').checked;
-    state.chosenTable = qs('tb').value.trim();
+    state.chosenTable = sanitizeTable(qs('tb').value.trim());
     state.dtcol = qs('dtcol').value.trim();
     state.valcol = qs('valcol').value.trim();
     state.ini = qs('ini').value;
@@ -162,14 +161,26 @@
   qs('btnSaveCfg').onclick = saveCfg;
   qs('btnClear').onclick = () => { log.textContent=''; appendLog('Pronto.'); }
 
-  function normBase(url){
-    return url.replace(/\/+$/,''); // remove barra final
-  }
+  function normBase(url){ return url.replace(/\/+$/,''); } // remove barra final
   function buildHeaders(extra){
-    return Object.assign({
-      apikey: state.key,
-      Authorization: `Bearer ${state.key}`
-    }, extra||{});
+    return Object.assign({ apikey: state.key, Authorization: `Bearer ${state.key}` }, extra||{});
+  }
+  function sanitizeTable(name){
+    // protege contra "public.public.tabela" e espaços
+    let n = (name || '').trim().replace(/^public\.public\./,'public.').replace(/\s+/g,'');
+    // se usuário clicar chip "vendas_xlsx" copiamos "public.vendas_xlsx"
+    return n;
+  }
+
+  async function apiFetch(url, opts){
+    const res = await fetch(url, opts || {});
+    if(!res.ok){
+      let detail = '';
+      try{ const js = await res.json(); detail = ' ' + JSON.stringify(js); }catch(_){}
+      const e = new Error(`HTTP ${res.status}${detail}`);
+      e.status = res.status; throw e;
+    }
+    return res;
   }
 
   async function loadOpenAPI(){
@@ -179,8 +190,7 @@
     const endpoint = `${base}/rest/v1/`;
     appendLog('Carregando OpenAPI…');
     try{
-      const res = await fetch(endpoint, { headers: buildHeaders({ Accept: 'application/openapi+json' }) });
-      if(!res.ok){ throw new Error(`HTTP ${res.status}`); }
+      const res = await apiFetch(endpoint, { headers: buildHeaders({ Accept: 'application/openapi+json' }) });
       const spec = await res.json();
       const list = extractTablesFromOpenAPI(spec, state.onlyPublic);
       state.tables = list;
@@ -191,70 +201,46 @@
     }
   }
   qs('btnOpenApi').onclick = loadOpenAPI;
-  qs('btnList').onclick = () => {
-    if(state.tables.length===0) appendLog('Nenhuma tabela detectada pelo OpenAPI. Desmarque "Somente schema public?" ou verifique as policies.', 'err');
-    renderChips(true);
-  };
+  qs('btnList').onclick = () => { if(state.tables.length===0) appendLog('Nenhuma tabela detectada. Desmarque "Somente public?" ou verifique policies.', 'err'); renderChips(true); };
 
   function extractTablesFromOpenAPI(spec, onlyPublic){
     const out = new Set();
-    // 1) components.schemas (formato novo)
+    const add = (full) => {
+      if(!full) return;
+      // normaliza "public.table" e evita duplicados
+      const norm = full.replace(/^public\.public\./,'public.').replace(/^\./,'');
+      const sch = norm.includes('.') ? norm.split('.',2)[0] : 'public';
+      const tbl = norm.includes('.') ? norm.split('.',2)[1] : norm;
+      if(!tbl) return;
+      if(!onlyPublic || sch==='public') out.add(`${sch}.${tbl}`);
+    };
+    // components.schemas
     const schemas = spec?.components?.schemas || {};
     for(const key of Object.keys(schemas)){
-      let name = key;
-      if(key.includes('.')){
-        const [sch, tbl] = key.split('.',2);
-        if(!onlyPublic || sch==='public') out.add(`${sch}.${tbl}`);
-      }else if(key.includes('_')){
-        const idx = key.indexOf('_');
-        const sch = key.slice(0, idx);
-        const tbl = key.slice(idx+1);
-        if(tbl && (!onlyPublic || sch==='public')) out.add(`${sch}.${tbl}`);
-      }else{
-        if(!onlyPublic || 'public'==='public') out.add(`public.${key}`);
-      }
+      if(key.includes('.')) add(key);
+      else add('public.'+key);
     }
-    // 2) definitions (formato antigo)
+    // definitions
     const defs = spec?.definitions || {};
     for(const key of Object.keys(defs)){
-      if(key.includes('.')){
-        const [sch, tbl] = key.split('.',2);
-        if(!onlyPublic || sch==='public') out.add(`${sch}.${tbl}`);
-      }else if(key.includes('_')){
-        const idx = key.indexOf('_');
-        const sch = key.slice(0, idx);
-        const tbl = key.slice(idx+1);
-        if(tbl && (!onlyPublic || sch==='public')) out.add(`${sch}.${tbl}`);
-      }else{
-        if(!onlyPublic || 'public'==='public') out.add(`public.${key}`);
-      }
+      if(key.includes('.')) add(key);
+      else add('public.'+key);
     }
-    // 3) paths (fallback)
+    // paths
     const paths = spec?.paths || {};
     for(const p of Object.keys(paths)){
       const m = p.match(/^\/rest\/v1\/([^/?]+)$/);
-      if(m){
-        const raw = decodeURIComponent(m[1]);
-        const full = raw.includes('.') ? raw : `public.${raw}`;
-        const [sch, tbl] = full.split('.',2);
-        if(tbl && (!onlyPublic || sch==='public')) out.add(`${sch}.${tbl}`);
-      }
+      if(m){ add(decodeURIComponent(m[1]).includes('.')?decodeURIComponent(m[1]):'public.'+decodeURIComponent(m[1])); }
     }
     return Array.from(out).sort((a,b)=>a.localeCompare(b));
   }
 
-  function renderChips(showToast){
+  function renderChips(){
     chips.innerHTML = '';
-    if(state.tables.length===0){
-      if(showToast) appendLog('Nenhuma tabela detectada pelo OpenAPI. Desmarque "Somente schema public?" ou verifique as policies.', 'err');
-      return;
-    }
     state.tables.forEach(full => {
       const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'chip';
-      chip.textContent = full.split('.')[1];
-      chip.title = full;
+      chip.type = 'button'; chip.className = 'chip';
+      chip.textContent = full.split('.')[1]; chip.title = full;
       chip.onclick = () => { qs('tb').value = full; saveCfg(); };
       chips.appendChild(chip);
     });
@@ -262,24 +248,18 @@
 
   function buildQueryURL({ table, select='*', limit=null, order=null, filters=[] }){
     let base = `${normBase(state.url)}/rest/v1/${encodeURIComponent(table)}`;
-    const qs = new URLSearchParams();
-    if(select) qs.set('select', select);
-    if(limit!=null) qs.set('limit', String(limit));
-    if(order){
-      qs.set('order', `${order.col}.${order.desc?'desc':'asc'}`);
-    }
-    for(const f of filters){
-      if(f && f.col && f.op){
-        qs.append(f.col, `${f.op}.${f.val}`);
-      }
-    }
-    return `${base}?${qs.toString()}`;
+    const params = new URLSearchParams();
+    if(select) params.set('select', select);
+    if(limit!=null) params.set('limit', String(limit));
+    if(order) params.set('order', `${order.col}.${order.desc?'desc':'asc'}`);
+    for(const f of filters){ if(f && f.col && f.op){ params.append(f.col, `${f.op}.${f.val}`); } }
+    return `${base}?${params.toString()}`;
   }
 
   async function countViaContentRange(){
     saveCfg();
     if(!state.url || !state.key || !qs('tb').value.trim()){ appendLog('[ERRO] Informe URL, Key e tabela.', 'err'); return; }
-    const table = qs('tb').value.trim();
+    const table = sanitizeTable(qs('tb').value.trim());
     const dtcol = qs('dtcol').value.trim();
     const ini = qs('ini').value;
     const fim = qs('fim').value;
@@ -288,52 +268,42 @@
     const filters = [];
     if(dtcol && ini && fim){
       filters.push({ col: dtcol, op: 'gte', val: ini });
-      const fimEx = new Date(fim);
-      fimEx.setDate(fimEx.getDate()+1);
+      const fimEx = new Date(fim); fimEx.setDate(fimEx.getDate()+1);
       const fimStr = fimEx.toISOString().slice(0,10);
       filters.push({ col: dtcol, op: 'lt', val: fimStr });
     }
     const url = buildQueryURL({ table, select: 'id', limit: 1, filters });
     try{
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: buildHeaders({ Range: '0-0', Prefer: 'count=exact' })
-      });
-      if(res.status===206 || res.status===200){
-        const cr = res.headers.get('Content-Range');
-        const total = cr ? cr.split('/')[1] : null;
-        if(total!=null){
-          appendLog(`Count via Content-Range: ${total}`, 'ok');
-          return;
-        }
-      }
-      await countFallback(table, filters);
+      const res = await apiFetch(url, { method:'GET', headers: buildHeaders({ Range: '0-0', Prefer: 'count=exact' }) });
+      const cr = res.headers.get('Content-Range');
+      const total = cr ? cr.split('/')[1] : null;
+      if(total!=null) appendLog(`Count via Content-Range: ${total}`, 'ok'); else await countFallback(table, filters);
     }catch(e){
       appendLog(`[ERRO] Count: ${e.message}`, 'err');
-      await countFallback(table, filters);
+      if(String(e.message).includes('Perhaps you meant the table')) trySuggestionAndRetry(e.message, 'count', filters);
+      else await countFallback(table, filters);
     }
   }
   async function countFallback(table, filters){
     const url = buildQueryURL({ table, select: 'count:count()', limit: 1, filters });
     try{
-      const res = await fetch(url, { headers: buildHeaders() });
-      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res = await apiFetch(url, { headers: buildHeaders() });
       const js = await res.json();
       const total = js?.[0]?.count ?? null;
       if(total!=null) appendLog(`Count via select=count(): ${total}`, 'ok');
       else appendLog('Count fallback sem retorno.', 'err');
     }catch(e){
       appendLog(`[ERRO] Count fallback: ${e.message}`, 'err');
+      if(String(e.message).includes('Perhaps you meant the table')) trySuggestionAndRetry(e.message, 'count', filters);
     }
   }
 
   async function loadSample(){
     saveCfg();
-    const table = qs('tb').value.trim();
+    const table = sanitizeTable(qs('tb').value.trim());
     if(!state.url || !state.key || !table){ appendLog('[ERRO] Informe URL, Key e tabela.', 'err'); return; }
     appendLog('Carregando amostra…');
     const dtcol = qs('dtcol').value.trim();
-    const valcol = qs('valcol').value.trim();
     const ini = qs('ini').value;
     const fim = qs('fim').value;
 
@@ -342,42 +312,47 @@
     if(dtcol){
       order = { col: dtcol, desc: true };
       if(ini && fim){
-        const fimEx = new Date(fim);
-        fimEx.setDate(fimEx.getDate()+1);
+        const fimEx = new Date(fim); fimEx.setDate(fimEx.getDate()+1);
         const fimStr = fimEx.toISOString().slice(0,10);
         filters.push({ col: dtcol, op: 'gte', val: ini });
         filters.push({ col: dtcol, op: 'lt', val: fimStr });
       }
     }
-    const url = buildQueryURL({ table, select: '*', limit: 20, order, filters });
+    const url = buildQueryURL({ table, select:'*', limit:20, order, filters });
     try{
-      const res = await fetch(url, { headers: buildHeaders() });
-      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res = await apiFetch(url, { headers: buildHeaders() });
       const rows = await res.json();
       renderTable(rows);
       document.getElementById('sampleInfo').textContent = `${rows.length} linhas — ${table}`;
       appendLog('Amostra carregada. 20 linhas.', 'ok');
     }catch(e){
       appendLog(`[ERRO] HTTP ao carregar amostra. ${e.message}`, 'err');
+      if(String(e.message).includes('Perhaps you meant the table')) trySuggestionAndRetry(e.message, 'sample', filters);
     }
   }
 
+  function trySuggestionAndRetry(msg, mode, filters){
+    const m = msg.match(/Perhaps you meant the table '([^']+)'/);
+    if(!m) return;
+    const suggested = m[1];
+    const pretty = suggested.replace(/^public\./,'');
+    qs('tb').value = suggested; saveCfg();
+    appendLog(`⚙️ Ajustei a tabela para '${suggested}' (sugestão do PostgREST). Tentando novamente…`, 'ok');
+    if(mode==='sample') loadSample(); else countViaContentRange();
+  }
+
   function renderTable(rows){
-    tbl.thead.innerHTML = ''; tbl.tbody.innerHTML='';
+    tbl.thead.innerHTML=''; tbl.tbody.innerHTML='';
     if(!rows || rows.length===0){ return; }
     const cols = Object.keys(rows[0]);
     const trh = document.createElement('tr');
-    cols.forEach(c => {
-      const th = document.createElement('th'); th.textContent = c; trh.appendChild(th);
-    });
+    cols.forEach(c => { const th=document.createElement('th'); th.textContent=c; trh.appendChild(th); });
     tbl.thead.appendChild(trh);
     for(const r of rows){
       const tr = document.createElement('tr');
       cols.forEach(c => {
-        const td = document.createElement('td');
-        const v = r[c];
-        td.textContent = (v==null)?'':String(v);
-        tr.appendChild(td);
+        const td=document.createElement('td');
+        const v=r[c]; td.textContent=(v==null)?'':String(v); tr.appendChild(td);
       });
       tbl.tbody.appendChild(tr);
     }
