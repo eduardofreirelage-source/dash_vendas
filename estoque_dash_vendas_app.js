@@ -788,12 +788,18 @@ document.addEventListener('DOMContentLoaded', () => {
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
       
       const fetchAndCalculateForUnit = async (unitName) => {
-          // Lógica completa de busca e cálculo, espelhada da função principal `updateKPIs`
-          const unitAnaliticosNow = { ...analiticos, unidade: [unitName] };
-          const unitAnaliticosPrev = { ...analiticos, unidade: [unitName] };
+          // CORREÇÃO: Reseta filtros granulares para pegar o total da unidade
+          const unitAnaliticos = { 
+            ...analiticos, 
+            unidade: [unitName],
+            loja: [],
+            canal: [],
+            turno: [],
+            pagamento: []
+          };
 
-          const pNow = buildParams(de, ate, unitAnaliticosNow);
-          const pPrev = buildParams(dePrev, atePrev, unitAnaliticosPrev);
+          const pNow = buildParams(de, ate, unitAnaliticos);
+          const pPrev = buildParams(dePrev, atePrev, unitAnaliticos);
           
           const [
             finNowResult, finPrevResult,
@@ -833,6 +839,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const len = DateHelpers.daysLen(de, ate);
           const prevLen = DateHelpers.daysLen(dePrev, atePrev);
 
+          // Lógica de cálculo completa, copiada de updateKPIs
           const tktN = (N.ped > 0) ? (N.fat / N.ped) : 0;
           const tktP = (P.ped > 0) ? (P.fat / P.ped) : 0;
           const fatMedN = len > 0 ? (N.fat / len) : 0;
@@ -915,7 +922,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateDiagnosticTab(selectedKpiForDiag, allKpiValues);
         }
         
-        // MODIFICADO PARA CHAMAR A NOVA FUNÇÃO
+        // MODIFICADO PARA CHAMAR A NOVA FUNÇÃO CORRIGIDA
         await getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos);
 
         if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
