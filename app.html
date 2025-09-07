@@ -631,6 +631,25 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <script>
+// =================================================================================
+// SCRIPT ÚNICO E CORRIGIDO
+// =================================================================================
+
+/* ===== Helpers ===== */
+const $  = (id)=> document.getElementById(id);
+const $$ = (sel,root=document)=> Array.from(root.querySelectorAll(sel));
+const setStatus=(msg,cls)=>{const el=$('status'); if(!el) return; el.textContent=msg; el.style.color=(cls==='err'?'var(--down)':cls==='ok'?'var(--ok)':'var(--muted)');};
+const fmt=(n)=> new Intl.NumberFormat('pt-BR',{maximumFractionDigits:3}).format(+n||0);
+const ptToNumber=(v)=>{ if(v==null) return 0; const s=String(v).trim().replace(/\./g,'').replace(',','.'); const n=parseFloat(s); return isNaN(n)?0:n; };
+const todayStr=()=> new Date().toISOString().slice(0,10);
+const weekDayPt=(iso)=> new Date(iso+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long'});
+
+/* ===== Supabase ===== */
+const SUPABASE_URL  = 'https://rqeagimulvgfecvuzubk.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxZWFnaW11bHZnZmVjdnV6dWJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NzkyMzUsImV4cCI6MjA3MjU1NTIzNX0.SeNHyHOlpqjm-QTl7KXq7YF-48fk5iOQCRgpangP4zU';
+const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+
 /* ===== ROTEAMENTO POR ABAS ===== */
 function setupRouting() {
   const mainTabsContainer = document.getElementById('main-tabs');
@@ -671,7 +690,7 @@ function setupRouting() {
   setupSubTabs('cadastro-subtabs', '#tab-cadastros .subpage');
   setupSubTabs('estoque-subtabs', '#tab-estoque .subpage');
 }
-document.addEventListener('DOMContentLoaded', setupRouting);
+
 
 /* ===== Gemini API Integration ===== */
 async function callGemini(prompt, button) {
@@ -717,20 +736,6 @@ async function callGemini(prompt, button) {
     }
 }
 
-
-/* ===== Helpers ===== */
-const $  = (id)=> document.getElementById(id);
-const $$ = (sel,root=document)=> Array.from(root.querySelectorAll(sel));
-const setStatus=(msg,cls)=>{const el=$('status'); if(!el) return; el.textContent=msg; el.style.color=(cls==='err'?'var(--down)':cls==='ok'?'var(--ok)':'var(--muted)');};
-const fmt=(n)=> new Intl.NumberFormat('pt-BR',{maximumFractionDigits:3}).format(+n||0);
-const ptToNumber=(v)=>{ if(v==null) return 0; const s=String(v).trim().replace(/\./g,'').replace(',','.'); const n=parseFloat(s); return isNaN(n)?0:n; };
-const todayStr=()=> new Date().toISOString().slice(0,10);
-const weekDayPt=(iso)=> new Date(iso+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long'});
-
-/* ===== Supabase ===== */
-const SUPABASE_URL  = 'https://rqeagimulvgfecvuzubk.supabase.co';
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxZWFnaW11bHZnZmVjdnV6dWJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NzkyMzUsImV4cCI6MjA3MjU1NTIzNX0.SeNHyHOlpqjm-QTl7KXq7YF-48fk5iOQCRgpangP4zU';
-const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
 /* ===== Estado PRATOS (lista/paginação) ===== */
 let pratos=[], pratosPage=1; const PAGE_SIZE=10; let pratoEditId=null;
@@ -1374,8 +1379,8 @@ $('btnShowNewIngredienteForm').addEventListener('click', () => {
     $('ingrediente-editor-container').style.display = 'block';
 });
 
-document.getElementById('btnCalcularPrev').addEventListener('click',calcularPrevisaoReal);
-document.getElementById('btnExportPrev').addEventListener('click',()=> alert('Exportar PDF: pronto para integrar.'));
+$('btnCalcularPrev').addEventListener('click',calcularPrevisaoReal);
+$('btnExportPrev').addEventListener('click',()=> alert('Exportar PDF: pronto para integrar.'));
 
 /* ===== loaders ===== */
 async function backfillUniqueCodes(tableName) {
@@ -1383,7 +1388,10 @@ async function backfillUniqueCodes(tableName) {
         const { data, error } = await supa.from(tableName).select('id, qrcode').is('qrcode', null);
 
         if (error) {
-            if (error.code === '42703') { // "column does not exist" error code in PostgreSQL
+            if (error.code === '42P01') { // a view v_pratos_resumo não existe
+                 console.warn(`Aviso: A tabela '${tableName}' não existe.`);
+                 setStatus(`Aviso: Tabela '${tableName}' não encontrada.`, 'warn');
+            } else if (error.code === '42703') { // "column does not exist" error code in PostgreSQL
                  console.warn(`Aviso: A tabela '${tableName}' não possui as colunas 'codigo_barras' e/ou 'qrcode'. Por favor, adicione-as no seu banco de dados Supabase para que os códigos possam ser salvos.`);
                  setStatus(`Aviso: Tabela '${tableName}' não configurada para códigos.`, 'warn');
             } else {
@@ -1407,7 +1415,6 @@ async function backfillUniqueCodes(tableName) {
 
                 if (updateError) {
                     console.error(`Erro ao atualizar item ${item.id} na tabela ${tableName}:`, updateError);
-                    // Continue to the next item even if one fails
                 }
             }
             console.log(`${data.length} registros verificados em ${tableName}.`);
@@ -1418,8 +1425,12 @@ async function backfillUniqueCodes(tableName) {
 }
 async function loadPratos(){
   try{
-    let data=null,error=null; ({data,error}=await supa.from('v_pratos_resumo').select('*').order('nome',{ascending:true}));
-    if(error){ ({data,error}=await supa.from('pratos').select('*').order('nome',{ascending:true})); }
+    const {data,error} = await supa.from('v_pratos_resumo').select('*').order('nome',{ascending:true});
+    if(error){ 
+        setStatus('Erro ao carregar pratos: '+(error.message||error),'err');
+        pratos=[]; renderPratos(); 
+        return;
+    }
     pratos=data||[]; renderPratos();
     await fillOptionsFrom('pratos','cp-prato','id','nome',{ativo:true});
   }catch(e){ pratos=[]; renderPratos(); setStatus('Não foi possível carregar pratos: '+(e.message||e),'err'); }
@@ -1463,15 +1474,11 @@ const EstoqueModule = {
         const container = $('mov-form-container');
         container.style.display = 'block';
         $('frmMov').reset();
-
-        // Hide all conditional fields by default
         $('mov-unidade-origem-group').style.display = 'none';
         $('mov-unidade-destino-group').style.display = 'none';
         $('mov-validade-group').style.display = 'none';
         $('mov-custo-group').style.display = 'none';
         $('mov-ajuste-sinal-group').style.display = 'none';
-
-
         switch(type) {
             case 'ENTRADA':
                 $('mov-form-title').textContent = 'Registrar Entrada';
@@ -1493,126 +1500,73 @@ const EstoqueModule = {
                 break;
             case 'AJUSTE':
                 $('mov-form-title').textContent = 'Registrar Ajuste';
-                $('mov-unidade-origem-group').style.display = 'block'; // Unidade a ser ajustada
+                $('mov-unidade-origem-group').style.display = 'block';
                 $('mov-ajuste-sinal-group').style.display = 'block';
                 $('btnMovSubmit').textContent = 'Ajustar';
                 break;
         }
     },
-
     hideMovForm() {
         $('mov-form-container').style.display = 'none';
         this.stopCamera();
     },
-    
     async handleMovimentacao(e) {
         e.preventDefault();
         const tipoMov = this.currentMovType;
         let rpcName = '';
         let payload = {};
-
         const item_tipo = $('mov-item-tipo').value;
         const item_id = $('mov-item').value;
         const qtd = ptToNumber($('mov-qtd').value);
         const un = $('mov-un').value;
         const doc = $('mov-doc').value || null;
-
         try {
             switch(tipoMov) {
                 case 'ENTRADA':
                     rpcName = 'rpc_entrada';
-                    payload = {
-                        p_unidade_id: $('mov-unidade-destino').value,
-                        p_item_tipo: item_tipo,
-                        p_item_id: item_id,
-                        p_lote: $('mov-lote').value || 'LOTE_PADRAO',
-                        p_qtd: qtd,
-                        p_un: un,
-                        p_validade: $('mov-validade').value || null,
-                        p_custo_unit: ptToNumber($('mov-custo').value),
-                        p_ref_doc: doc
-                    };
+                    payload = { p_unidade_id: $('mov-unidade-destino').value, p_item_tipo: item_tipo, p_item_id: item_id, p_lote: $('mov-lote').value || 'LOTE_PADRAO', p_qtd: qtd, p_un: un, p_validade: $('mov-validade').value || null, p_custo_unit: ptToNumber($('mov-custo').value), p_ref_doc: doc };
                     break;
                 case 'SAIDA':
                     rpcName = 'rpc_saida';
-                    payload = {
-                        p_unidade_id: $('mov-unidade-origem').value,
-                        p_item_tipo: item_tipo,
-                        p_item_id: item_id,
-                        p_qtd: qtd,
-                        p_un: un,
-                        p_ref_doc: doc,
-                        p_tipo_saida: 'SAIDA'
-                    };
+                    payload = { p_unidade_id: $('mov-unidade-origem').value, p_item_tipo: item_tipo, p_item_id: item_id, p_qtd: qtd, p_un: un, p_ref_doc: doc, p_tipo_saida: 'SAIDA' };
                     break;
                 case 'TRANSFERENCIA':
                     rpcName = 'rpc_transferencia';
-                     payload = {
-                        p_origem_id: $('mov-unidade-origem').value,
-                        p_destino_id: $('mov-unidade-destino').value,
-                        p_item_tipo: item_tipo,
-                        p_item_id: item_id,
-                        p_qtd: qtd,
-                        p_un: un,
-                        p_lote: $('mov-lote').value || null,
-                        p_obs: doc
-                    };
+                     payload = { p_origem_id: $('mov-unidade-origem').value, p_destino_id: $('mov-unidade-destino').value, p_item_tipo: item_tipo, p_item_id: item_id, p_qtd: qtd, p_un: un, p_lote: $('mov-lote').value || null, p_obs: doc };
                     break;
                 case 'AJUSTE':
                     rpcName = 'rpc_ajuste_estoque';
                     const sinal = $('mov-ajuste-sinal').value;
-                    payload = {
-                        p_unidade_id: $('mov-unidade-origem').value,
-                        p_item_tipo: item_tipo,
-                        p_item_id: item_id,
-                        p_lote: $('mov-lote').value || null,
-                        p_qtd: sinal === '+' ? qtd : -qtd,
-                        p_un: un,
-                        p_obs: doc
-                    };
+                    payload = { p_unidade_id: $('mov-unidade-origem').value, p_item_tipo: item_tipo, p_item_id: item_id, p_lote: $('mov-lote').value || null, p_qtd: sinal === '+' ? qtd : -qtd, p_un: un, p_obs: doc };
                     break;
                 default:
                     throw new Error("Tipo de movimentação desconhecido.");
             }
-
             if (!payload.p_unidade_id && !payload.p_origem_id) {
-                alert('Unidade de origem/destino é obrigatória.');
-                return;
+                alert('Unidade de origem/destino é obrigatória.'); return;
             }
-
             setStatus('Registrando movimentação...', '');
             const { data, error } = await supa.rpc(rpcName, payload);
             if (error) throw error;
-            
             setStatus('Movimentação registrada com sucesso!', 'ok');
             this.hideMovForm();
             await this.loadRecentMovs();
             await this.loadSaldos();
-        
         } catch(ex) {
             console.error('Erro na movimentação:', ex);
             setStatus('Erro ao registrar: ' + (ex.message || 'Verifique os dados'), 'err');
         }
     },
-    
-    toggleCamera() {
-        if(this.stream) {
-            this.stopCamera();
-        } else {
-            this.startCamera();
-        }
-    },
-
+    toggleCamera() { if(this.stream) { this.stopCamera(); } else { this.startCamera(); } },
     startCamera() {
         const video = $('qr-video');
         video.style.display = 'block';
         $('btnMovScan').textContent = '📷 Parar Câmera';
-        
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
         .then(stream => {
             this.stream = stream;
             video.srcObject = stream;
-            video.setAttribute("playsinline", true); // required to tell iOS safari we don't want fullscreen
+            video.setAttribute("playsinline", true);
             video.play();
             requestAnimationFrame(() => this.tick());
         }).catch(err => {
@@ -1621,16 +1575,12 @@ const EstoqueModule = {
             this.stopCamera();
         });
     },
-
     stopCamera() {
-        if(this.stream) {
-            this.stream.getTracks().forEach(track => track.stop());
-        }
+        if(this.stream) { this.stream.getTracks().forEach(track => track.stop()); }
         this.stream = null;
         $('qr-video').style.display = 'none';
         $('btnMovScan').textContent = '📷 Scan QR';
     },
-
     tick() {
         const video = $('qr-video');
         if (video.readyState === video.HAVE_ENOUGH_DATA) {
@@ -1640,21 +1590,14 @@ const EstoqueModule = {
             canvasElement.width = video.videoWidth;
             canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
             const imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
-            const code = jsQR(imageData.data, imageData.width, imageData.height, {
-                inversionAttempts: "dontInvert",
-            });
-
+            const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert", });
             if (code) {
                 $('qr-result').textContent = `Código detectado: ${code.data}`;
-                // Aqui você pode adicionar a lógica para preencher o formulário
                 this.stopCamera();
             }
         }
-        if(this.stream) {
-            requestAnimationFrame(() => this.tick());
-        }
+        if(this.stream) { requestAnimationFrame(() => this.tick()); }
     },
-    
     async loadRecentMovs() {
         const tb = $('tblMovRecentes')?.querySelector('tbody');
         if(!tb) return;
@@ -1665,13 +1608,7 @@ const EstoqueModule = {
             tb.innerHTML = '';
             data.forEach(mov => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${new Date(mov.ts).toLocaleTimeString('pt-BR')}</td>
-                    <td>${mov.tipo}</td>
-                    <td>${mov.item_nome || 'N/D'}</td>
-                    <td>${mov.qtd}</td>
-                    <td>${mov.unidade_nome || 'N/D'}</td>
-                `;
+                tr.innerHTML = `<td>${new Date(mov.ts).toLocaleTimeString('pt-BR')}</td><td>${mov.tipo}</td><td>${mov.item_nome || 'N/D'}</td><td>${mov.qtd}</td><td>${mov.unidade_nome || 'N/D'}</td>`;
                 tb.appendChild(tr);
             });
         } catch(ex) {
@@ -1679,222 +1616,171 @@ const EstoqueModule = {
             tb.innerHTML = '<tr><td colspan="5">Erro ao carregar. Verifique se a RPC `rpc_get_recent_movs` foi criada (execute o SQL).</td></tr>';
         }
     },
-    
-    async loadSaldos() {
-       // Placeholder para carregar saldos e KPIs
-    }
+    async loadSaldos() { /* Placeholder */ }
 };
 
-
-async function init(){
-  try{
-    await backfillUniqueCodes('pratos');
-    await backfillUniqueCodes('receitas');
-    await backfillUniqueCodes('ingredientes');
-    await loadPratos(); await loadReceitas(); await loadIngredientes(); await preencherCategorias(); await loadDash?.();
-    EstoqueModule.init(); // Inicializa o módulo de estoque
-    setStatus('Pronto','ok');
-  }catch(e){ setStatus(e.message||e,'err'); }
-}
-document.addEventListener('DOMContentLoaded',init);
-</script>
-
-<script>
-// IIFE to encapsulate logic for generic cadastro tabs
-(() => {
-  const supa = window.supa;
-  function toast(msg, type='info'){
-    const statusEl = document.getElementById('status');
-    if(statusEl) {
-        statusEl.textContent = msg;
-        statusEl.style.color = type === 'error' ? 'var(--down)' : 'var(--ok)';
-    }
-    console[type==='error'?'error':'log']('[cadastros]', msg);
-  }
-  function byId(id){ return document.getElementById(id); }
-
-  function setupGenericCrud(config) {
+// =======================================================================
+// LÓGICA DAS ABAS DE CADASTROS GENÉRICOS (antes no segundo script)
+// =======================================================================
+function setupGenericCrud(config) {
     const {
         tabId, table, formId, editorId, btnShowId, btnCancelId,
-        loadFn, renderFn, formTitle, entityName
+        loadFn, formTitle, entityName
     } = config;
-
-    // Show Form Button
-    byId(btnShowId)?.addEventListener('click', () => {
-        byId(formId).reset();
-        byId(formId).id.value = '';
-        byId(`${tabId}-form-title`).textContent = `Nova ${formTitle}`;
-        byId(editorId).style.display = 'block';
+    $('btnShowId')?.addEventListener('click', () => {
+        $(formId).reset();
+        $(formId).id.value = '';
+        $(`${tabId}-form-title`).textContent = `Nova ${formTitle}`;
+        $(editorId).style.display = 'block';
     });
-
-    // Cancel Button
-    byId(btnCancelId)?.addEventListener('click', () => {
-        byId(editorId).style.display = 'none';
-        byId(formId).reset();
-        byId(formId).id.value = '';
+    $(btnCancelId)?.addEventListener('click', () => {
+        $(editorId).style.display = 'none';
+        $(formId).reset();
+        $(formId).id.value = '';
     });
-    
-    // Form Submission
-    byId(formId)?.addEventListener('submit', async (ev) => {
+    $(formId)?.addEventListener('submit', async (ev) => {
         ev.preventDefault();
         const f = ev.target;
         const formData = new FormData(f);
         const payload = Object.fromEntries(formData.entries());
-        
-        // Type conversions
         if(payload.fator) payload.fator = Number(payload.fator);
         payload.ativo = f.ativo.checked;
         const id = payload.id;
         delete payload.id;
-
         const q = id 
             ? supa.from(table).update(payload).eq('id', id) 
             : supa.from(table).insert(payload);
-        
         const { error } = await q;
-
-        if(error){ toast(error.message || error, 'error'); return; }
-        toast(`${entityName} salvo(a) com sucesso!`);
-        byId(btnCancelId).click();
+        if(error){ setStatus(error.message || error, 'err'); return; }
+        setStatus(`${entityName} salvo(a) com sucesso!`, 'ok');
+        $(btnCancelId).click();
         await loadFn();
     });
-  }
-  
-  function createTableActions(onEdit) {
-      const td = document.createElement('td');
-      td.className = 'row-actions';
-      const btnEdit = document.createElement('button');
-      btnEdit.textContent = 'Editar';
-      btnEdit.className = 'btn small';
-      btnEdit.onclick = onEdit;
-      td.appendChild(btnEdit);
-      // Could add toggle/delete buttons here as well
-      return td;
-  }
-
-  // ===== Unidades de Medida =====
-  async function loadUM(){
+}
+function createTableActions(onEdit) {
+    const td = document.createElement('td');
+    td.className = 'row-actions';
+    const btnEdit = document.createElement('button');
+    btnEdit.textContent = 'Editar';
+    btnEdit.className = 'btn small';
+    btnEdit.onclick = onEdit;
+    td.appendChild(btnEdit);
+    return td;
+}
+async function loadUM(){
     const { data, error } = await supa.from('unidades_medida').select('*').order('nome', { ascending: true });
-    if (error) return toast('Tabela unidades_medida não encontrada', 'error');
-    
-    const tbody = byId('tbl-um').querySelector('tbody');
+    if (error) return setStatus('Tabela unidades_medida não encontrada', 'err');
+    const tbody = $('tbl-um').querySelector('tbody');
     tbody.innerHTML = '';
     (data || []).forEach(r => {
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${r.sigla||''}</td><td>${r.nome||''}</td><td>${r.codigo||''}</td><td>${r.base||''}</td><td>${r.fator||''}</td><td>${r.ativo?'<span class="pill ok">Ativo</span>':'<span class="pill bad">Inativo</span>'}</td>`;
         tr.appendChild(createTableActions(() => {
-            const f = byId('form-um');
+            const f = $('form-um');
             f.id.value = r.id; f.sigla.value=r.sigla||''; f.nome.value=r.nome||''; f.codigo.value=r.codigo||'';
             f.base.value=r.base||'un'; f.fator.value=r.fator||1; f.ativo.checked=!!r.ativo;
-            byId('um-form-title').textContent = 'Editar Unidade de Medida';
-            byId('um-editor-container').style.display = 'block';
+            $('um-form-title').textContent = 'Editar Unidade de Medida';
+            $('um-editor-container').style.display = 'block';
         }));
         tbody.appendChild(tr);
     });
-  }
-
-  // ===== Unidades (destino) =====
-  async function loadUnidades(){
+}
+async function loadUnidades(){
     const { data, error } = await supa.from('unidades').select('*').order('nome', { ascending: true });
-    if (error) return toast('Tabela unidades não encontrada', 'error');
-
-    const tbody = byId('tbl-unidades').querySelector('tbody');
+    if (error) return setStatus('Tabela unidades não encontrada', 'err');
+    const tbody = $('tbl-unidades').querySelector('tbody');
     tbody.innerHTML='';
     (data || []).forEach(r => {
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${r.nome||''}</td><td>${r.ativo?'<span class="pill ok">Ativo</span>':'<span class="pill bad">Inativo</span>'}</td>`;
         tr.appendChild(createTableActions(() => {
-            const f = byId('form-unidades');
+            const f = $('form-unidades');
             f.id.value=r.id; f.nome.value=r.nome||''; f.ativo.checked=!!r.ativo;
-            byId('unidades-form-title').textContent = 'Editar Unidade (destino)';
-            byId('unidades-editor-container').style.display = 'block';
+            $('unidades-form-title').textContent = 'Editar Unidade (destino)';
+            $('unidades-editor-container').style.display = 'block';
         }));
         tbody.appendChild(tr);
     });
-  }
-  
-  // ===== Categorias =====
-  async function loadCategorias(){
+}
+async function loadCategorias(){
     const { data, error } = await supa.from('categorias').select('*').order('nome', { ascending: true });
-    if (error) return toast('Tabela categorias não encontrada', 'error');
-
-    const tbody = byId('tbl-categorias').querySelector('tbody');
+    if (error) return setStatus('Tabela categorias não encontrada', 'err');
+    const tbody = $('tbl-categorias').querySelector('tbody');
     tbody.innerHTML='';
     (data || []).forEach(r => {
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${r.nome||''}</td><td>${r.tipo||''}</td><td>${r.ativo?'<span class="pill ok">Ativo</span>':'<span class="pill bad">Inativo</span>'}</td>`;
         tr.appendChild(createTableActions(() => {
-            const f = byId('form-categorias');
+            const f = $('form-categorias');
             f.id.value=r.id; f.nome.value=r.nome||''; f.tipo.value=r.tipo||'INGREDIENTE'; f.ativo.checked=!!r.ativo;
-            byId('categorias-form-title').textContent = 'Editar Categoria';
-            byId('categorias-editor-container').style.display = 'block';
+            $('categorias-form-title').textContent = 'Editar Categoria';
+            $('categorias-editor-container').style.display = 'block';
         }));
         tbody.appendChild(tr);
     });
-  }
-  
-  // ===== Tipos de Item =====
-  let itemTiposTableName = null;
-  async function detectAndLoadItemTipos(){
-      if (!itemTiposTableName) {
-          for (const t of ['item_tipos', 'tipos_item']){
-              const { error } = await supa.from(t).select('id', { count: 'exact', head: true });
-              if (!error) {
-                  itemTiposTableName = t;
-                  byId('itemtipos-warning').hidden = true;
-                  break;
-              }
-          }
-      }
-      if (!itemTiposTableName) {
-          byId('itemtipos-warning').hidden = false;
-          return;
-      }
-      
-      const { data, error } = await supa.from(itemTiposTableName).select('*').order('nome', { ascending: true });
-      if (error) return toast(`Erro ao ler ${itemTiposTableName}`, 'error');
+}
+let itemTiposTableName = null;
+async function detectAndLoadItemTipos(){
+    if (!itemTiposTableName) {
+        for (const t of ['item_tipos', 'tipos_item']){
+            const { error } = await supa.from(t).select('id', { count: 'exact', head: true });
+            if (!error) {
+                itemTiposTableName = t;
+                $('itemtipos-warning').hidden = true;
+                break;
+            }
+        }
+    }
+    if (!itemTiposTableName) {
+        $('itemtipos-warning').hidden = false;
+        return;
+    }
+    const { data, error } = await supa.from(itemTiposTableName).select('*').order('nome', { ascending: true });
+    if (error) return setStatus(`Erro ao ler ${itemTiposTableName}`, 'err');
+    const tbody = $('tbl-itemtipos').querySelector('tbody');
+    tbody.innerHTML='';
+    (data || []).forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${r.nome||''}</td><td>${r.ativo?'<span class="pill ok">Ativo</span>':'<span class="pill bad">Inativo</span>'}</td>`;
+        tr.appendChild(createTableActions(() => {
+            const f = $('form-itemtipos');
+            f.id.value=r.id; f.nome.value=r.nome||''; f.ativo.checked=!!r.ativo;
+            $('itemtipos-form-title').textContent = 'Editar Tipo de Item';
+            $('itemtipos-editor-container').style.display = 'block';
+        }));
+        tbody.appendChild(tr);
+    });
+}
 
-      const tbody = byId('tbl-itemtipos').querySelector('tbody');
-      tbody.innerHTML='';
-      (data || []).forEach(r => {
-          const tr = document.createElement('tr');
-          tr.innerHTML = `<td>${r.nome||''}</td><td>${r.ativo?'<span class="pill ok">Ativo</span>':'<span class="pill bad">Inativo</span>'}</td>`;
-          tr.appendChild(createTableActions(() => {
-              const f = byId('form-itemtipos');
-              f.id.value=r.id; f.nome.value=r.nome||''; f.ativo.checked=!!r.ativo;
-              byId('itemtipos-form-title').textContent = 'Editar Tipo de Item';
-              byId('itemtipos-editor-container').style.display = 'block';
-          }));
-          tbody.appendChild(tr);
-      });
-  }
-
-
-  // Hook up events on DOMContentLoaded
-  window.addEventListener('DOMContentLoaded', () => {
+// =======================================================================
+// INICIALIZAÇÃO GERAL
+// =======================================================================
+async function init(){
+  try{
+    setupRouting();
+    
     // Setup CRUD forms
     setupGenericCrud({ tabId: 'um', table: 'unidades_medida', formId: 'form-um', editorId: 'um-editor-container', btnShowId: 'btnShowNewUmForm', btnCancelId: 'btnCancelUmEdit', loadFn: loadUM, formTitle: 'Unidade de Medida', entityName: 'Unidade de medida' });
     setupGenericCrud({ tabId: 'unidades', table: 'unidades', formId: 'form-unidades', editorId: 'unidades-editor-container', btnShowId: 'btnShowNewUnidadesForm', btnCancelId: 'btnCancelUnidadesEdit', loadFn: loadUnidades, formTitle: 'Unidade (destino)', entityName: 'Unidade' });
     setupGenericCrud({ tabId: 'categorias', table: 'categorias', formId: 'form-categorias', editorId: 'categorias-editor-container', btnShowId: 'btnShowNewCategoriasForm', btnCancelId: 'btnCancelCategoriasEdit', loadFn: loadCategorias, formTitle: 'Categoria', entityName: 'Categoria' });
-    
-    // Special setup for item_tipos due to dynamic table name
-    byId('btnShowNewItemTiposForm')?.addEventListener('click', () => { byId('itemtipos-editor-container').style.display = 'block'; byId('form-itemtipos').reset(); byId('form-itemtipos').id.value = ''; });
-    byId('btnCancelItemTiposEdit')?.addEventListener('click', () => { byId('itemtipos-editor-container').style.display = 'none'; });
-    byId('form-itemtipos')?.addEventListener('submit', async(ev) => {
+    $('btnShowNewItemTiposForm')?.addEventListener('click', () => { $('itemtipos-editor-container').style.display = 'block'; $('form-itemtipos').reset(); $('form-itemtipos').id.value = ''; });
+    $('btnCancelItemTiposEdit')?.addEventListener('click', () => { $('itemtipos-editor-container').style.display = 'none'; });
+    $('form-itemtipos')?.addEventListener('submit', async(ev) => {
         ev.preventDefault();
-        if(!itemTiposTableName){ toast('Crie a tabela item_tipos ou tipos_item no banco para editar.','error'); return; }
+        if(!itemTiposTableName){ setStatus('Crie a tabela item_tipos ou tipos_item no banco para editar.','err'); return; }
         const f = ev.target;
         const payload = { id: f.id.value||undefined, nome: f.nome.value?.trim(), ativo: f.ativo.checked };
         const q = payload.id ? supa.from(itemTiposTableName).update(payload).eq('id', payload.id) : supa.from(itemTiposTableName).insert(payload);
         const { error } = await q;
-        if(error){ toast(error.message||error, 'error'); return; }
-        toast('Tipo de item salvo');
-        byId('btnCancelItemTiposEdit').click();
+        if(error){ setStatus(error.message||error, 'err'); return; }
+        setStatus('Tipo de item salvo', 'ok');
+        $('btnCancelItemTiposEdit').click();
         await detectAndLoadItemTipos();
     });
 
     // Lazy load data when a subtab is clicked
     const mapLoaders = {
+      'pratos': loadPratos,
       'um': loadUM,
       'unidades': loadUnidades,
       'categorias': loadCategorias,
@@ -1906,8 +1792,24 @@ document.addEventListener('DOMContentLoaded',init);
         if(mapLoaders[sub]) mapLoaders[sub]();
       });
     });
-  });
-})();
+
+    await backfillUniqueCodes('pratos');
+    await backfillUniqueCodes('receitas');
+    await backfillUniqueCodes('ingredientes');
+    await loadPratos(); 
+    await loadReceitas(); 
+    await loadIngredientes(); 
+    await preencherCategorias(); 
+    await loadDash?.();
+    EstoqueModule.init();
+    setStatus('Pronto','ok');
+  }catch(e){ 
+    console.error("Erro fatal na inicialização:", e);
+    setStatus(e.message||e,'err'); 
+  }
+}
+document.addEventListener('DOMContentLoaded',init);
+
 </script>
 </body>
 </html>
