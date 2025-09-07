@@ -181,7 +181,7 @@
     function agg(rows){
       var out={fat:0,des:0,fre:0,ped:0, byStore:{}, byHour:{}, byCanal:{}, byDay:{}};
       rows = rows||[];
-      for (var i=0;i<rows.length;i++){
+      for (var i=0;i<rows.length;i++){ if (!rows[i]) continue; if (!rows[i]) continue;
         var r=rows[i], fat=+r.fat||0, des=+r.des||0, fre=+r.fre||0;
         var loja=r.loja||'—', canal=r.canal||'—', dia=r.dia||'—';
         var h=r.hora==null? '—' : String(r.hora); if(h.length===1) h='0'+h;
@@ -250,36 +250,63 @@
         if (parts && parts.length===2){ cb(parseInt(parts[1],10)); } else { cb(null); }
       }).catch(function(){ cb(null); });
     }
+    
     function fetchRESTPaged(de, ate, anal, cb){
       if(!hasCreds()){ cb([]); return; }
       var URL = window.SUPABASE_URL, KEY = window.SUPABASE_KEY;
       var base = URL + '/rest/v1/vendas_canon';
-      var qs = ['select=dia,hora,loja,canal,fat,des,fre,cancelado','dia=gte.'+encodeURIComponent(de),'dia=lte.'+encodeURIComponent(ate),'order=dia.asc,hora.asc'];
-      try{ if (anal && anal.cancelado==='sim') qs.push('cancelado=eq.Sim'); if (anal && anal.cancelado==='nao') qs.push('cancelado=neq.Sim'); }catch(e){}
-      var url = base + '?' + qs.join('&');
-      var headers = { apikey: KEY, Authorization: 'Bearer '+KEY, 'Range-Unit': 'items', Range: '0-49999', Prefer: 'count=exact' };
-      var chunk = 50000, start = 0, rows = [], pages = 0, maxPages = 200;
+      var qsBase = ['select=dia,hora,loja,canal,fat,des,fre,cancelado','dia=gte.'+encodeURIComponent(de),'dia=lte.'+encodeURIComponent(ate),'order=dia.asc,hora.asc'];
+      try{ if (anal && anal.cancelado==='sim') qsBase.push('cancelado=eq.Sim'); if (anal && anal.cancelado==='nao') qsBase.push('cancelado=neq.Sim'); }catch(e){}
+      var headers = { apikey: KEY, Authorization: 'Bearer '+KEY, 'Range-Unit': 'items', Prefer: 'count=exact' };
+      var rows = [], start = 0, total = null, guard = 0, hardPage = 0, hardLimit = 1000;
+      function urlWith(extra){
+        var arr = qsBase.slice(0);
+        if (extra) arr = arr.concat(extra);
+        return base + '?' + arr.join('&');
+      }
       function step(){
-        headers.Range = String(start) + '-' + String(start + chunk - 1);
-        return fetch(url, { headers: headers }).then(function(r){
-          if (!r.ok){ cb(rows); return; }
-          var cr = r.headers && r.headers.get ? r.headers.get('content-range') : null;
+        if (guard++ > 500){ console.warn('[DX] Guard stop paging'); cb(rows); return; }
+        headers.Range = String(start) + '-' + String(start + 49999);
+        return fetch(urlWith(), { headers: headers }).then(function(r){
+          var cr = r && r.headers && r.headers.get ? r.headers.get('content-range') : null;
           return r.json().then(function(data){
             var got = (data && data.length) ? data.length : 0;
             for (var i=0;i<got;i++) rows.push(data[i]);
-            pages += 1; start += chunk;
-            var total = null;
-            if (cr){ var parts = cr.split('/'); if (parts && parts.length===2) total = parseInt(parts[1],10); }
-            var done = (got < chunk) || (total!=null && rows.length >= total) || (pages >= maxPages);
-            if (done){ cb(rows); return; }
-            return step();
+            if (cr){
+              var m = /([0-9]+)-([0-9]+)\/([0-9]+|\*)/.exec(cr);
+              if (m){
+                var sN = parseInt(m[1],10), eN = parseInt(m[2],10);
+                total = (m[3]==='*'? null : parseInt(m[3],10));
+                start = eN + 1;
+                console.log('[DX] Page via Range', sN+'-'+eN, 'got=', got, 'total=', total, 'acc=', rows.length);
+                if (total!=null && eN >= total-1){ cb(rows); return; }
+                if (got===0){ cb(rows); return; }
+                return step();
+              }
+            }
+            // fallback limit/offset
+            var extra = ['limit='+hardLimit, 'offset='+(hardPage*hardLimit)];
+            console.log('[DX] Fallback limit/offset page', hardPage, 'offset=', (hardPage*hardLimit));
+            return fetch(urlWith(extra), { headers: {apikey: KEY, Authorization: 'Bearer '+KEY} }).then(function(r2){
+              return r2.json().then(function(d2){
+                var got2 = (d2 && d2.length) ? d2.length : 0;
+                for (var j=0;j<got2;j++) rows.push(d2[j]);
+                hardPage += 1;
+                console.log('[DX] Fallback got=', got2, 'acc=', rows.length);
+                if (got2 < hardLimit){ cb(rows); return; }
+                return step();
+              });
+            });
           });
-        }).catch(function(){ cb(rows); });
+        }).catch(function(e){
+          console.warn('[DX] Paging error', e); cb(rows);
+        });
       }
       step();
     }
 
-    // baseQuery wrapper: se existir, usamos; se capar, trocamos para REST
+    // baseQuery wrapper
+// baseQuery wrapper: se existir, usamos; se capar, trocamos para REST
     function baseQueryWrapped(de, ate, anal){
       var hasBQ = (typeof window.baseQuery === 'function');
       var bqPromise;
