@@ -1,438 +1,337 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"/>
-  <title>Dash Vendas — Diagnóstico (ES5, sem limite, debug)</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Dash de Vendas — Diagnóstico (fix)</title>
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif;margin:0;color:#111827;background:#fff}
-    .wrap{max-width:1200px;margin:0 auto;padding:16px}
-    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
-    .toolbar label{font-size:12px;color:#6b7280;margin-right:4px}
-    .toolbar input,.toolbar select{padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;background:#fff}
+    :root{--bg:#f7f7fb;--panel:#fff;--muted:#8a8f98;--ink:#0f172a;--accent:#0ea5e9;--ok:#16a34a;--warn:#b91c1c;--line:#e5e7eb}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    .wrap{max-width:1160px;margin:24px auto;padding:0 16px}
+    header h1{font-size:28px;margin:0 0 12px}
+    .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+    .toolbar input,.toolbar select{height:36px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
     .tabs{display:flex;gap:8px;margin:8px 0 16px}
-    .tab-btn{padding:8px 12px;border:1px solid #e5e7eb;border-radius:8px;background:#f3f4f6;cursor:pointer}
-    .tab-btn.active{background:#111827;color:#fff;border-color:#111827}
-    .tab{display:none}
-    .tab.active{display:block}
-    .hero{display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;margin:12px 0 8px}
-    .hero-value-number{font-size:32px;font-weight:800}
-    .delta{font-size:14px;padding:2px 6px;border-radius:6px;border:1px solid #e5e7eb;background:#f9fafb}
-    .delta.up{color:#065f46;border-color:#a7f3d0;background:#ecfdf5}
-    .delta.down{color:#991b1b;border-color:#fecaca;background:#fef2f2}
-    .hero-sub-value{color:#6b7280;margin-left:8px}
-    .hero-context{margin-top:6px;color:#374151}
-    .section{margin-top:16px;padding:12px;border:1px solid #e5e7eb;border-radius:10px;background:#fafafa}
-    .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}
-    .card{padding:10px;border:1px solid #e5e7eb;border-radius:10px;background:white}
-    .muted{color:#6b7280}
-    .ins-list{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}
-    .ins-card{grid-column:span 6;display:flex;gap:8px;align-items:flex-start;padding:10px;border:1px solid #e5e7eb;border-radius:10px;background:#fff}
-    .ins-card .dot{width:10px;height:10px;border-radius:50%;margin-top:4px;background:#9ca3af}
-    .ins-card.up .dot{background:#10b981}
-    .ins-card.down .dot{background:#ef4444}
-    .proj{display:flex;gap:16px;flex-wrap:wrap}
-    .proj-kpi-sub{display:flex;gap:16px}
-    .proj-value{font-weight:700}
-    .proj-value-small{font-weight:600}
-    .placeholder{padding:24px;border:1px dashed #d1d5db;border-radius:10px;color:#6b7280;text-align:center}
+    .tabs button{padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
+    .tabs .active{background:var(--ink);color:#fff}
+    .kpi{font-size:40px;font-weight:800;margin:8px 0}
+    .delta{display:inline-flex;gap:6px;align-items:center;padding:4px 10px;border-radius:999px;font-weight:600;font-size:12px}
+    .delta.up{background:#e8f7ee;color:#15803d}.delta.down{background:#fde2e2;color:#b91c1c}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;margin:10px 0}
+    .muted{color:var(--muted)}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .ins-list{display:grid;gap:8px}
+    .ins-card{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:14px;border:1px solid var(--line)}
+    .ins-card.up{background:#f0fdf4}.ins-card.down{background:#fef2f2}
+    .dot{width:10px;height:10px;border-radius:50%}
+    .ins-card.up .dot{background:#16a34a}.ins-card.down .dot{background:#b91c1c}
+    .proj{display:flex;gap:24px;align-items:center}
+    .proj .big{font-size:28px;font-weight:800}
+    .pill{background:#f3f4f6;color:#111827;border-radius:999px;padding:4px 8px;font-size:12px}
+    .footer{display:flex;justify-content:space-between;align-items:center}
+    .btn{height:32px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
   </style>
-  <script>
-    // Credenciais (guard)
-    window.SUPABASE_URL = window.SUPABASE_URL || "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    window.SUPABASE_KEY = window.SUPABASE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
-  </script>
 </head>
 <body>
   <div class="wrap">
-    <h1>Dash de Vendas</h1>
+    <header>
+      <h1>Dash de Vendas</h1>
+    </header>
+
+    <div class="tabs"><button class="btn" id="tabMain">Principal</button><button class="btn active">Diagnóstico</button></div>
+
     <div class="toolbar">
-      <div>
-        <label for="fxDuStart">Início</label>
-        <input id="fxDuStart" type="date"/>
-      </div>
-      <div>
-        <label for="fxDuEnd">Fim</label>
-        <input id="fxDuEnd" type="date"/>
-      </div>
-      <div>
-        <label for="fxCanceled">Cancelado</label>
-        <select id="fxCanceled">
-          <option value="">Todos</option>
-          <option value="sim">Somente cancelados</option>
-          <option value="nao">Somente válidos</option>
+      <label>Início <input id="dtIni" type="date"></label>
+      <label>Fim <input id="dtFim" type="date"></label>
+      <label>Cancelado 
+        <select id="cancelado">
+          <option value="all">Todos</option>
+          <option value="false">Não</option>
+          <option value="true">Sim</option>
         </select>
-      </div>
-      <div>
-        <label for="kpi-select">KPI</label>
-        <select id="kpi-select">
+      </label>
+      <label>KPI 
+        <select id="kpiSel">
           <option value="fat">Faturamento</option>
           <option value="ped">Pedidos</option>
-          <option value="tkt">Ticket Médio</option>
-          <option value="des">Desconto (R$)</option>
-          <option value="desperc">% Desconto</option>
-          <option value="fre">Frete (R$)</option>
-          <option value="canc_ped">Cancelados (qtd)</option>
-          <option value="canc_val">Cancelados (R$)</option>
-          <option value="roi">ROI</option>
+          <option value="ticket">Ticket Médio</option>
+          <option value="desc">Desconto (R$)</option>
         </select>
-      </div>
+      </label>
     </div>
 
-    <div class="tabs" id="tabs">
-      <button class="tab-btn active" data-tab="principal">Principal</button>
-      <button class="tab-btn" data-tab="diagnostico">Diagnóstico</button>
+    <div class="panel">
+      <div id="kpiLabel" class="muted">—</div>
+      <div class="kpi" id="kpiValue">—</div>
+      <div class="muted">Período anterior: <span id="prevValue">—</span> <span id="delta" class="delta" style="display:none"></span></div>
+      <div class="muted" id="highlights" style="margin-top:6px"></div>
     </div>
 
-    <div id="tab-principal" class="tab active">
-      <div class="placeholder">Sua visão principal aqui.</div>
-    </div>
-
-    <div id="tab-diagnostico" class="tab">
-      <div class="hero diag-card2 hero">
-        <div class="hero-value-number">—</div>
-        <div class="delta">—</div>
-        <div class="hero-sub-value muted">Período anterior: —</div>
+    <div class="grid">
+      <div class="panel">
+        <div class="muted" style="margin-bottom:8px">Insights</div>
+        <div class="ins-list" id="ins"></div>
       </div>
-      <div class="hero-context muted">—</div>
-
-      <div class="section">
-        <div class="muted" style="margin-bottom:6px">Insights</div>
-        <div class="ins-list"></div>
-      </div>
-
-      <div class="section">
-        <div class="muted" style="margin-bottom:6px">Projeções</div>
+      <div class="panel">
+        <div class="muted" style="margin-bottom:8px">Projeções</div>
         <div class="proj">
-          <div>Próx. 30d: <span class="proj-value">—</span></div>
-          <div class="proj-kpi-sub">
-            <div class="sub-kpi">Pedidos: <span class="proj-value-small">—</span></div>
-            <div class="sub-kpi">Ticket: <span class="proj-value-small">—</span></div>
+          <div>
+            <div class="muted">Receita projetada (30d)</div>
+            <div class="big" id="proj_value">—</div>
+          </div>
+          <div>
+            <div class="muted">Pedidos</div>
+            <div class="big" id="proj_ped">—</div>
+          </div>
+          <div>
+            <div class="muted">Ticket Médio</div>
+            <div class="big" id="proj_ticket">—</div>
           </div>
         </div>
       </div>
+    </div>
 
-      <div class="section" id="dx-test-section" style="margin-top:12px">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <strong>Teste de Paginação (Diagnóstico)</strong>
-          <button id="dx-run-test" class="tab-btn">Rodar teste</button>
-          <span id="dx-test-result" class="muted"></span>
-        </div>
-      </div>
+    <div class="panel footer">
+      <div><strong>Teste de Paginação (Diagnóstico)</strong> — Total via HEAD: <span id="headTotal" class="mono">—</span></div>
+      <button id="btnTest" class="btn">Rodar teste</button>
     </div>
   </div>
 
   <script>
-  // Abas e datas padrão
-  (function(){
-    var btns = document.querySelectorAll('.tab-btn');
-    for (var i=0;i<btns.length;i++){
-      btns[i].addEventListener('click', function(e){
-        var t = e.currentTarget.getAttribute('data-tab');
-        var all = document.querySelectorAll('.tab-btn'); for (var j=0;j<all.length;j++) all[j].classList.remove('active');
-        e.currentTarget.classList.add('active');
-        var tabs = document.querySelectorAll('.tab'); for (var k=0;k<tabs.length;k++) tabs[k].classList.remove('active');
-        var el = document.getElementById('tab-'+t); if (el) el.classList.add('active');
-      });
-    }
-    var end = new Date(); var start = new Date(end); start.setDate(end.getDate()-30);
-    function pad(n){ return (n<10?'0':'')+n; }
-    function iso(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
-    var fxA = document.getElementById('fxDuStart'), fxB = document.getElementById('fxDuEnd');
-    if (fxA && fxB && !fxA.value && !fxB.value){ fxA.value = iso(start); fxB.value = iso(end); }
-  })();
-  </script>
+  // ==== CONFIG SUPABASE (use os seus valores) ====
+  const SUPABASE_URL = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+  // Endpoints candidatos (tabela ou view). O primeiro que responder OK será usado.
+  const DX_ENDPOINTS = [
+    "/rest/v1/vendas",
+    "/rest/v1/vw_vendas",
+    "/rest/v1/sales",
+    "/rest/v1/vendas_diario"
+  ];
+  // Possíveis colunas de data/tempo (tentamos na ordem).
+  const DATE_COLS = [
+    {name:"dt", type:"date"},
+    {name:"data", type:"date"},
+    {name:"dh", type:"ts"},
+    {name:"created_at", type:"ts"},
+    {name:"hora", type:"ts"}
+  ];
 
-  <!-- DIAGNÓSTICO (ES5 + DEBUG) -->
-  <script>
-  (function(){
-    'use strict';
-    console.log('[DX] Patch carregado');
+  // ==== Helpers ====
+  const $ = (sel) => document.querySelector(sel);
+  const fmtBRL = (v) => (Number(v)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+  const fmtInt = (v) => (Number(v)||0).toLocaleString('pt-BR');
+  const todayISO = () => new Date().toISOString().slice(0,10);
+  const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); };
 
-    // Helpers
-    function $(s){ return document.querySelector(s); }
-    function hasCreds(){ return !!(window.SUPABASE_URL && window.SUPABASE_KEY); }
-    function uiDates(){
-      var a = document.getElementById('fxDuStart'), b = document.getElementById('fxDuEnd');
-      if(!a||!b||!a.value||!b.value) return null;
-      var A=a.value,B=b.value; var s=(B>=A?A:B), e=(B>=A?B:A); return {start:s,end:e};
-    }
-    function computePrevRangeISO(deISO, ateISO){
-      try{
-        var de = new Date(deISO+'T00:00:00');
-        var ate = new Date(ateISO+'T00:00:00');
-        var span = ate - de;
-        var prevEnd = new Date(de.getTime()-86400000);
-        var prevStart = new Date(prevEnd.getTime()-span);
-        return { dePrev: prevStart.toISOString().slice(0,10), atePrev: prevEnd.toISOString().slice(0,10) };
-      }catch(e){
-        var end=new Date(); var start=new Date(end); start.setDate(end.getDate()-30);
-        var prevEnd2=new Date(start); prevEnd2.setDate(start.getDate()-1);
-        var prevStart2=new Date(prevEnd2); prevStart2.setDate(prevStart2.getDate()-30);
-        return { dePrev: prevStart2.toISOString().slice(0,10), atePrev: prevEnd2.toISOString().slice(0,10) };
-      }
-    }
-    function fmtMoney(v){ return isFinite(v)? ('R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})):'—'; }
-    function fmtCount(v){ return isFinite(v)? (+v).toLocaleString('pt-BR'):'—'; }
-    function fmtPercent(v){ return isFinite(v)? ((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%':'—'; }
-    function fmtByKey(k,v){ if(k==='ped') return fmtCount(v); if(k==='desperc'||k==='roi') return fmtPercent(v); return fmtMoney(v); }
-    function deltaTxt(now, prev){ if(!isFinite(prev)||+prev===0) return {txt:'—',cls:'flat'}; var p=((now-prev)/prev)*100; return {txt:(p>=0?'▲ ':'▼ ')+Math.abs(p).toFixed(1)+'%', cls:(p>=0?'up':'down')}; }
+  // Mapeia campos de uma linha
+  function getFat(o){
+    const k = ["fat","faturamento","valor","total","venda_total","vlr"];
+    for (let i=0;i<k.length;i++){ const v=o[k[i]]; if (v!=null) return Number(v)||0; }
+    return 0;
+  }
+  function getPed(o){
+    const k = ["ped","qtd","n","qte","quantidade","itens","num_pedidos"];
+    for (let i=0;i<k.length;i++){ const v=o[k[i]]; if (v!=null) return Number(v)||0; }
+    // se a linha representa um pedido, cair como 1
+    return 1;
+  }
+  function getDesc(o){
+    const k = ["desc","desconto","vl_desconto","discount"];
+    for (let i=0;i<k.length;i++){ const v=o[k[i]]; if (v!=null) return Number(v)||0; }
+    return 0;
+  }
 
-    function agg(rows){
-      var out={fat:0,des:0,fre:0,ped:0, byStore:{}, byHour:{}, byCanal:{}, byDay:{}};
-      rows = rows||[];
-      for (var i=0;i<rows.length;i++){ if (!rows[i]) continue; if (!rows[i]) continue;
-        var r=rows[i], fat=+r.fat||0, des=+r.des||0, fre=+r.fre||0;
-        var loja=r.loja||'—', canal=r.canal||'—', dia=r.dia||'—';
-        var h=r.hora==null? '—' : String(r.hora); if(h.length===1) h='0'+h;
-        out.fat+=fat; out.des+=des; out.fre+=fre; out.ped+=1;
-        out.byStore[loja]=(out.byStore[loja]||{fat:0,ped:0}); out.byStore[loja].fat+=fat; out.byStore[loja].ped+=1;
-        out.byHour[h]=(out.byHour[h]||{fat:0,ped:0}); out.byHour[h].fat+=fat; out.byHour[h].ped+=1;
-        out.byCanal[canal]=(out.byCanal[canal]||{fat:0,ped:0}); out.byCanal[canal].fat+=fat; out.byCanal[canal].ped+=1;
-        out.byDay[dia]=(out.byDay[dia]||{fat:0,ped:0}); out.byDay[dia].fat+=fat; out.byDay[dia].ped+=1;
-      }
-      out.dias = Object.keys(out.byDay).length;
-      return out;
-    }
-    function valByKey(key, a){
-      if (key==='fat') return a.fat;
-      if (key==='des') return a.des;
-      if (key==='fre') return a.fre;
-      if (key==='ped') return a.ped;
-      if (key==='tkt') return (a.ped>0? a.fat/a.ped:0);
-      if (key==='fatmed') return (a.dias>0? a.fat/a.dias:0);
-      if (key==='fremed') return (a.ped>0? a.fre/a.ped:0);
-      if (key==='desperc') return (a.fat>0? a.des/a.fat:0);
-      if (key==='roi') return (a.des>0? (a.fat-a.des)/a.des: NaN);
-      return 0;
-    }
-    function topN(mapObj, key, n){
-      if (!mapObj) return [];
-      var safe = {}; for (var kk in mapObj){ if (mapObj.hasOwnProperty(kk) && mapObj[kk]) safe[kk]=mapObj[kk]; }
-      mapObj = safe;
-      var arr=[], k;
-      for (k in mapObj){ if(!mapObj.hasOwnProperty(k)) continue;
-        var v = mapObj[k]; if (!v) continue;
-        var sortVal = (key==='ped'? v.ped : (key==='tkt'? (v.ped? (v.fat/v.ped):0) : v.fat));
-        arr.push({name:k, val:sortVal||0});
-      }
-      arr.sort(function(a,b){ return (b.val||0)-(a.val||0); });
-      var out=[]; for (var i=0;i<Math.min(n,arr.length);i++) out.push(arr[i].name);
-      return out;
-    }
-    function getKpiKey(){
-      var el = document.getElementById('kpi-select');
-      var raw = el ? (el.value || el.getAttribute('data-value')) : 'fat';
-      raw = (raw||'').toLowerCase();
-      if (raw.indexOf('ped')>-1) return 'ped';
-      if (raw.indexOf('tkt')>-1 || raw.indexOf('ticket')>-1) return 'tkt';
-      if (raw.indexOf('desperc')>-1 || raw.indexOf('%')>-1) return 'desperc';
-      if (raw.indexOf('frete')>-1 && raw.indexOf('m')>-1) return 'fremed';
-      if (raw.indexOf('frete')>-1) return 'fre';
-      if (raw.indexOf('roi')>-1) return 'roi';
-      if (raw.indexOf('canc')>-1 && raw.indexOf('valor')>-1) return 'canc_val';
-      if (raw.indexOf('canc')>-1) return 'canc_ped';
-      if (raw.indexOf('fatmed')>-1 || raw.indexOf('m')>-1) return 'fatmed';
-      if (raw.indexOf('des')>-1) return 'des';
-      return 'fat';
-    }
-
-    // REST helpers
-    function headTotal(de, ate, anal, cb){
-      if(!hasCreds()){ cb(null); return; }
-      var URL = window.SUPABASE_URL, KEY = window.SUPABASE_KEY;
-      var base = URL + '/rest/v1/vendas_canon';
-      var qs = ['select=dia','dia=gte.'+encodeURIComponent(de),'dia=lte.'+encodeURIComponent(ate)];
-      try{ if (anal && anal.cancelado==='sim') qs.push('cancelado=eq.Sim'); if (anal && anal.cancelado==='nao') qs.push('cancelado=neq.Sim'); }catch(e){}
-      var url = base + '?' + qs.join('&');
-      var headers = { apikey: KEY, Authorization: 'Bearer '+KEY, 'Range-Unit': 'items', Range: '0-0', Prefer: 'count=exact' };
-      fetch(url, { headers: headers }).then(function(r){
-        var cr = r && r.headers && r.headers.get ? r.headers.get('content-range') : null;
-        if (!cr){ cb(null); return; }
-        var parts = cr.split('/');
-        if (parts && parts.length===2){ cb(parseInt(parts[1],10)); } else { cb(null); }
-      }).catch(function(){ cb(null); });
-    }
-    
-    function fetchRESTPaged(de, ate, anal, cb){
-      if(!hasCreds()){ cb([]); return; }
-      var URL = window.SUPABASE_URL, KEY = window.SUPABASE_KEY;
-      var base = URL + '/rest/v1/vendas_canon';
-      var qsBase = ['select=dia,hora,loja,canal,fat,des,fre,cancelado','dia=gte.'+encodeURIComponent(de),'dia=lte.'+encodeURIComponent(ate),'order=dia.asc,hora.asc'];
-      try{ if (anal && anal.cancelado==='sim') qsBase.push('cancelado=eq.Sim'); if (anal && anal.cancelado==='nao') qsBase.push('cancelado=neq.Sim'); }catch(e){}
-      var headers = { apikey: KEY, Authorization: 'Bearer '+KEY, 'Range-Unit': 'items', Prefer: 'count=exact' };
-      var rows = [], start = 0, total = null, guard = 0, hardPage = 0, hardLimit = 1000;
-      function urlWith(extra){
-        var arr = qsBase.slice(0);
-        if (extra) arr = arr.concat(extra);
-        return base + '?' + arr.join('&');
-      }
-      function step(){
-        if (guard++ > 500){ console.warn('[DX] Guard stop paging'); cb(rows); return; }
-        headers.Range = String(start) + '-' + String(start + 49999);
-        return fetch(urlWith(), { headers: headers }).then(function(r){
-          var cr = r && r.headers && r.headers.get ? r.headers.get('content-range') : null;
-          return r.json().then(function(data){
-            var got = (data && data.length) ? data.length : 0;
-            for (var i=0;i<got;i++) rows.push(data[i]);
-            if (cr){
-              var m = /([0-9]+)-([0-9]+)\/([0-9]+|\*)/.exec(cr);
-              if (m){
-                var sN = parseInt(m[1],10), eN = parseInt(m[2],10);
-                total = (m[3]==='*'? null : parseInt(m[3],10));
-                start = eN + 1;
-                console.log('[DX] Page via Range', sN+'-'+eN, 'got=', got, 'total=', total, 'acc=', rows.length);
-                if (total!=null && eN >= total-1){ cb(rows); return; }
-                if (got===0){ cb(rows); return; }
-                return step();
-              }
-            }
-            // fallback limit/offset
-            var extra = ['limit='+hardLimit, 'offset='+(hardPage*hardLimit)];
-            console.log('[DX] Fallback limit/offset page', hardPage, 'offset=', (hardPage*hardLimit));
-            return fetch(urlWith(extra), { headers: {apikey: KEY, Authorization: 'Bearer '+KEY} }).then(function(r2){
-              return r2.json().then(function(d2){
-                var got2 = (d2 && d2.length) ? d2.length : 0;
-                for (var j=0;j<got2;j++) rows.push(d2[j]);
-                hardPage += 1;
-                console.log('[DX] Fallback got=', got2, 'acc=', rows.length);
-                if (got2 < hardLimit){ cb(rows); return; }
-                return step();
-              });
-            });
-          });
-        }).catch(function(e){
-          console.warn('[DX] Paging error', e); cb(rows || []);
-        });
-      }
-      step();
-    }
-
-    // baseQuery wrapper
-// baseQuery wrapper: se existir, usamos; se capar, trocamos para REST
-    function baseQueryWrapped(de, ate, anal){
-      var hasBQ = (typeof window.baseQuery === 'function');
-      var bqPromise;
-      if (hasBQ){
-        try{
-          bqPromise = window.baseQuery(de, ate, anal);
-          if (!bqPromise || !bqPromise.then){ bqPromise = Promise.resolve(bqPromise); }
-        }catch(e){
-          bqPromise = Promise.resolve([]);
-        }
-      } else {
-        bqPromise = Promise.resolve([]);
-      }
-
-      return Promise.all([
-        bqPromise.then(function(rows){ return rows||[]; }).catch(function(){ return []; }),
-        new Promise(function(res){ headTotal(de, ate, anal, function(total){ res(total); }); })
-      ]).then(function(pair){
-        var rows = pair[0];
-        var total = pair[1];
-        console.log('[DX] baseQuery=', rows.length, 'HEAD total=', total);
-        if (total!=null && rows.length < total){
-          console.log('[DX] Usando REST paginado (trazer todas as linhas)...');
-          return new Promise(function(res){ fetchRESTPaged(de, ate, anal, function(all){ console.log('[DX] REST paginado trouxe', all.length, 'linhas'); res(all); }); });
-        }
-        return rows;
-      });
-    }
-
-    function run(){
-      var dates = uiDates(); if (!dates) return;
-      var key = getKpiKey();
-      var anal = { cancelado: (document.getElementById('fxCanceled')||{}).value || null };
-      var prev = computePrevRangeISO(dates.start, dates.end);
-
-      baseQueryWrapped(dates.start, dates.end, anal).then(function(rowsNow){
-        fetchRESTPaged(prev.dePrev, prev.atePrev, anal, function(rowsPrev){
-          var A = agg(rowsNow||[]), B = agg(rowsPrev||[]);
-          var curr = valByKey(key, A);
-          var prevv= valByKey(key, B);
-
-          var heroNum = document.querySelector('.hero-value-number');
-          var heroDelta = document.querySelector('.diag-card2.hero .delta') || document.querySelector('.delta');
-          var heroSub = document.querySelector('.hero-sub-value');
-          if (heroNum) heroNum.textContent = fmtByKey(key, curr);
-          if (heroSub) heroSub.textContent = 'Período anterior: '+fmtByKey(key, prevv);
-          if (heroDelta){
-            var d = deltaTxt(curr, prevv);
-            heroDelta.textContent = d.txt;
-            heroDelta.className = 'delta '+d.cls;
+  // Detecta endpoint + coluna de data válidos via HEAD
+  async function detectRouteAndDateRange(dtIni, dtFim){
+    const start = dtIni;
+    const end = dtFim;
+    const headers = {
+      "apikey": SUPABASE_KEY,
+      "Authorization": "Bearer " + SUPABASE_KEY,
+      "Range": "0-0",
+      "Prefer": "count=exact"
+    };
+    for (let e=0;e<DX_ENDPOINTS.length;e++){
+      const base = SUPABASE_URL + DX_ENDPOINTS[e] + "?select=id";
+      for (let d=0; d<DATE_COLS.length; d++){
+        const col = DATE_COLS[d];
+        const suffix = (col.type==="ts") ? "T00:00:00" : "";
+        const url = `${base}&${col.name}=gte.${start}${suffix}&${col.name}=lt.${end}${suffix}`;
+        try {
+          const res = await fetch(url, {method:"HEAD", headers});
+          if (res.ok){
+            const cr = res.headers.get("content-range") || "";
+            return { endpoint: DX_ENDPOINTS[e], dateCol: col.name, type: col.type, headTotal: parseInt((cr.split("/")[1]||"0"),10) || 0 };
           }
-
-          var Astore = topN(A.byStore||{},key,2).join(' e ') || '—';
-          var Ahour  = topN((A.byHour||{}),key,2).join('–') || '—';
-          var Acanal = topN((A.byCanal||{}),key,1).join(', ') || '—';
-          var ctx = document.querySelector('.hero-context');
-          if (ctx){
-            ctx.innerHTML = '<strong>Destaques:</strong> Lojas '+Astore+' • <strong>Horário:</strong> '+Ahour+' • <strong>Canal:</strong> '+Acanal;
-          }
-
-          
-          function __getPedDX__(o){
-            if (!o) return 0;
-            var v = (o.ped!=null)? o.ped : (o.qtd!=null? o.qtd : (o.n!=null? o.n : null));
-            if (v==null){ return 1; } // assume 1 por linha quando não enviado
-            v = Number(v);
-            return isFinite(v)? v : 0;
-          }
-var days = Object.keys(A.byDay).sort();
-          var tail=days.slice(-28), prevWin=days.slice(-56,-28);
-          function sumFat(keys, map){ var s=0; for (var i=0;i<keys.length;i++){ s+= (map[keys[i]]? map[keys[i]].fat:0); } return s; }
-          function sumPed(keys, map){ var s=0; for (var i=0;i<keys.length;i++){ var o = map[keys[i]]; s += __getPedDX__(o); } } return s; }
-          var nowFat=sumFat(tail,A.byDay), prevFat=sumFat(prevWin,A.byDay);
-          var N = tail.length>0? tail.length : 1;
-          var mmFat= nowFat/Math.max(1,N), mmPed=sumPed(tail,A.byDay)/Math.max(1,N);
-          var trend=(isFinite(prevFat)&&prevFat>0)? ((nowFat-prevFat)/prevFat):0, boost=1+(trend*0.5);
-          var pv=document.querySelector('.proj-value'); if(pv) pv.textContent='R$ '+(mmFat*30*boost).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-          var a=document.querySelector('.proj-kpi-sub .sub-kpi:nth-child(1) .proj-value-small'); if(a) a.textContent = Math.round(mmPed*30*boost).toLocaleString('pt-BR');
-          var b=document.querySelector('.proj-kpi-sub .sub-kpi:nth-child(2) .proj-value-small'); if(b) b.textContent = 'R$ '+(A.ped? (A.fat/A.ped).toFixed(2).replace('.',',') : '0,00');
-
-          // Insights simples
-          var box=document.querySelector('.ins-list');
-          if (box){
-            box.innerHTML='';
-            if(nowFat>0||prevFat>0){
-              var up = nowFat>=prevFat;
-              var el=document.createElement('div'); el.className='ins-card '+(up?'up':'down');
-              el.innerHTML='<div class="dot"></div><div><div class="ins-title">'+(up?'Aceleração':'Desaceleração')+' nas últimas 4 semanas</div><div class="ins-sub">Δ '+(((nowFat-prevFat)/Math.max(1,prevFat)*100).toFixed(1))+'% em receita agregada.</div><div class="ins-action">Ação: '+(up?'reforçar':'ajustar')+' mix nos horários de pico.</div></div>';
-              box.appendChild(el);
-            }
-          }
-        });
-      });
-    }
-
-    function bind(){
-      var ids = ['#fxDuStart','#fxDuEnd','#fxCanceled','#kpi-select'];
-      for (var i=0;i<ids.length;i++){
-        var el = document.querySelector(ids[i]); if (!el) continue;
-        if (!el.__dx__){
-          el.addEventListener('change', run);
-          el.addEventListener('input', run);
-          el.__dx__ = true;
-        }
-      }
-      document.addEventListener('filters:apply', run);
-      document.addEventListener('filters:apply:internal', run);
-      var testBtn = document.getElementById('dx-run-test'), testOut = document.getElementById('dx-test-result');
-      if (testBtn && !testBtn.__dx__){
-        testBtn.addEventListener('click', function(){
-          var dates = uiDates(); if(!dates){ if(testOut) testOut.textContent='Defina Início/Fim.'; return; }
-          var anal = { cancelado: (document.getElementById('fxCanceled')||{}).value || null };
-          headTotal(dates.start, dates.end, anal, function(total){
-            if(testOut) testOut.textContent = (total!=null? ('Total via HEAD: '+total.toLocaleString('pt-BR')) : 'Sem total (HEAD)');
-            console.log('[DX TEST] HEAD total=', total);
-          });
-        });
-        testBtn.__dx__ = true;
+        } catch (err){ /* tenta próximo */ }
       }
     }
+    // fallback: sem data
+    return { endpoint: DX_ENDPOINTS[0], dateCol: null, type: "date", headTotal: 0 };
+  }
 
-    document.addEventListener('DOMContentLoaded', function(){ bind(); run(); });
-  })();
+  // Faz paginação usando Range: a-b (1000 registros por página)
+  async function fetchPaged(endpoint, dateCol, type, dtIni, dtFim, canceladoSel){
+    const page = 1000;
+    let data = [];
+    const hdr = { "apikey": SUPABASE_KEY, "Authorization": "Bearer "+SUPABASE_KEY, "Prefer": "count=exact" };
+    const base = new URL(SUPABASE_URL + endpoint);
+    base.searchParams.set("select", "*");
+    // filtros
+    if (dateCol){
+      const suffix = (type==="ts")? "T00:00:00" : "";
+      base.searchParams.set(dateCol + "=", ""); // placeholder para impedir repetição
+      base.searchParams.delete(dateCol + "=");
+      base.searchParams.set(dateCol + "gte", dtIni + suffix);
+      base.searchParams.set(dateCol + "lt", dtFim + suffix);
+    }
+    if (canceladoSel === "true"){ base.searchParams.set("cancelado", "eq.true"); }
+    else if (canceladoSel === "false"){ base.searchParams.set("cancelado", "eq.false"); }
+
+    // HEAD para total
+    const head = await fetch(base.toString(), { method:"HEAD", headers:{...hdr, "Range":"0-0"} });
+    const cr = head.headers.get("content-range") || "*/0";
+    const total = parseInt(cr.split("/")[1]||"0",10) || 0;
+    $("#headTotal").textContent = fmtInt(total);
+
+    if (total === 0) return data;
+    const pages = Math.ceil(total / page);
+    for (let i=0;i<pages;i++){
+      const from = i*page;
+      const to = Math.min(from + page - 1, total-1);
+      const res = await fetch(base.toString(), { headers:{...hdr, "Range": `${from}-${to}`} });
+      if (!res.ok) throw new Error("Falha REST página " + i);
+      const rows = await res.json();
+      data.push(...rows);
+    }
+    return data;
+  }
+
+  function groupByDay(rows, dateCol){
+    const out = {};
+    for (const r of rows){
+      let d;
+      if (dateCol && r[dateCol]){
+        d = String(r[dateCol]).slice(0,10);
+      }else{
+        // fallback: tenta campos comuns
+        const k = ["dt","data","dh","created_at","hora"];
+        let val = null;
+        for (const c of k){ if (r[c]) { val = r[c]; break; } }
+        d = val ? String(val).slice(0,10) : "";
+      }
+      if (!d) continue;
+      if (!out[d]) out[d] = {fat:0,ped:0,desc:0};
+      out[d].fat += getFat(r);
+      out[d].ped += getPed(r);
+      out[d].desc += getDesc(r);
+    }
+    return out;
+  }
+
+  function calcKPI(rows, kpi){
+    let fat=0, ped=0, desc=0;
+    for (const r of rows){ fat+=getFat(r); ped+=getPed(r); desc+=getDesc(r); }
+    if (kpi==="fat") return {v:fat, fmt:fmtBRL(fat)};
+    if (kpi==="ped") return {v:ped, fmt:fmtInt(ped)};
+    if (kpi==="ticket"){ const t = ped>0? fat/ped : 0; return {v:t, fmt:fmtBRL(t)}; }
+    if (kpi==="desc") return {v:desc, fmt:fmtBRL(desc)};
+    return {v:0, fmt:"—"};
+  }
+
+  function renderDelta(curV, prevV){
+    const el = $("#delta");
+    if (!el) return;
+    if (prevV<=0){ el.style.display="none"; return; }
+    const d = (curV - prevV)/prevV;
+    el.style.display="";
+    el.className = "delta " + (d>=0? "up":"down");
+    el.textContent = (d>=0? "▲ ":"▼ ") + Math.abs(d*100).toFixed(1).replace(".", ",") + "%";
+  }
+
+  function renderInsights(byDay){
+    const box = $("#ins");
+    box.innerHTML = "";
+    const days = Object.keys(byDay).sort();
+    if (!days.length){ box.innerHTML = '<div class="muted">Sem dados no período.</div>'; return; }
+    const last = days.slice(-28);
+    // aceleração (fat em janelas)
+    const sum = (keys, field) => keys.reduce((s,k)=> s + (byDay[k]?.[field]||0), 0);
+    const nowFat = sum(last,"fat");
+    const prevFat = sum(days.slice(-56,-28), "fat");
+    const up = nowFat>=prevFat;
+    const c1 = document.createElement("div"); c1.className="ins-card "+(up?"up":"down");
+    c1.innerHTML = `<div class="dot"></div><div><div><strong>${up?"Aceleração":"Desaceleração"} nas últimas 4 semanas</strong></div>
+    <div class="muted">Base: receita 28d vs. 28d anteriores.</div></div>`;
+    box.appendChild(c1);
+  }
+
+  function renderProj(byDay, pedTotal, fatTotal){
+    const days = Object.keys(byDay).sort();
+    const tail = days.slice(-28);
+    const sum = (keys, field) => keys.reduce((s,k)=> s + (byDay[k]?.[field]||0), 0);
+    const nowFat = sum(tail,"fat");
+    const nowPed = sum(tail,"ped");
+    const N = Math.max(1, tail.length);
+    const mmFat = nowFat / N;
+    const mmPed = nowPed / N;
+    $("#proj_value").textContent = fmtBRL(mmFat*30);
+    $("#proj_ped").textContent = fmtInt(Math.round(mmPed*30));
+    const tk = pedTotal>0? fatTotal/pedTotal : 0;
+    $("#proj_ticket").textContent = fmtBRL(tk);
+  }
+
+  async function run(){
+    // datas padrão: último mês
+    const ini = $("#dtIni").value || addDays(todayISO(), -30);
+    const fim = $("#dtFim").value || todayISO();
+    $("#dtIni").value = ini; $("#dtFim").value = fim;
+
+    const kpi = $("#kpiSel").value;
+    $("#kpiLabel").textContent = $("#kpiSel").selectedOptions[0].textContent;
+
+    const route = await detectRouteAndDateRange(ini, addDays(fim,1));
+    $("#headTotal").textContent = fmtInt(route.headTotal);
+
+    const rows = await fetchPaged(route.endpoint, route.dateCol, route.type, ini, addDays(fim,1), $("#cancelado").value);
+
+    // Total atual
+    const k = calcKPI(rows, kpi);
+    $("#kpiValue").textContent = k.fmt;
+
+    // Período anterior com mesma duração:
+    const dur = Math.max(1, Math.ceil((new Date(addDays(fim,1)) - new Date(ini))/86400000));
+    const prevIni = addDays(ini, -dur), prevFim = ini;
+    const rowsPrev = await fetchPaged(route.endpoint, route.dateCol, route.type, prevIni, prevFim, $("#cancelado").value);
+    const kPrev = calcKPI(rowsPrev, kpi);
+    $("#prevValue").textContent = kPrev.fmt;
+    renderDelta(k.v, kPrev.v);
+
+    // Destaques básicos
+    $("#highlights").textContent = "Destaques: — (dados reais, sem amostras).";
+
+    // Projeções + insights
+    const byDay = groupByDay(rows, route.dateCol);
+    const totFat = rows.reduce((s,r)=>s+getFat(r),0);
+    const totPed = rows.reduce((s,r)=>s+getPed(r),0);
+    renderProj(byDay, totPed, totFat);
+    renderInsights(byDay);
+  }
+
+  $("#btnTest").addEventListener("click", async ()=>{
+    const ini = $("#dtIni").value || addDays(todayISO(), -30);
+    const fim = $("#dtFim").value || todayISO();
+    const route = await detectRouteAndDateRange(ini, addDays(fim,1));
+    $("#headTotal").textContent = fmtInt(route.headTotal);
+    alert("HEAD total = " + route.headTotal);
+  });
+  // roda no load
+  run().catch(err=>{
+    console.error("[DX] Falha geral", err);
+    alert("Erro ao carregar diagnóstico: " + (err.message||err));
+  });
   </script>
 </body>
 </html>
