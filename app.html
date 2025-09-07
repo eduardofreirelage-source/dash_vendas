@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width,initial-scale=1" name="viewport"/>
-<title>Mapa de Produção — v3.2 Final</title>
+<title>Mapa de Produção — v3.4 Final</title>
 <link href='data:image/svg+xml,&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"&gt;&lt;rect x="0" y="0" width="128" height="128" rx="22" fill="%237b1e3a"/&gt;&lt;text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white"&gt;MP&lt;/text&gt;&lt;/svg&gt;' rel="icon"/>
 <style>
     :root{--bg:#f7f7fa; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e5e7eb; --wine:#7b1e3a; --wine-2:#8c2947; --chip:#fef2f2; --ok:#0b5d47; --down:#b91c1c; --ok-dark: #065f46; --wine-dark: #881337; --radius:12px; --shadow:0 8px 28px rgba(16,24,40,.06);}
@@ -574,10 +574,9 @@
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-
 <script>
 // =================================================================================
-// SCRIPT ÚNICO, COMPLETO E CORRIGIDO (v3.2)
+// SCRIPT ÚNICO, COMPLETO E CORRIGIDO
 // =================================================================================
 
 /* ===== Helpers ===== */
@@ -1310,7 +1309,8 @@ addSafeEventListener('btnSaveIng', 'click', async () => {
         }
         $('btnCancelIngEdit').click();
         await loadIngredientes();
-        await loadEstoqueParams();
+        await loadEstoqueParams(); 
+        await EstoqueModule.loadSaldos();
         setStatus('Ingrediente salvo.', 'ok');
     } catch (ex) { setStatus('Erro ao salvar ingrediente: ' + (ex.message || ex), 'err'); }
 });
@@ -1416,7 +1416,6 @@ const EstoqueModule = {
         await this.populateItemsDropdown();
         await this.loadRecentMovs();
         await this.loadSaldos();
-        await loadEstoqueParams();
     },
 
     async populateUnidadesDropdown() {
@@ -1584,12 +1583,14 @@ const EstoqueModule = {
        tbody.innerHTML = '<tr><td colspan="6">Carregando saldos...</td></tr>';
        try {
            const { data, error } = await supa.from('estoque_saldo')
-               .select('*, ingredientes(nome, estoque_minimo, estoque_maximo, unidades_medida(sigla)), unidades(nome)');
+               .select('*, ingredientes!inner(nome, estoque_minimo, estoque_maximo, unidades_medida(sigla)), unidades(nome)')
+               .eq('item_tipo', 'INGREDIENTE');
+
            if (error) throw error;
            
            tbody.innerHTML = '';
            data.forEach(item => {
-               if (!item.ingredientes) return; // Pula itens que não são ingredientes (ex: receitas)
+               if (!item.ingredientes) return; 
                const saldo = item.saldo_atual;
                const min = item.ingredientes.estoque_minimo;
                const max = item.ingredientes.estoque_maximo;
@@ -1611,7 +1612,7 @@ const EstoqueModule = {
            });
        } catch(e) {
            tbody.innerHTML = '<tr><td colspan="6">Erro ao carregar saldos. Verifique o console.</td></tr>';
-           console.error(e);
+           console.error("Erro em loadSaldos:", e);
        }
     },
 };
@@ -1802,7 +1803,7 @@ async function init(){
     setupGenericCrud({ tabId: 'unidades', table: 'unidades', formId: 'form-unidades', editorId: 'unidades-editor-container', btnShowId: 'btnShowNewUnidadesForm', btnCancelId: 'btnCancelUnidadesEdit', loadFn: loadUnidades, formTitle: 'Unidade (destino)', entityName: 'Unidade' });
     setupGenericCrud({ tabId: 'categorias', table: 'categorias', formId: 'form-categorias', editorId: 'categorias-editor-container', btnShowId: 'btnShowNewCategoriasForm', btnCancelId: 'btnCancelCategoriasEdit', loadFn: loadCategorias, formTitle: 'Categoria', entityName: 'Categoria' });
     
-    addSafeEventListener('btnShowNewItemTiposForm', 'click', () => { $('itemtipos-editor-container').style.display = 'block'; if($('form-itemtipos')){$('form-itemtipos').reset(); $('form-itemtipos').id.value = '';} });
+    addSafeEventListener('btnShowNewItemTiposForm', 'click', () => { if($('itemtipos-editor-container')){$('itemtipos-editor-container').style.display = 'block'; if($('form-itemtipos')){$('form-itemtipos').reset(); $('form-itemtipos').id.value = '';}} });
     addSafeEventListener('btnCancelItemTiposEdit', 'click', () => { if($('itemtipos-editor-container')) $('itemtipos-editor-container').style.display = 'none'; });
     addSafeEventListener('form-itemtipos', 'submit', async(ev) => {
         ev.preventDefault();
@@ -1813,7 +1814,7 @@ async function init(){
         const { error } = await q;
         if(error){ setStatus(error.message||error, 'err'); return; }
         setStatus('Tipo de item salvo', 'ok');
-        $('btnCancelItemTiposEdit').click();
+        if($('btnCancelItemTiposEdit')) $('btnCancelItemTiposEdit').click();
         await detectAndLoadItemTipos();
     });
 
@@ -1825,6 +1826,7 @@ async function init(){
       'categorias': loadCategorias,
       'item-tipos': detectAndLoadItemTipos,
       'estoque-param': loadEstoqueParams,
+      'estoque-visao': EstoqueModule.loadSaldos,
     };
     document.querySelectorAll('.subtabs [data-subtab]').forEach(btn => {
       btn.addEventListener('click', () => {
