@@ -988,7 +988,7 @@ const EstoqueModule = {
             tb.innerHTML = '<tr><td colspan="5">Erro ao carregar. Verifique se a RPC `rpc_get_recent_movs` foi criada (execute o SQL).</td></tr>';
         }
     },
-    // CORREÇÃO: Função reescrita para ser mais simples e eficiente
+    
     async loadSaldos() {
        const tbody = $('tblSaldo')?.querySelector('tbody');
        if (!tbody) return;
@@ -1195,6 +1195,10 @@ async function loadEstoqueParams() {
     }
 }
 
+async function populateStockFilters() {
+    await fillOptionsFrom('categorias', 'filtro-categoria-estoque', 'nome', 'nome', { tipo: 'INGREDIENTE' });
+}
+
 document.addEventListener('click', (e) => {
     if (e.target.matches('.btn-edit-param')) {
         const id = e.target.dataset.id;
@@ -1260,6 +1264,7 @@ async function init(){
     await loadReceitas(); 
     await loadIngredientes(); 
     await preencherCategorias(); 
+    await populateStockFilters(); // Adicionado para carregar filtro de categoria do estoque
     await loadDash?.();
     EstoqueModule.init();
     setStatus('Pronto','ok');
