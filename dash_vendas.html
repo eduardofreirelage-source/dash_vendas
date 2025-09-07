@@ -57,8 +57,8 @@
     .seg button.active{background:var(--wine);color:#fff}
     .chart-box{position:relative;flex-grow:1;min-height:0;}
     .chart-box canvas{display:block;width:100%;height:100%}
-    .side{display:flex;flex-direction:column;gap:10px} /* MODIFICADO: gap de 8px para 10px */
-    .card.mini{min-height:auto;padding:12px 10px;} /* MODIFICADO: padding aumentado para 12px 10px */
+    .side{display:flex;flex-direction:column;gap:10px}
+    .card.mini{min-height:auto;padding:12px 10px;}
     .card.mini h4{font-size:12px;}
     .card.mini .val{font-size:18px;font-weight:500;margin-top:0px}
     .card.mini .sub{font-size:11px}
@@ -213,14 +213,14 @@
           
           <div class="diag-card2 hero" style="grid-column: 1 / -1;">
             <div class="hero-main-value">
-              <span class="hero-value-number">R$ 1.234.567</span>
-              <span class="delta up" style="font-size: 16px; padding: 4px 10px;">▲ 12,8%</span>
+              <span class="hero-value-number">—</span>
+              <span class="delta flat" style="font-size: 16px; padding: 4px 10px;">—</span>
             </div>
             <div class="hero-sub-value">
-              Período anterior: R$ 1.094.000
+              Período anterior: —
             </div>
             <div class="hero-context">
-              <strong>Destaques:</strong> Lojas Savassi e Estoril • <strong>Horário:</strong> 11–14h • <strong>Canal:</strong> Delivery Próprio
+              <strong>Destaques:</strong> —
             </div>
           </div>
         
@@ -523,6 +523,7 @@
     const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v1';
     const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v1';
     const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v1';
+    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral'; // NOVA RPC PARA A ABA DIAGNÓSTICO
 
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
@@ -586,8 +587,8 @@
       return formatCurrencyTick(v);
     };
     const formatValueBy = (fmt,v) => {
-      if(fmt==='count') return (Number(v)||0).toLocaleString('pt-BR');
-      if(fmt==='percent'){ const n=Number(v)||0; return (n*100).toFixed(1)+'%'; }
+      if(fmt==='count') return num(v);
+      if(fmt==='percent') return pctf(v);
       return money(v);
     };
     const bucketKey = (type, row) => {
@@ -601,8 +602,9 @@
     const downSVG = () => '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 16l-5-6h3V4h4v6h3l-5 6z"/></svg>';
     const deltaBadge = (el,curr,prev) => {
       if(!el) return;
-      if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
-      const p=((curr-prev)/prev)*100;
+      if(prev == null || !isFinite(prev) || +prev === 0 || curr == null || !isFinite(curr)){ el.textContent='—'; el.className='delta flat'; return; }
+      const delta = (curr-prev)/prev;
+      const p = delta*100;
       el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
       el.className='delta '+(p>=0?'up':'down');
     };
@@ -1344,6 +1346,55 @@
       ms.turnos.setOptions(['Dia','Noite'], true);
     }
     
+    // ===================================================================================
+    // NOVA: LÓGICA PARA A ABA DE DIAGNÓSTICO
+    // ===================================================================================
+    async function updateDiagnosticTab(kpi_key, de, ate, dePrev, atePrev, analiticos) {
+      const heroCard = document.querySelector('#tab-diagnostico .hero');
+      if (!heroCard) return;
+
+      try {
+        const rpc_params = { ...buildParams(de, ate, analiticos), p_kpi_key: kpi_key };
+        
+        // A CHAMADA REAL PARA A RPC (QUANDO ESTIVER NO AR)
+        // const { data, error } = await supa.rpc(RPC_DIAGNOSTIC_FUNC, rpc_params);
+
+        // ========================================================================
+        // INÍCIO: DADOS DE EXEMPLO (MOCK)
+        // Este bloco simula a resposta da RPC. Remova-o quando a função 'diagnostico_geral'
+        // estiver ativa no Supabase para usar os dados reais.
+        const mockData = {
+            hero: { current: Math.random() * 2000000, previous: Math.random() * 2000000, delta: (Math.random() - 0.5) * 0.4 },
+            context: { top_stores: ['Savassi', 'Estoril'], top_channels: ['Delivery Próprio'], top_hours: ['11–14h'] }
+        };
+        const data = mockData;
+        const error = null;
+        // FIM: DADOS DE EXEMPLO (MOCK)
+        // ========================================================================
+
+        if (error) throw error;
+        if (!data) return;
+
+        // Renderiza o card principal (Hero)
+        const valEl = heroCard.querySelector('.hero-value-number');
+        const deltaEl = heroCard.querySelector('.delta');
+        const subEl = heroCard.querySelector('.hero-sub-value');
+        const contextEl = heroCard.querySelector('.hero-context');
+
+        const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
+        valEl.textContent = formatValueBy(kpiMeta.fmt, data.hero.current);
+        subEl.textContent = 'Período anterior: ' + formatValueBy(kpiMeta.fmt, data.hero.previous);
+        deltaBadge(deltaEl, data.hero.current, data.hero.previous);
+        
+        const { top_stores, top_channels, top_hours } = data.context;
+        contextEl.innerHTML = `<strong>Destaques:</strong> ${top_stores?.join(' e ') || 'N/A'} • <strong>Horário:</strong> ${top_hours?.join(', ') || 'N/A'} • <strong>Canal:</strong> ${top_channels?.join(', ') || 'N/A'}`;
+
+      } catch (e) {
+        console.error('Erro ao atualizar aba de diagnóstico:', e);
+      }
+    }
+
+
     /* ===================== LOOP PRINCIPAL ===================== */
     async function applyAll(details){
       try{
@@ -1358,23 +1409,29 @@
         const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
         setStatus('Consultando…');
         let kpiOk=true;
+
+        // Atualiza as abas Vendas e Analítico
         await updateKPIs(de,ate,dePrev,atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
         await Promise.all([
           updateCharts(de,ate,dePrev,atePrev, analiticos),
           updateMonth12x12(analiticos),
           updateTop6(de,ate, analiticos)
         ]);
+        
+        // ATUALIZA A ABA DIAGNÓSTICO
+        const selectedKpiForDiag = $('kpi-select').value;
+        await updateDiagnosticTab(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos);
+
         if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
         else setStatus('OK','ok');
         
-        // NOVA CHAMADA: Garante o alinhamento após a renderização
+        // Garante o alinhamento do painel da aba Vendas após a renderização
         matchPanelHeights();
       }catch(e){
         console.error('Erro em applyAll:', e);
         setStatus('Erro: '+(e.message||e),'err');
       }
     }
-
 
     // ===================================================================================
     // LÓGICA DA INTERFACE DE FILTROS E ABAS
@@ -1478,6 +1535,8 @@
     fx.$start.addEventListener('change', fxDispatchApplyDebounced);
     fx.$end.addEventListener('change', fxDispatchApplyDebounced);
     fxCanceled.addEventListener('change', fxDispatchApplyDebounced);
+    // Adiciona o gatilho para a nova aba
+    $('kpi-select').addEventListener('change', fxDispatchApplyDebounced);
 
     document.addEventListener('filters:apply', (e) => {
         if(e.detail) {
@@ -1506,7 +1565,7 @@
         bindKPIClick();
         updateChartTitles();
 
-        // NOVA CHAMADA: Garante o alinhamento em caso de redimensionamento da tela
+        // Garante o alinhamento em caso de redimensionamento da tela
         window.addEventListener('resize', debounce(matchPanelHeights, 150));
 
         fxLastNDays(30);
@@ -1521,245 +1580,5 @@
   });
   </script>
 
-<script>
-(function(){
-  'use strict';
-  function $(s){ return document.querySelector(s); }
-
-  // Polyfills/helpers
-  if (!window.DateHelpers || typeof window.DateHelpers.computePrevRangeISO !== 'function') {
-    window.DateHelpers = window.DateHelpers || {};
-    window.DateHelpers.computePrevRangeISO = function(deISO, ateISO){
-      try{
-        var de = new Date(deISO+'T00:00:00');
-        var ate = new Date(ateISO+'T00:00:00');
-        var span = ate - de;
-        var prevEnd = new Date(de.getTime()-86400000);
-        var prevStart = new Date(prevEnd.getTime()-span);
-        return { dePrev: prevStart.toISOString().slice(0,10), atePrev: prevEnd.toISOString().slice(0,10) };
-      }catch(e){
-        var end=new Date(); var start=new Date(end); start.setDate(end.getDate()-30);
-        var prevEnd2=new Date(start); prevEnd2.setDate(start.getDate()-1);
-        var prevStart2=new Date(prevEnd2); prevStart2.setDate(prevEnd2.getDate()-30);
-        return { dePrev: prevStart2.toISOString().slice(0,10), atePrev: prevEnd2.toISOString().slice(0,10) };
-      }
-    };
-  }
-
-  function safeGet(obj, path){
-    try{
-      for (var i=0;i<path.length;i++){ if (!obj) return null; obj = obj[path[i]]; }
-      return obj;
-    }catch(e){ return null; }
-  }
-
-  function dxFetch(de, ate, anal, cb){
-    // Try baseQuery if it exists
-    try{
-      if (typeof window.baseQuery === 'function'){
-        return window.baseQuery(de, ate, anal).then(function(rows){ cb(null, rows); }).catch(function(e){
-          console.warn('[DX ES5] baseQuery falhou, fallback REST', e);
-          return dxFetchREST(de, ate, anal, cb);
-        });
-      }
-    }catch(e){ console.warn('[DX ES5] baseQuery call error', e); }
-    // Else REST
-    return dxFetchREST(de, ate, anal, cb);
-  }
-
-  function dxFetchREST(de, ate, anal, cb){
-    var URL = window.SUPABASE_URL, KEY = window.SUPABASE_KEY;
-    if (!URL || !KEY){ cb(null, []); return; }
-    var headers = { apikey: KEY, Authorization: 'Bearer '+KEY, Range: '0-999999', Prefer: 'count=exact' };
-    var qs = [
-      'select=dia,hora,loja,canal,fat,des,fre,cancelado',
-      'dia=gte.'+encodeURIComponent(de),
-      'dia=lte.'+encodeURIComponent(ate),
-      'order=dia.asc,hora.asc'
-    ];
-    try{
-      if (anal && anal.cancelado==='sim') qs.push('cancelado=eq.Sim');
-      if (anal && anal.cancelado==='nao') qs.push('cancelado=neq.Sim');
-    }catch(e){}
-    var url = URL + '/rest/v1/vendas_canon?' + qs.join('&');
-    fetch(url, { headers: headers }).then(function(r){
-      if (!r.ok) return [];
-      return r.json();
-    }).then(function(data){
-      cb(null, data || []);
-    }).catch(function(e){ console.warn('[DX ES5] REST error', e); cb(null, []); });
-  }
-
-  function agg(rows){
-    var byDay={}, byStore={}, byHour={}, byCanal={};
-    var canc_val=0, canc_ped=0;
-    for (var i=0;i<(rows||[]).length;i++){
-      var r = rows[i];
-      var dia=r.dia;
-      var loja=r.loja||'—';
-      var h = (r.hora==null? '—' : String(r.hora)); if (h.length===1) h='0'+h;
-      var canal=r.canal||'—';
-      var fat=+r.fat||0, des=+r.des||0, fre=+r.fre||0;
-      if(!byDay[dia]) byDay[dia]={fat:0,des:0,fre:0,ped:0};
-      byDay[dia].fat+=fat; byDay[dia].des+=des; byDay[dia].fre+=fre; byDay[dia].ped+=1;
-      if(!byStore[loja]) byStore[loja]={fat:0,des:0,fre:0,ped:0};
-      byStore[loja].fat+=fat; byStore[loja].des+=des; byStore[loja].fre+=fre; byStore[loja].ped+=1;
-      if(!byHour[h]) byHour[h]={fat:0,des:0,fre:0,ped:0};
-      byHour[h].fat+=fat; byHour[h].des+=des; byHour[h].fre+=fre; byHour[h].ped+=1;
-      if(!byCanal[canal]) byCanal[canal]={fat:0,des:0,fre:0,ped:0};
-      byCanal[canal].fat+=fat; byCanal[canal].des+=des; byCanal[canal].fre+=fre; byCanal[canal].ped+=1;
-      if (String(r.cancelado)==='Sim'){ canc_ped+=1; canc_val+=fat; }
-    }
-    var dias=0; for (var k in byDay) if (byDay.hasOwnProperty(k)) dias++;
-    var tot={fat:0,des:0,fre:0,ped:0,dias:dias,canc_ped:canc_ped,canc_val:canc_val};
-    for (var d in byDay){ if(!byDay.hasOwnProperty(d)) continue; tot.fat+=byDay[d].fat; tot.des+=byDay[d].des; tot.fre+=byDay[d].fre; tot.ped+=byDay[d].ped; }
-    return {byDay:byDay, byStore:byStore, byHour:byHour, byCanal:byCanal, tot:tot};
-  }
-
-  function valBy(key, a){
-    if (key==='fat') return a.fat;
-    if (key==='des') return a.des;
-    if (key==='fre') return a.fre;
-    if (key==='ped') return a.ped;
-    if (key==='tkt') return (a.ped>0? a.fat/a.ped:0);
-    if (key==='fatmed') return (a.dias>0? a.fat/a.dias:0);
-    if (key==='fremed') return (a.ped>0? a.fre/a.ped:0);
-    if (key==='desperc') return (a.fat>0? a.des/a.fat:0);
-    if (key==='canc_ped') return a.canc_ped||0;
-    if (key==='canc_val') return a.canc_val||0;
-    if (key==='roi') return (a.des>0? (a.fat-a.des)/a.des: NaN);
-    return 0;
-  }
-
-  function fmt(key, v){
-    var metaFmt = (window.KPI_META && window.KPI_META[key] && window.KPI_META[key].fmt) ? window.KPI_META[key].fmt : null;
-    var m;
-    if (metaFmt) m = metaFmt;
-    else {
-      if (key==='ped' || key==='canc_ped') m='count';
-      else if (key==='desperc' || key==='roi') m='percent';
-      else m='money';
-    }
-    if (m==='money')   return isFinite(v)? ('R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})):'—';
-    if (m==='count')   return isFinite(v)? (+v).toLocaleString('pt-BR'):'—';
-    if (m==='percent') return isFinite(v)? ((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%':'—';
-    return String(v);
-  }
-
-  function delta(now, prev){
-    if(!isFinite(prev)||prev===0) return {txt:'—',cls:'flat'};
-    var p=((now-prev)/prev)*100;
-    return {txt:(p>=0?'▲ ':'▼ ')+Math.abs(p).toFixed(1)+'%', cls:(p>=0?'up':'down')};
-  }
-
-  function topN(mapObj, key, n){
-    var arr=[], k;
-    for (k in mapObj){ if(!mapObj.hasOwnProperty(k)) continue;
-      var v = mapObj[k];
-      var sortVal = (key==='ped'? v.ped : (key==='tkt'? (v.ped? v.fat/v.ped:0): v.fat));
-      arr.push({name:k, val:sortVal});
-    }
-    arr.sort(function(a,b){ return (b.val||0)-(a.val||0); });
-    var out=[];
-    for (var i=0;i<Math.min(n,arr.length);i++) out.push(arr[i].name);
-    return out;
-  }
-
-  function uiDates(){
-    var a = $('#fxDuStart') ? $('#fxDuStart').value : null;
-    var b = $('#fxDuEnd') ? $('#fxDuEnd').value : null;
-    if(!a || !b) return null;
-    var start = (b>=a)? a : b;
-    var end   = (b>=a)? b : a;
-    return {start:start, end:end};
-  }
-
-  function selectedKey(){
-    var sel = $('#kpi-select');
-    var raw = sel ? (sel.value || sel.getAttribute('data-value')) : '';
-    if (!raw && sel && sel.options && sel.selectedIndex>=0){
-      var opt = sel.options[sel.selectedIndex];
-      raw = (opt.value || opt.text || '').trim();
-    }
-    var s = (raw||'').toLowerCase();
-    if (window.KPI_META && window.KPI_META[raw]) return raw;
-    if (s.indexOf('fat')>-1) return 'fat';
-    if (s.indexOf('ped')>-1 || s.indexOf('pedido')>-1) return 'ped';
-    if (s.indexOf('ticket')>-1 || s==='tkt') return 'tkt';
-    if (s.indexOf('frete')>-1 || s==='fre') return 'fre';
-    if (s.indexOf('desc')>-1 || s==='des') return 'des';
-    if (s.indexOf('%')>-1 || s.indexOf('perc')>-1) return 'desperc';
-    if (s.indexOf('roi')>-1) return 'roi';
-    if (s.indexOf('cancel')>-1 && s.indexOf('pedido')>-1) return 'canc_ped';
-    if (s.indexOf('cancel')>-1 && s.indexOf('valor')>-1) return 'canc_val';
-    return 'fat';
-  }
-
-  function run(){
-    var dates = uiDates(); if (!dates) return;
-    var key = selectedKey();
-    var anal = {
-      unidade: safeGet(window, ['ms','unids','get']) ? window.ms.unids.get() : [],
-      loja:    safeGet(window, ['ms','lojas','get']) ? window.ms.lojas.get() : [],
-      turno:   safeGet(window, ['ms','turnos','get']) ? window.ms.turnos.get() : [],
-      canal:   safeGet(window, ['ms','canais','get']) ? window.ms.canais.get() : [],
-      pagamento: safeGet(window, ['ms','pags','get']) ? window.ms.pags.get() : [],
-      cancelado: $('#fxCanceled') ? $('#fxCanceled').value : null
-    };
-    var prev = DateHelpers.computePrevRangeISO(dates.start, dates.end);
-
-    // Fetch now and prev, then render
-    dxFetch(dates.start, dates.end, anal, function(_e1, rowsNow){
-      dxFetch(prev.dePrev, prev.atePrev, anal, function(_e2, rowsPrev){
-
-        // Aggregates
-        var A = agg(rowsNow||[]), B = agg(rowsPrev||[]);
-        var mode = (typeof window.effectiveMode==='function') ? window.effectiveMode() : 'total';
-        var curr = (mode==='media') ? valBy(key, { fat:(A.tot.dias? A.tot.fat/A.tot.dias:0), fre:(A.tot.ped? A.tot.fre/A.tot.ped:0), ped:A.tot.ped, des:A.tot.des, dias:A.tot.dias, canc_ped:A.tot.canc_ped, canc_val:A.tot.canc_val })
-                                    : valBy(key, A.tot);
-        var prevv= (mode==='media') ? valBy(key, { fat:(B.tot.dias? B.tot.fat/B.tot.dias:0), fre:(B.tot.ped? B.tot.fre/B.tot.ped:0), ped:B.tot.ped, des:B.tot.des, dias:B.tot.dias, canc_ped:B.tot.canc_ped, canc_val:B.tot.canc_val })
-                                    : valBy(key, B.tot);
-
-        // Render hero (painel ao vivo)
-        var pK = $('.hero-value-number'); if (pK) pK.textContent = fmt(key, curr);
-        var pD = document.querySelector('.hero .delta, .delta');
-        if (pD){
-          var dlt = delta(curr, prevv);
-          pD.textContent = dlt.txt;
-          pD.className = 'delta '+dlt.cls;
-        }
-        var pS = $('.hero-sub-value'); if (pS) pS.textContent = 'Período anterior: ' + fmt(key, prevv);
-
-        var ctx = $('.hero-context');
-        if (ctx){
-          var lo = topN(A.byStore,key,2).join(' e ') || '—';
-          var ho = topN(A.byHour,key,2).join('–') || '—';
-          var ca = topN(A.byCanal,key,1).join(', ') || '—';
-          ctx.innerHTML = '<strong>Destaques:</strong> Lojas '+lo+' • <strong>Horário:</strong> '+ho+' • <strong>Canal:</strong> '+ca;
-        }
-      });
-    });
-  }
-
-  // Bind UI changes
-  function bind(){
-    var ids = ['#fxDuStart','#fxDuEnd','#fxCanceled','#kpi-select'];
-    for (var i=0;i<ids.length;i++){
-      var el = $(ids[i]); if (!el) continue;
-      if (!el.__dx_es5__){
-        el.addEventListener('change', run);
-        el.addEventListener('input', run);
-        el.__dx_es5__ = true;
-      }
-    }
-  }
-
-  document.addEventListener('DOMContentLoaded', function(){
-    bind(); run();
-  });
-  document.addEventListener('filters:apply', run);
-  document.addEventListener('filters:apply:internal', run);
-})();
-</script>
 </body>
 </html>
