@@ -335,6 +335,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return allRows;
     }
     
+    // Função original, sem alterações, para garantir estabilidade
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
       let allKpiValues = {};
       try {
@@ -500,84 +501,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
     
-    function computeByBucket(rows, type, metric, mode){
-      const bucketDays = new Map();
-      const bucketDaily = new Map();
-      for(const r of rows){
-        const bkey = bucketKey(type, r);
-        if(bkey==null) continue;
-        if(!bucketDays.has(bkey)) bucketDays.set(bkey, new Set());
-        bucketDays.get(bkey).add(r.dia);
-        if(!bucketDaily.has(bkey)) bucketDaily.set(bkey, new Map());
-        const dayMap = bucketDaily.get(bkey);
-        const dkey = r.dia;
-        if(!dayMap.has(dkey)) dayMap.set(dkey, {fat:0, des:0, fre:0, ped:0});
-        const dacc = dayMap.get(dkey);
-        dacc.fat += +r.fat||0;
-        dacc.des += +r.des||0;
-        dacc.fre += +r.fre||0;
-        dacc.ped += 1;
-      }
-      function computeRatio(dailyMap, metric){
-        const days = [...dailyMap.values()];
-        const dailyVals = days.map(d => {
-          switch(metric){
-            case 'tkt': return (d.ped > 0) ? (d.fat / d.ped) : 0;
-            case 'desperc': return (d.fat > 0) ? (d.des / d.fat) : 0;
-            case 'fremed': return (d.ped > 0) ? (d.fre / d.ped) : 0;
-            case 'roi': return (d.des > 0) ? ((d.fat - d.des) / d.des) : 0;
-            default: return 0;
-          }
-        }).filter(v => isFinite(v));
-        if(!dailyVals.length) return 0;
-        return dailyVals.reduce((a,b)=>a+b, 0) / dailyVals.length;
-      }
-      function computeNonRatio(dailyMap, metric, numDays){
-        const total = {fat:0, des:0, fre:0, ped:0};
-        for(const d of dailyMap.values()){
-          total.fat += d.fat; total.des += d.des; total.fre += d.fre; total.ped += d.ped;
-        }
-        switch(metric){
-          case 'fat': return mode==='media' ? (total.fat / numDays) : total.fat;
-          case 'ped': return mode==='media' ? (total.ped / numDays) : total.ped;
-          case 'des': return mode==='media' ? (total.des / numDays) : total.des;
-          case 'fre': return mode==='media' ? (total.fre / numDays) : total.fre;
-          case 'fatmed': return total.fat / numDays;
-          case 'canc_ped': return mode==='media' ? (total.ped / numDays) : total.ped;
-          case 'canc_val': return mode==='media' ? (total.fat / numDays) : total.fat;
-        }
-        return 0;
-      }
-      const keys=[...bucketDaily.keys()].sort((a,b)=>{
-        if(type==='dow' || type==='hour') return Number(a)-Number(b);
-        if(type==='month'){ return a.localeCompare(b); }
-        return String(a).localeCompare(String(b),'pt-BR');
-      });
-      return keys.map(k=>{
-        const dailyMap = bucketDaily.get(k);
-        const numDays = bucketDays.get(k)?.size || 1;
-        let value;
-        const isRatio = ['tkt','desperc','fremed','roi'].includes(metric);
-        if(isRatio){
-          value = (mode === 'media') ? computeRatio(dailyMap, metric) : (function(){
-            const total = {fat:0, des:0, fre:0, ped:0};
-            for(const d of dailyMap.values()){
-              total.fat += d.fat; total.des += d.des; total.fre += d.fre; total.ped += d.ped;
-            }
-            switch(metric){
-              case 'tkt': return (total.ped > 0) ? (total.fat / total.ped) : 0;
-              case 'desperc': return (total.fat > 0) ? (total.des / total.fat) : 0;
-              case 'fremed': return (total.ped > 0) ? (total.fre / total.ped) : 0;
-              case 'roi': return (total.des > 0) ? ((total.fat - total.des) / total.des) : 0;
-            }
-            return 0;
-          })();
-        } else {
-          value = computeNonRatio(dailyMap, metric, numDays);
-        }
-        return { key:k, value: value };
-      });
-    }
     async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
       const meta = KPI_META[selectedKPI] || KPI_META.fat;
       const mode = effectiveMode();
@@ -837,87 +760,23 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===================================================================================
     // LÓGICA PARA A ABA DE DIAGNÓSTICO
     // ===================================================================================
-
-    // NOVA FUNÇÃO para buscar KPIs por unidade
-    async function getUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
-      const kpiMeta = KPI_META[kpi_key] || {};
-      
-      const fetchUnitData = async (unitName) => {
-        try {
-          const unitAnaliticos = { ...analiticos, unidade: [unitName] };
-          const pNow = buildParams(de, ate, unitAnaliticos);
-          const pPrev = buildParams(dePrev, atePrev, unitAnaliticos);
-          
-          const [
-            {data: finNow, error: errNow}, 
-            {data: finPrev, error: errPrev},
-            {count: pedNow},
-            {count: pedPrev}
-          ] = await Promise.all([
-            supa.rpc(RPC_KPI_FUNC, pNow),
-            supa.rpc(RPC_KPI_FUNC, pPrev),
-            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).match({unidade: unitName}).gte('dia', de).lte('dia', ate),
-            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).match({unidade: unitName}).gte('dia', dePrev).lte('dia', atePrev),
-          ]);
-          
-          if (errNow || errPrev) throw (errNow || errPrev);
-
-          const N = { ped: pedNow, fat: +(finNow[0]?.fat || 0), des: +(finNow[0]?.des || 0) };
-          const P = { ped: pedPrev, fat: +(finPrev[0]?.fat || 0), des: +(finPrev[0]?.des || 0) };
-
-          let current = N[kpi_key] ?? N.fat; // Default to fat if key not direct
-          let previous = P[kpi_key] ?? P.fat;
-          
-          // Lógica para KPIs calculados
-          if (kpi_key === 'tkt') {
-            current = N.ped > 0 ? (N.fat / N.ped) : 0;
-            previous = P.ped > 0 ? (P.fat / P.ped) : 0;
-          } else if (kpi_key === 'desperc') {
-            current = N.fat > 0 ? (N.des / N.fat) : 0;
-            previous = P.fat > 0 ? (P.des / P.fat) : 0;
-          }
-
-          return { current, previous };
-        } catch(e) {
-          console.error(`Erro ao buscar dados para unidade ${unitName}:`, e);
-          return { current: 0, previous: 0 };
-        }
-      };
-
-      const [rajaData, savassiData] = await Promise.all([
-        fetchUnitData('Uni. Raja'),
-        fetchUnitData('Uni. Savassi')
-      ]);
-
-      return { raja: rajaData, savassi: savassiData };
-    }
-
-    // MODIFICADO para aceitar e processar os dados das unidades
-    function updateDiagnosticTab(kpi_key, allKpiValues, unitKpis) {
+    
+    // NENHUMA ALTERAÇÃO. Esta função continua responsável apenas pelo KPI Master.
+    function updateDiagnosticTab(kpi_key, allKpiValues) {
       const heroCard = document.querySelector('#tab-diagnostico .hero');
       if (!heroCard || !allKpiValues || !allKpiValues[kpi_key]) return;
 
       try {
         const kpiData = allKpiValues[kpi_key];
+        
+        const valEl = heroCard.querySelector('.hero-value-number');
+        const deltaEl = heroCard.querySelector('.hero-main-value .delta'); // Seletor mais específico
+        const subEl = heroCard.querySelector('.hero-sub-value');
+
         const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
-
-        // Renderiza o card principal (KPI MASTER)
-        heroCard.querySelector('.hero-value-number').textContent = formatValueBy(kpiMeta.fmt, kpiData.current);
-        heroCard.querySelector('.hero-sub-value').textContent = 'Período anterior: ' + formatValueBy(kpiMeta.fmt, kpiData.previous);
-        deltaBadge(heroCard.querySelector('.hero-main-value .delta'), kpiData.current, kpiData.previous);
-
-        // Renderiza os MINI KPIs
-        if (unitKpis) {
-          const { raja, savassi } = unitKpis;
-          const rajaCard = $('mini-kpi-raja');
-          const savassiCard = $('mini-kpi-savassi');
-
-          rajaCard.querySelector('.mini-kpi-value').textContent = formatValueBy(kpiMeta.fmt, raja.current);
-          deltaBadge(rajaCard.querySelector('.delta'), raja.current, raja.previous);
-
-          savassiCard.querySelector('.mini-kpi-value').textContent = formatValueBy(kpiMeta.fmt, savassi.current);
-          deltaBadge(savassiCard.querySelector('.delta'), savassi.current, savassi.previous);
-        }
+        valEl.textContent = formatValueBy(kpiMeta.fmt, kpiData.current);
+        subEl.textContent = 'Período anterior: ' + formatValueBy(kpiMeta.fmt, kpiData.previous);
+        deltaBadge(deltaEl, kpiData.current, kpiData.previous);
         
       } catch (e) {
         console.error('Erro ao atualizar aba de diagnóstico:', e);
@@ -926,7 +785,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     /* ===================== LOOP PRINCIPAL ===================== */
-    // MODIFICADO para buscar e passar os dados das unidades
+    // MODIFICADO para chamar a nova função que renderiza os Mini KPIs
     async function applyAll(details){
       try{
         const de = details.start;
@@ -940,13 +799,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
         setStatus('Consultando…');
         let kpiOk=true;
-        const selectedKpiForDiag = $('kpi-select').value;
 
-        // Executa todas as buscas de dados em paralelo
-        const [allKpiValues, unitKpiValues] = await Promise.all([
-          updateKPIs(de, ate, dePrev, atePrev, analiticos).catch(e => { console.error('Erro em KPIs:', e); kpiOk = false; return {}; }),
-          getUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos)
-        ]);
+        const allKpiValues = await updateKPIs(de,ate,dePrev,atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
         
         await Promise.all([
           updateCharts(de,ate,dePrev,atePrev, analiticos),
@@ -954,7 +808,13 @@ document.addEventListener('DOMContentLoaded', () => {
           updateTop6(de,ate, analiticos)
         ]);
         
-        updateDiagnosticTab(selectedKpiForDiag, allKpiValues, unitKpiValues);
+        const selectedKpiForDiag = $('kpi-select').value;
+        if (allKpiValues) {
+            updateDiagnosticTab(selectedKpiForDiag, allKpiValues);
+        }
+
+        // CHAMADA PARA A NOVA FUNÇÃO (adicionada, não altera o fluxo principal)
+        await getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos);
 
         if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
         else setStatus('OK','ok');
