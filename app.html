@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width,initial-scale=1" name="viewport"/>
-<title>Mapa de Produção — v3.1 Final</title>
+<title>Mapa de Produção — v3.2 Final</title>
 <link href='data:image/svg+xml,&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"&gt;&lt;rect x="0" y="0" width="128" height="128" rx="22" fill="%237b1e3a"/&gt;&lt;text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white"&gt;MP&lt;/text&gt;&lt;/svg&gt;' rel="icon"/>
 <style>
     :root{--bg:#f7f7fa; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e5e7eb; --wine:#7b1e3a; --wine-2:#8c2947; --chip:#fef2f2; --ok:#0b5d47; --down:#b91c1c; --ok-dark: #065f46; --wine-dark: #881337; --radius:12px; --shadow:0 8px 28px rgba(16,24,40,.06);}
@@ -493,9 +493,10 @@
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+
 <script>
 // =================================================================================
-// SCRIPT ÚNICO, COMPLETO E CORRIGIDO
+// INÍCIO DO SCRIPT COMPLETO
 // =================================================================================
 
 /* ===== Helpers ===== */
@@ -603,13 +604,15 @@ async function callGemini(prompt, button) {
 /* ===== Estado PRATOS (lista/paginação) ===== */
 let pratos=[], pratosPage=1; const PAGE_SIZE=10; let pratoEditId=null;
 function renderPratos(){
-  const term=$('pratos-search').value?.toLowerCase().trim()||'';
-  const catF= $('pratos-cat-filter').value||'';
+  const term=$('pratos-search')?.value?.toLowerCase().trim()||'';
+  const catF= $('pratos-cat-filter')?.value||'';
   const filtered=pratos.filter(p=>(!catF||String(p.categoria||'')===catF) && (!term||String(p.nome).toLowerCase().includes(term)));
   const totalPages=Math.max(1,Math.ceil(filtered.length/PAGE_SIZE));
   if(pratosPage>totalPages) pratosPage=totalPages;
   const pageItems=filtered.slice((pratosPage-1)*PAGE_SIZE,(pratosPage-1)*PAGE_SIZE+PAGE_SIZE);
-  const tb=$('tblPratos').querySelector('tbody'); tb.innerHTML='';
+  const tb=$('tblPratos')?.querySelector('tbody'); 
+  if(!tb) return;
+  tb.innerHTML='';
   pageItems.forEach(p=>{
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${p.nome}</td><td>${p.categoria||'—'}</td><td>${p.receitas ?? '—'}</td>
@@ -619,64 +622,78 @@ function renderPratos(){
       <button class="btn small" data-act="del" data-id="${p.id}">Excluir</button></td>`;
     tb.appendChild(tr);
   });
-  $('pratos-page-info').textContent=`Página ${pratosPage}/${totalPages}`;
-  $('pratos-prev').disabled=pratosPage<=1; $('pratos-next').disabled=pratosPage>=totalPages;
+  if($('pratos-page-info')) $('pratos-page-info').textContent=`Página ${pratosPage}/${totalPages}`;
+  if($('pratos-prev')) $('pratos-prev').disabled=pratosPage<=1; 
+  if($('pratos-next')) $('pratos-next').disabled=pratosPage>=totalPages;
 }
-$('pratos-prev').addEventListener('click',()=>{ pratosPage=Math.max(1,pratosPage-1); renderPratos(); });
-$('pratos-next').addEventListener('click',()=>{ pratosPage=pratosPage+1; renderPratos(); });
-$('pratos-search').addEventListener('input',()=>{ pratosPage=1; renderPratos(); });
-$('pratos-cat-filter').addEventListener('change',()=>{ pratosPage=1; renderPratos(); });
+
+// CORREÇÃO: ADICIONADA VERIFICAÇÃO DE EXISTÊNCIA (IF) ANTES DE ADICIONAR O EVENTO
+function addSafeEventListener(id, event, handler) {
+    const element = $(id);
+    if (element) {
+        element.addEventListener(event, handler);
+    }
+}
+
+addSafeEventListener('pratos-prev', 'click', ()=>{ pratosPage=Math.max(1,pratosPage-1); renderPratos(); });
+addSafeEventListener('pratos-next', 'click', ()=>{ pratosPage=pratosPage+1; renderPratos(); });
+addSafeEventListener('pratos-search', 'input', ()=>{ pratosPage=1; renderPratos(); });
+addSafeEventListener('pratos-cat-filter', 'change', ()=>{ pratosPage=1; renderPratos(); });
 
 /* ===== CRUD PRATOS ===== */
-$('btnNovoPrato').addEventListener('click',()=>{ 
+addSafeEventListener('btnNovoPrato', 'click', ()=>{ 
     pratoEditId=null;
     $('prato-editor-container').style.display = 'block';
     $('prato-form-title').textContent='Novo prato'; 
-    $('prato-nome').value=''; 
-    $('prato-cat').value='PRATOS'; 
-    $('prato-peso').value=''; 
-    $('prato-peso-un').value='g'; 
-    $('prato-preco').value=''; 
-    $('prato-custo').value=''; 
-    $('prato-ultima').value=''; 
-    $('prato-descricao').value = '';
-    $('prato-codigo-barras').value = '';
-    $('prato-qrcode').value = '';
+    const form = $('prato-editor-container');
+    form.querySelector('#prato-nome').value = '';
+    form.querySelector('#prato-cat').value = 'PRATOS';
+    form.querySelector('#prato-peso').value = '';
+    form.querySelector('#prato-peso-un').value = 'g';
+    form.querySelector('#prato-preco').value = '';
+    form.querySelector('#prato-custo').value = '';
+    form.querySelector('#prato-ultima').value = '';
+    form.querySelector('#prato-descricao').value = '';
+    form.querySelector('#prato-codigo-barras').value = '';
+    form.querySelector('#prato-qrcode').value = '';
 });
-$('btnCancelarPrato').addEventListener('click',()=>{ 
+addSafeEventListener('btnCancelarPrato', 'click', ()=>{ 
     $('prato-editor-container').style.display = 'none';
 });
-$('tblPratos').addEventListener('click',async e=>{
+addSafeEventListener('tblPratos', 'click', async e=>{
   const b=e.target.closest('button'); if(!b) return; const id=b.dataset.id, act=b.dataset.act;
   if(act==='edit'){ 
-      const p=pratos.find(x=>String(x.id)===String(id)); 
-      if(!p) return; 
+      const { data: p, error } = await supa.from('pratos').select('*').eq('id', id).single();
+      if (error || !p) return setStatus('Prato não encontrado', 'err');
+      
       pratoEditId=p.id; 
       $('prato-editor-container').style.display = 'block';
       $('prato-form-title').textContent='Editar prato'; 
-      $('prato-nome').value=p.nome||''; 
-      $('prato-cat').value=p.categoria||'PRATOS'; 
-      $('prato-peso').value=p.peso??''; 
-      $('prato-peso-un').value=p.peso_un||'g'; 
-      $('prato-preco').value=p.preco_venda??''; 
-      $('prato-custo').value=p.custo??''; 
-      $('prato-ultima').value=p.updated_at?new Date(p.updated_at).toLocaleString('pt-BR'):'—'; 
-      $('prato-descricao').value = p.descricao || '';
-      $('prato-codigo-barras').value = p.codigo_barras || '';
-      $('prato-qrcode').value = p.qrcode || '';
+      const form = $('prato-editor-container');
+      form.querySelector('#prato-nome').value=p.nome||''; 
+      form.querySelector('#prato-cat').value=p.categoria||'PRATOS'; 
+      form.querySelector('#prato-peso').value=p.peso??''; 
+      form.querySelector('#prato-peso-un').value=p.peso_un||'g'; 
+      form.querySelector('#prato-preco').value=p.preco_venda??''; 
+      form.querySelector('#prato-custo').value=p.custo??''; 
+      form.querySelector('#prato-ultima').value=p.updated_at?new Date(p.updated_at).toLocaleString('pt-BR'):'—'; 
+      form.querySelector('#prato-descricao').value = p.descricao || '';
+      form.querySelector('#prato-codigo-barras').value = p.codigo_barras || '';
+      form.querySelector('#prato-qrcode').value = p.qrcode || '';
     }
   if(act==='toggle'){ try{ const p=pratos.find(x=>String(x.id)===String(id)); const {error}=await supa.from('pratos').update({ativo:!p.ativo}).eq('id',id); if(error) throw error; await loadPratos(); }catch(ex){ alert(ex.message||ex); } }
   if(act==='del'){ if(!confirm('Excluir prato?')) return; try{ const {error}=await supa.from('pratos').delete().eq('id',id); if(error) throw error; await loadPratos(); }catch(ex){ alert(ex.message||ex); } }
 });
-$('btnSalvarPrato').addEventListener('click',async ()=>{
-  const nome=$('prato-nome').value.trim(); if(!nome){ alert('Informe o nome do prato'); return; }
+addSafeEventListener('btnSalvarPrato', 'click', async ()=>{
+  const form = $('prato-editor-container');
+  const nome=form.querySelector('#prato-nome').value.trim(); if(!nome){ alert('Informe o nome do prato'); return; }
   const basePayload={ 
       nome, 
-      categoria:$('prato-cat').value, 
-      peso:ptToNumber($('prato-peso').value), 
-      peso_un:$('prato-peso-un').value, 
-      preco_venda:$('prato-preco').value.trim(),
-      descricao: $('prato-descricao').value.trim() || null
+      categoria:form.querySelector('#prato-cat').value, 
+      peso:ptToNumber(form.querySelector('#prato-peso').value), 
+      peso_un:form.querySelector('#prato-peso-un').value, 
+      preco_venda:form.querySelector('#prato-preco').value.trim(),
+      descricao: form.querySelector('#prato-descricao').value.trim() || null
   };
   try{
     if(pratoEditId){ 
@@ -722,9 +739,9 @@ async function loadDash(){
       });
   }catch(e){ tb.innerHTML='<tr><td colspan="4">Não foi possível ler a fonte do dashboard.</td></tr>'; }
 }
-$('btnSyncAll').addEventListener('click', loadDash);
+addSafeEventListener('btnSyncAll', 'click', loadDash);
 
-$('btnImportAll').addEventListener('click', async (e) => {
+addSafeEventListener('btnImportAll', 'click', async (e) => {
     const btn = e.target;
     const importButtons = $$('#tblDash button[data-import]');
     if(importButtons.length === 0) {
@@ -775,7 +792,7 @@ async function loadPratoCompTable(){
     }
   }catch(ex){ tb.innerHTML='<tr><td colspan="4">Erro ao listar</td></tr>'; }
 }
-$('cp-prato')?.addEventListener('change', () => {
+addSafeEventListener('cp-prato', 'change', () => {
     const pratoId = $('cp-prato').value;
     const editor = $('componentes-editor');
     if (pratoId) {
@@ -786,7 +803,7 @@ $('cp-prato')?.addEventListener('change', () => {
     }
 });
 
-$('btnAddPrComp')?.addEventListener('click',async ()=>{
+addSafeEventListener('btnAddPrComp', 'click',async ()=>{
   const prato_id=$('cp-prato').value, receita_id=$('cp-receita').value, qtd=ptToNumber($('cp-qtd').value), unidade=$('cp-und').value, obs=$('cp-obs').value.trim()||null;
   if(!prato_id||!receita_id||!qtd){ return alert('Selecione prato/receita e informe quantidade'); }
   const {error}=await supa.from('prato_receitas').insert({prato_id,receita_id,qtd,unidade,obs});
@@ -804,13 +821,13 @@ document.addEventListener('click', async e=>{
 /* ===== Receitas (cadastro) ===== */
 let recEditId=null, draftItems=[];
 async function refreshDraftRefs(){ const tipo=$('draft-tipo').value; if(tipo==='INGREDIENTE') await fillOptionsFrom('ingredientes','draft-ref','id','nome',{ativo:true}); else await fillOptionsFrom('receitas','draft-ref','id','nome',{ativo:true}); }
-function renderDraft(){ const tb=$('tblDraft').querySelector('tbody'); tb.innerHTML=''; draftItems.forEach((it,i)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${it.tipo}</td><td>${it.nome}</td><td>${fmt(it.qtd)}</td><td>${it.unidade}</td><td>${fmt(it.perda_pct)}%</td><td class="row-actions"><button class="btn small" data-rm="${i}">Remover</button></td>`; tb.appendChild(tr); }); }
-$('draft-tipo')?.addEventListener('change',refreshDraftRefs);
+function renderDraft(){ const tb=$('tblDraft')?.querySelector('tbody'); if(tb) {tb.innerHTML=''; draftItems.forEach((it,i)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${it.tipo}</td><td>${it.nome}</td><td>${fmt(it.qtd)}</td><td>${it.unidade}</td><td>${fmt(it.perda_pct)}%</td><td class="row-actions"><button class="btn small" data-rm="${i}">Remover</button></td>`; tb.appendChild(tr); });} }
+addSafeEventListener('draft-tipo', 'change', refreshDraftRefs);
 document.addEventListener('click',e=>{ const b=e.target.closest('#tblDraft button[data-rm]'); if(!b) return; draftItems.splice(+b.dataset.rm,1); renderDraft(); });
-$('btnDraftAdd')?.addEventListener('click',async ()=>{ const tipo=$('draft-tipo').value, ref_id=$('draft-ref').value, qtd=ptToNumber($('draft-qtd').value), unidade=$('draft-und').value, perda_pct=ptToNumber($('draft-perda').value); if(!ref_id||!qtd) return alert('Selecione a referência e informe a quantidade'); let nome=''; if(tipo==='INGREDIENTE'){ const {data}=await supa.from('ingredientes').select('nome').eq('id',ref_id).single(); nome=data?.nome||''; } else { const {data}=await supa.from('receitas').select('nome').eq('id',ref_id).single(); nome=data?.nome||''; } draftItems.push({tipo,ref_id,nome,qtd,unidade,perda_pct}); $('draft-qtd').value=''; $('draft-perda').value='0'; renderDraft(); });
-$('btnDraftClear')?.addEventListener('click',()=>{ draftItems=[]; renderDraft(); });
+addSafeEventListener('btnDraftAdd', 'click', async ()=>{ const tipo=$('draft-tipo').value, ref_id=$('draft-ref').value, qtd=ptToNumber($('draft-qtd').value), unidade=$('draft-und').value, perda_pct=ptToNumber($('draft-perda').value); if(!ref_id||!qtd) return alert('Selecione a referência e informe a quantidade'); let nome=''; if(tipo==='INGREDIENTE'){ const {data}=await supa.from('ingredientes').select('nome').eq('id',ref_id).single(); nome=data?.nome||''; } else { const {data}=await supa.from('receitas').select('nome').eq('id',ref_id).single(); nome=data?.nome||''; } draftItems.push({tipo,ref_id,nome,qtd,unidade,perda_pct}); $('draft-qtd').value=''; $('draft-perda').value='0'; renderDraft(); });
+addSafeEventListener('btnDraftClear', 'click', ()=>{ draftItems=[]; renderDraft(); });
 
-$('btnSaveRec')?.addEventListener('click',async ()=>{
+addSafeEventListener('btnSaveRec', 'click', async ()=>{
   const nome=$('rec-nome').value.trim(), rendimento_qtd=ptToNumber($('rec-rend-qtd').value), unidade_rendimento=$('rec-rend-und').value, perda_pct=ptToNumber($('rec-perda').value), obs=$('rec-obs').value.trim()||null, modo_preparo = $('rec-preparo').value.trim()||null;
   if(!nome||!rendimento_qtd) return alert('Informe nome e rendimento');
   const newBarcode = `BAR-${crypto.randomUUID()}`;
@@ -825,7 +842,7 @@ $('btnSaveRec')?.addEventListener('click',async ()=>{
   $('btnCancelRecEdit').click();
   await loadReceitas(); setStatus('Receita salva','ok');
 });
-$('btnUpdateRec')?.addEventListener('click',async ()=>{ 
+addSafeEventListener('btnUpdateRec', 'click', async ()=>{ 
     if(!recEditId) return; 
     const nome=$('rec-nome').value.trim(), rendimento_qtd=ptToNumber($('rec-rend-qtd').value), unidade_rendimento=$('rec-rend-und').value, perda_pct=ptToNumber($('rec-perda').value), obs=$('rec-obs').value.trim()||null, modo_preparo = $('rec-preparo').value.trim()||null; 
     if(!nome||!rendimento_qtd) return alert('Informe nome e rendimento'); 
@@ -837,7 +854,7 @@ $('btnUpdateRec')?.addEventListener('click',async ()=>{
     await loadReceitas(); 
     setStatus('Receita atualizada','ok'); 
 });
-$('btnCancelRecEdit').addEventListener('click',()=>{ 
+addSafeEventListener('btnCancelRecEdit', 'click', ()=>{ 
     recEditId=null; 
     $('recipe-editor-container').style.display = 'none';
     $('recipe-form-title').textContent = 'Nova Receita';
@@ -862,14 +879,16 @@ async function fillOptionsFrom(table, selId, valKey, labelKey, whereEq){
   try{ let q=supa.from(table).select(`${valKey},${labelKey}`).order(labelKey,{ascending:true}); if(whereEq) Object.entries(whereEq).forEach(([k,v])=> q=q.eq(k,v)); const {data,error}=await q; if(error) throw error; sel.innerHTML='<option value="">Selecione</option>'; (data||[]).forEach(x=>{ const o=document.createElement('option'); o.value=x[valKey]; o.textContent=x[labelKey]; sel.appendChild(o); }); }catch(e){ sel.innerHTML='<option value="">(n/d)</option>'; }
 }
 async function loadReceitas(){
-  const tb=$('tblRec').querySelector('tbody'); tb.innerHTML='<tr><td colspan="6">Carregando…</td></tr>';
+  const tb=$('tblRec')?.querySelector('tbody'); if(!tb) return;
+  tb.innerHTML='<tr><td colspan="6">Carregando…</td></tr>';
   try{ const {data,error}=await supa.from('v_receitas_resumo').select('*').order('nome',{ascending:true}); if(error) throw error;
     tb.innerHTML=''; (data||[]).forEach(r=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.nome}</td><td>${fmt(r.rendimento_qtd)} ${r.unidade_rendimento}</td><td>${r.itens}</td><td>${r.ativo?'<span class="pill ok">Ativo</span>':'<span class="pill bad">Inativo</span>'}</td><td class="row-actions"><button class="btn small" data-act="edit" data-id="${r.id}">Editar</button><button class="btn small" data-act="toggle" data-id="${r.id}">${r.ativo?'Desativar':'Ativar'}</button><button class="btn small" data-act="del" data-id="${r.id}">Excluir</button></td>`; tb.appendChild(tr); });
   }catch(e){ tb.innerHTML='<tr><td colspan="6">Crie a view v_receitas_resumo e adicione os campos de código</td></tr>'; }
   await fillOptionsFrom('pratos','cp-prato','id','nome',{ativo:true}); await fillOptionsFrom('receitas','cp-receita','id','nome',{ativo:true}); 
 }
 async function loadIngredientes(){
-    const tb = $('tblIng').querySelector('tbody');
+    const tb = $('tblIng')?.querySelector('tbody');
+    if(!tb) return;
     tb.innerHTML = '<tr><td colspan="6">Carregando…</td></tr>';
     try {
         const { data, error } = await supa.from('v_ingredientes_detalhados').select('*').order('nome', { ascending: true });
@@ -902,7 +921,8 @@ function toBase(value,unit){ const u=(unit||'').toLowerCase(); if(u==='kg') retu
 
 /* ===== PREVISÃO ===== */
 async function preencherCategorias(){
-  const sel=$('cat-filter'); sel.innerHTML='';
+  const sel=$('cat-filter'); if(!sel) return;
+  sel.innerHTML='';
   const {data}=await supa.from('pratos').select('categoria').not('categoria','is',null);
   const cats=[...new Set((data||[]).map(x=>x.categoria||'OUTROS'))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   cats.forEach(c=>{ const o=document.createElement('option'); o.value=c; o.textContent=c; sel.appendChild(o); });
@@ -1063,7 +1083,7 @@ async function calcularPrevisaoReal(){
 }
 
 /* ===== binds e handlers ===== */
-$('btnGeneratePreparo')?.addEventListener('click', async (e) => {
+addSafeEventListener('btnGeneratePreparo', 'click', async (e) => {
     if (draftItems.length === 0) {
         alert('Adicione pelo menos um item à grade antes de gerar o modo de preparo.');
         return;
@@ -1076,7 +1096,7 @@ $('btnGeneratePreparo')?.addEventListener('click', async (e) => {
         setStatus('Modo de preparo gerado com sucesso!', 'ok');
     }
 });
-$('btnGenerateDesc')?.addEventListener('click', async (e) => {
+addSafeEventListener('btnGenerateDesc', 'click', async (e) => {
     if (!pratoEditId) {
         alert('Salve o prato primeiro ou selecione um prato existente para editar antes de gerar a descrição.');
         return;
@@ -1115,7 +1135,7 @@ $('btnGenerateDesc')?.addEventListener('click', async (e) => {
         }
     }
 });
-document.querySelector('#tblRec')?.addEventListener('click', async (e) => {
+addSafeEventListener('tblRec', 'click', async (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
     const { act, id } = btn.dataset;
@@ -1185,7 +1205,7 @@ document.querySelector('#tblRec')?.addEventListener('click', async (e) => {
     }
 });
 let ingEditId = null;
-document.querySelector('#tblIng')?.addEventListener('click', async (e) => {
+addSafeEventListener('tblIng', 'click', async (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
     const { act, id } = btn.dataset;
@@ -1231,7 +1251,7 @@ document.querySelector('#tblIng')?.addEventListener('click', async (e) => {
         } catch (ex) { alert(ex.message || ex); }
     }
 });
-$('btnSaveIng').addEventListener('click', async () => {
+addSafeEventListener('btnSaveIng', 'click', async () => {
     const nome = $('ing-nome').value.trim();
     if (!nome) return alert('O nome do ingrediente é obrigatório.');
     
@@ -1268,7 +1288,7 @@ $('btnSaveIng').addEventListener('click', async () => {
         setStatus('Ingrediente salvo.', 'ok');
     } catch (ex) { setStatus('Erro ao salvar ingrediente: ' + (ex.message || ex), 'err'); }
 });
-$('btnCancelIngEdit').addEventListener('click', () => {
+addSafeEventListener('btnCancelIngEdit', 'click', () => {
     ingEditId = null;
     $('ingrediente-editor-container').style.display = 'none';
     $('ingrediente-form-title').textContent = 'Novo Ingrediente';
@@ -1286,17 +1306,17 @@ $('btnCancelIngEdit').addEventListener('click', () => {
     
     $('btnSaveIng').textContent = 'Salvar';
 });
-$('btnShowNewRecipeForm').addEventListener('click', () => {
+addSafeEventListener('btnShowNewRecipeForm', 'click', () => {
     $('btnCancelRecEdit').click();
     $('recipe-editor-container').style.display = 'block';
     $('recipe-editor-container').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
-$('btnShowNewIngredienteForm').addEventListener('click', () => {
+addSafeEventListener('btnShowNewIngredienteForm', 'click', () => {
     $('btnCancelIngEdit').click();
     $('ingrediente-editor-container').style.display = 'block';
 });
-$('btnCalcularPrev').addEventListener('click',calcularPrevisaoReal);
-$('btnExportPrev').addEventListener('click',()=> alert('Exportar PDF: pronto para integrar.'));
+addSafeEventListener('btnCalcularPrev', 'click', calcularPrevisaoReal);
+addSafeEventListener('btnExportPrev', 'click', ()=> alert('Exportar PDF: pronto para integrar.'));
 async function backfillUniqueCodes(tableName) {
     try {
         const { data, error } = await supa.from(tableName).select('id, qrcode').is('qrcode', null);
@@ -1356,10 +1376,10 @@ const EstoqueModule = {
     
     init() {
         $$('.mov-actions .btn').forEach(btn => btn.addEventListener('click', (e) => this.showMovForm(e.currentTarget.dataset.movType)));
-        $('btnMovCancel').addEventListener('click', () => this.hideMovForm());
-        $('frmMov')?.addEventListener('submit', (e) => this.handleMovimentacao(e));
-        $('mov-item-tipo')?.addEventListener('change', () => this.populateItemsDropdown());
-        $('btnMovScan').addEventListener('click', () => this.toggleCamera());
+        addSafeEventListener('btnMovCancel', 'click', () => this.hideMovForm());
+        addSafeEventListener('frmMov', 'submit', (e) => this.handleMovimentacao(e));
+        addSafeEventListener('mov-item-tipo', 'change', () => this.populateItemsDropdown());
+        addSafeEventListener('btnMovScan', 'click', () => this.toggleCamera());
         this.loadInitialData();
     },
 
@@ -1570,46 +1590,38 @@ const EstoqueModule = {
 
 function setupGenericCrud(config) {
     const { tabId, table, formId, editorId, btnShowId, btnCancelId, loadFn, formTitle, entityName } = config;
-    const showButton = $(btnShowId);
-    if(showButton) {
-        showButton.addEventListener('click', () => {
-            const editor = $(editorId);
-            const form = $(formId);
-            const title = $(`${tabId}-form-title`);
-            if(form) {
-                form.reset();
-                if(form.id) form.id.value = '';
-            }
-            if(title) title.textContent = `Nova ${formTitle}`;
-            if(editor) editor.style.display = 'block';
-        });
-    }
-    const cancelButton = $(btnCancelId);
-    if(cancelButton) {
-        cancelButton.addEventListener('click', () => {
-            const editor = $(editorId);
-            if(editor) editor.style.display = 'none';
-        });
-    }
-    const form = $(formId);
-    if(form) {
-        form.addEventListener('submit', async (ev) => {
-            ev.preventDefault();
-            const f = ev.target;
-            const formData = new FormData(f);
-            const payload = Object.fromEntries(formData.entries());
-            if(payload.fator) payload.fator = Number(payload.fator);
-            payload.ativo = f.ativo.checked;
-            const id = payload.id;
-            delete payload.id;
-            const q = id ? supa.from(table).update(payload).eq('id', id) : supa.from(table).insert(payload);
-            const { error } = await q;
-            if(error){ setStatus(error.message || error, 'err'); return; }
-            setStatus(`${entityName} salvo(a) com sucesso!`, 'ok');
-            if(cancelButton) cancelButton.click();
-            if(loadFn) await loadFn();
-        });
-    }
+    addSafeEventListener(btnShowId, 'click', () => {
+        const editor = $(editorId);
+        const form = $(formId);
+        const title = $(`${tabId}-form-title`);
+        if(form) {
+            form.reset();
+            if(form.id) form.id.value = '';
+        }
+        if(title) title.textContent = `Nova ${formTitle}`;
+        if(editor) editor.style.display = 'block';
+    });
+    addSafeEventListener(btnCancelId, 'click', () => {
+        const editor = $(editorId);
+        if(editor) editor.style.display = 'none';
+    });
+    addSafeEventListener(formId, 'submit', async (ev) => {
+        ev.preventDefault();
+        const f = ev.target;
+        const formData = new FormData(f);
+        const payload = Object.fromEntries(formData.entries());
+        if(payload.fator) payload.fator = Number(payload.fator);
+        payload.ativo = f.ativo.checked;
+        const id = payload.id;
+        delete payload.id;
+        const q = id ? supa.from(table).update(payload).eq('id', id) : supa.from(table).insert(payload);
+        const { error } = await q;
+        if(error){ setStatus(error.message || error, 'err'); return; }
+        setStatus(`${entityName} salvo(a) com sucesso!`, 'ok');
+        const cancelButton = $(btnCancelId);
+        if(cancelButton) cancelButton.click();
+        if(loadFn) await loadFn();
+    });
 }
 function createTableActions(onEdit) {
     const td = document.createElement('td');
@@ -1624,7 +1636,8 @@ function createTableActions(onEdit) {
 async function loadUM(){
     const { data, error } = await supa.from('unidades_medida').select('*').order('nome', { ascending: true });
     if (error) return setStatus('Tabela unidades_medida não encontrada', 'err');
-    const tbody = $('tbl-um').querySelector('tbody');
+    const tbody = $('tbl-um')?.querySelector('tbody');
+    if(!tbody) return;
     tbody.innerHTML = '';
     (data || []).forEach(r => {
         const tr = document.createElement('tr');
@@ -1642,7 +1655,8 @@ async function loadUM(){
 async function loadUnidades(){
     const { data, error } = await supa.from('unidades').select('*').order('nome', { ascending: true });
     if (error) return setStatus('Tabela unidades não encontrada', 'err');
-    const tbody = $('tbl-unidades').querySelector('tbody');
+    const tbody = $('tbl-unidades')?.querySelector('tbody');
+    if(!tbody) return;
     tbody.innerHTML='';
     (data || []).forEach(r => {
         const tr = document.createElement('tr');
@@ -1659,7 +1673,8 @@ async function loadUnidades(){
 async function loadCategorias(){
     const { data, error } = await supa.from('categorias').select('*').order('nome', { ascending: true });
     if (error) return setStatus('Tabela categorias não encontrada', 'err');
-    const tbody = $('tbl-categorias').querySelector('tbody');
+    const tbody = $('tbl-categorias')?.querySelector('tbody');
+    if(!tbody) return;
     tbody.innerHTML='';
     (data || []).forEach(r => {
         const tr = document.createElement('tr');
@@ -1680,18 +1695,19 @@ async function detectAndLoadItemTipos(){
             const { error } = await supa.from(t).select('id', { count: 'exact', head: true });
             if (!error) {
                 itemTiposTableName = t;
-                $('itemtipos-warning').hidden = true;
+                if($('itemtipos-warning')) $('itemtipos-warning').hidden = true;
                 break;
             }
         }
     }
     if (!itemTiposTableName) {
-        $('itemtipos-warning').hidden = false;
+        if($('itemtipos-warning')) $('itemtipos-warning').hidden = false;
         return;
     }
     const { data, error } = await supa.from(itemTiposTableName).select('*').order('nome', { ascending: true });
     if (error) return setStatus(`Erro ao ler ${itemTiposTableName}`, 'err');
-    const tbody = $('tbl-itemtipos').querySelector('tbody');
+    const tbody = $('tbl-itemtipos')?.querySelector('tbody');
+    if(!tbody) return;
     tbody.innerHTML='';
     (data || []).forEach(r => {
         const tr = document.createElement('tr');
@@ -1741,10 +1757,11 @@ document.addEventListener('click', (e) => {
         $('main-tabs').querySelector('[data-tab="cadastros"]').click();
         $('cadastro-subtabs').querySelector('[data-subtab="ingredientes"]').click();
         
-        const editButton = $(`tblIng`).querySelector(`button[data-act="edit"][data-id="${id}"]`);
+        const editButton = $(`tblIng`)?.querySelector(`button[data-act="edit"][data-id="${id}"]`);
         if (editButton) {
             editButton.click();
-            $('ingrediente-editor-container').scrollIntoView({ behavior: 'smooth' });
+            const editor = $('ingrediente-editor-container');
+            if(editor) editor.scrollIntoView({ behavior: 'smooth' });
         }
     }
 });
@@ -1757,9 +1774,9 @@ async function init(){
     setupGenericCrud({ tabId: 'unidades', table: 'unidades', formId: 'form-unidades', editorId: 'unidades-editor-container', btnShowId: 'btnShowNewUnidadesForm', btnCancelId: 'btnCancelUnidadesEdit', loadFn: loadUnidades, formTitle: 'Unidade (destino)', entityName: 'Unidade' });
     setupGenericCrud({ tabId: 'categorias', table: 'categorias', formId: 'form-categorias', editorId: 'categorias-editor-container', btnShowId: 'btnShowNewCategoriasForm', btnCancelId: 'btnCancelCategoriasEdit', loadFn: loadCategorias, formTitle: 'Categoria', entityName: 'Categoria' });
     
-    $('btnShowNewItemTiposForm')?.addEventListener('click', () => { $('itemtipos-editor-container').style.display = 'block'; $('form-itemtipos').reset(); $('form-itemtipos').id.value = ''; });
-    $('btnCancelItemTiposEdit')?.addEventListener('click', () => { $('itemtipos-editor-container').style.display = 'none'; });
-    $('form-itemtipos')?.addEventListener('submit', async(ev) => {
+    addSafeEventListener('btnShowNewItemTiposForm', 'click', () => { $('itemtipos-editor-container').style.display = 'block'; $('form-itemtipos').reset(); $('form-itemtipos').id.value = ''; });
+    addSafeEventListener('btnCancelItemTiposEdit', 'click', () => { $('itemtipos-editor-container').style.display = 'none'; });
+    addSafeEventListener('form-itemtipos', 'submit', async(ev) => {
         ev.preventDefault();
         if(!itemTiposTableName){ setStatus('Crie a tabela item_tipos ou tipos_item no banco para editar.','err'); return; }
         const f = ev.target;
@@ -1782,7 +1799,7 @@ async function init(){
       'estoque-param': loadEstoqueParams,
     };
     document.querySelectorAll('.subtabs [data-subtab]').forEach(btn => {
-      btn.addEventListener('click', () => {
+      addSafeEventListener(btn.id, 'click', () => {
         const sub = btn.getAttribute('data-subtab');
         if(mapLoaders[sub]) mapLoaders[sub]();
       });
