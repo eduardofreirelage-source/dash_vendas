@@ -783,24 +783,22 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // NOVA FUNÇÃO ADICIONADA para buscar, calcular e renderizar os dados das unidades.
-    // Esta função é separada para não interferir com a lógica principal.
+    // NOVA FUNÇÃO CORRIGIDA para buscar, calcular e renderizar os dados das unidades.
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
       
       const fetchAndCalculateForUnit = async (unitName) => {
-          // CORREÇÃO: Reseta filtros granulares para pegar o total da unidade
+          // CORREÇÃO CRÍTICA: Cria um objeto de filtro limpo para a unidade,
+          // mantendo apenas o filtro de 'cancelado' do principal.
           const unitAnaliticos = { 
-            ...analiticos, 
             unidade: [unitName],
-            loja: [],
-            canal: [],
-            turno: [],
-            pagamento: []
+            cancelado: analiticos.cancelado
           };
 
           const pNow = buildParams(de, ate, unitAnaliticos);
           const pPrev = buildParams(dePrev, atePrev, unitAnaliticos);
           
+          // Lógica de busca de dados IDÊNTICA à função principal 'updateKPIs',
+          // mas com o filtro adicional de 'unidade' em todas as queries.
           const [
             finNowResult, finPrevResult,
             { count: pedNowCount, error: errPedNow },
@@ -818,7 +816,7 @@ document.addEventListener('DOMContentLoaded', () => {
               supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Não')
           ]);
 
-          const pedTotalNow = analiticos.cancelado === 'sim' ? cnCount : analiticos.cancelado === 'nao' ? vnCount : pedNowCount;
+          const pedTotalNow = unitAnaliticos.cancelado === 'sim' ? cnCount : unitAnaliticos.cancelado === 'nao' ? vnCount : pedNowCount;
 
           const N = {
               ped: pedTotalNow,
@@ -839,7 +837,6 @@ document.addEventListener('DOMContentLoaded', () => {
           const len = DateHelpers.daysLen(de, ate);
           const prevLen = DateHelpers.daysLen(dePrev, atePrev);
 
-          // Lógica de cálculo completa, copiada de updateKPIs
           const tktN = (N.ped > 0) ? (N.fat / N.ped) : 0;
           const tktP = (P.ped > 0) ? (P.fat / P.ped) : 0;
           const fatMedN = len > 0 ? (N.fat / len) : 0;
@@ -922,7 +919,6 @@ document.addEventListener('DOMContentLoaded', () => {
             updateDiagnosticTab(selectedKpiForDiag, allKpiValues);
         }
         
-        // MODIFICADO PARA CHAMAR A NOVA FUNÇÃO CORRIGIDA
         await getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos);
 
         if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
