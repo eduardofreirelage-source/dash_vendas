@@ -220,7 +220,7 @@
               Período anterior: —
             </div>
             <div class="hero-context">
-              <strong>Destaques:</strong> —
+              <strong>Destaques:</strong> Lojas Savassi e Estoril • <strong>Horário:</strong> 11–14h • <strong>Canal:</strong> Delivery Próprio
             </div>
           </div>
         
@@ -682,9 +682,6 @@
       }
     };
     
-    // ===================================================================================
-    // NOVA FUNÇÃO DE ALINHAMENTO DE ALTURA (SOLUÇÃO DEFINITIVA)
-    // ===================================================================================
     function matchPanelHeights() {
       const panel = document.querySelector('.panel');
       if (!panel) return;
@@ -693,11 +690,9 @@
       const sideBar = panel.querySelector('.side');
 
       if (!chartCard || !sideBar) return;
-
-      // 1. Reseta a altura do card do gráfico para que a sidebar defina a altura natural da linha.
+      
       chartCard.style.height = 'auto';
 
-      // 2. Aguarda o navegador recalcular o layout e então aplica a altura da sidebar no card do gráfico.
       requestAnimationFrame(() => {
         const sideBarHeight = sideBar.offsetHeight;
         if (sideBarHeight > 0) {
@@ -853,7 +848,9 @@
       return allRows;
     }
     
+    // MODIFICADO: A função agora retorna um objeto com todos os KPIs calculados
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
+      let allKpiValues = {};
       try {
         const pNow = buildParams(de, ate, analiticos);
         const pPrev = buildParams(dePrev, atePrev, analiticos);
@@ -878,10 +875,10 @@
         if(finNowResult.error) throw finNowResult.error;
         if(errPedNow) throw errPedNow;
         
-        let N_ped_final = analiticos.cancelado === 'sim' ? cnCount : analiticos.cancelado === 'nao' ? vnCount : pedNowCount;
+        const pedTotalNow = analiticos.cancelado === 'sim' ? cnCount : analiticos.cancelado === 'nao' ? vnCount : pedNowCount;
 
         const N = {
-            ped: N_ped_final,
+            ped: pedTotalNow,
             fat: +(finNowResult.data[0]?.fat || 0),
             des: +(finNowResult.data[0]?.des || 0),
             fre: +(finNowResult.data[0]?.fre || 0)
@@ -893,44 +890,50 @@
             fre: +(finPrevResult.data[0]?.fre || 0)
         };
 
-        const totalPedidosNow = vnCount + cnCount;
-        const totalPedidosPrev = vpCount + cpCount;
-        
-        // Busca o valor cancelado separadamente
         const {data: cancDataNow} = await supa.rpc(RPC_KPI_FUNC, { ...pNow, p_cancelado: 'Sim' });
         const {data: cancDataPrev} = await supa.rpc(RPC_KPI_FUNC, { ...pPrev, p_cancelado: 'Sim' });
-        const CN_val = { fat: +(cancDataNow[0]?.fat || 0) };
-        const CP_val = { fat: +(cancDataPrev[0]?.fat || 0) };
-
+        
         const len = DateHelpers.daysLen(de, ate);
         const prevLen = DateHelpers.daysLen(dePrev, atePrev);
+
+        // Calcula todos os KPIs
         const tktN = (N.ped > 0) ? (N.fat / N.ped) : 0;
         const tktP = (P.ped > 0) ? (P.fat / P.ped) : 0;
-        const fatMedN = len > 0 ? (N.fat/len) : 0;
+        const fatMedN = len > 0 ? (N.fat / len) : 0;
         const fatMedP = prevLen > 0 ? (P.fat / prevLen) : 0;
         const desPercN = N.fat > 0 ? (N.des / N.fat) : 0;
         const desPercP = P.fat > 0 ? (P.des / P.fat) : 0;
         const freMedN = N.ped > 0 ? (N.fre / N.ped) : 0;
         const freMedP = P.ped > 0 ? (P.fre / P.ped) : 0;
-        const partCancN = totalPedidosNow > 0 ? (cnCount / totalPedidosNow) : 0;
-        const partCancP = totalPedidosPrev > 0 ? (cpCount / totalPedidosPrev) : 0;
+        const cancValN = +(cancDataNow[0]?.fat || 0);
+        const cancValP = +(cancDataPrev[0]?.fat || 0);
         const roiN = N.des > 0 ? (N.fat - N.des) / N.des : NaN;
         const roiP = P.des > 0 ? (P.fat - P.des) / P.des : NaN;
-        
-        $('k_ped').textContent=num(N.ped); $('p_ped').textContent=num(P.ped); deltaBadge($('d_ped'),N.ped,P.ped);
-        $('k_tkt').textContent=money(tktN); $('p_tkt').textContent=money(tktP); deltaBadge($('d_tkt'),tktN,tktP);
-        $('k_fat').textContent=money(N.fat); $('p_fat').textContent=money(P.fat); deltaBadge($('d_fat'),N.fat,P.fat);
-        $('k_fatmed').textContent=money(fatMedN); $('p_fatmed').textContent=money(fatMedP); deltaBadge($('d_fatmed'),fatMedN,fatMedP);
-        $('k_des').textContent=money(N.des); $('p_des').textContent=money(P.des); deltaBadge($('d_des'),N.des,P.des);
-        $('k_desperc').textContent=pctf(desPercN); $('p_desperc').textContent=pctf(desPercP); deltaBadge($('d_desperc'),desPercN,desPercP);
-        $('k_fre').textContent=money(N.fre); $('p_fre').textContent=money(P.fre); deltaBadge($('d_fre'),N.fre,P.fre);
-        $('k_fremed').textContent=money(freMedN); $('p_fremed').textContent=money(freMedP); deltaBadge($('d_fremed'),freMedN,freMedP);
-        $('k_canc_ped').textContent=num(cnCount); deltaBadge($('d_canc_ped'),cnCount,cpCount);
-        $('k_canc_val').textContent=money(CN_val.fat); $('p_canc_val').textContent=money(CP_val.fat); deltaBadge($('d_canc_val'),CN_val.fat, CP_val.fat);
-        $('k_canc_part').textContent=pctf(partCancN); $('p_canc_part').textContent=pctf(partCancP);
-        $('k_roi').textContent = Number.isFinite(roiN) ? pctf(roiN) : '—';
-        $('p_roi').textContent = Number.isFinite(roiP) ? pctf(roiP) : '—';
-        deltaBadge($('d_roi'), Number.isFinite(roiN)?roiN:0, Number.isFinite(roiP)?roiP:0);
+
+        allKpiValues = {
+            fat: { current: N.fat, previous: P.fat },
+            ped: { current: N.ped, previous: P.ped },
+            tkt: { current: tktN, previous: tktP },
+            des: { current: N.des, previous: P.des },
+            fatmed: { current: fatMedN, previous: fatMedP },
+            roi: { current: roiN, previous: roiP },
+            desperc: { current: desPercN, previous: desPercP },
+            canc_val: { current: cancValN, previous: cancValP },
+            fre: { current: N.fre, previous: P.fre },
+            fremed: { current: freMedN, previous: freMedP },
+            canc_ped: { current: cnCount, previous: cpCount },
+        };
+
+        // Renderiza os KPIs nas abas Vendas/Analítico
+        Object.keys(allKpiValues).forEach(key => {
+            const kpi = allKpiValues[key];
+            const valEl = $(`k_${key}`);
+            const prevEl = $(`p_${key}`);
+            const deltaEl = $(`d_${key}`);
+            if (valEl) valEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.current);
+            if (prevEl) prevEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.previous);
+            if (deltaEl) deltaBadge(deltaEl, kpi.current, kpi.previous);
+        });
 
       } catch (e) {
         console.error("Erro detalhado em updateKPIs:", e);
@@ -938,6 +941,7 @@
         document.querySelectorAll('.kpi .delta').forEach(el => { el.textContent = '—'; el.className = 'delta flat'; });
         throw e;
       }
+      return allKpiValues;
     }
     let chartModeGlobal = 'total';
     const segGlobal = $('segGlobal');
@@ -972,17 +976,17 @@
     }
     let selectedKPI = 'fat';
     const KPI_META = {
-      fat:       { label:'Faturamento',         fmt:'money',   forceMode:null,  needsCancel:null },
-      ped:       { label:'Pedidos',             fmt:'count',   forceMode:null,  needsCancel:'Não' },
-      tkt:       { label:'Ticket Médio',        fmt:'money',   forceMode:'media',needsCancel:'Não' },
-      des:       { label:'Incentivos',          fmt:'money',   forceMode:null,  needsCancel:null },
-      desperc:   { label:'% de incentivos',     fmt:'percent', forceMode:'media',needsCancel:null },
-      fre:       { label:'Frete',               fmt:'money',   forceMode:null,  needsCancel:null },
-      fremed:    { label:'Frete Médio',         fmt:'money',   forceMode:'media',needsCancel:null },
-      fatmed:    { label:'Faturamento Médio',   fmt:'money',   forceMode:'media',needsCancel:null },
-      canc_ped:  { label:'Pedidos cancelados',  fmt:'count',   forceMode:null,  needsCancel:'Sim' },
-      canc_val:  { label:'Valor de cancelados', fmt:'money',   forceMode:null,  needsCancel:'Sim' },
-      roi:       { label:'ROI',                 fmt:'percent', forceMode:'media',needsCancel:null },
+      fat:       { label:'Faturamento',         fmt:'money' },
+      ped:       { label:'Pedidos',             fmt:'count' },
+      tkt:       { label:'Ticket Médio',        fmt:'money' },
+      des:       { label:'Incentivos',          fmt:'money' },
+      desperc:   { label:'% de incentivos',     fmt:'percent' },
+      fre:       { label:'Frete',               fmt:'money' },
+      fremed:    { label:'Frete Médio',         fmt:'money' },
+      fatmed:    { label:'Faturamento Médio',   fmt:'money' },
+      canc_ped:  { label:'Pedidos cancelados',  fmt:'count' },
+      canc_val:  { label:'Valor de cancelados', fmt:'money' },
+      roi:       { label:'ROI',                 fmt:'percent' },
     };
     function wantedCancelFilterForKPI(){
       const m=KPI_META[selectedKPI];
@@ -1349,32 +1353,13 @@
     // ===================================================================================
     // NOVA: LÓGICA PARA A ABA DE DIAGNÓSTICO
     // ===================================================================================
-    async function updateDiagnosticTab(kpi_key, de, ate, dePrev, atePrev, analiticos) {
+    function updateDiagnosticTab(kpi_key, allKpiValues) {
       const heroCard = document.querySelector('#tab-diagnostico .hero');
-      if (!heroCard) return;
+      if (!heroCard || !allKpiValues || !allKpiValues[kpi_key]) return;
 
       try {
-        const rpc_params = { ...buildParams(de, ate, analiticos), p_kpi_key: kpi_key };
+        const kpiData = allKpiValues[kpi_key];
         
-        // A CHAMADA REAL PARA A RPC (QUANDO ESTIVER NO AR)
-        // const { data, error } = await supa.rpc(RPC_DIAGNOSTIC_FUNC, rpc_params);
-
-        // ========================================================================
-        // INÍCIO: DADOS DE EXEMPLO (MOCK)
-        // Este bloco simula a resposta da RPC. Remova-o quando a função 'diagnostico_geral'
-        // estiver ativa no Supabase para usar os dados reais.
-        const mockData = {
-            hero: { current: Math.random() * 2000000, previous: Math.random() * 2000000, delta: (Math.random() - 0.5) * 0.4 },
-            context: { top_stores: ['Savassi', 'Estoril'], top_channels: ['Delivery Próprio'], top_hours: ['11–14h'] }
-        };
-        const data = mockData;
-        const error = null;
-        // FIM: DADOS DE EXEMPLO (MOCK)
-        // ========================================================================
-
-        if (error) throw error;
-        if (!data) return;
-
         // Renderiza o card principal (Hero)
         const valEl = heroCard.querySelector('.hero-value-number');
         const deltaEl = heroCard.querySelector('.delta');
@@ -1382,12 +1367,13 @@
         const contextEl = heroCard.querySelector('.hero-context');
 
         const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
-        valEl.textContent = formatValueBy(kpiMeta.fmt, data.hero.current);
-        subEl.textContent = 'Período anterior: ' + formatValueBy(kpiMeta.fmt, data.hero.previous);
-        deltaBadge(deltaEl, data.hero.current, data.hero.previous);
+        valEl.textContent = formatValueBy(kpiMeta.fmt, kpiData.current);
+        subEl.textContent = 'Período anterior: ' + formatValueBy(kpiMeta.fmt, kpiData.previous);
+        deltaBadge(deltaEl, kpiData.current, kpiData.previous);
         
-        const { top_stores, top_channels, top_hours } = data.context;
-        contextEl.innerHTML = `<strong>Destaques:</strong> ${top_stores?.join(' e ') || 'N/A'} • <strong>Horário:</strong> ${top_hours?.join(', ') || 'N/A'} • <strong>Canal:</strong> ${top_channels?.join(', ') || 'N/A'}`;
+        // AINDA ESTÁTICO: A lógica para Destaques dinâmicos requer a RPC 'diagnostico_geral'
+        // const { top_stores, top_channels, top_hours } = data.context;
+        // contextEl.innerHTML = `<strong>Destaques:</strong> ${top_stores?.join(' e ') || 'N/A'} • <strong>Horário:</strong> ${top_hours?.join(', ') || 'N/A'} • <strong>Canal:</strong> ${top_channels?.join(', ') || 'N/A'}`;
 
       } catch (e) {
         console.error('Erro ao atualizar aba de diagnóstico:', e);
@@ -1410,17 +1396,19 @@
         setStatus('Consultando…');
         let kpiOk=true;
 
-        // Atualiza as abas Vendas e Analítico
-        await updateKPIs(de,ate,dePrev,atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
+        // Atualiza as abas Vendas e Analítico e OBTÉM OS VALORES CALCULADOS
+        const allKpiValues = await updateKPIs(de,ate,dePrev,atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
+        
+        // Atualiza os gráficos das outras abas
         await Promise.all([
           updateCharts(de,ate,dePrev,atePrev, analiticos),
           updateMonth12x12(analiticos),
           updateTop6(de,ate, analiticos)
         ]);
         
-        // ATUALIZA A ABA DIAGNÓSTICO
+        // ATUALIZA A ABA DIAGNÓSTICO USANDO OS VALORES JÁ CALCULADOS
         const selectedKpiForDiag = $('kpi-select').value;
-        await updateDiagnosticTab(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos);
+        updateDiagnosticTab(selectedKpiForDiag, allKpiValues);
 
         if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
         else setStatus('OK','ok');
@@ -1535,7 +1523,6 @@
     fx.$start.addEventListener('change', fxDispatchApplyDebounced);
     fx.$end.addEventListener('change', fxDispatchApplyDebounced);
     fxCanceled.addEventListener('change', fxDispatchApplyDebounced);
-    // Adiciona o gatilho para a nova aba
     $('kpi-select').addEventListener('change', fxDispatchApplyDebounced);
 
     document.addEventListener('filters:apply', (e) => {
@@ -1565,7 +1552,6 @@
         bindKPIClick();
         updateChartTitles();
 
-        // Garante o alinhamento em caso de redimensionamento da tela
         window.addEventListener('resize', debounce(matchPanelHeights, 150));
 
         fxLastNDays(30);
