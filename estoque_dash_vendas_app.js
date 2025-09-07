@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v1';
     const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v1';
     const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v1';
-    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral'; // NOVA RPC PARA A ABA DIAGNÓSTICO
+    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
 
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
@@ -57,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
     function displayNormalize(s){ return cleanSpaces(s); }
     const agg = (rows) => {
-      const ped = rows?.length || 0; // Contagem de pedidos é pelo número de linhas.
+      const ped = rows?.length || 0;
       let fat=0,des=0,fre=0; 
       for(const r of (rows||[])){ fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } 
       return {ped,fat,des,fre};
@@ -335,7 +335,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return allRows;
     }
     
-    // MODIFICADO: A função agora retorna um objeto com todos os KPIs calculados
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
       let allKpiValues = {};
       try {
@@ -383,7 +382,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const len = DateHelpers.daysLen(de, ate);
         const prevLen = DateHelpers.daysLen(dePrev, atePrev);
 
-        // Calcula todos os KPIs
         const tktN = (N.ped > 0) ? (N.fat / N.ped) : 0;
         const tktP = (P.ped > 0) ? (P.fat / P.ped) : 0;
         const fatMedN = len > 0 ? (N.fat / len) : 0;
@@ -411,7 +409,6 @@ document.addEventListener('DOMContentLoaded', () => {
             canc_ped: { current: cnCount, previous: cpCount },
         };
 
-        // Renderiza os KPIs nas abas Vendas/Analítico
         Object.keys(allKpiValues).forEach(key => {
             const kpi = allKpiValues[key];
             const valEl = $(`k_${key}`);
@@ -430,6 +427,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       return allKpiValues;
     }
+
     let chartModeGlobal = 'total';
     const segGlobal = $('segGlobal');
     segGlobal.addEventListener('click',(e)=>{
@@ -791,7 +789,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const wb = XLSX.read(buf, { type:'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
-        // ... (resto da lógica de upload, que já estava funcional)
       }catch(e){
         console.error(e);
         setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
@@ -838,30 +835,90 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // ===================================================================================
-    // NOVA: LÓGICA PARA A ABA DE DIAGNÓSTICO
+    // LÓGICA PARA A ABA DE DIAGNÓSTICO
     // ===================================================================================
-    function updateDiagnosticTab(kpi_key, allKpiValues) {
+
+    // NOVA FUNÇÃO para buscar KPIs por unidade
+    async function getUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
+      const kpiMeta = KPI_META[kpi_key] || {};
+      
+      const fetchUnitData = async (unitName) => {
+        try {
+          const unitAnaliticos = { ...analiticos, unidade: [unitName] };
+          const pNow = buildParams(de, ate, unitAnaliticos);
+          const pPrev = buildParams(dePrev, atePrev, unitAnaliticos);
+          
+          const [
+            {data: finNow, error: errNow}, 
+            {data: finPrev, error: errPrev},
+            {count: pedNow},
+            {count: pedPrev}
+          ] = await Promise.all([
+            supa.rpc(RPC_KPI_FUNC, pNow),
+            supa.rpc(RPC_KPI_FUNC, pPrev),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).match({unidade: unitName}).gte('dia', de).lte('dia', ate),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).match({unidade: unitName}).gte('dia', dePrev).lte('dia', atePrev),
+          ]);
+          
+          if (errNow || errPrev) throw (errNow || errPrev);
+
+          const N = { ped: pedNow, fat: +(finNow[0]?.fat || 0), des: +(finNow[0]?.des || 0) };
+          const P = { ped: pedPrev, fat: +(finPrev[0]?.fat || 0), des: +(finPrev[0]?.des || 0) };
+
+          let current = N[kpi_key] ?? N.fat; // Default to fat if key not direct
+          let previous = P[kpi_key] ?? P.fat;
+          
+          // Lógica para KPIs calculados
+          if (kpi_key === 'tkt') {
+            current = N.ped > 0 ? (N.fat / N.ped) : 0;
+            previous = P.ped > 0 ? (P.fat / P.ped) : 0;
+          } else if (kpi_key === 'desperc') {
+            current = N.fat > 0 ? (N.des / N.fat) : 0;
+            previous = P.fat > 0 ? (P.des / P.fat) : 0;
+          }
+
+          return { current, previous };
+        } catch(e) {
+          console.error(`Erro ao buscar dados para unidade ${unitName}:`, e);
+          return { current: 0, previous: 0 };
+        }
+      };
+
+      const [rajaData, savassiData] = await Promise.all([
+        fetchUnitData('Uni. Raja'),
+        fetchUnitData('Uni. Savassi')
+      ]);
+
+      return { raja: rajaData, savassi: savassiData };
+    }
+
+    // MODIFICADO para aceitar e processar os dados das unidades
+    function updateDiagnosticTab(kpi_key, allKpiValues, unitKpis) {
       const heroCard = document.querySelector('#tab-diagnostico .hero');
       if (!heroCard || !allKpiValues || !allKpiValues[kpi_key]) return;
 
       try {
         const kpiData = allKpiValues[kpi_key];
-        
-        // Renderiza o card principal (Hero)
-        const valEl = heroCard.querySelector('.hero-value-number');
-        const deltaEl = heroCard.querySelector('.delta');
-        const subEl = heroCard.querySelector('.hero-sub-value');
-        const contextEl = heroCard.querySelector('.hero-context');
-
         const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
-        valEl.textContent = formatValueBy(kpiMeta.fmt, kpiData.current);
-        subEl.textContent = 'Período anterior: ' + formatValueBy(kpiMeta.fmt, kpiData.previous);
-        deltaBadge(deltaEl, kpiData.current, kpiData.previous);
-        
-        // AINDA ESTÁTICO: A lógica para Destaques dinâmicos requer a RPC 'diagnostico_geral'
-        // const { top_stores, top_channels, top_hours } = data.context;
-        // contextEl.innerHTML = `<strong>Destaques:</strong> ${top_stores?.join(' e ') || 'N/A'} • <strong>Horário:</strong> ${top_hours?.join(', ') || 'N/A'} • <strong>Canal:</strong> ${top_channels?.join(', ') || 'N/A'}`;
 
+        // Renderiza o card principal (KPI MASTER)
+        heroCard.querySelector('.hero-value-number').textContent = formatValueBy(kpiMeta.fmt, kpiData.current);
+        heroCard.querySelector('.hero-sub-value').textContent = 'Período anterior: ' + formatValueBy(kpiMeta.fmt, kpiData.previous);
+        deltaBadge(heroCard.querySelector('.hero-main-value .delta'), kpiData.current, kpiData.previous);
+
+        // Renderiza os MINI KPIs
+        if (unitKpis) {
+          const { raja, savassi } = unitKpis;
+          const rajaCard = $('mini-kpi-raja');
+          const savassiCard = $('mini-kpi-savassi');
+
+          rajaCard.querySelector('.mini-kpi-value').textContent = formatValueBy(kpiMeta.fmt, raja.current);
+          deltaBadge(rajaCard.querySelector('.delta'), raja.current, raja.previous);
+
+          savassiCard.querySelector('.mini-kpi-value').textContent = formatValueBy(kpiMeta.fmt, savassi.current);
+          deltaBadge(savassiCard.querySelector('.delta'), savassi.current, savassi.previous);
+        }
+        
       } catch (e) {
         console.error('Erro ao atualizar aba de diagnóstico:', e);
       }
@@ -869,6 +926,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     /* ===================== LOOP PRINCIPAL ===================== */
+    // MODIFICADO para buscar e passar os dados das unidades
     async function applyAll(details){
       try{
         const de = details.start;
@@ -882,25 +940,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
         setStatus('Consultando…');
         let kpiOk=true;
+        const selectedKpiForDiag = $('kpi-select').value;
 
-        // Atualiza as abas Vendas e Analítico e OBTÉM OS VALORES CALCULADOS
-        const allKpiValues = await updateKPIs(de,ate,dePrev,atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
+        // Executa todas as buscas de dados em paralelo
+        const [allKpiValues, unitKpiValues] = await Promise.all([
+          updateKPIs(de, ate, dePrev, atePrev, analiticos).catch(e => { console.error('Erro em KPIs:', e); kpiOk = false; return {}; }),
+          getUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos)
+        ]);
         
-        // Atualiza os gráficos das outras abas
         await Promise.all([
           updateCharts(de,ate,dePrev,atePrev, analiticos),
           updateMonth12x12(analiticos),
           updateTop6(de,ate, analiticos)
         ]);
         
-        // ATUALIZA A ABA DIAGNÓSTICO USANDO OS VALORES JÁ CALCULADOS
-        const selectedKpiForDiag = $('kpi-select').value;
-        updateDiagnosticTab(selectedKpiForDiag, allKpiValues);
+        updateDiagnosticTab(selectedKpiForDiag, allKpiValues, unitKpiValues);
 
         if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
         else setStatus('OK','ok');
         
-        // Garante o alinhamento do painel da aba Vendas após a renderização
         matchPanelHeights();
       }catch(e){
         console.error('Erro em applyAll:', e);
