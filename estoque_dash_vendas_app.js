@@ -428,7 +428,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       return allKpiValues;
     }
-
     let chartModeGlobal = 'total';
     const segGlobal = $('segGlobal');
     segGlobal.addEventListener('click',(e)=>{
@@ -760,8 +759,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===================================================================================
     // LÓGICA PARA A ABA DE DIAGNÓSTICO
     // ===================================================================================
-    
-    // NENHUMA ALTERAÇÃO. Esta função continua responsável apenas pelo KPI Master.
+
+    // Função original, sem alterações, para garantir estabilidade.
+    // Ela continua responsável apenas pelo KPI Master.
     function updateDiagnosticTab(kpi_key, allKpiValues) {
       const heroCard = document.querySelector('#tab-diagnostico .hero');
       if (!heroCard || !allKpiValues || !allKpiValues[kpi_key]) return;
@@ -770,7 +770,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const kpiData = allKpiValues[kpi_key];
         
         const valEl = heroCard.querySelector('.hero-value-number');
-        const deltaEl = heroCard.querySelector('.hero-main-value .delta'); // Seletor mais específico
+        const deltaEl = heroCard.querySelector('.hero-main-value .delta'); 
         const subEl = heroCard.querySelector('.hero-sub-value');
 
         const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
@@ -782,10 +782,112 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('Erro ao atualizar aba de diagnóstico:', e);
       }
     }
+    
+    // NOVA FUNÇÃO ADICIONADA para buscar, calcular e renderizar os dados das unidades.
+    // Esta função é separada para não interferir com a lógica principal.
+    async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
+      
+      const fetchAndCalculateForUnit = async (unitName) => {
+          // Lógica completa de busca e cálculo, espelhada da função principal `updateKPIs`
+          const unitAnaliticosNow = { ...analiticos, unidade: [unitName] };
+          const unitAnaliticosPrev = { ...analiticos, unidade: [unitName] };
+
+          const pNow = buildParams(de, ate, unitAnaliticosNow);
+          const pPrev = buildParams(dePrev, atePrev, unitAnaliticosPrev);
+          
+          const [
+            finNowResult, finPrevResult,
+            { count: pedNowCount, error: errPedNow },
+            { count: pedPrevCount, error: errPedPrev },
+            { count: cnCount, error: errCn }, { count: vnCount, error: errVn },
+            { count: cpCount, error: errCp }, { count: vpCount, error: errVp }
+          ] = await Promise.all([
+              supa.rpc(RPC_KPI_FUNC, pNow),
+              supa.rpc(RPC_KPI_FUNC, pPrev),
+              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', de).lte('dia', ate),
+              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', dePrev).lte('dia', atePrev),
+              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', de).lte('dia', ate).eq('cancelado', 'Sim'),
+              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', de).lte('dia', ate).eq('cancelado', 'Não'),
+              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Sim'),
+              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Não')
+          ]);
+
+          const pedTotalNow = analiticos.cancelado === 'sim' ? cnCount : analiticos.cancelado === 'nao' ? vnCount : pedNowCount;
+
+          const N = {
+              ped: pedTotalNow,
+              fat: +(finNowResult.data[0]?.fat || 0),
+              des: +(finNowResult.data[0]?.des || 0),
+              fre: +(finNowResult.data[0]?.fre || 0)
+          };
+          const P = {
+              ped: pedPrevCount,
+              fat: +(finPrevResult.data[0]?.fat || 0),
+              des: +(finPrevResult.data[0]?.des || 0),
+              fre: +(finPrevResult.data[0]?.fre || 0)
+          };
+
+          const {data: cancDataNow} = await supa.rpc(RPC_KPI_FUNC, { ...pNow, p_cancelado: 'Sim' });
+          const {data: cancDataPrev} = await supa.rpc(RPC_KPI_FUNC, { ...pPrev, p_cancelado: 'Sim' });
+          
+          const len = DateHelpers.daysLen(de, ate);
+          const prevLen = DateHelpers.daysLen(dePrev, atePrev);
+
+          const tktN = (N.ped > 0) ? (N.fat / N.ped) : 0;
+          const tktP = (P.ped > 0) ? (P.fat / P.ped) : 0;
+          const fatMedN = len > 0 ? (N.fat / len) : 0;
+          const fatMedP = prevLen > 0 ? (P.fat / prevLen) : 0;
+          const desPercN = N.fat > 0 ? (N.des / N.fat) : 0;
+          const desPercP = P.fat > 0 ? (P.des / P.fat) : 0;
+          const freMedN = N.ped > 0 ? (N.fre / N.ped) : 0;
+          const freMedP = P.ped > 0 ? (P.fre / P.ped) : 0;
+          const cancValN = +(cancDataNow[0]?.fat || 0);
+          const cancValP = +(cancDataPrev[0]?.fat || 0);
+          const roiN = N.des > 0 ? (N.fat - N.des) / N.des : NaN;
+          const roiP = P.des > 0 ? (P.fat - P.des) / P.des : NaN;
+
+          return {
+              fat: { current: N.fat, previous: P.fat },
+              ped: { current: N.ped, previous: P.ped },
+              tkt: { current: tktN, previous: tktP },
+              des: { current: N.des, previous: P.des },
+              fatmed: { current: fatMedN, previous: fatMedP },
+              roi: { current: roiN, previous: roiP },
+              desperc: { current: desPercN, previous: desPercP },
+              canc_val: { current: cancValN, previous: cancValP },
+              fre: { current: N.fre, previous: P.fre },
+              fremed: { current: freMedN, previous: freMedP },
+              canc_ped: { current: cnCount, previous: cpCount },
+          };
+      };
+
+      try {
+        const [rajaKpis, savassiKpis] = await Promise.all([
+          fetchAndCalculateForUnit('Uni. Raja'),
+          fetchAndCalculateForUnit('Uni. Savassi')
+        ]);
+
+        const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
+        
+        const renderUnit = (unitId, unitData) => {
+            const card = $(unitId);
+            const data = unitData[kpi_key];
+            if (card && data) {
+              card.querySelector('.unit-kpi-value').textContent = formatValueBy(kpiMeta.fmt, data.current);
+              card.querySelector('.unit-kpi-sub').textContent = 'Anterior: ' + formatValueBy(kpiMeta.fmt, data.previous);
+              deltaBadge(card.querySelector('.delta'), data.current, data.previous);
+            }
+          };
+
+        renderUnit('unit-kpi-raja', rajaKpis);
+        renderUnit('unit-kpi-savassi', savassiKpis);
+      } catch(e) {
+          console.error("Erro ao renderizar KPIs de unidade:", e);
+      }
+    }
 
 
     /* ===================== LOOP PRINCIPAL ===================== */
-    // MODIFICADO para chamar a nova função que renderiza os Mini KPIs
     async function applyAll(details){
       try{
         const de = details.start;
@@ -800,7 +902,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setStatus('Consultando…');
         let kpiOk=true;
 
-        const allKpiValues = await updateKPIs(de,ate,dePrev,atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
+        const allKpiValues = await updateKPIs(de, ate, dePrev, atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
         
         await Promise.all([
           updateCharts(de,ate,dePrev,atePrev, analiticos),
@@ -812,8 +914,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (allKpiValues) {
             updateDiagnosticTab(selectedKpiForDiag, allKpiValues);
         }
-
-        // CHAMADA PARA A NOVA FUNÇÃO (adicionada, não altera o fluxo principal)
+        
+        // MODIFICADO PARA CHAMAR A NOVA FUNÇÃO
         await getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos);
 
         if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
