@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width,initial-scale=1" name="viewport"/>
-<title>Mapa de Produção — v3.4 Final</title>
+<title>Mapa de Produção — v3.5 Final</title>
 <link href='data:image/svg+xml,&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"&gt;&lt;rect x="0" y="0" width="128" height="128" rx="22" fill="%237b1e3a"/&gt;&lt;text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white"&gt;MP&lt;/text&gt;&lt;/svg&gt;' rel="icon"/>
 <style>
     :root{--bg:#f7f7fa; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e5e7eb; --wine:#7b1e3a; --wine-2:#8c2947; --chip:#fef2f2; --ok:#0b5d47; --down:#b91c1c; --ok-dark: #065f46; --wine-dark: #881337; --radius:12px; --shadow:0 8px 28px rgba(16,24,40,.06);}
@@ -574,9 +574,10 @@
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+
 <script>
 // =================================================================================
-// SCRIPT ÚNICO, COMPLETO E CORRIGIDO
+// SCRIPT ÚNICO, COMPLETO E CORRIGIDO (v3.4)
 // =================================================================================
 
 /* ===== Helpers ===== */
@@ -593,6 +594,15 @@ const SUPABASE_URL  = 'https://rqeagimulvgfecvuzubk.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxZWFnaW11bHZnZmVjdnV6dWJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NzkyMzUsImV4cCI6MjA3MjU1NTIzNX0.SeNHyHOlpqjm-QTl7KXq7YF-48fk5iOQCRgpangP4zU';
 const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
+// Função de segurança para adicionar Event Listeners
+function addSafeEventListener(id, event, handler) {
+    const element = $(id);
+    if (element) {
+        element.addEventListener(event, handler);
+    } else {
+        console.warn(`Elemento com ID '${id}' não encontrado para adicionar evento '${event}'.`);
+    }
+}
 
 /* ===== ROTEAMENTO POR ABAS ===== */
 function setupRouting() {
@@ -601,8 +611,8 @@ function setupRouting() {
   
   const setupSubTabs = (containerId, contentSelector) => {
       const container = document.getElementById(containerId);
-      const contents = document.querySelectorAll(contentSelector);
       if (!container) return;
+      const contents = document.querySelectorAll(contentSelector);
       
       container.addEventListener('click', (e) => {
         const btn = e.target.closest('button');
@@ -631,6 +641,7 @@ function setupRouting() {
     });
   });
   
+  // CORREÇÃO: Assegurar que o roteamento de sub-abas seja aplicado a ambos os menus
   setupSubTabs('cadastro-subtabs', '#tab-cadastros .subpage');
   setupSubTabs('estoque-subtabs', '#tab-estoque .subpage');
 }
@@ -641,29 +652,17 @@ async function callGemini(prompt, button) {
     const originalButtonText = button.innerHTML;
     button.innerHTML = '✨ Gerando...';
     button.disabled = true;
-
     const apiKey = ""; // Será substituído pelo ambiente de execução
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-
-    const payload = {
-        contents: [{ parts: [{ text: prompt }] }],
-    };
-
+    const payload = { contents: [{ parts: [{ text: prompt }] }], };
     try {
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
+        const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         if (!response.ok) {
             const errorBody = await response.text();
             throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorBody}`);
         }
-
         const result = await response.json();
         const candidate = result.candidates?.[0];
-
         if (candidate && candidate.content?.parts?.[0]?.text) {
             return candidate.content.parts[0].text;
         } else {
@@ -705,16 +704,6 @@ function renderPratos(){
   if($('pratos-page-info')) $('pratos-page-info').textContent=`Página ${pratosPage}/${totalPages}`;
   if($('pratos-prev')) $('pratos-prev').disabled=pratosPage<=1; 
   if($('pratos-next')) $('pratos-next').disabled=pratosPage>=totalPages;
-}
-
-// Função de segurança para adicionar Event Listeners
-function addSafeEventListener(id, event, handler) {
-    const element = $(id);
-    if (element) {
-        element.addEventListener(event, handler);
-    } else {
-        console.warn(`Elemento com ID '${id}' não encontrado para adicionar evento '${event}'.`);
-    }
 }
 
 addSafeEventListener('pratos-prev', 'click', ()=>{ pratosPage=Math.max(1,pratosPage-1); renderPratos(); });
@@ -1577,14 +1566,18 @@ const EstoqueModule = {
             tb.innerHTML = '<tr><td colspan="5">Erro ao carregar. Verifique se a RPC `rpc_get_recent_movs` foi criada (execute o SQL).</td></tr>';
         }
     },
+    // CORREÇÃO: Função reescrita para ser mais simples e eficiente
     async loadSaldos() {
        const tbody = $('tblSaldo')?.querySelector('tbody');
        if (!tbody) return;
        tbody.innerHTML = '<tr><td colspan="6">Carregando saldos...</td></tr>';
        try {
-           const { data, error } = await supa.from('estoque_saldo')
-               .select('*, ingredientes!inner(nome, estoque_minimo, estoque_maximo, unidades_medida(sigla)), unidades(nome)')
-               .eq('item_tipo', 'INGREDIENTE');
+           const { data, error } = await supa.from('estoque_saldo').select(`
+                saldo_atual,
+                item_tipo,
+                unidades ( nome ),
+                ingredientes ( nome, estoque_minimo, estoque_maximo, unidades_medida(sigla) )
+            `).eq('item_tipo', 'INGREDIENTE');
 
            if (error) throw error;
            
@@ -1611,7 +1604,7 @@ const EstoqueModule = {
                tbody.appendChild(tr);
            });
        } catch(e) {
-           tbody.innerHTML = '<tr><td colspan="6">Erro ao carregar saldos. Verifique o console.</td></tr>';
+           tbody.innerHTML = `<tr><td colspan="6">Erro ao carregar saldos. Verifique o console.</td></tr>`;
            console.error("Erro em loadSaldos:", e);
        }
     },
