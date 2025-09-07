@@ -48,18 +48,14 @@
     .delta.up{background:rgba(6,95,70,.1);border-color:rgba(6,95,70,.25);color:var(--ok-dark)}
     .delta.down{background:rgba(136,19,55,.1);border-color:rgba(136,19,55,.25);color:var(--wine-dark)}
 
-    .panel{display:grid;grid-template-columns:1fr 260px;gap:8px;}
-    /* ATENÇÃO: A propriedade min-height foi REMOVIDA desta regra para permitir o alinhamento automático */
+    .panel{display:grid;grid-template-columns:1fr 260px;gap:8px; align-items: start;} /* align-items:start para alinhar pelo topo inicialmente */
     .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;display:flex;flex-direction:column;}
     .card .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
     .title{font-weight:700}
     .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
     .seg button{padding:5px 9px;border:0;background:#fff;font-weight:700;color:#475569;cursor:pointer}
     .seg button.active{background:var(--wine);color:#fff}
-    /* ATENÇÃO: A propriedade min-height foi REMOVIDA para permitir que o gráfico se ajuste */
-    .chart-box{position:relative;flex-grow:1;}
-    /* ATENÇÃO: Esta regra foi REMOVIDA pois estava forçando uma altura mínima no gráfico */
-    /* .panel > .card .chart-box{ ... } */
+    .chart-box{position:relative;flex-grow:1;min-height:0;}
     .chart-box canvas{display:block;width:100%;height:100%}
     .side{display:flex;flex-direction:column;gap:8px}
     .card.mini{min-height:auto;padding:8px}
@@ -683,6 +679,30 @@
           return { dePrev: this.iso(dePrev), atePrev: this.iso(atePrev) };
       }
     };
+    
+    // ===================================================================================
+    // NOVA FUNÇÃO DE ALINHAMENTO DE ALTURA (SOLUÇÃO DEFINITIVA)
+    // ===================================================================================
+    function matchPanelHeights() {
+      const panel = document.querySelector('.panel');
+      if (!panel) return;
+
+      const chartCard = panel.querySelector('.card:first-child');
+      const sideBar = panel.querySelector('.side');
+
+      if (!chartCard || !sideBar) return;
+
+      // 1. Reseta a altura do card do gráfico para que a sidebar defina a altura natural da linha.
+      chartCard.style.height = 'auto';
+
+      // 2. Aguarda o navegador recalcular o layout e então aplica a altura da sidebar no card do gráfico.
+      requestAnimationFrame(() => {
+        const sideBarHeight = sideBar.offsetHeight;
+        if (sideBarHeight > 0) {
+          chartCard.style.height = `${sideBarHeight}px`;
+        }
+      });
+    }
 
     /* ===================== MULTISELECT ===================== */
     function MultiSelect(rootId, placeholder, onChangeCallback){
@@ -1346,6 +1366,9 @@
         ]);
         if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
         else setStatus('OK','ok');
+        
+        // NOVA CHAMADA: Garante o alinhamento após a renderização
+        matchPanelHeights();
       }catch(e){
         console.error('Erro em applyAll:', e);
         setStatus('Erro: '+(e.message||e),'err');
@@ -1482,6 +1505,9 @@
         
         bindKPIClick();
         updateChartTitles();
+
+        // NOVA CHAMADA: Garante o alinhamento em caso de redimensionamento da tela
+        window.addEventListener('resize', debounce(matchPanelHeights, 150));
 
         fxLastNDays(30);
         fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
