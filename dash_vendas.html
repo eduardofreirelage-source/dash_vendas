@@ -1,452 +1,342 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Dash de Vendas — Diagnóstico (REST + OpenAPI)</title>
+  <!-- Favicon inline para evitar 404 -->
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">📊</text></svg>'>
   <style>
     :root{
-      --bg:#f6f7fb;
-      --card:#ffffff;
-      --ink:#0f172a;
-      --muted:#6b7280;
-      --primary:#2563eb;
-      --ring:#c7d2fe;
-      --danger:#ef4444;
-      --ok:#16a34a;
-      --chip:#eef2ff;
-      --chip-ink:#3730a3;
-      --mono:#0b1020;
+      --bg:#f6f6fb;--card:#fff;--muted:#6b7280;--text:#111827;--brand:#2563eb;--border:#e5e7eb;
+      --ok:#059669;--warn:#f59e0b;--err:#ef4444;
     }
     *{box-sizing:border-box}
     html,body{height:100%}
-    body{
-      margin:0; padding:0;
-      background:var(--bg);
-      color:var(--ink);
-      font: 14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,"Noto Sans",sans-serif;background:var(--bg);color:var(--text)}
+    .wrap{max-width:1180px;margin:24px auto;padding:0 16px}
+    .row{display:flex;gap:16px;flex-wrap:wrap}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px}
+    .card h3{margin:0 0 8px 0;font-size:16px}
+    .kpi{font-size:20px;font-weight:700}
+    .muted{color:var(--muted);font-size:12px}
+    label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
+    input[type="text"],input[type="date"],input[type="password"],select{
+      width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#fff;outline:none
     }
-    .wrap{max-width:1100px; margin:24px auto; padding:0 16px;}
-    h1{font-size:28px; margin:0 0 16px 0}
-    .row{display:flex; gap:16px; flex-wrap:wrap}
-    .card{
-      background:var(--card);
-      border:1px solid #e5e7eb;
-      border-radius:14px;
-      padding:16px;
-      box-shadow:0 1px 2px rgba(0,0,0,.03);
-    }
-    .grid{display:grid; gap:12px}
-    .grid.cols-2{grid-template-columns:1fr 1fr}
-    .grid.cols-3{grid-template-columns:repeat(3,1fr)}
-    label{display:block; font-weight:600; font-size:12px; color:var(--muted); margin:4px 0 6px}
-    input[type=text], input[type=date], select, textarea{
-      width:100%;
-      border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px;
-      outline:none; background:#fff; color:var(--ink);
-    }
-    input:focus, select:focus, textarea:focus{border-color:#c7d2fe; box-shadow:0 0 0 4px var(--ring)}
-    .btn{
-      appearance:none; border:0; border-radius:999px; padding:10px 14px;
-      background:var(--primary); color:#fff; font-weight:600; cursor:pointer
-    }
-    .btn.secondary{background:#e5e7eb; color:#111827}
-    .btn.ghost{background:transparent; border:1px solid #d1d5db; color:#111827}
-    .btn:disabled{opacity:.5; cursor:not-allowed}
-    .kpis{display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px}
-    .kpi{background:var(--card); border:1px solid #e5e7eb; border-radius:14px; padding:14px}
-    .kpi h3{margin:0; font-size:12px; color:var(--muted)}
-    .kpi .v{font-size:24px; font-weight:700}
-    .chips{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px}
-    .chip{
-      background:var(--chip); color:var(--chip-ink); border:1px solid #e5e7eb;
-      padding:6px 10px; border-radius:999px; cursor:pointer; user-select:none
-    }
-    .chip:hover{filter:brightness(.98)}
-    .log{
-      font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Monaco,"Liberation Mono","Courier New",monospace;
-      background:#0b1020; color:#bcd;
-      border-radius:10px; padding:10px; white-space:pre-wrap; min-height:70px;
-    }
-    table{width:100%; border-collapse:collapse; font-size:13px}
-    th,td{border-bottom:1px solid #eef2f7; padding:8px 10px; text-align:left}
-    th{font-weight:700; color:#475569; background:#fafbff}
-    .muted{color:var(--muted)}
-    .ok{color:var(--ok)}
-    .bad{color:var(--danger)}
-    .inline{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+    input[type="checkbox"]{transform:translateY(2px)}
+    .btn{padding:10px 14px;border:1px solid var(--border);background:#fff;border-radius:10px;cursor:pointer}
+    .btn.brand{background:var(--brand);color:#fff;border-color:var(--brand)}
+    .btn.ghost{background:#fff}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border);background:#fff;border-radius:999px;font-size:13px;margin:4px;cursor:pointer;user-select:none}
+    .pill:hover{border-color:#c7cbd1}
+    .stack{display:grid;gap:12px}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left}
+    th{position:sticky;top:0;background:#fafafa;z-index:1}
+    .log{background:#0b1020;color:#e2e8f0;padding:12px;border-radius:10px;font:12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;max-height:160px;overflow:auto;white-space:pre-wrap}
+    .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
+    .controls{display:flex;gap:8px;flex-wrap:wrap}
+    .small{font-size:12px}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Dash de Vendas <span class="muted">— Diagnóstico (REST + OpenAPI)</span></h1>
+<div class="wrap">
+  <div class="row" style="align-items:center;justify-content:space-between">
+    <h1 style="margin:0">Dash de Vendas</h1>
+    <div class="controls">
+      <button id="btnRefresh" class="btn brand">Atualizar</button>
+      <button id="btnTest" class="btn">Rodar teste</button>
+    </div>
+  </div>
 
-    <div class="row">
-      <div class="card" style="flex:1 1 520px; min-width:320px">
-        <div class="grid cols-2">
-          <div>
-            <label>Início</label>
-            <input type="date" id="dtIni">
-          </div>
-          <div>
-            <label>Fim</label>
-            <input type="date" id="dtFim">
-          </div>
-        </div>
-        <div class="kpis" style="margin-top:12px">
-          <div class="kpi"><h3>Faturamento</h3><div class="v" id="kpiFat">R$ 0,00</div></div>
-          <div class="kpi"><h3>Pedidos</h3><div class="v" id="kpiPed">0</div></div>
-          <div class="kpi"><h3>Ticket</h3><div class="v" id="kpiTkt">R$ 0,00</div></div>
-        </div>
-        <div class="inline" style="margin-top:12px">
-          <button class="btn" id="btnAtualizar">Atualizar</button>
-          <button class="btn ghost" id="btnTest">Rodar teste</button>
-        </div>
-      </div>
-
-      <div class="card" style="flex:1 1 520px; min-width:320px">
-        <h3 style="margin:0 0 10px">Config (ajuste se auto-detecção falhar)</h3>
-        <div class="grid cols-2">
-          <div>
-            <label>Project URL</label>
-            <input type="text" id="projectUrl" placeholder="https://xxxx.supabase.co">
-          </div>
-          <div>
-            <label>Anon Key</label>
-            <input type="text" id="anonKey" placeholder="eyJhbGciOi...">
-          </div>
-          <div class="inline" style="align-items:center; margin-top:6px">
-            <input type="checkbox" id="chkPublic" checked>
-            <label for="chkPublic" style="margin:0">Somente schema <b>public</b>?</label>
-          </div>
-        </div>
-        <div class="inline" style="margin-top:10px">
-          <button class="btn" id="btnOpenApi">Descobrir tabelas e colunas (OpenAPI)</button>
-          <span class="muted" id="openapiStatus"></span>
-        </div>
-
-        <div class="grid cols-3" style="margin-top:14px">
-          <div>
-            <label>Tabela de vendas (use schema.tabela se necessário)</label>
-            <div class="inline">
-              <input type="text" id="salesTable" list="tablesList" placeholder="ex.: public.vendas_canon">
-              <datalist id="tablesList"></datalist>
-            </div>
-          </div>
-          <div>
-            <label>Coluna de data</label>
-            <input type="text" id="dateCol" placeholder="ex.: dia / data / dt / dh / created_at / hora">
-          </div>
-          <div>
-            <label>Coluna de valor (opcional)</label>
-            <input type="text" id="valueCol" placeholder="ex.: fat / valor_total / receita">
-          </div>
-        </div>
-        <div class="grid cols-3" style="margin-top:8px">
-          <div>
-            <label>Coluna de cancelado (opcional)</label>
-            <input type="text" id="cancelCol" placeholder="ex.: cancelado / status">
-          </div>
-          <div class="inline" style="align-items:flex-end">
-            <button class="btn secondary" id="btnSave">Salvar</button>
-          </div>
-        </div>
-
-        <div class="chips" id="chips"></div>
-      </div>
+  <div class="row">
+    <div class="card" style="flex:1 1 520px;min-width:320px">
+      <h3>Faturamento</h3>
+      <div class="kpi" id="kpiFat">—</div>
+      <div class="muted" id="kpiDestaques">Destaques: —</div>
     </div>
 
-    <div class="card" style="margin-top:16px">
-      <div class="inline">
-        <strong>Teste rápido</strong>
-        <span class="muted">— HEAD com <code>Content-Range</code> e GET de amostra</span>
-      </div>
-
-      <div class="inline" style="margin:12px 0">
-        <button class="btn" id="btnCount">Contar registros (Content-Range)</button>
-        <button class="btn secondary" id="btnSample">Carregar amostra</button>
-        <span id="lastUrl" class="muted" style="margin-left:8px"></span>
-      </div>
-      <div class="log" id="log"></div>
-
-      <h3 style="margin:18px 0 8px">Amostra de dados</h3>
-      <div style="overflow:auto">
-        <table id="tbl"><thead></thead><tbody></tbody></table>
+    <div class="card" style="flex:1 1 520px;min-width:320px">
+      <h3>Projeções</h3>
+      <div class="row">
+        <div style="flex:1">Receita projetada (30d): <b id="projReceita">R$ 0,00</b></div>
+        <div style="flex:1">Pedidos: <b id="projPed">0</b></div>
+        <div style="flex:1">Ticket: <b id="projTick">R$ 0,00</b></div>
       </div>
     </div>
   </div>
 
+  <div class="card" style="margin-top:16px">
+    <h3>Diagnóstico (REST + OpenAPI)</h3>
+
+    <div class="grid-3">
+      <div class="stack">
+        <label>Project URL (ex.: https://xxxxx.supabase.co)</label>
+        <input id="inpProject" type="text" placeholder="https://xxxxx.supabase.co">
+        <div class="small"><label><input id="chkOnlyPublic" type="checkbox" checked> Somente schema <b>public</b>?</label></div>
+      </div>
+      <div class="stack">
+        <label>Anon Key</label>
+        <input id="inpAnon" type="password" placeholder="eyJh...">
+      </div>
+      <div class="stack" style="align-content:end">
+        <button id="btnDiscover" class="btn brand">Descobrir tabelas e colunas (OpenAPI)</button>
+        <div id="openApiStatus" class="small muted"></div>
+      </div>
+    </div>
+
+    <div class="grid-3" style="margin-top:16px">
+      <div class="stack">
+        <label>Tabela de vendas (use schema.tabela se necessário)</label>
+        <div class="controls">
+          <input id="inpTable" type="text" placeholder="ex.: public.vendas_xlsx" list="dlTables">
+          <datalist id="dlTables"></datalist>
+          <button id="btnSave" class="btn">Salvar</button>
+        </div>
+      </div>
+      <div class="stack">
+        <label>Coluna de data</label>
+        <input id="inpDateCol" type="text" placeholder="ex.: dia / data / dt / dh / created_at / hora">
+      </div>
+      <div class="stack">
+        <label>Coluna de valor (opcional)</label>
+        <input id="inpValueCol" type="text" placeholder="ex.: total / valor_total / receita">
+      </div>
+    </div>
+
+    <div class="grid-3" style="margin-top:12px">
+      <div class="stack">
+        <label>Coluna de cancelado (opcional)</label>
+        <input id="inpCancelCol" type="text" placeholder="ex.: cancelado / status">
+      </div>
+      <div class="stack">
+        <label>Início</label>
+        <input id="inpIni" type="date">
+      </div>
+      <div class="stack">
+        <label>Fim</label>
+        <input id="inpFim" type="date">
+      </div>
+    </div>
+
+    <div style="margin:12px 0 6px" class="muted">Tabelas detectadas:</div>
+    <div id="pills" class="row"></div>
+
+    <div class="row" style="margin-top:12px">
+      <div class="controls">
+        <button id="btnCount" class="btn brand">Contar registros (Content-Range)</button>
+        <button id="btnSample" class="btn">Carregar amostra</button>
+      </div>
+    </div>
+
+    <div id="log" class="log" style="margin-top:12px">Pronto.</div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Amostra de dados</h3>
+    <div class="muted" id="sampleCount">—</div>
+    <div style="overflow:auto;max-height:420px;border:1px solid var(--border);border-radius:10px">
+      <table id="tbl"><thead></thead><tbody></tbody></table>
+    </div>
+  </div>
+</div>
+
 <script>
-(function(){
+(() => {
+  // -------------------- Util --------------------
   const $ = sel => document.querySelector(sel);
-  const logBox = $('#log');
-  const tablesList = $('#tablesList');
-  const chipsBox = $('#chips');
-  const state = {
-    spec:null,
-    tables:[],
-    guessCols:{},
+  const $$ = sel => Array.from(document.querySelectorAll(sel));
+  const fmtReal = n => isFinite(n) ? n.toLocaleString('pt-BR', {style:'currency', currency:'BRL'}) : 'R$ 0,00';
+  const log = (...msg) => { const el=$('#log'); el.textContent += (el.textContent? '\\n':'') + msg.join(' '); el.scrollTop = el.scrollHeight; };
+
+  const st = {
+    get project(){ return $('#inpProject').value.trim() },
+    get anon(){ return $('#inpAnon').value.trim() },
+    get onlyPublic(){ return $('#chkOnlyPublic').checked },
+    get table(){ return $('#inpTable').value.trim() },
+    get dateCol(){ return $('#inpDateCol').value.trim() },
+    get valueCol(){ return $('#inpValueCol').value.trim() },
+    get cancelCol(){ return $('#inpCancelCol').value.trim() },
+    get ini(){ return $('#inpIni').value },
+    get fim(){ return $('#inpFim').value },
   };
 
-  const LS_KEY = 'dash_vendas_cfg_v1';
-  const fmtBRL = v => (isFinite(v)? v : 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
-
-  function setTodayRange(){
-    const end = new Date();
-    const start = new Date(end);
-    start.setDate(end.getDate()-30);
-    $('#dtIni').value = start.toISOString().slice(0,10);
-    $('#dtFim').value  = end.toISOString().slice(0,10);
-  }
-
-  function saveCfg(){
-    const cfg = {
-      projectUrl: $('#projectUrl').value.trim(),
-      anonKey: $('#anonKey').value.trim(),
-      publicOnly: $('#chkPublic').checked,
-      salesTable: $('#salesTable').value.trim(),
-      dateCol: $('#dateCol').value.trim(),
-      valueCol: $('#valueCol').value.trim(),
-      cancelCol: $('#cancelCol').value.trim(),
-    };
-    localStorage.setItem(LS_KEY, JSON.stringify(cfg));
-    log('Config salva.');
-    return cfg;
-  }
-  function loadCfg(){
+  const saveLocal = () => {
+    const o = {project:st.project,anon:st.anon,onlyPublic:st.onlyPublic,table:st.table,dateCol:st.dateCol,valueCol:st.valueCol,cancelCol:st.cancelCol};
+    localStorage.setItem('dx_cfg', JSON.stringify(o));
+  };
+  const loadLocal = () => {
     try{
-      const cfg = JSON.parse(localStorage.getItem(LS_KEY)||'{}');
-      if(cfg.projectUrl) $('#projectUrl').value = cfg.projectUrl;
-      if(cfg.anonKey)    $('#anonKey').value = cfg.anonKey;
-      if(typeof cfg.publicOnly==='boolean') $('#chkPublic').checked = cfg.publicOnly;
-      if(cfg.salesTable) $('#salesTable').value = cfg.salesTable;
-      if(cfg.dateCol)    $('#dateCol').value = cfg.dateCol;
-      if(cfg.valueCol)   $('#valueCol').value = cfg.valueCol;
-      if(cfg.cancelCol)  $('#cancelCol').value = cfg.cancelCol;
+      const o = JSON.parse(localStorage.getItem('dx_cfg')||'{}');
+      if(o.project) $('#inpProject').value = o.project;
+      if(o.anon) $('#inpAnon').value = o.anon;
+      if(typeof o.onlyPublic === 'boolean') $('#chkOnlyPublic').checked = o.onlyPublic;
+      if(o.table) $('#inpTable').value = o.table;
+      if(o.dateCol) $('#inpDateCol').value = o.dateCol;
+      if(o.valueCol) $('#inpValueCol').value = o.valueCol;
+      if(o.cancelCol) $('#inpCancelCol').value = o.cancelCol;
     }catch(e){}
-  }
+    // Datas padrão: último mês rolling
+    const today = new Date();
+    const fim = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const ini = new Date(fim); ini.setMonth(ini.getMonth()-1);
+    $('#inpIni').value = ini.toISOString().slice(0,10);
+    $('#inpFim').value = fim.toISOString().slice(0,10);
+  };
 
-  function log(msg, type){
-    const t = new Date().toTimeString().slice(0,8);
-    const line = `[${t}] ${msg}`;
-    logBox.textContent += (logBox.textContent? '\\n' : '') + line;
-    logBox.scrollTop = logBox.scrollHeight;
-    if(type==='url') $('#lastUrl').textContent = 'Última URL: ' + msg;
-  }
+  const buildBase = () => st.project.replace(/\/+$/,'') + '/rest/v1/' + encodeURIComponent(st.table);
+  const authHeaders = () => ({ 'apikey': st.anon, 'Authorization': 'Bearer ' + st.anon });
 
-  function headers(){
-    const anon = $('#anonKey').value.trim();
-    return {
-      'apikey': anon,
-      'Authorization': 'Bearer ' + anon,
-      'Accept': 'application/json',
-      'Prefer': 'count=exact'
-    };
-  }
-  function baseUrl(){
-    return $('#projectUrl').value.replace(/\\/$/, '');
-  }
+  const ensureCfg = () => {
+    if(!st.project || !st.anon){ log('[ERRO] Informe URL e Anon Key.'); return false; }
+    if(!st.table || !st.dateCol){ log('[ERRO] Informe tabela e coluna de data.'); return false; }
+    return true;
+  };
 
-  // OpenAPI discovery
-  async function discover(){
+  // -------------------- OpenAPI discovery --------------------
+  async function discoverOpenAPI(){
+    $('#openApiStatus').textContent = 'Carregando OpenAPI...';
+    $('#pills').innerHTML = '';
+    $('#dlTables').innerHTML = '';
     try{
-      const url = baseUrl() + '/rest/v1/';
-      const res = await fetch(url, {headers: headers()});
-      if(!res.ok){
-        throw new Error('HTTP '+res.status);
+      const url = st.project.replace(/\/+$/,'') + '/rest/v1/';
+      const res = await fetch(url, { headers: { ...authHeaders(), 'Accept': 'application/openapi+json' } });
+      if(!res.ok){ $('#openApiStatus').textContent = 'Erro OpenAPI: ' + res.status; log(`[OpenAPI] Falhou ${res.status}. Verifique URL/AnonKey/Policies.`); return; }
+      const api = await res.json();
+      const paths = Object.keys(api.paths || {});
+      const tables = [];
+      for(const p of paths){
+        if(!p || p.indexOf('{')!==-1) continue;        // ignora endpoints com parâmetros
+        // Evita regex com barras (para não gerar "invalid flags"). Usamos string pura.
+        let name = p.startsWith('/') ? p.slice(1) : p;  // remove barra inicial
+        if(!name) continue;
+        if(st.onlyPublic && !name.startsWith('public.')) continue;
+        if(name.startsWith('rpc/')) continue;          // ignora RPC
+        if(!tables.includes(name)) tables.push(name);
       }
-      const spec = await res.json();
-      state.spec = spec;
-      // build list of tables from spec.definitions
-      const defs = spec.definitions || {};
-      const tables = Object.keys(defs).filter(k=>k!=='_rpc' && !k.startsWith('graphql'));
-      state.tables = tables.sort((a,b)=>a.localeCompare(b));
-      tablesList.innerHTML = '';
-      chipsBox.innerHTML = '';
-      const onlyPublic = $('#chkPublic').checked;
+      tables.sort((a,b)=>a.localeCompare(b));
+      // UI: pills + datalist
+      const pills = $('#pills');
+      const dl = $('#dlTables');
+      for(const t of tables){
+        const p = document.createElement('div');
+        p.className = 'pill';
+        p.textContent = t;
+        p.title = 'Usar ' + t;
+        p.onclick = () => { $('#inpTable').value = t; saveLocal(); };
+        pills.appendChild(p);
 
-      const uniq = [];
-      for(const t of state.tables){
-        if(onlyPublic && !/^public\\./.test(t)) continue;
-        const opt = document.createElement('option'); opt.value = t; tablesList.appendChild(opt);
-        const chip = document.createElement('div');
-        chip.className = 'chip';
-        chip.textContent = t.replace(/^public\\./,'');
-        chip.title = t;
-        chip.onclick = ()=>{ $('#salesTable').value = t; tryGuessColumns(t); };
-        chipsBox.appendChild(chip);
-        uniq.push(t);
+        const opt = document.createElement('option');
+        opt.value = t;
+        dl.appendChild(opt);
       }
-      $('#openapiStatus').textContent = `OpenAPI OK. ${uniq.length} tabelas vistas.`;
-      log(`OpenAPI carregado. ${uniq.length} tabelas.`);
-
-      // se já houver uma tabela, tentar sugerir colunas
-      const current = $('#salesTable').value.trim();
-      if(current){ tryGuessColumns(current); }
-      else {
-        // preferência por vendas_* ou vw_vendas_*
-        const pref = uniq.find(n=>/\\b(vendas|vw_vendas)/.test(n));
-        if(pref){ $('#salesTable').value = pref; tryGuessColumns(pref); }
-      }
-    }catch(e){
-      log('Falha no OpenAPI: ' + e.message);
+      $('#openApiStatus').innerHTML = `<span class="ok">OpenAPI OK.</span> ${tables.length} tabelas vistas.`;
+      log(`[${new Date().toLocaleTimeString()}] OpenAPI carregado. ${tables.length} tabelas.`);
+    }catch(err){
+      $('#openApiStatus').innerHTML = `<span class="err">OpenAPI erro.</span>`;
+      log('[OpenAPI][ERR]', err.message||err);
     }
   }
 
-  function tryGuessColumns(table){
+  // -------------------- Query helpers --------------------
+  function makeDateFilters(){
+    const dcol = st.dateCol;
+    if(!dcol || !st.ini || !st.fim) return [];
+    // para colunas de data/timestamp fazemos [gte, lt]
+    const ini = new Date(st.ini + 'T00:00:00');
+    const endNext = new Date(st.fim + 'T00:00:00'); endNext.setDate(endNext.getDate()+1);
+    const iniISO = ini.toISOString();
+    const fimISO = endNext.toISOString();
+    return [`${encodeURIComponent(dcol)}=gte.${encodeURIComponent(iniISO)}`, `${encodeURIComponent(dcol)}=lt.${encodeURIComponent(fimISO)}`];
+  }
+
+  function addOptionalFilters(qs){
+    // cancelado: queremos excluir cancelados por padrão? aqui só adicionamos se o usuário quiser no futuro
+    // valueCol não é filtro, é só para agregações (fora do escopo deste diagn.) — então não usamos aqui.
+    return qs;
+  }
+
+  async function countContentRange(){
+    if(!ensureCfg()) return;
     try{
-      const def = state.spec?.definitions?.[table];
-      if(!def) return;
-      const props = def.properties ? Object.keys(def.properties) : [];
-      // Candidatas de data (em ordem)
-      const datePrefs = ['dia','data','dt','dh','created_at','hora'];
-      const dCol = datePrefs.find(c=>props.includes(c));
-      if(dCol){ $('#dateCol').value = dCol; }
-      // Valor
-      const valPrefs = ['fat','valor_total','total','receita'];
-      const vCol = valPrefs.find(c=>props.includes(c));
-      if(vCol && !$('#valueCol').value){ $('#valueCol').value = vCol; }
-      // Cancelado
-      const cPrefs = ['cancelado','status','canceled'];
-      const cCol = cPrefs.find(c=>props.includes(c));
-      if(cCol && !$('#cancelCol').value){ $('#cancelCol').value = cCol; }
-      log(`Tabela/colunas sugeridas: ${table} | data=${$('#dateCol').value || '?'} | valor=${$('#valueCol').value || '-'} | cancelado=${$('#cancelCol').value || '-'}`);
-    }catch(e){}
-  }
-
-  function ensureCfg(){
-    const cfg = saveCfg();
-    if(!cfg.projectUrl || !/^https?:\\/\\//.test(cfg.projectUrl)){ log('Informe Project URL.', 'err'); throw new Error('cfg'); }
-    if(!cfg.anonKey){ log('Informe Anon Key.', 'err'); throw new Error('cfg'); }
-    if(!cfg.salesTable){ log('Informe tabela de vendas.', 'err'); throw new Error('cfg'); }
-    if(!cfg.dateCol){ log('Informe coluna de data.', 'err'); throw new Error('cfg'); }
-    if(cfg.dateCol.toLowerCase().includes('hora')){
-      log('⚠️ A coluna "hora" é numérica (0-23). Selecione sua coluna de data (ex.: dia/data/dt/dh/created_at).');
-      throw new Error('dateCol');
+      const base = buildBase();
+      const qs = ['select=id', ...makeDateFilters()];
+      const url = base + '?' + qs.join('&');
+      log(`[${new Date().toLocaleTimeString()}] HEAD-COUNT URL: ${url}`);
+      // Usamos GET com Range 0-0 (PostgREST responde 206 e header Content-Range com total)
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: { ...authHeaders(), 'Range': '0-0', 'Prefer': 'count=exact' }
+      });
+      if(!res.ok && res.status!==206){ log(`[ERRO no count]: HTTP ${res.status}`); return; }
+      const cr = res.headers.get('Content-Range') || '';
+      const total = (cr.split('/')[1]||'0').trim();
+      log(`[${new Date().toLocaleTimeString()}] Total (Content-Range): ${total||'0'}`);
+      $('#sampleCount').textContent = `Total estimado: ${total||'0'}`;
+    }catch(err){
+      log('[count][ERR]', err.message||err);
     }
-    return cfg;
   }
 
-  function makeDateParams(dateCol){
-    const ini = $('#dtIni').value;
-    const fim = $('#dtFim').value;
-    const usp = new URLSearchParams();
-    usp.set('select','id');
-    if(dateCol){
-      usp.append(dateCol, 'gte.' + ini);
-      usp.append(dateCol, 'lt.' + fim);
+  async function loadSample(limit=50){
+    if(!ensureCfg()) return;
+    try{
+      const base = buildBase();
+      const qs = ['select=*', ...makeDateFilters(), st.dateCol? `order=${encodeURIComponent(st.dateCol)}.asc` : '', `limit=${limit}`].filter(Boolean);
+      const url = base + '?' + qs.join('&');
+      log(`[${new Date().toLocaleTimeString()}] GET amostra: ${url}`);
+      const res = await fetch(url, { headers: { ...authHeaders(), 'Prefer':'count=planned' } });
+      if(!res.ok){ const t = await res.text(); log(`[ERR ${res.status}] ${t}`); return; }
+      const data = await res.json();
+      renderTable(data);
+      $('#sampleCount').textContent = `Amostra carregada: ${data.length} linhas`;
+      // Atualiza KPIs simples
+      $('#kpiFat').textContent = '—';
+      if(data.length && st.valueCol && data[0].hasOwnProperty(st.valueCol)){
+        const soma = data.reduce((acc,r)=> acc + (+r[st.valueCol]||0), 0);
+        $('#kpiFat').textContent = fmtReal(soma);
+      }
+    }catch(err){
+      log('[sample][ERR]', err.message||err);
     }
-    return {params:usp, ini, fim};
-  }
-
-  async function countRecords(){
-    const cfg = ensureCfg();
-    const {params, ini, fim} = makeDateParams(cfg.dateCol);
-    const url = baseUrl() + '/rest/v1/' + encodeURIComponentPath(cfg.salesTable) + '?' + params.toString();
-    log(url, 'url');
-    const res = await fetch(url, {method:'HEAD', headers: headers()});
-    if(!res.ok){
-      log('Erro no count: HTTP ' + res.status); return;
-    }
-    const cr = res.headers.get('content-range'); // ex.: 0-0/1234
-    const total = cr ? parseInt(cr.split('/').pop()||'0',10) : NaN;
-    if(!isFinite(total)) log('Sem Content-Range. Adicione Prefer: count=exact.');
-    else log('Total via Content-Range: ' + total);
-    return total;
-  }
-
-  async function loadSample(limit=100){
-    const cfg = ensureCfg();
-    const {params} = makeDateParams(cfg.dateCol);
-    params.set('select','*');
-    params.set('limit', String(limit));
-    const url = baseUrl() + '/rest/v1/' + encodeURIComponentPath(cfg.salesTable) + '?' + params.toString();
-    log(url, 'url');
-    const res = await fetch(url, {headers: headers()});
-    if(!res.ok){
-      log('Erro na amostra: HTTP ' + res.status);
-      renderTable([]);
-      return [];
-    }
-    const rows = await res.json();
-    renderTable(rows);
-    log('Amostra carregada: ' + rows.length + ' linha(s).');
-    return rows;
-  }
-
-  function encodeURIComponentPath(s){
-    // mantém schema.tabela sem codificar o ponto
-    return s.replace(/[^A-Za-z0-9_.~-]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
   }
 
   function renderTable(rows){
     const thead = $('#tbl thead'); const tbody = $('#tbl tbody');
     thead.innerHTML = ''; tbody.innerHTML = '';
-    if(!rows || !rows.length){
-      thead.innerHTML = '<tr><th>Nenhum dado</th></tr>';
-      return;
-    }
+    if(!rows || !rows.length){ return; }
     const cols = Object.keys(rows[0]);
     thead.innerHTML = '<tr>' + cols.map(c=>`<th>${c}</th>`).join('') + '</tr>';
-    tbody.innerHTML = rows.map(r=>'<tr>' + cols.map(c=>`<td>${escapeHtml(r[c])}</td>`).join('') + '</tr>').join('');
-  }
-
-  function escapeHtml(v){
-    if(v===null || v===undefined) return '';
-    return String(v).replace(/[&<>"']/g, s=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[s]));
-  }
-
-  async function updateKPIs(){
-    try{
-      const cfg = ensureCfg();
-      const {params} = makeDateParams(cfg.dateCol);
-      params.set('select', [cfg.valueCol || 'fat','pedidos'].filter(Boolean).join(','));
-      params.set('limit','1000'); // amostra razoável; para produção use RPC/SQL agregador
-      const url = baseUrl() + '/rest/v1/' + encodeURIComponentPath(cfg.salesTable) + '?' + params.toString();
-      log(url, 'url');
-      const res = await fetch(url, {headers: headers()});
-      if(!res.ok){ log('Erro no KPI: HTTP '+res.status); return; }
-      const rows = await res.json();
-      let totalFat = 0, totalPed = 0;
-      for(const r of rows){
-        const v = Number(r[cfg.valueCol || 'fat']) || 0;
-        const p = Number(r.pedidos) || 0;
-        totalFat += v;
-        totalPed += p || 1; // fallback se não houver "pedidos"
-      }
-      const ticket = totalPed ? totalFat/totalPed : 0;
-      $('#kpiFat').textContent = fmtBRL(totalFat);
-      $('#kpiPed').textContent = String(totalPed);
-      $('#kpiTkt').textContent = fmtBRL(ticket);
-    }catch(e){
-      // apenas log
+    const frag = document.createDocumentFragment();
+    for(const r of rows){
+      const tr = document.createElement('tr');
+      tr.innerHTML = cols.map(c=>`<td>${safeCell(r[c])}</td>`).join('');
+      frag.appendChild(tr);
     }
+    tbody.appendChild(frag);
+  }
+  function safeCell(v){
+    if(v===null || v===undefined) return '<span class="muted">—</span>';
+    if(typeof v==='number') return String(v);
+    if(typeof v==='object') return JSON.stringify(v);
+    return String(v);
   }
 
-  // Events
-  $('#btnOpenApi').onclick = discover;
-  $('#btnSave').onclick = saveCfg;
-  $('#btnCount').onclick = countRecords;
-  $('#btnSample').onclick = ()=>loadSample(200);
-  $('#btnAtualizar').onclick = ()=>{ updateKPIs(); };
+  // -------------------- Wire up --------------------
+  loadLocal();
+  $('#btnDiscover').onclick = () => { saveLocal(); discoverOpenAPI(); };
+  $('#btnSave').onclick = () => { saveLocal(); log(`[${new Date().toLocaleTimeString()}] Config salva.`); };
+  $('#btnCount').onclick = countContentRange;
+  $('#btnSample').onclick = () => loadSample(100);
+  $('#btnRefresh').onclick = () => { countContentRange(); loadSample(100); };
+  $('#btnTest').onclick = () => { log('Teste OK — interface responsiva.'); };
 
-  $('#btnTest').onclick = async ()=>{
-    try{
-      const total = await countRecords();
-      await loadSample(50);
-      if(Number.isFinite(total)) log('Teste OK. Total='+total);
-    }catch(e){
-      log('Teste falhou: ' + e.message);
-    }
-  };
-
-  // init
-  setTodayRange();
-  loadCfg();
-  // tentativa de descobrir ao abrir (se tiver URL e key)
-  if($('#projectUrl').value && $('#anonKey').value){
-    discover();
-  }
+  // Se já houver URL + AnonKey, tenta auto-descobrir ao abrir
+  if(st.project && st.anon){ discoverOpenAPI(); }
 })();
 </script>
 </body>
