@@ -337,7 +337,28 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       return allRows;
     }
-    
+
+    // NOVA FUNÇÃO: dedicada a renderizar os KPIs da aba "Vendas"
+    function renderVendasKPIs(allKpiValues) {
+        if (!allKpiValues) {
+            // Limpa os KPIs em caso de erro
+            document.querySelectorAll('.kpi .val, .kpi .sub span').forEach(el => el.textContent = '—');
+            document.querySelectorAll('.kpi .delta').forEach(el => { el.textContent = '—'; el.className = 'delta flat'; });
+            return;
+        };
+
+        Object.keys(allKpiValues).forEach(key => {
+            const kpi = allKpiValues[key];
+            const valEl = $(`k_${key}`);
+            const prevEl = $(`p_${key}`);
+            const deltaEl = $(`d_${key}`);
+            if (valEl) valEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.current);
+            if (prevEl) prevEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.previous);
+            if (deltaEl) deltaBadge(deltaEl, kpi.current, kpi.previous);
+        });
+    }
+
+    // MODIFICADO: Esta função agora SÓ CALCULA e RETORNA os dados, não atualiza a tela diretamente.
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
         let allKpiValues = {};
         try {
@@ -418,20 +439,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 canc_ped: { current: cnCount, previous: cpCount },
             };
 
-            Object.keys(allKpiValues).forEach(key => {
-                const kpi = allKpiValues[key];
-                const valEl = $(`k_${key}`);
-                const prevEl = $(`p_${key}`);
-                const deltaEl = $(`d_${key}`);
-                if (valEl) valEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.current);
-                if (prevEl) prevEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.previous);
-                if (deltaEl) deltaBadge(deltaEl, kpi.current, kpi.previous);
-            });
-
         } catch (e) {
             console.error("Erro detalhado em updateKPIs:", e);
-            document.querySelectorAll('.kpi .val, .kpi .sub span').forEach(el => el.textContent = '—');
-            document.querySelectorAll('.kpi .delta').forEach(el => { el.textContent = '—'; el.className = 'delta flat'; });
+            // Em caso de erro, retorna null para que a função de renderização possa limpar a tela.
             return null;
         }
         return allKpiValues;
@@ -444,9 +454,10 @@ document.addEventListener('DOMContentLoaded', () => {
           const mainDeltaEl = mainKpiCard.querySelector('.delta');
           const mainSubEl = mainKpiCard.querySelector('.hero-sub-value');
           
-          // Para o KPI principal do Diagnóstico, usamos um filtro sem unidade para garantir que seja o total
           const totalAnaliticos = {...analiticos, unidade: [], loja: []};
+          // A função updateKPIs é chamada aqui apenas para obter os dados, sem efeito colateral de renderização.
           const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, totalAnaliticos);
+          
           if(totalKpis && totalKpis[kpi_key]) {
               const meta = KPI_META[kpi_key];
               mainValueEl.textContent = formatValueBy(meta.fmt, totalKpis[kpi_key].current);
@@ -988,18 +999,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
         setStatus('Consultando…');
         
-        // CORREÇÃO: Para evitar a condição de corrida, separamos as chamadas.
-        
-        // ETAPA 1: Renderizar os KPIs e gráficos da aba "Vendas", garantindo a visão TOTAL.
         const totalViewAnaliticos = { ...analiticos, unidade: [], loja: [] };
-        await Promise.all([
-            updateKPIs(de, ate, dePrev, atePrev, totalViewAnaliticos),
-            updateMonth12x12(totalViewAnaliticos),
-        ]);
+        
+        // ETAPA 1: Busca e renderiza os KPIs principais primeiro para evitar o "pisca" e garantir o valor total.
+        const kpiData = await updateKPIs(de, ate, dePrev, atePrev, totalViewAnaliticos);
+        renderVendasKPIs(kpiData);
 
-        // ETAPA 2: Renderizar os dados detalhados e filtrados para as outras abas.
+        // ETAPA 2: Busca e renderiza todo o resto em paralelo, agora sem risco de sobrescrever os KPIs principais.
         const selectedKpiForDiag = $('kpi-select').value;
         await Promise.all([
+          updateMonth12x12(totalViewAnaliticos),
           getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos),
           updateCharts(de,ate,dePrev,atePrev, analiticos),
           updateTop6(de,ate, analiticos),
