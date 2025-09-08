@@ -446,6 +446,7 @@
       console.error("Erro ao carregar dados do Supabase:", error);
       return [];
     }
+    // Normaliza os dados para o formato que a UI espera
     return data.map(r => ({
         data: new Date(r.data + 'T12:00:00Z').toISOString().split('T')[0],
         prato: r.prato,
@@ -455,17 +456,18 @@
     }));
   }
 
-  async function syncAndSaveData(data) {
+  async function syncAndSaveData(aggregatedData) {
     console.log("--- INICIANDO PROCESSO DE SINCRONIZAÇÃO E SALVAMENTO ---");
     
-    const categorias = [...new Set(data.map(r => r.categoria))].filter(Boolean).map(c => ({ nome: c, tipo: 'PRATO', ativo: true }));
+    // Sincroniza Categorias e Pratos
+    const categorias = [...new Set(aggregatedData.map(r => r.categoria))].filter(Boolean).map(c => ({ nome: c, tipo: 'PRATO', ativo: true }));
     if(categorias.length > 0) await supa.from('categorias').upsert(categorias, { onConflict: 'nome' });
     
     const { data: allCategories } = await supa.from('categorias').select('id, nome');
     const catMap = new Map(allCategories.map(c => [c.nome, c.id]));
     
-    const pratos = [...new Set(data.map(r => r.prato))].filter(Boolean).map(pNome => {
-        const item = data.find(d => d.prato === pNome);
+    const pratos = [...new Set(aggregatedData.map(r => r.prato))].filter(Boolean).map(pNome => {
+        const item = aggregatedData.find(d => d.prato === pNome);
         return { nome: pNome, categoria_id: catMap.get(item.categoria), ativo: true };
     }).filter(p => p.categoria_id);
 
@@ -475,14 +477,14 @@
     const unidMap = new Map(allUnidades.map(u => [u.nome, u.id]));
 
     const unidadesNaoEncontradas = new Set();
-    const vendasParaSalvar = data.map(r => {
+    const vendasParaSalvar = aggregatedData.map(r => {
         const unidadeNomeCorrigido = r.unidade_nome.replace(/^Unidade\s+/i, '').trim();
         const unidade_id = unidMap.get(unidadeNomeCorrigido);
         if (!unidade_id) {
             unidadesNaoEncontradas.add(r.unidade_nome);
             return null;
         }
-        return { data: r.data, prato: r.prato, categoria: r.categoria, quantidade: r.quantidade, unidade_id: unidade_id };
+        return { data: r.data.toISOString().split('T')[0], prato: r.prato, categoria: r.categoria, quantidade: r.quantidade, unidade_id: unidade_id };
     }).filter(Boolean);
 
      if (unidadesNaoEncontradas.size > 0) {
@@ -528,14 +530,14 @@
     };
 
     const norm = rows.map(r => ({
-        data: parseExcelDate(pick(r, ["data", "data venda"])),
-        prato: safe(pick(r, ["prato", "produto"])),
+        data: parseExcelDate(pick(r, ["data"])),
+        prato: safe(pick(r, ["prato"])),
         categoria: safe(pick(r, ["categoria"])),
-        quantidade: toNumber(pick(r, ["quantidade", "qtd"])),
-        unidade_nome: safe(pick(r, ["unidade", "loja"]))
+        quantidade: toNumber(pick(r, ["quantidade"])),
+        unidade_nome: safe(pick(r, ["unidade"]))
     })).filter(r => r.data && r.quantidade > 0 && r.prato && r.prato !== '0');
     
-    // AGREGAÇÃO DOS DADOS ANTES DE SALVAR
+    // AGREGAÇÃO CORRETA DOS DADOS ANTES DE SALVAR
     const aggregatedMap = new Map();
     for (const row of norm) {
         const key = `${row.data.toISOString().split('T')[0]}|${row.prato}|${row.unidade_nome}`;
