@@ -881,7 +881,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // VERSÃO FINAL CORRIGIDA
     async function updateInsights(de, ate, analiticos, kpi_key) {
         const insightsContainer = document.querySelector('#tab-diagnostico .ins-list');
         const contextContainer = document.querySelector('#tab-diagnostico .hero-context');
@@ -907,7 +906,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error) throw error;
             if (!data) throw new Error("A resposta da função de diagnóstico está vazia.");
             
-            // ATUALIZAÇÃO DA SEÇÃO DE DESTAQUES (CONTEXT)
             if(data.context) {
                 const { top_stores, top_hours, top_channels } = data.context;
                 let contextHTML = '<strong>Destaques:</strong> ';
@@ -919,7 +917,6 @@ document.addEventListener('DOMContentLoaded', () => {
                  contextContainer.innerHTML = '<strong>Destaques:</strong> Nenhum dado de contexto retornado.';
             }
 
-            // GERAÇÃO DE INSIGHTS A PARTIR DO CONTEXTO
             let insightsArray = [];
             if (data.context) {
                 const { top_stores, top_hours } = data.context;
@@ -972,6 +969,116 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // ===================================================================================
+    // NOVA FUNÇÃO DE PROJEÇÕES (Princípios C-Level aplicados)
+    // ===================================================================================
+    async function updateProjections(allKpiValues, de, ate) {
+        // Seleciona os elementos do DOM onde os resultados serão exibidos.
+        const valFatEl = $('proj_fat');
+        const valPedEl = $('proj_ped');
+        const valTktEl = $('proj_tkt');
+        const canvas = $('ch_proj');
+
+        // Função para resetar a UI em caso de erro ou dados insuficientes.
+        // Garante robustez e uma experiência de usuário consistente.
+        const resetProjectionUI = () => {
+            if(valFatEl) valFatEl.textContent = '—';
+            if(valPedEl) valPedEl.textContent = '—';
+            if(valTktEl) valTktEl.textContent = '—';
+            if(canvas && canvas.__chart) {
+                try { canvas.__chart.destroy(); } catch(e) {}
+                canvas.__chart = null;
+            }
+        };
+
+        try {
+            // Princípio da Robustez: Verifica se os dados necessários existem.
+            if (!allKpiValues || !allKpiValues.fat || !allKpiValues.ped || !de || !ate) {
+                console.warn('[Projeção] Dados de KPI ou período insuficientes para cálculo.');
+                resetProjectionUI();
+                return;
+            }
+
+            // Extrai os valores do período atual para o cálculo da projeção.
+            const faturamentoAtual = allKpiValues.fat.current;
+            const pedidosAtuais = allKpiValues.ped.current;
+            
+            // Calcula a duração do período selecionado em dias.
+            const diasNoPeriodo = DateHelpers.daysLen(de, ate);
+
+            // Princípio da Regressão Zero: Lida com casos extremos para evitar erros (e.g., divisão por zero).
+            if (diasNoPeriodo <= 0) {
+                console.warn('[Projeção] Período inválido (0 dias). Projeção não pode ser calculada.');
+                resetProjectionUI();
+                return;
+            }
+
+            // Princípio da Verbosisdade Explícita: Cálculos claros e bem definidos.
+            const faturamentoMedioDiario = faturamentoAtual / diasNoPeriodo;
+            const pedidosMediosDiarios = pedidosAtuais / diasNoPeriodo;
+            
+            // A projeção padrão é para 30 dias.
+            const diasProjecao = 30; 
+            const faturamentoProjetado = faturamentoMedioDiario * diasProjecao;
+            const pedidosProjetados = pedidosMediosDiarios * diasProjecao;
+            const ticketMedioProjetado = (pedidosProjetados > 0) ? (faturamentoProjetado / pedidosProjetados) : 0;
+
+            // Atualiza a interface com os valores formatados usando helpers existentes.
+            valFatEl.textContent = money(faturamentoProjetado);
+            valPedEl.textContent = num(pedidosProjetados);
+            valTktEl.textContent = money(ticketMedioProjetado);
+
+            // GERAÇÃO DO GRÁFICO DE PROJEÇÃO DINÂMICO
+            if (!canvas) return; // Se o canvas não existir, encerra aqui.
+
+            // Destrói o gráfico anterior para evitar sobreposição.
+            if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
+            
+            const ctx = canvas.getContext('2d');
+            const labels = Array.from({length: diasProjecao}, (_, i) => `+${i+1}D`);
+            const data = Array.from({length: diasProjecao}, (_, i) => faturamentoMedioDiario * (i + 1));
+
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Faturamento Projetado (Acum.)',
+                        data: data,
+                        borderColor: 'var(--wine)',
+                        backgroundColor: 'rgba(123, 30, 58, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, animation: false,
+                    scales: {
+                        x: { display: false }, // Eixo X oculto para um visual mais limpo
+                        y: { beginAtZero: true, grid: { display: false }, ticks: { callback: (v) => formatTickBy('money', v) } }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            mode: 'index', intersect: false,
+                            callbacks: {
+                                label: (ctx) => `Projeção: ${formatValueBy('money', ctx.parsed.y || 0)}`
+                            }
+                        }
+                    }
+                }
+            });
+            canvas.__chart = chart;
+
+        } catch (error) {
+            // Princípio do Diagnóstico Total: Loga o erro detalhado no console.
+            console.error('[Erro na Projeção]', error);
+            // Princípio da Robustez: Garante que a UI falhe de forma graciosa.
+            resetProjectionUI();
+        }
+    }
+
 
     /* ===================== LOOP PRINCIPAL ===================== */
     async function applyAll(details){
@@ -999,8 +1106,14 @@ document.addEventListener('DOMContentLoaded', () => {
           updateInsights(de, ate, analiticos, selectedKpiForDiag)
         ]);
         
+        // Verifica se os KPIs foram carregados antes de atualizar as abas que dependem deles
         if (allKpiValues) {
             updateDiagnosticTab(selectedKpiForDiag, allKpiValues);
+            // ==========================================================
+            // NOVA CHAMADA PARA A FUNÇÃO DE PROJEÇÕES
+            // Reutiliza os dados de KPIs e o período já consultados
+            // ==========================================================
+            await updateProjections(allKpiValues, de, ate);
         }
         
         await getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos);
