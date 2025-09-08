@@ -338,9 +338,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return allRows;
     }
     
-    // ===================================================================================
-    // ARQUITETURA ESTÁVEL (BASE ENVIADA) COM ADIÇÃO DAS PROJEÇÕES
-    // ===================================================================================
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
         let allKpiValues = {};
         try {
@@ -982,27 +979,39 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    /* ===================== LOOP PRINCIPAL ===================== */
+    /* ===================== LOOP PRINCIPAL (CORRIGIDO) ===================== */
     async function applyAll(details){
       try{
         const de = details.start;
         const ate = details.end;
-        const analiticos = details.analiticos;
+        const analiticos = details.analiticos; // Filtros selecionados pelo usuário
         if (!de || !ate) {
             setStatus('Selecione um período', 'err');
             return;
         }
         
+        // CORREÇÃO: Para garantir que os KPIs principais na aba "Vendas" e o gráfico mensal
+        // sempre mostrem o total da empresa, criamos um objeto de filtro separado que ignora
+        // os filtros de unidade e loja. Os outros filtros (data, cancelado, etc.) são mantidos.
+        const totalViewAnaliticos = {
+            ...analiticos,
+            unidade: [], // Força a busca de todas as unidades
+            loja: []     // Força a busca de todas as lojas
+        };
+
         const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
         setStatus('Consultando…');
         
         const selectedKpiForDiag = $('kpi-select').value;
         
         await Promise.all([
-          updateKPIs(de, ate, dePrev, atePrev, analiticos),
+          // Usar 'totalViewAnaliticos' para os painéis que devem mostrar a visão geral
+          updateKPIs(de, ate, dePrev, atePrev, totalViewAnaliticos),
+          updateMonth12x12(totalViewAnaliticos),
+          
+          // Usar os filtros originais 'analiticos' para os painéis de análise detalhada
           getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos),
           updateCharts(de,ate,dePrev,atePrev, analiticos),
-          updateMonth12x12(analiticos),
           updateTop6(de,ate, analiticos),
           updateInsights(de, ate, analiticos, selectedKpiForDiag),
           updateProjections(de, ate, dePrev, atePrev, analiticos)
