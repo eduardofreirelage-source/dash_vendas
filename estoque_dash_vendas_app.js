@@ -804,9 +804,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const unitNames = data.map(item => item.unidade);
         console.log(">>> UNIDADES REAIS NO BANCO DE DADOS:", unitNames);
       } catch(e) {
-        console.error("Erro ao buscar lista de unidades para diagnóstico:", e);
+        console.error("ERRO CRÍTICO AO BUSCAR NOMES DAS UNIDADES:", e);
       }
     }
+
 
     /* ===================== LOOP PRINCIPAL ===================== */
     async function applyAll(details){
@@ -823,7 +824,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setStatus('Consultando…');
         let kpiOk=true;
 
-        // ** AÇÃO DE DIAGNÓSTICO ** await logActualUnitNames();
+        // ** AÇÃO DE DIAGNÓSTICO PASSO 2 ** await logActualUnitNames();
 
         const allKpiValues = await updateKPIs(de, ate, dePrev, atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
         
@@ -834,10 +835,10 @@ document.addEventListener('DOMContentLoaded', () => {
         ]);
         
         const selectedKpiForDiag = $('kpi-select').value;
-        if (allKpiValues) {
+        if (allKpiValues && allKpiValues[selectedKpiForDiag]) {
             updateDiagnosticTab(selectedKpiForDiag, allKpiValues);
             
-            // ** AÇÃO DE DIAGNÓSTICO ** renderUnitKPIsForDebug(selectedKpiForDiag, allKpiValues);
+            // ** AÇÃO DE DIAGNÓSTICO PASSO 1 ** renderUnitKPIsForDebug(selectedKpiForDiag, allKpiValues);
         }
         
         if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
@@ -932,7 +933,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fx.$days.addEventListener('click', (e)=>{
       const b=e.target.closest('.fx-chip'); if(!b) return;
       fx.$days.querySelectorAll('button').forEach(x=> x.classList.toggle('active', x===b));
-      fx.$chips.querySelectorAll('button').forEach(x=> x.classList.remove('fx-active'));
+      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('fx-active'));
       const n=parseInt(b.dataset.win,10); if(!isNaN(n)) fxLastNDays(n);
       fxDispatchApply();
     });
@@ -987,8 +988,7 @@ document.addEventListener('DOMContentLoaded', () => {
         fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
         fxDispatchApply();
       }catch(e){
-        console.error('Erro na inicialização:', e);
-        setStatus('Erro ao iniciar: '+(e.message||e),'err');
+        console.error('Erro ao iniciar: '+(e.message||e),'err');
       }
     })();
 
