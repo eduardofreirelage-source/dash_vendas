@@ -339,52 +339,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // ===================================================================================
-    // ARQUITETURA ESTÁVEL (BASE ENVIADA) COM ADIÇÃO DAS PROJEÇÕES
+    // FUNÇÃO DE KPI REFATORADA PARA CORREÇÃO DO BUG DE FILTRO
     // ===================================================================================
-    async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
+    async function updateKPIs(de, ate, dePrev, atePrev, analiticos) {
       let allKpiValues = {};
       try {
-        const pNow = buildParams(de, ate, analiticos);
-        const pPrev = buildParams(dePrev, atePrev, analiticos);
-        
-        const [
-          finNowResult, finPrevResult,
-          { count: pedNowCount, error: errPedNow },
-          { count: pedPrevCount, error: errPedPrev },
-          { count: cnCount, error: errCn }, { count: vnCount, error: errVn },
-          { count: cpCount, error: errCp }, { count: vpCount, error: errVp }
-        ] = await Promise.all([
-            supa.rpc(RPC_KPI_FUNC, pNow),
-            supa.rpc(RPC_KPI_FUNC, pPrev),
-            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate),
-            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev),
-            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Sim'),
-            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Não'),
-            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Sim'),
-            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Não')
+        // 1. Buscar dados brutos filtrados para os dois períodos usando a função baseQuery, que é mais confiável.
+        const [rowsNow, rowsPrev] = await Promise.all([
+            baseQuery(de, ate, analiticos),
+            baseQuery(dePrev, atePrev, analiticos)
         ]);
 
-        if(finNowResult.error) throw finNowResult.error;
-        if(errPedNow) throw errPedNow;
-        
-        const pedTotalNow = analiticos.cancelado === 'sim' ? cnCount : analiticos.cancelado === 'nao' ? vnCount : pedNowCount;
+        // 2. Agregar os resultados no client-side para garantir que os filtros sejam aplicados.
+        const N = agg(rowsNow);
+        const P = agg(rowsPrev);
 
-        const N = {
-            ped: pedTotalNow,
-            fat: +(finNowResult.data[0]?.fat || 0),
-            des: +(finNowResult.data[0]?.des || 0),
-            fre: +(finNowResult.data[0]?.fre || 0)
-        };
-        const P = {
-            ped: pedPrevCount,
-            fat: +(finPrevResult.data[0]?.fat || 0),
-            des: +(finPrevResult.data[0]?.des || 0),
-            fre: +(finPrevResult.data[0]?.fre || 0)
-        };
+        // 3. Buscar dados específicos para os KPIs de cancelamento.
+        // Isso garante que os valores de cancelamento sejam calculados corretamente, respeitando os outros filtros (loja, unidade etc.).
+        const analiticosSim = { ...analiticos, cancelado: 'sim' };
+        const [rowsCancNow, rowsCancPrev] = await Promise.all([
+           baseQuery(de, ate, analiticosSim),
+           baseQuery(dePrev, atePrev, analiticosSim)
+        ]);
+        const cancAggNow = agg(rowsCancNow);
+        const cancAggPrev = agg(rowsCancPrev);
 
-        const {data: cancDataNow} = await supa.rpc(RPC_KPI_FUNC, { ...pNow, p_cancelado: 'Sim' });
-        const {data: cancDataPrev} = await supa.rpc(RPC_KPI_FUNC, { ...pPrev, p_cancelado: 'Sim' });
-        
+        // 4. Calcular todas as métricas derivadas a partir dos dados agregados.
         const len = DateHelpers.daysLen(de, ate);
         const prevLen = DateHelpers.daysLen(dePrev, atePrev);
 
@@ -396,8 +376,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const desPercP = P.fat > 0 ? (P.des / P.fat) : 0;
         const freMedN = N.ped > 0 ? (N.fre / N.ped) : 0;
         const freMedP = P.ped > 0 ? (P.fre / P.ped) : 0;
-        const cancValN = +(cancDataNow[0]?.fat || 0);
-        const cancValP = +(cancDataPrev[0]?.fat || 0);
+        const cancValN = cancAggNow.fat;
+        const cancValP = cancAggPrev.fat;
+        const cancPedN = cancAggNow.ped;
+        const cancPedP = cancAggPrev.ped;
         const roiN = N.des > 0 ? (N.fat - N.des) / N.des : NaN;
         const roiP = P.des > 0 ? (P.fat - P.des) / P.des : NaN;
 
@@ -412,9 +394,10 @@ document.addEventListener('DOMContentLoaded', () => {
             canc_val: { current: cancValN, previous: cancValP },
             fre: { current: N.fre, previous: P.fre },
             fremed: { current: freMedN, previous: freMedP },
-            canc_ped: { current: cnCount, previous: cpCount },
+            canc_ped: { current: cancPedN, previous: cancPedP },
         };
 
+        // 5. Atualizar a interface do usuário com os novos valores.
         Object.keys(allKpiValues).forEach(key => {
             const kpi = allKpiValues[key];
             const valEl = $(`k_${key}`);
