@@ -53,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
     const num =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
     const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
-    const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u3000-\u036f]/g,'');
     const normHeader = (s)=> rmAcc(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
     function cleanSpaces(s){ return String(s||'').replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000]/g,' ').replace(/\s+/g,' ').trim(); }
     function displayNormalize(s){ return cleanSpaces(s); }
@@ -339,82 +339,114 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // ===================================================================================
-    // FUNÇÃO DE KPI REFATORADA PARA CORREÇÃO DO BUG DE FILTRO
+    // FUNÇÃO DE KPI CORRIGIDA (VERSÃO 2)
     // ===================================================================================
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos) {
-      let allKpiValues = {};
-      try {
-        // 1. Buscar dados brutos filtrados para os dois períodos usando a função baseQuery, que é mais confiável.
-        const [rowsNow, rowsPrev] = await Promise.all([
-            baseQuery(de, ate, analiticos),
-            baseQuery(dePrev, atePrev, analiticos)
-        ]);
+        let allKpiValues = {};
+        try {
+            // Para contornar o bug do backend, buscamos explicitamente os dados TOTAIS e os de CANCELADOS.
+            const paramsTotalNow = buildParams(de, ate, { ...analiticos, cancelado: 'ambos' });
+            const paramsTotalPrev = buildParams(dePrev, atePrev, { ...analiticos, cancelado: 'ambos' });
+            const paramsCancNow = { ...paramsTotalNow, p_cancelado: 'Sim' };
+            const paramsCancPrev = { ...paramsTotalPrev, p_cancelado: 'Sim' };
 
-        // 2. Agregar os resultados no client-side para garantir que os filtros sejam aplicados.
-        const N = agg(rowsNow);
-        const P = agg(rowsPrev);
+            const [
+                totalFinNowResult, totalFinPrevResult,
+                cancFinNowResult, cancFinPrevResult,
+                { count: pedNowCount, error: errPedNow },
+                { count: pedPrevCount, error: errPedPrev },
+                { count: cnCount, error: errCn }, { count: vnCount, error: errVn },
+                { count: cpCount, error: errCp }, { count: vpCount, error: errVp }
+            ] = await Promise.all([
+                supa.rpc(RPC_KPI_FUNC, paramsTotalNow),
+                supa.rpc(RPC_KPI_FUNC, paramsTotalPrev),
+                supa.rpc(RPC_KPI_FUNC, paramsCancNow),
+                supa.rpc(RPC_KPI_FUNC, paramsCancPrev),
+                supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate),
+                supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev),
+                supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Sim'),
+                supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Não'),
+                supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Sim'),
+                supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Não')
+            ]);
 
-        // 3. Buscar dados específicos para os KPIs de cancelamento.
-        // Isso garante que os valores de cancelamento sejam calculados corretamente, respeitando os outros filtros (loja, unidade etc.).
-        const analiticosSim = { ...analiticos, cancelado: 'sim' };
-        const [rowsCancNow, rowsCancPrev] = await Promise.all([
-           baseQuery(de, ate, analiticosSim),
-           baseQuery(dePrev, atePrev, analiticosSim)
-        ]);
-        const cancAggNow = agg(rowsCancNow);
-        const cancAggPrev = agg(rowsCancPrev);
+            // Verificação de erros
+            if (totalFinNowResult.error) throw totalFinNowResult.error;
+            if (cancFinNowResult.error) throw cancFinNowResult.error;
+            if (errPedNow) throw errPedNow;
 
-        // 4. Calcular todas as métricas derivadas a partir dos dados agregados.
-        const len = DateHelpers.daysLen(de, ate);
-        const prevLen = DateHelpers.daysLen(dePrev, atePrev);
+            // CORREÇÃO BUG 1: Seleciona a contagem de pedidos correta para AMBOS os períodos.
+            const pedTotalNow = analiticos.cancelado === 'sim' ? cnCount : analiticos.cancelado === 'nao' ? vnCount : pedNowCount;
+            const pedTotalPrev = analiticos.cancelado === 'sim' ? cpCount : analiticos.cancelado === 'nao' ? vpCount : pedPrevCount;
 
-        const tktN = (N.ped > 0) ? (N.fat / N.ped) : 0;
-        const tktP = (P.ped > 0) ? (P.fat / P.ped) : 0;
-        const fatMedN = len > 0 ? (N.fat / len) : 0;
-        const fatMedP = prevLen > 0 ? (P.fat / prevLen) : 0;
-        const desPercN = N.fat > 0 ? (N.des / N.fat) : 0;
-        const desPercP = P.fat > 0 ? (P.des / P.fat) : 0;
-        const freMedN = N.ped > 0 ? (N.fre / N.ped) : 0;
-        const freMedP = P.ped > 0 ? (P.fre / P.ped) : 0;
-        const cancValN = cancAggNow.fat;
-        const cancValP = cancAggPrev.fat;
-        const cancPedN = cancAggNow.ped;
-        const cancPedP = cancAggPrev.ped;
-        const roiN = N.des > 0 ? (N.fat - N.des) / N.des : NaN;
-        const roiP = P.des > 0 ? (P.fat - P.des) / P.des : NaN;
+            // Extrai os dados financeiros (totais e cancelados)
+            const totalNow = { fat: +(totalFinNowResult.data[0]?.fat || 0), des: +(totalFinNowResult.data[0]?.des || 0), fre: +(totalFinNowResult.data[0]?.fre || 0) };
+            const totalPrev = { fat: +(totalFinPrevResult.data[0]?.fat || 0), des: +(totalFinPrevResult.data[0]?.des || 0), fre: +(totalFinPrevResult.data[0]?.fre || 0) };
+            const cancNow = { fat: +(cancFinNowResult.data[0]?.fat || 0), des: +(cancFinNowResult.data[0]?.des || 0), fre: +(cancFinNowResult.data[0]?.fre || 0) };
+            const cancPrev = { fat: +(cancFinPrevResult.data[0]?.fat || 0), des: +(cancFinPrevResult.data[0]?.des || 0), fre: +(cancFinPrevResult.data[0]?.fre || 0) };
 
-        allKpiValues = {
-            fat: { current: N.fat, previous: P.fat },
-            ped: { current: N.ped, previous: P.ped },
-            tkt: { current: tktN, previous: tktP },
-            des: { current: N.des, previous: P.des },
-            fatmed: { current: fatMedN, previous: fatMedP },
-            roi: { current: roiN, previous: roiP },
-            desperc: { current: desPercN, previous: desPercP },
-            canc_val: { current: cancValN, previous: cancValP },
-            fre: { current: N.fre, previous: P.fre },
-            fremed: { current: freMedN, previous: freMedP },
-            canc_ped: { current: cancPedN, previous: cancPedP },
-        };
+            // CORREÇÃO BUG 2: Reconstrói os dados financeiros corretos com base na seleção do filtro.
+            let N_financial, P_financial;
+            if (analiticos.cancelado === 'sim') {
+                N_financial = cancNow;
+                P_financial = cancPrev;
+            } else if (analiticos.cancelado === 'nao') {
+                N_financial = { fat: totalNow.fat - cancNow.fat, des: totalNow.des - cancNow.des, fre: totalNow.fre - cancNow.fre };
+                P_financial = { fat: totalPrev.fat - cancPrev.fat, des: totalPrev.des - cancPrev.des, fre: totalPrev.fre - cancPrev.fre };
+            } else { // 'ambos'
+                N_financial = totalNow;
+                P_financial = totalPrev;
+            }
+            
+            const N = { ped: pedTotalNow, ...N_financial };
+            const P = { ped: pedTotalPrev, ...P_financial };
 
-        // 5. Atualizar a interface do usuário com os novos valores.
-        Object.keys(allKpiValues).forEach(key => {
-            const kpi = allKpiValues[key];
-            const valEl = $(`k_${key}`);
-            const prevEl = $(`p_${key}`);
-            const deltaEl = $(`d_${key}`);
-            if (valEl) valEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.current);
-            if (prevEl) prevEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.previous);
-            if (deltaEl) deltaBadge(deltaEl, kpi.current, kpi.previous);
-        });
+            const len = DateHelpers.daysLen(de, ate);
+            const prevLen = DateHelpers.daysLen(dePrev, atePrev);
 
-      } catch (e) {
-        console.error("Erro detalhado em updateKPIs:", e);
-        document.querySelectorAll('.kpi .val, .kpi .sub span').forEach(el => el.textContent = '—');
-        document.querySelectorAll('.kpi .delta').forEach(el => { el.textContent = '—'; el.className = 'delta flat'; });
-        return null;
-      }
-      return allKpiValues;
+            // Calcula os KPIs derivados com os dados já corrigidos
+            const tktN = (N.ped > 0) ? (N.fat / N.ped) : 0;
+            const tktP = (P.ped > 0) ? (P.fat / P.ped) : 0;
+            const fatMedN = len > 0 ? (N.fat / len) : 0;
+            const fatMedP = prevLen > 0 ? (P.fat / prevLen) : 0;
+            const desPercN = N.fat > 0 ? (N.des / N.fat) : 0;
+            const desPercP = P.fat > 0 ? (P.des / P.fat) : 0;
+            const freMedN = N.ped > 0 ? (N.fre / N.ped) : 0;
+            const freMedP = P.ped > 0 ? (P.fre / P.ped) : 0;
+            const roiN = N.des > 0 ? (N.fat - N.des) / N.des : NaN;
+            const roiP = P.des > 0 ? (P.fat - P.des) / P.des : NaN;
+
+            allKpiValues = {
+                fat: { current: N.fat, previous: P.fat },
+                ped: { current: N.ped, previous: P.ped },
+                tkt: { current: tktN, previous: tktP },
+                des: { current: N.des, previous: P.des },
+                fatmed: { current: fatMedN, previous: fatMedP },
+                roi: { current: roiN, previous: roiP },
+                desperc: { current: desPercN, previous: desPercP },
+                canc_val: { current: cancNow.fat, previous: cancPrev.fat },
+                fre: { current: N.fre, previous: P.fre },
+                fremed: { current: freMedN, previous: freMedP },
+                canc_ped: { current: cnCount, previous: cpCount },
+            };
+
+            Object.keys(allKpiValues).forEach(key => {
+                const kpi = allKpiValues[key];
+                const valEl = $(`k_${key}`);
+                const prevEl = $(`p_${key}`);
+                const deltaEl = $(`d_${key}`);
+                if (valEl) valEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.current);
+                if (prevEl) prevEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.previous);
+                if (deltaEl) deltaBadge(deltaEl, kpi.current, kpi.previous);
+            });
+
+        } catch (e) {
+            console.error("Erro detalhado em updateKPIs:", e);
+            document.querySelectorAll('.kpi .val, .kpi .sub span').forEach(el => el.textContent = '—');
+            document.querySelectorAll('.kpi .delta').forEach(el => { el.textContent = '—'; el.className = 'delta flat'; });
+            return null;
+        }
+        return allKpiValues;
     }
 
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
