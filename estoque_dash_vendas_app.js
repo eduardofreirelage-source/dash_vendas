@@ -111,6 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return d.toISOString().slice(0, 10);
       },
       daysLen: (de, ate) => {
+          if (!de || !ate) return 0;
           const d1 = new Date(de + 'T12:00:00');
           const d2 = new Date(ate + 'T12:00:00');
           return Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
@@ -281,7 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     /* ===================== ESTADO / FILTROS ===================== */
     let firstDay='', lastDay='';
-    let projectionDays = 30; // NOVO ESTADO PARA O PERÍODO DE PROJEÇÃO
+    let projectionDays = 30;
     const fxDispatchApplyDebounced = debounce(() => fxDispatchApply(), 500);
     const ms={
       unids:  MultiSelect('fxUnit', 'Todas', fxDispatchApplyDebounced),
@@ -971,77 +972,60 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ===================================================================================
-    // FUNÇÃO DE PROJEÇÕES REFEITA (Princípios C-Level aplicados)
+    // FUNÇÃO DE PROJEÇÕES REFEITA (v3 - Baseada em Tendência e KPI Selecionado)
     // ===================================================================================
-    async function updateProjections(allKpiValues, de, ate) {
-        
-        // --- PROJEÇÃO TOTAL (REUTILIZANDO DADOS) ---
-        try {
-            if (!allKpiValues || !allKpiValues.fat || !allKpiValues.ped || !de || !ate) {
-                throw new Error('Dados de KPI ou período insuficientes para projeção total.');
+    async function updateProjections(de, ate, dePrev, atePrev, analiticos) {
+        const selectedKpiKey = $('kpi-select').value;
+        const meta = KPI_META[selectedKpiKey] || KPI_META.fat;
+        const len = DateHelpers.daysLen(de, ate);
+        const projectionMultiplier = len > 0 ? projectionDays / len : 0;
+
+        // --- LÓGICA DE CÁLCULO DA PROJEÇÃO BASEADA EM TENDÊNCIA ---
+        const calculateTrendProjection = (current, previous) => {
+            if (current == null || previous == null || !isFinite(current) || !isFinite(previous) || previous === 0) {
+                // Se não há dados para calcular a tendência, faz uma projeção linear simples
+                return current * projectionMultiplier;
             }
-            const faturamentoAtual = allKpiValues.fat.current;
-            const pedidosAtuais = allKpiValues.ped.current;
-            const diasNoPeriodo = DateHelpers.daysLen(de, ate);
-            
-            if (diasNoPeriodo <= 0) throw new Error('Período inválido (0 dias).');
-
-            const faturamentoMedioDiario = faturamentoAtual / diasNoPeriodo;
-            const pedidosMediosDiarios = pedidosAtuais / diasNoPeriodo;
-            
-            $('proj_total_label').textContent = `PROJEÇÃO TOTAL (${projectionDays} DIAS)`;
-            $('proj_total_fat').textContent = money(faturamentoMedioDiario * projectionDays);
-            $('proj_total_ped').textContent = `${num(pedidosMediosDiarios * projectionDays)} pedidos`;
-
-        } catch (error) {
-            console.warn(`[Projeção Total] ${error.message}`);
-            $('proj_total_fat').textContent = '—';
-            $('proj_total_ped').textContent = 'Dados insuficientes';
-        }
-
-        // --- PROJEÇÕES POR UNIDADE (CONSULTAS DEDICADAS) ---
-        const fetchUnitProjection = async (unitName) => {
-            const params = { p_dini: de, p_dfim: ate, p_unids: [unitName], p_lojas: null, p_turnos: null, p_canais: null, p_pags: null, p_cancelado: null };
-            const { data: finData, error: finErr } = await supa.rpc(RPC_KPI_FUNC, params);
-            if (finErr) throw finErr;
-            const { count: pedCount, error: pedErr } = await supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', de).lte('dia', ate);
-            if (pedErr) throw pedErr;
-
-            const faturamentoAtual = finData?.[0]?.fat || 0;
-            const pedidosAtuais = pedCount || 0;
-            const diasNoPeriodo = DateHelpers.daysLen(de, ate);
-
-            if (diasNoPeriodo <= 0) return { fat: 0, ped: 0 };
-            
-            const faturamentoMedioDiario = faturamentoAtual / diasNoPeriodo;
-            const pedidosMediosDiarios = pedidosAtuais / diasNoPeriodo;
-            
-            return {
-                fat: faturamentoMedioDiario * projectionDays,
-                ped: pedidosMediosDiarios * projectionDays
-            };
+            const delta = (current - previous) / previous;
+            const projectedValue = current * (1 + delta);
+            return projectedValue * projectionMultiplier; // Ajusta para o período de projeção
         };
 
+        // --- PROJEÇÃO TOTAL (REUTILIZANDO DADOS GLOBAIS) ---
         try {
-            const [raja, savassi] = await Promise.all([
-                fetchUnitProjection('Uni.Raja'),
-                fetchUnitProjection('Uni.Savassi')
-            ]);
-            
-            $('proj_raja_fat').textContent = money(raja.fat);
-            $('proj_raja_ped').textContent = `${num(raja.ped)} pedidos`;
+            const {data: allKpiData, error: kpiError} = await getAndRenderUnitKPIs(selectedKpiKey, de, ate, dePrev, atePrev, analiticos);
+            if(kpiError || !allKpiData) throw new Error("Dados de KPI globais não disponíveis");
 
-            $('proj_savassi_fat').textContent = money(savassi.fat);
-            $('proj_savassi_ped').textContent = `${num(savassi.ped)} pedidos`;
+            const totalProjectedValue = calculateTrendProjection(allKpiData.total.current, allKpiData.total.previous);
+
+            $('proj_total_label').textContent = `PROJEÇÃO TOTAL ${meta.label.toUpperCase()} (${projectionDays}D)`;
+            $('proj_total_val').textContent = formatValueBy(meta.fmt, totalProjectedValue);
+        } catch (error) {
+            console.warn(`[Projeção Total] ${error.message}`);
+            $('proj_total_label').textContent = `PROJEÇÃO TOTAL ${meta.label.toUpperCase()} (${projectionDays}D)`;
+            $('proj_total_val').textContent = '—';
+        }
+
+        // --- PROJEÇÕES POR UNIDADE ---
+        try {
+             const {data: unitKpiData, error: unitKpiError} = await getAndRenderUnitKPIs(selectedKpiKey, de, ate, dePrev, atePrev, analiticos);
+             if(unitKpiError || !unitKpiData) throw new Error("Dados de KPI de unidades não disponíveis");
+
+            const rajaProjectedValue = calculateTrendProjection(unitKpiData.raja.current, unitKpiData.raja.previous);
+            $('proj_raja_label').textContent = `UNI.RAJA - ${meta.label}`;
+            $('proj_raja_val').textContent = formatValueBy(meta.fmt, rajaProjectedValue);
+
+            const savassiProjectedValue = calculateTrendProjection(unitKpiData.savassi.current, unitKpiData.savassi.previous);
+            $('proj_savassi_label').textContent = `UNI.SAVASSI - ${meta.label}`;
+            $('proj_savassi_val').textContent = formatValueBy(meta.fmt, savassiProjectedValue);
         } catch (error) {
             console.error('[Erro na Projeção por Unidade]', error);
-            $('proj_raja_fat').textContent = '—';
-            $('proj_raja_ped').textContent = 'Erro';
-            $('proj_savassi_fat').textContent = '—';
-            $('proj_savassi_ped').textContent = 'Erro';
+            $('proj_raja_label').textContent = `UNI.RAJA - ${meta.label}`;
+            $('proj_raja_val').textContent = '—';
+            $('proj_savassi_label').textContent = `UNI.SAVASSI - ${meta.label}`;
+            $('proj_savassi_val').textContent = '—';
         }
     }
-
 
     /* ===================== LOOP PRINCIPAL ===================== */
     async function applyAll(details){
@@ -1062,7 +1046,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const selectedKpiForDiag = $('kpi-select').value;
         
-        // Promise.all para executar consultas não dependentes em paralelo
         await Promise.all([
           updateCharts(de,ate,dePrev,atePrev, analiticos),
           updateMonth12x12(analiticos),
@@ -1070,13 +1053,14 @@ document.addEventListener('DOMContentLoaded', () => {
           updateInsights(de, ate, analiticos, selectedKpiForDiag)
         ]);
         
-        // Funções que dependem de `allKpiValues` ou que são parte do fluxo síncrono final
         if (allKpiValues) {
             updateDiagnosticTab(selectedKpiForDiag, allKpiValues);
-            await updateProjections(allKpiValues, de, ate); // CHAMADA PARA A NOVA FUNÇÃO DE PROJEÇÕES
+            // A função de projeção agora é a última a ser chamada, usando todos os dados já buscados
+            await updateProjections(de, ate, dePrev, atePrev, analiticos);
+        } else {
+            // Garante que a projeção seja limpa se os KPIs principais falharem
+             await updateProjections(null, null, null, null, null);
         }
-        
-        await getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos);
         
         if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
         else setStatus('OK','ok');
@@ -1128,7 +1112,7 @@ document.addEventListener('DOMContentLoaded', () => {
       $end: $('fxDuEnd'),
       $days: $('fxDuQuickDays'),
       $chips: $('fxQuickChips'),
-      $segProj: $('segProj'), // NOVO SELETOR PARA BOTÕES DE PROJEÇÃO
+      $segProj: $('segProj'),
     };
 
     fx.$segProj.addEventListener('click', (e) => {
@@ -1136,10 +1120,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!btn) return;
         const days = parseInt(btn.dataset.days, 10);
         if (!isNaN(days)) {
-            projectionDays = days; // Atualiza o estado
+            projectionDays = days;
             fx.$segProj.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
-            // Dispara a atualização do dashboard para refletir a nova projeção
-            document.dispatchEvent(new Event('filters:apply:internal'));
+            fxDispatchApply(); // CORREÇÃO: Chama a função principal de atualização
         }
     });
 
