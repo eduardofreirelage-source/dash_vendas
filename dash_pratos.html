@@ -217,7 +217,7 @@
     return `${n[m]}/${y}`;
   }
 
-  const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u300-\u036f]/g,'');
   
   function fxDispatchApply(){
       const payload = { 
@@ -442,7 +442,7 @@
     ], { plugins: { legend: { display: false } } });
   }
 
-  /* ===================== DATA SOURCES ===================== */
+  /* ===================== DATA SOURCES & SYNC ===================== */
   async function syncPratosToDatabase(data) {
     console.log("Iniciando sincronização de pratos e categorias para o BD...");
     const categorias = [...new Set(data.map(r => r.categoria))].map(c => ({ nome: c, tipo: 'PRATO', ativo: true }));
@@ -462,7 +462,7 @@
     if (pratoError) console.error("Erro ao sincronizar pratos:", pratoError);
     else console.log("Sincronização de pratos e categorias concluída.");
   }
-
+  
   async function onExcelUpload(file) {
     if (!file) return;
     const XLSX = window.XLSX;
@@ -502,17 +502,14 @@
     document.dispatchEvent(new Event('filters:init'));
   }
 
-
   /* ===================== INITIALIZATION & UI CONTROLS ===================== */
   async function reloadFilterOptions(dataSource) {
     let unids, cats, pratos;
     if (typeof dataSource === 'object' && dataSource !== null && dataSource.length > 0) {
-        // Data source is a local array (from Excel)
         unids = [...new Set(dataSource.map(r => r.unidade_nome))];
         cats = [...new Set(dataSource.map(r => r.categoria))];
         pratos = [...new Set(dataSource.map(r => r.prato))];
     } else {
-        // Data source is Supabase
         const [unidsRes, catsRes, pratosRes] = await Promise.all([
             supa.from('vendas_pratos_unidades').select('unidade'),
             supa.from('vendas_pratos_categorias').select('categoria'),
@@ -529,21 +526,35 @@
 
   async function init() {
     try {
-      const { data, error } = await supa.from('vendas_pratos_daterange').select('max_data').limit(1).single();
-      if (error && error.code !== 'PGRST116') throw error;
-      lastDay = (data && data.max_data) ? data.max_data : getTodayISO();
-      await reloadFilterOptions('supabase'); // Load initial filters from Supabase
-      document.dispatchEvent(new Event('filters:init'));
+        const { data, error } = await supa.from('vendas_pratos_raw')
+            .select('*, unidades (nome)');
+
+        if (error) throw error;
+        
+        rawData = data.map(r => ({
+            data: r.data,
+            prato: r.prato,
+            categoria: r.categoria,
+            quantidade: r.quantidade,
+            unidade_nome: r.unidades?.nome || 'N/A'
+        }));
+
+        if (rawData.length > 0) {
+            lastDay = rawData.reduce((max, r) => r.data > max ? r.data : max, rawData[0].data);
+        } else {
+            lastDay = getTodayISO();
+        }
+        await reloadFilterOptions(rawData);
+        document.dispatchEvent(new Event('filters:init'));
     } catch (e) { 
       console.error("Erro na inicialização:", e);
       lastDay = getTodayISO();
-      await reloadFilterOptions('supabase');
+      await reloadFilterOptions([]);
       document.dispatchEvent(new Event('filters:init'));
     }
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    // UI Controls (fx, seg, etc.)
     const fx = { $drop: $('fxDropup'), $btnMore: $('fxBtnMore'), $btnReset: $('fxBtnReset'), $start: $('fxDuStart'), $end: $('fxDuEnd'), $days: $('fxDuQuickDays'), $chips: $('fxQuickChips') };
     function fxFmt(date){ return date.toISOString().split('T')[0]; }
     function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end); }
@@ -592,17 +603,7 @@
     });
 
     document.addEventListener('filters:apply', (e) => {
-        if(e.detail) { 
-            // Se rawData estiver vazio, busca do Supabase, senão, usa o rawData local.
-            if (rawData.length === 0) {
-                loadFromSupabase().then(data => {
-                    rawData = data;
-                    processAndRender(rawData, e.detail);
-                });
-            } else {
-                processAndRender(rawData, e.detail);
-            }
-        }
+        if(e.detail) { processAndRender(rawData, e.detail); }
     });
     
     document.addEventListener('filters:init', () => {
@@ -612,7 +613,6 @@
         fxDispatchApply();
     });
     
-    // Logic for Excel Upload Button
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
     $('fileExcel').addEventListener('change', (ev) => onExcelUpload(ev.target.files[0]));
 
