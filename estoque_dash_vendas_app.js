@@ -941,7 +941,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div>
                             <div class="ins-title">${title}</div>
                             <div class="ins-sub">${subtitle}</div>
-                            <div class="ins-action">${action}</div>
+                            <div class.ins-action">${action}</div>
                         </div>
                     </div>
                 `;
