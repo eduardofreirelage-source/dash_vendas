@@ -792,8 +792,7 @@ document.addEventListener('DOMContentLoaded', () => {
           
           const [
             finNowResult, finPrevResult,
-            { count: pedNowCount },
-            { count: pedPrevCount },
+            { count: pedNowCount }, { count: pedPrevCount },
             { count: cnCount }, { count: vnCount },
             { count: cpCount }, { count: vpCount }
           ] = await Promise.all([
@@ -881,7 +880,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // VERSÃO FINAL CORRIGIDA
     async function updateInsights(de, ate, analiticos, kpi_key) {
         const insightsContainer = document.querySelector('#tab-diagnostico .ins-list');
         const contextContainer = document.querySelector('#tab-diagnostico .hero-context');
