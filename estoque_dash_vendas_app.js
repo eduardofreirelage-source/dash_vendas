@@ -780,107 +780,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // VERSÃO FINAL CORRIGIDA com os nomes corretos ("Uni.Raja", "Uni.Savassi")
+    // NENHUMA ALTERAÇÃO. Esta função está desativada para o teste.
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
-      
-      const fetchAndCalculateForUnit = async (unitName) => {
-          const unitAnaliticos = { 
-            unidade: [unitName],
-            cancelado: analiticos.cancelado
-          };
-
-          const pNow = buildParams(de, ate, unitAnaliticos);
-          const pPrev = buildParams(dePrev, atePrev, unitAnaliticos);
-          
-          const [
-            finNowResult, finPrevResult,
-            { count: pedNowCount },
-            { count: pedPrevCount },
-            { count: cnCount }, { count: vnCount },
-            { count: cpCount }, { count: vpCount }
-          ] = await Promise.all([
-              supa.rpc(RPC_KPI_FUNC, pNow),
-              supa.rpc(RPC_KPI_FUNC, pPrev),
-              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', de).lte('dia', ate),
-              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', dePrev).lte('dia', atePrev),
-              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', de).lte('dia', ate).eq('cancelado', 'Sim'),
-              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', de).lte('dia', ate).eq('cancelado', 'Não'),
-              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Sim'),
-              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Não')
-          ]);
-
-          const pedTotalNow = unitAnaliticos.cancelado === 'sim' ? cnCount : unitAnaliticos.cancelado === 'nao' ? vnCount : pedNowCount;
-
-          const N = {
-              ped: pedTotalNow,
-              fat: +(finNowResult.data[0]?.fat || 0),
-              des: +(finNowResult.data[0]?.des || 0),
-              fre: +(finNowResult.data[0]?.fre || 0)
-          };
-          const P = {
-              ped: pedPrevCount,
-              fat: +(finPrevResult.data[0]?.fat || 0),
-              des: +(finPrevResult.data[0]?.des || 0),
-              fre: +(finPrevResult.data[0]?.fre || 0)
-          };
-
-          const {data: cancDataNow} = await supa.rpc(RPC_KPI_FUNC, { ...pNow, p_cancelado: 'Sim' });
-          const {data: cancDataPrev} = await supa.rpc(RPC_KPI_FUNC, { ...pPrev, p_cancelado: 'Sim' });
-          
-          const len = DateHelpers.daysLen(de, ate);
-          const prevLen = DateHelpers.daysLen(dePrev, atePrev);
-
-          const tktN = (N.ped > 0) ? (N.fat / N.ped) : 0;
-          const tktP = (P.ped > 0) ? (P.fat / P.ped) : 0;
-          const fatMedN = len > 0 ? (N.fat / len) : 0;
-          const fatMedP = prevLen > 0 ? (P.fat / prevLen) : 0;
-          const desPercN = N.fat > 0 ? (N.des / N.fat) : 0;
-          const desPercP = P.fat > 0 ? (P.des / P.fat) : 0;
-          const freMedN = N.ped > 0 ? (N.fre / N.ped) : 0;
-          const freMedP = P.ped > 0 ? (P.fre / P.ped) : 0;
-          const cancValN = +(cancDataNow[0]?.fat || 0);
-          const cancValP = +(cancDataPrev[0]?.fat || 0);
-          const roiN = N.des > 0 ? (N.fat - N.des) / N.des : NaN;
-          const roiP = P.des > 0 ? (P.fat - P.des) / P.des : NaN;
-
-          return {
-              fat: { current: N.fat, previous: P.fat },
-              ped: { current: N.ped, previous: P.ped },
-              tkt: { current: tktN, previous: tktP },
-              des: { current: N.des, previous: P.des },
-              fatmed: { current: fatMedN, previous: fatMedP },
-              roi: { current: roiN, previous: roiP },
-              desperc: { current: desPercN, previous: desPercP },
-              canc_val: { current: cancValN, previous: cancValP },
-              fre: { current: N.fre, previous: P.fre },
-              fremed: { current: freMedN, previous: freMedP },
-              canc_ped: { current: cnCount, previous: cpCount },
-          };
-      };
-
-      try {
-        const [rajaKpis, savassiKpis] = await Promise.all([
-          fetchAndCalculateForUnit('Uni.Raja'), 
-          fetchAndCalculateForUnit('Uni.Savassi')
-        ]);
-
-        const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
-        
-        const renderUnit = (unitId, unitData) => {
-            const card = $(unitId);
-            const data = unitData[kpi_key];
-            if (card && data) {
-              card.querySelector('.unit-kpi-value').textContent = formatValueBy(kpiMeta.fmt, data.current);
-              card.querySelector('.unit-kpi-sub').textContent = 'Anterior: ' + formatValueBy(kpiMeta.fmt, data.previous);
-              deltaBadge(card.querySelector('.delta'), data.current, data.previous);
-            }
-          };
-
-        renderUnit('unit-kpi-raja', rajaKpis);
-        renderUnit('unit-kpi-savassi', savassiKpis);
-      } catch(e) {
-          console.error("Erro ao renderizar KPIs de unidade:", e);
-      }
+      // DESATIVADO PARA TESTE
     }
 
 
@@ -910,6 +812,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedKpiForDiag = $('kpi-select').value;
         if (allKpiValues) {
             updateDiagnosticTab(selectedKpiForDiag, allKpiValues);
+
+            // CÓDIGO DE DIAGNÓSTICO ATIVADO
+            renderUnitKPIsForDebug(selectedKpiForDiag, allKpiValues);
         }
         
         await getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos);
