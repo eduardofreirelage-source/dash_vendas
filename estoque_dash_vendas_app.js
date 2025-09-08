@@ -341,12 +341,9 @@ document.addEventListener('DOMContentLoaded', () => {
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
         let allKpiValues = {};
         try {
-            // ETAPA 1: Para contornar o bug do backend, buscamos os dados TOTAIS de forma previsível,
-            // ignorando o filtro de 'cancelado' nesta primeira chamada.
             const pTotalNow = buildParams(de, ate, { ...analiticos, cancelado: 'ambos' });
             const pTotalPrev = buildParams(dePrev, atePrev, { ...analiticos, cancelado: 'ambos' });
 
-            // ETAPA 2: Mantemos todas as buscas de contagem originais e adicionamos a busca pelos dados financeiros TOTAIS.
             const [
                 totalFinNowResult, totalFinPrevResult,
                 { count: pedNowCount, error: errPedNow },
@@ -367,15 +364,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if(totalFinNowResult.error) throw totalFinNowResult.error;
             if(errPedNow) throw errPedNow;
             
-            // ETAPA 3: Buscamos separadamente os dados financeiros APENAS dos cancelados.
             const {data: cancDataNow} = await supa.rpc(RPC_KPI_FUNC, { ...buildParams(de, ate, analiticos), p_cancelado: 'Sim' });
             const {data: cancDataPrev} = await supa.rpc(RPC_KPI_FUNC, { ...buildParams(dePrev, atePrev, analiticos), p_cancelado: 'Sim' });
 
-            // ETAPA 4: CORREÇÃO DO BUG DE LÓGICA - Aplicar o filtro de cancelado na contagem de pedidos do período ANTERIOR.
             const pedTotalNow = analiticos.cancelado === 'sim' ? cnCount : analiticos.cancelado === 'nao' ? vnCount : pedNowCount;
             const pedTotalPrev = analiticos.cancelado === 'sim' ? cpCount : analiticos.cancelado === 'nao' ? vpCount : pedPrevCount;
 
-            // ETAPA 5: CORREÇÃO DO BUG DE BACKEND - Reconstruir os valores financeiros corretos no client-side.
             const totalNow = { fat: +(totalFinNowResult.data[0]?.fat || 0), des: +(totalFinNowResult.data[0]?.des || 0), fre: +(totalFinNowResult.data[0]?.fre || 0) };
             const totalPrev = { fat: +(totalFinPrevResult.data[0]?.fat || 0), des: +(totalFinPrevResult.data[0]?.des || 0), fre: +(totalFinPrevResult.data[0]?.fre || 0) };
             const cancNow = { fat: +(cancDataNow[0]?.fat || 0), des: +(cancDataNow[0]?.des || 0), fre: +(cancDataNow[0]?.fre || 0) };
@@ -396,7 +390,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const N = { ped: pedTotalNow, ...N_financial };
             const P = { ped: pedTotalPrev, ...P_financial };
 
-            // ETAPA 6: Prosseguir com o cálculo dos KPIs derivados, agora com os dados base (N e P) corretos.
             const len = DateHelpers.daysLen(de, ate);
             const prevLen = DateHelpers.daysLen(dePrev, atePrev);
 
@@ -451,7 +444,9 @@ document.addEventListener('DOMContentLoaded', () => {
           const mainDeltaEl = mainKpiCard.querySelector('.delta');
           const mainSubEl = mainKpiCard.querySelector('.hero-sub-value');
           
-          const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
+          // Para o KPI principal do Diagnóstico, usamos um filtro sem unidade para garantir que seja o total
+          const totalAnaliticos = {...analiticos, unidade: [], loja: []};
+          const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, totalAnaliticos);
           if(totalKpis && totalKpis[kpi_key]) {
               const meta = KPI_META[kpi_key];
               mainValueEl.textContent = formatValueBy(meta.fmt, totalKpis[kpi_key].current);
@@ -990,26 +985,21 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        // CORREÇÃO: Para garantir que os KPIs principais na aba "Vendas" e o gráfico mensal
-        // sempre mostrem o total da empresa, criamos um objeto de filtro separado que ignora
-        // os filtros de unidade e loja. Os outros filtros (data, cancelado, etc.) são mantidos.
-        const totalViewAnaliticos = {
-            ...analiticos,
-            unidade: [], // Força a busca de todas as unidades
-            loja: []     // Força a busca de todas as lojas
-        };
-
         const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
         setStatus('Consultando…');
         
-        const selectedKpiForDiag = $('kpi-select').value;
+        // CORREÇÃO: Para evitar a condição de corrida, separamos as chamadas.
         
+        // ETAPA 1: Renderizar os KPIs e gráficos da aba "Vendas", garantindo a visão TOTAL.
+        const totalViewAnaliticos = { ...analiticos, unidade: [], loja: [] };
         await Promise.all([
-          // Usar 'totalViewAnaliticos' para os painéis que devem mostrar a visão geral
-          updateKPIs(de, ate, dePrev, atePrev, totalViewAnaliticos),
-          updateMonth12x12(totalViewAnaliticos),
-          
-          // Usar os filtros originais 'analiticos' para os painéis de análise detalhada
+            updateKPIs(de, ate, dePrev, atePrev, totalViewAnaliticos),
+            updateMonth12x12(totalViewAnaliticos),
+        ]);
+
+        // ETAPA 2: Renderizar os dados detalhados e filtrados para as outras abas.
+        const selectedKpiForDiag = $('kpi-select').value;
+        await Promise.all([
           getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos),
           updateCharts(de,ate,dePrev,atePrev, analiticos),
           updateTop6(de,ate, analiticos),
