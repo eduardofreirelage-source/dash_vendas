@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Dash Pratos (Modo Depuração)</title>
+  <title>Dash Pratos</title>
   <style>
     :root{
       --bg:#f7f7fa; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e5e7eb;
@@ -460,7 +460,8 @@
   }
 
   async function syncAndSaveData(data) {
-    console.log("Iniciando sincronização e salvamento para o BD...");
+    console.log("--- INICIANDO PROCESSO DE SINCRONIZAÇÃO E SALVAMENTO ---");
+    console.log(`Recebidos ${data.length} registros da planilha.`);
     
     // Sincroniza Categorias e Pratos
     const categorias = [...new Set(data.map(r => r.categoria))].filter(Boolean).map(c => ({ nome: c, tipo: 'PRATO', ativo: true }));
@@ -484,27 +485,59 @@
     }
     
     // Adiciona ou atualiza (Upsert) os dados de vendas
+    console.log("Mapeando dados de vendas para o formato do banco de dados...");
     const { data: allUnidades, error: getUnidError } = await supa.from('unidades').select('id, nome');
-    if (getUnidError) { console.error("Erro ao buscar unidades:", getUnidError); return; }
+    if (getUnidError) {
+        console.error("ERRO CRÍTICO: Não foi possível buscar a lista de unidades do banco de dados.", getUnidError);
+        alert("ERRO: Não foi possível buscar a lista de unidades. Verifique o console.");
+        return;
+    }
     const unidMap = new Map(allUnidades.map(u => [u.nome, u.id]));
+    console.log("Mapa de Unidades criado:", unidMap);
 
-    const vendasParaSalvar = data.map(r => ({
-        data: r.data,
-        prato: r.prato,
-        categoria: r.categoria,
-        quantidade: r.quantidade,
-        unidade_id: unidMap.get(r.unidade_nome)
-    })).filter(v => v.unidade_id);
+    let successfullyMapped = 0;
+    let failedToMap = 0;
+    const unidadesNaoEncontradas = new Set();
+
+    const vendasParaSalvar = data.map(r => {
+        const unidade_id = unidMap.get(r.unidade_nome);
+        if (!unidade_id) {
+            unidadesNaoEncontradas.add(r.unidade_nome);
+            failedToMap++;
+        } else {
+            successfullyMapped++;
+        }
+        return {
+            data: r.data,
+            prato: r.prato,
+            categoria: r.categoria,
+            quantidade: r.quantidade,
+            unidade_id: unidade_id
+        };
+    }).filter(v => v.unidade_id);
+
+    console.log(`Mapeamento concluído: ${successfullyMapped} linhas mapeadas com sucesso, ${failedToMap} falharam.`);
+     if (unidadesNaoEncontradas.size > 0) {
+        alert(`ATENÇÃO: As seguintes Unidades/Lojas do seu arquivo Excel não foram encontradas no banco de dados e suas vendas foram ignoradas:\n\n- ${[...unidadesNaoEncontradas].join('\n- ')}\n\nPor favor, cadastre essas unidades no sistema de Estoque ou corrija o nome na planilha.`);
+    }
 
     if(vendasParaSalvar.length > 0) {
+        console.log(`Enviando ${vendasParaSalvar.length} registros de vendas para o Supabase...`);
         const { error: vendasError } = await supa.from('vendas_pratos_raw').upsert(
             vendasParaSalvar,
             { onConflict: 'data, prato, unidade_id' }
         );
-        if (vendasError) console.error("Erro ao salvar dados de vendas:", vendasError);
+        if (vendasError) {
+             console.error("ERRO CRÍTICO ao salvar dados de vendas:", vendasError);
+             alert("Ocorreu um erro ao salvar os dados de vendas no banco de dados. Verifique o console para detalhes.");
+        } else {
+             alert(`${vendasParaSalvar.length} registros de vendas foram salvos com sucesso no banco de dados!`);
+        }
+    } else if (failedToMap > 0) {
+        console.error("NENHUM DADO DE VENDA FOI SALVO.");
     }
     
-    console.log("Sincronização e salvamento de dados concluídos.");
+    console.log("--- PROCESSO DE SINCRONIZAÇÃO E SALVAMENTO CONCLUÍDO ---");
   }
   
   async function onExcelUpload(file) {
@@ -523,7 +556,7 @@
     const parseExcelDate = (value)=>{
       if (value==null) return null;
       if (typeof value === "number"){ const d=new Date(Date.UTC(1899,11,30) + value * 86400000); return isNaN(d)?null:d; }
-      if (typeof value === "string"){ const d=new Date(value.trim()); return isNaN(d)?null:d; }
+      if (typeof value === "string"){ const d=new Date(value.trim().split(' ')[0].split('/').reverse().join('-') + 'T12:00:00Z'); return isNaN(d)?null:d; }
       return null;
     };
 
