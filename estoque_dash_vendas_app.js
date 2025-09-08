@@ -780,10 +780,11 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // VERSÃO FINAL CORRIGIDA com os nomes corretos ("Uni.Raja", "Uni.Savassi")
+    // =============================== INÍCIO DO CÓDIGO CORRIGIDO ===============================
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
       
       const fetchAndCalculateForUnit = async (unitName) => {
+          // Filtro APENAS por unidade e pelo status de cancelado. Outros filtros (loja, canal) são ignorados.
           const unitAnaliticos = { 
             unidade: [unitName],
             cancelado: analiticos.cancelado
@@ -794,8 +795,7 @@ document.addEventListener('DOMContentLoaded', () => {
           
           const [
             finNowResult, finPrevResult,
-            { count: pedNowCount },
-            { count: pedPrevCount },
+            { count: pedNowCount }, { count: pedPrevCount },
             { count: cnCount }, { count: vnCount },
             { count: cpCount }, { count: vpCount }
           ] = await Promise.all([
@@ -860,8 +860,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       try {
         const [rajaKpis, savassiKpis] = await Promise.all([
-          fetchAndCalculateForUnit('Uni.Raja'), 
-          fetchAndCalculateForUnit('Uni.Savassi')
+          fetchAndCalculateForUnit('Uni.Raja'), // NOME CORRIGIDO (ponto em vez de espaço)
+          fetchAndCalculateForUnit('Uni.Savassi') // NOME CORRIGIDO (ponto em vez de espaço)
         ]);
 
         const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
@@ -883,15 +883,25 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // NOVA FUNÇÃO PARA ATIVAR OS INSIGHTS DINÂMICOS
-    async function updateInsights(de, ate, analiticos) {
+    async function updateInsights(de, ate, analiticos, kpi_key) {
         const insightsContainer = document.querySelector('#tab-diagnostico .ins-list');
         if (!insightsContainer) return;
 
         insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px;">Gerando insights...</p>';
 
         try {
-            const params = buildParams(de, ate, analiticos);
+            // CORREÇÃO: Criação de um objeto de parâmetros específico para esta função.
+            const isActive = (val) => val && val.length > 0;
+            const params = {
+                p_dini: de,
+                p_dfim: ate,
+                p_kpi_key: kpi_key,
+                p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
+                p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
+                p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
+                p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null
+            };
+
             const { data, error } = await supa.rpc(RPC_DIAGNOSTIC_FUNC, params);
 
             if (error) {
@@ -924,6 +934,7 @@ document.addEventListener('DOMContentLoaded', () => {
             insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px; color: var(--down);">Erro ao carregar insights.</p>';
         }
     }
+    // =============================== FIM DO CÓDIGO CORRIGIDO ================================
 
 
     /* ===================== LOOP PRINCIPAL ===================== */
@@ -943,15 +954,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const allKpiValues = await updateKPIs(de, ate, dePrev, atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
         
-        // MUDANÇA: chamada para a nova função de insights
+        const selectedKpiForDiag = $('kpi-select').value;
+        
         await Promise.all([
           updateCharts(de,ate,dePrev,atePrev, analiticos),
           updateMonth12x12(analiticos),
           updateTop6(de,ate, analiticos),
-          updateInsights(de, ate, analiticos)
+          updateInsights(de, ate, analiticos, selectedKpiForDiag) // Chamada corrigida
         ]);
         
-        const selectedKpiForDiag = $('kpi-select').value;
         if (allKpiValues) {
             updateDiagnosticTab(selectedKpiForDiag, allKpiValues);
         }
