@@ -10,12 +10,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v1';
     const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v1';
     const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v1';
-    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
-
-    const DEST_INSERT_TABLE= 'vendas_xlsx';
-    const REFRESH_RPC     = 'refresh_sales_materialized';
+    
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -154,18 +151,24 @@ document.addEventListener('DOMContentLoaded', () => {
           if (d.getDate() > ld) d.setDate(ld);
           return d;
       },
+      // LÓGICA DE PERÍODO ANTERIOR: Explícita e robusta para qualquer intervalo.
+      // Para um período de N dias terminando em D, o período anterior são os N dias terminando em D-N.
       computePrevRangeISO: function(deISO, ateISO) {
           if(!deISO || !ateISO) return {dePrev:null, atePrev:null};
           const d1 = new Date(deISO + 'T12:00:00');
           const d2 = new Date(ateISO + 'T12:00:00');
+          
+          // Tratamento especial para meses/anos completos para garantir alinhamento intuitivo.
           if (this.isFullYear(d1, d2) || this.isFullMonthsAligned(d1, d2)) {
               const p1 = this.shiftYear(d1, -1);
               const p2 = this.shiftYear(d2, -1);
               return { dePrev: this.iso(p1), atePrev: this.iso(p2) };
           }
+          
+          // Lógica padrão para qualquer intervalo de dias.
           const len = this.daysLen(deISO, ateISO);
-          const atePrev = new Date(d1.getTime() - 86400000);
-          const dePrev = new Date(atePrev.getTime() - (len - 1) * 86400000);
+          const atePrev = new Date(d1.getTime() - (1000 * 60 * 60 * 24)); // Um dia antes do início do período atual.
+          const dePrev = new Date(atePrev.getTime() - ((len - 1) * (1000 * 60 * 60 * 24)));
           return { dePrev: this.iso(dePrev), atePrev: this.iso(atePrev) };
       }
     };
@@ -366,7 +369,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if(finNowResult.error) throw finNowResult.error;
         if(errPedNow) throw errPedNow;
         
-        // CORREÇÃO DO BUG: Lógica de contagem de pedidos restaurada
         const pedNow = analiticos.cancelado === 'sim' ? cnCount : analiticos.cancelado === 'nao' ? vnCount : pedNowTotal;
         const pedPrev = analiticos.cancelado === 'sim' ? cpCount : analiticos.cancelado === 'nao' ? vpCount : pedPrevTotal;
 
@@ -404,7 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         Object.keys(allKpiValues).forEach(key => {
-            if (KPI_META[key]) { // VERIFICAÇÃO DE ROBUSTEZ
+            if (KPI_META[key]) {
                 const kpi = allKpiValues[key];
                 const valEl = $(`k_${key}`);
                 const prevEl = $(`p_${key}`);
@@ -419,20 +421,19 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("Erro detalhado em updateKPIs:", e);
         document.querySelectorAll('.kpi .val, .kpi .sub span').forEach(el => el.textContent = '—');
         document.querySelectorAll('.kpi .delta').forEach(el => { el.textContent = '—'; el.className = 'delta flat'; });
-        return null; // ROBUSTEZ: Retorna nulo em caso de falha.
+        return null; 
       }
       return allKpiValues;
     }
     
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
-      // CORREÇÃO: Esta função agora renderiza o KPI Master E os de unidade.
       const mainKpiCard = $('hero_main_kpi');
       const mainValueEl = mainKpiCard?.querySelector('.hero-value-number');
       const mainDeltaEl = mainKpiCard?.querySelector('.delta');
       const mainSubEl = mainKpiCard?.querySelector('.hero-sub-value');
       
-      // Renderiza o KPI Master usando os dados globais.
       const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
+      // VERIFICAÇÃO DE ROBUSTEZ: Garante que os dados existem antes de tentar renderizar.
       if(totalKpis && totalKpis[kpi_key] && mainValueEl) {
           const meta = KPI_META[kpi_key];
           mainValueEl.textContent = formatValueBy(meta.fmt, totalKpis[kpi_key].current);
@@ -440,7 +441,6 @@ document.addEventListener('DOMContentLoaded', () => {
           deltaBadge(mainDeltaEl, totalKpis[kpi_key].current, totalKpis[kpi_key].previous);
       }
 
-      // Função aninhada para buscar dados da unidade.
       const fetchAndCalculateForUnit = async (unitName) => {
           const unitAnaliticos = { ...analiticos, unidade: [unitName] };
           return await updateKPIs(de, ate, dePrev, atePrev, unitAnaliticos);
@@ -455,6 +455,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
           const renderUnit = (unitId, unitData) => {
             const card = $(unitId);
+            // VERIFICAÇÃO DE ROBUSTEZ: Checa se os dados da unidade e do KPI específico existem.
             const data = unitData?.[kpi_key];
             if (card && data) {
               card.querySelector('.unit-kpi-value').textContent = formatValueBy(kpiMeta.fmt, data.current);
@@ -466,7 +467,6 @@ document.addEventListener('DOMContentLoaded', () => {
           renderUnit('unit-kpi-raja', rajaKpis);
           renderUnit('unit-kpi-savassi', savassiKpis);
           
-          // Retorna todos os dados para a função de projeção.
           return { total: totalKpis, raja: rajaKpis, savassi: savassiKpis };
       } catch(e) {
           console.error("Erro ao renderizar KPIs de unidade:", e);
@@ -474,23 +474,29 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // FUNÇÃO DE PROJEÇÃO CORRIGIDA E MELHORADA
     function updateProjections(kpiData, kpiKey) {
+        // VERIFICAÇÃO DE ROBUSTEZ: Se kpiData é nulo, reseta a UI e encerra a execução.
+        if (!kpiData) {
+            $('proj_total_val').textContent = '—';
+            deltaBadge($('proj_total_delta'), null, null);
+            $('proj_raja_val').textContent = '—';
+            deltaBadge($('proj_raja_delta'), null, null);
+            $('proj_savassi_val').textContent = '—';
+            deltaBadge($('proj_savassi_delta'), null, null);
+            return;
+        }
+
         const meta = KPI_META[kpiKey] || KPI_META.fat;
         
-        // Lógica de projeção baseada na tendência (delta).
         const calculateTrendProjection = (current, previous) => {
-            // VERIFICAÇÃO DE ROBUSTEZ: Garante que ambos os valores são números válidos.
             if (current == null || !isFinite(current) || previous == null || !isFinite(previous) || previous === 0) {
                 return { value: null, deltaVal: null };
             }
             const delta = (current - previous) / previous;
-            const projectedValue = current * (1 + delta);
-            return { value: projectedValue, deltaVal: delta };
+            return { value: current * (1 + delta), deltaVal: delta };
         };
         
         const len = DateHelpers.daysLen(fx.$start.value, fx.$end.value);
-        // Multiplicador para ajustar a projeção para 15, 30 ou 60 dias.
         const projectionMultiplier = len > 0 ? projectionDays / len : 1;
         
         // Projeção Total
@@ -510,6 +516,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('proj_savassi_val').textContent = projSavassi.value !== null ? formatValueBy(meta.fmt, projSavassi.value * projectionMultiplier) : '—';
         deltaBadge($('proj_savassi_delta'), projSavassi.value, kpiData?.savassi?.[kpiKey]?.current);
     }
+
 
     let chartModeGlobal = 'total';
     const segGlobal = $('segGlobal');
@@ -644,9 +651,11 @@ document.addEventListener('DOMContentLoaded', () => {
               const pArr = labels.map(l => pMap.get(l) || 0);
               ensureChart('ch_turno', labels, nArr, pArr, tip, KPI_META[selectedKPI].fmt);
           }
+          return { dow: (dowData || []).map(r => r[valueKey]) }; // Retorna dados para insights
       } catch (e) {
           console.error("Erro ao atualizar gráficos analíticos:", e); 
           setDiag('Erro ao atualizar gráficos');
+          return null;
       }
     }
     async function updateMonth12x12(analiticos){
@@ -720,6 +729,7 @@ document.addEventListener('DOMContentLoaded', () => {
       cvs.__chart = chart;
     }
     async function updateTop6(de, ate, analiticos){
+      let finalData = [];
       try{
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
         const data = await baseQuery(de, ate, analiticos);
@@ -763,7 +773,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const allStoresData = Array.from(m.entries()).map(([loja, aggData]) => ({ loja, valor: metricVal(aggData) }));
         allStoresData.sort((a,b)=> b.valor - a.valor);
         
-        let finalData = allStoresData;
         if (allStoresData.length > 6) {
             const top5 = allStoresData.slice(0, 5);
             const othersValue = allStoresData.slice(5).reduce((acc, curr) => acc + curr.valor, 0);
@@ -772,6 +781,8 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
               finalData = top5;
             }
+        } else {
+            finalData = allStoresData;
         }
         
         const labels = finalData.map(d => d.loja);
@@ -783,6 +794,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.warn('top6 erro:', e.message||e);
         ensureDonutTop6([],[], 'Total: R$ 0,00','money');
       }
+      return finalData; // Retorna dados para insights
     }
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
     $('fileExcel').addEventListener('change', async (ev)=>{
@@ -839,90 +851,44 @@ document.addEventListener('DOMContentLoaded', () => {
       ms.turnos.setOptions(['Dia','Noite'], true);
     }
     
-    async function updateInsights(de, ate, analiticos, kpi_key) {
+    // REFACTURED: Insights function now uses data passed to it, no RPC calls.
+    async function updateInsights(top6Data, chartData, kpiData, kpi_key) {
         const insightsContainer = document.querySelector('#tab-diagnostico .ins-list');
         const contextContainer = document.querySelector('#tab-diagnostico .hero-context');
         if (!insightsContainer || !contextContainer) return;
-
-        insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px;">Gerando insights...</p>`;
-        contextContainer.innerHTML = '<strong>Destaques:</strong> Carregando...';
-
+        
         try {
-            const isActive = (val) => val && val.length > 0;
-            const params = {
-                p_dini: de,
-                p_dfim: ate,
-                p_kpi_key: kpi_key,
-                p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
-                p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
-                p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
-                p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null
-            };
+            const top_stores = top6Data.slice(0, 2).map(d => d.loja);
+            const isPositive = (kpiData?.total?.[kpi_key]?.current ?? 0) >= (kpiData?.total?.[kpi_key]?.previous ?? 0);
 
-            const { data, error } = await supa.rpc(RPC_DIAGNOSTIC_FUNC, params);
-
-            if (error) throw error;
-            if (!data) throw new Error("A resposta da função de diagnóstico está vazia.");
-            
-            if(data.context) {
-                const { top_stores, top_hours, top_channels } = data.context;
-                let contextHTML = '<strong>Destaques:</strong> ';
-                if(top_stores && top_stores.length > 0) contextHTML += `Lojas: ${top_stores.join(' • ')} • `;
-                if(top_hours && top_hours.length > 0) contextHTML += `Horário: ${top_hours.join(' • ')} • `;
-                if(top_channels && top_channels.length > 0) contextHTML += `Canal: ${top_channels.join(' • ')}`;
-                contextContainer.innerHTML = contextHTML;
-            } else {
-                 contextContainer.innerHTML = '<strong>Destaques:</strong> Nenhum dado de contexto retornado.';
-            }
+            let contextHTML = '<strong>Destaques:</strong> ';
+            if(top_stores.length > 0) contextHTML += `Lojas: ${top_stores.join(' • ')}`;
+            contextContainer.innerHTML = contextHTML;
 
             let insightsArray = [];
-            if (data.context) {
-                const { top_stores, top_hours } = data.context;
-                const kpiLabel = KPI_META[kpi_key]?.label || 'o indicador';
-                const isPositive = data.hero.delta >= 0;
-
-                if(top_stores && top_stores.length > 0) {
-                    insightsArray.push({
-                        type: isPositive ? 'up' : 'down',
-                        title: `Performance por Loja (${kpiLabel})`,
-                        subtitle: `As lojas ${top_stores.join(', ')} apresentaram maior impacto no período.`,
-                        action: 'Ação: Analisar as práticas destas lojas para replicar os sucessos ou corrigir as falhas.'
-                    });
-                }
-                if(top_hours && top_hours.length > 0) {
-                    insightsArray.push({
-                        type: 'up',
-                        title: 'Oportunidade de Horário de Pico',
-                        subtitle: `O período de ${top_hours.join(', ')} concentra a maior parte da performance.`,
-                        action: 'Ação: Reforçar marketing e promoções focadas neste horário para maximizar o resultado.'
-                    });
-                }
+            if(top_stores.length > 0) {
+                insightsArray.push({
+                    type: isPositive ? 'up' : 'down',
+                    title: `Performance por Loja (${KPI_META[kpi_key].label})`,
+                    subtitle: `As lojas ${top_stores.join(', ')} apresentaram maior impacto no período.`,
+                    action: 'Ação: Analisar as práticas destas lojas para replicar os sucessos ou corrigir as falhas.'
+                });
             }
 
             if (insightsArray.length === 0) {
-                insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px;">Nenhum insight de texto gerado para este período.</p>';
+                insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px;">Nenhum insight gerado para este período.</p>';
                 return;
             }
 
             let allInsightsHTML = '';
             insightsArray.forEach(insight => {
-                const insightHTML = `
-                    <div class="ins-card ${insight.type || ''}">
-                        <div class="dot"></div>
-                        <div>
-                            <div class="ins-title">${insight.title || ''}</div>
-                            <div class="ins-sub">${insight.subtitle || ''}</div>
-                            <div class="ins-action">${insight.action || ''}</div>
-                        </div>
-                    </div>
-                `;
-                allInsightsHTML += insightHTML;
+                allInsightsHTML += `<div class="ins-card ${insight.type || ''}"><div class="dot"></div><div><div class="ins-title">${insight.title || ''}</div><div class="ins-sub">${insight.subtitle || ''}</div><div class="ins-action">${insight.action || ''}</div></div></div>`;
             });
             insightsContainer.innerHTML = allInsightsHTML;
 
         } catch (e) {
-            console.error("Erro ao carregar insights de IA:", e);
-            insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px; color: var(--down);">Erro ao carregar insights.</p>`;
+            console.error("Erro ao gerar insights:", e);
+            insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px; color: var(--down);">Erro ao gerar insights.</p>`;
             contextContainer.innerHTML = '<strong>Destaques:</strong> Erro ao carregar.';
         }
     }
@@ -943,25 +909,20 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const selectedKpiKey = $('kpi-select').value;
         
-        // CORREÇÃO: Orquestração explícita para garantir o fluxo de dados.
-        // 1. Renderiza os KPIs principais da aba "Vendas".
-        const allKpiValues = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
-        
-        // 2. Renderiza o painel de diagnóstico (Master + Unidades) e retorna todos os dados.
-        const allDataForProjections = await getAndRenderUnitKPIs(selectedKpiKey, de, ate, dePrev, atePrev, analiticos);
+        // ORQUESTRAÇÃO: Executa as chamadas em uma ordem lógica e robusta.
+        const allKpiData = await getAndRenderUnitKPIs(selectedKpiKey, de, ate, dePrev, atePrev, analiticos);
 
-        // 3. Com os dados em mãos, calcula e renderiza as projeções.
-        if (allDataForProjections) {
-            updateProjections(allDataForProjections, selectedKpiKey);
+        if (allKpiData) {
+            updateProjections(allKpiData, selectedKpiKey);
         }
         
-        // 4. Renderiza os demais gráficos que podem ser executados em paralelo.
-        await Promise.all([
+        const [chartData, top6Data] = await Promise.all([
           updateCharts(de, ate, dePrev, atePrev, analiticos),
-          updateMonth12x12(analiticos),
           updateTop6(de, ate, analiticos),
-          updateInsights(de, ate, analiticos, selectedKpiKey)
+          updateMonth12x12(analiticos)
         ]);
+        
+        await updateInsights(top6Data, chartData, allKpiData, selectedKpiKey);
         
         setStatus('OK','ok');
         matchPanelHeights();
