@@ -456,17 +456,12 @@
   }
 
   async function syncAndSaveData(data) {
-    alert("Iniciando sincronização com o banco de dados. Por favor, aguarde...");
-    console.log("Iniciando sincronização e salvamento para o BD...");
+    alert("Iniciando sincronização com o banco de dados. Este processo pode levar um momento. Por favor, aguarde...");
     
     const categorias = [...new Set(data.map(r => r.categoria))].filter(Boolean).map(c => ({ nome: c, tipo: 'PRATO', ativo: true }));
-    if(categorias.length > 0) {
-        const { error: catError } = await supa.from('categorias').upsert(categorias, { onConflict: 'nome' });
-        if (catError) console.error("Erro ao sincronizar categorias:", catError);
-    }
+    if(categorias.length > 0) await supa.from('categorias').upsert(categorias, { onConflict: 'nome' });
     
-    const { data: allCategories, error: getCatError } = await supa.from('categorias').select('id, nome');
-    if (getCatError) { console.error("Erro ao buscar categorias:", getCatError); return; }
+    const { data: allCategories } = await supa.from('categorias').select('id, nome');
     const catMap = new Map(allCategories.map(c => [c.nome, c.id]));
     
     const pratos = [...new Set(data.map(r => r.prato))].filter(Boolean).map(pNome => {
@@ -474,15 +469,10 @@
         return { nome: pNome, categoria_id: catMap.get(item.categoria), ativo: true };
     }).filter(p => p.categoria_id);
 
-    if (pratos.length > 0) {
-        const { error: pratoError } = await supa.from('pratos').upsert(pratos, { onConflict: 'nome' });
-        if (pratoError) console.error("Erro ao sincronizar pratos:", pratoError);
-    }
+    if (pratos.length > 0) await supa.from('pratos').upsert(pratos, { onConflict: 'nome' });
     
-    const { data: allUnidades, error: getUnidError } = await supa.from('unidades').select('id, nome');
-    if (getUnidError) { alert("ERRO: Não foi possível buscar a lista de unidades. Verifique o console."); return; }
+    const { data: allUnidades } = await supa.from('unidades').select('id, nome');
     const unidMap = new Map(allUnidades.map(u => [u.nome, u.id]));
-    console.log("Mapa de Unidades do BD:", unidMap);
 
     const unidadesNaoEncontradas = new Set();
     const vendasParaSalvar = data.map(r => {
@@ -500,18 +490,19 @@
     }
 
     if(vendasParaSalvar.length > 0) {
-        console.log(`Enviando ${vendasParaSalvar.length} registros de vendas para o Supabase...`);
-        const { error: vendasError } = await supa.from('vendas_pratos_raw').upsert(vendasParaSalvar, { onConflict: 'data, prato, unidade_id' });
+        const { error: vendasError } = await supa.from('vendas_pratos_raw').upsert(
+            vendasParaSalvar,
+            { onConflict: 'data, prato, unidade_id' }
+        );
         if (vendasError) {
-             console.error("ERRO CRÍTICO ao salvar dados de vendas:", vendasError);
              alert("Ocorreu um erro ao salvar os dados de vendas. Verifique o console para detalhes.");
+             console.error("ERRO CRÍTICO ao salvar dados de vendas:", vendasError);
         } else {
              alert(`${vendasParaSalvar.length} registros de vendas foram salvos/atualizados com sucesso!`);
         }
     } else {
         alert("Nenhum registro de venda válido foi encontrado para salvar no banco de dados.");
     }
-    console.log("--- PROCESSO DE SINCRONIZAÇÃO E SALVAMENTO CONCLUÍDO ---");
   }
   
   async function onExcelUpload(file) {
