@@ -760,8 +760,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // LÓGICA PARA A ABA DE DIAGNÓSTICO
     // ===================================================================================
 
-    // Função original, sem alterações, para garantir estabilidade.
-    // Ela continua responsável apenas pelo KPI Master.
     function updateDiagnosticTab(kpi_key, allKpiValues) {
       const heroCard = document.querySelector('#tab-diagnostico .hero');
       if (!heroCard || !allKpiValues || !allKpiValues[kpi_key]) return;
@@ -783,28 +781,28 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // NOVA FUNÇÃO CORRIGIDA para buscar, calcular e renderizar os dados das unidades.
+    // FUNÇÃO TOTALMENTE REFEITA PARA CORRIGIR O BUG DOS VALORES ZERADOS
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
       
       const fetchAndCalculateForUnit = async (unitName) => {
-          // CORREÇÃO CRÍTICA: Cria um objeto de filtro limpo para a unidade,
-          // mantendo apenas o filtro de 'cancelado' do principal.
+          // CORREÇÃO: Cria um objeto de filtro limpo para a unidade,
+          // mantendo apenas o filtro de 'cancelado' do principal para consistência.
+          // Filtros como loja, canal, etc., são ignorados para pegar o total da unidade.
           const unitAnaliticos = { 
             unidade: [unitName],
-            cancelado: analiticos.cancelado
+            cancelado: analiticos.cancelado,
+            loja: [], canal: [], turno: [], pagamento: []
           };
 
           const pNow = buildParams(de, ate, unitAnaliticos);
           const pPrev = buildParams(dePrev, atePrev, unitAnaliticos);
           
-          // Lógica de busca de dados IDÊNTICA à função principal 'updateKPIs',
-          // mas com o filtro adicional de 'unidade' em todas as queries.
           const [
             finNowResult, finPrevResult,
-            { count: pedNowCount, error: errPedNow },
-            { count: pedPrevCount, error: errPedPrev },
-            { count: cnCount, error: errCn }, { count: vnCount, error: errVn },
-            { count: cpCount, error: errCp }, { count: vpCount, error: errVp }
+            { count: pedNowCount },
+            { count: pedPrevCount },
+            { count: cnCount }, { count: vnCount },
+            { count: cpCount }, { count: vpCount }
           ] = await Promise.all([
               supa.rpc(RPC_KPI_FUNC, pNow),
               supa.rpc(RPC_KPI_FUNC, pPrev),
@@ -816,6 +814,7 @@ document.addEventListener('DOMContentLoaded', () => {
               supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Não')
           ]);
 
+          // CORREÇÃO: Usa o 'unitAnaliticos' para decidir qual contagem de pedidos usar.
           const pedTotalNow = unitAnaliticos.cancelado === 'sim' ? cnCount : unitAnaliticos.cancelado === 'nao' ? vnCount : pedNowCount;
 
           const N = {
