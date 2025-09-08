@@ -758,6 +758,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===================================================================================
     // LÓGICA PARA A ABA DE DIAGNÓSTICO
     // ===================================================================================
+
     function updateDiagnosticTab(kpi_key, allKpiValues) {
       const heroCard = document.querySelector('#tab-diagnostico .hero');
       if (!heroCard || !allKpiValues || !allKpiValues[kpi_key]) return;
@@ -881,7 +882,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // VERSÃO FINAL CORRIGIDA
     async function updateInsights(de, ate, analiticos, kpi_key) {
         const insightsContainer = document.querySelector('#tab-diagnostico .ins-list');
         const contextContainer = document.querySelector('#tab-diagnostico .hero-context');
@@ -1028,19 +1028,9 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // CORREÇÃO: As funções de data agora usam 'lastDay' como referência
-    function fxLocalMidday(d) {
-        // Se d for uma string YYYY-MM-DD, cria a data em UTC para evitar problemas de fuso horário
-        if (typeof d === 'string' && d.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            return new Date(d + 'T12:00:00Z');
-        }
-        const x = new Date(d);
-        x.setHours(12, 0, 0, 0);
-        return x;
-    }
+    function fxLocalMidday(d){ const x=new Date(d); x.setHours(12,0,0,0); return x }
     function fxFmt(date){ return date.toISOString().slice(0,10); }
     function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
-    
     function fxLastNDays(n){
       const baseDate = lastDay ? fxLocalMidday(lastDay) : new Date();
       const end = new Date(baseDate);
@@ -1104,7 +1094,6 @@ document.addEventListener('DOMContentLoaded', () => {
       fxDispatchApply();
     });
 
-    // CORREÇÃO: O seletor estava errado, agora busca por 'button'
     fx.$days.addEventListener('click', (e)=>{
       const b=e.target.closest('button'); if(!b) return;
       fx.$days.querySelectorAll('button').forEach(x=> x.classList.toggle('fx-active', x===b));
