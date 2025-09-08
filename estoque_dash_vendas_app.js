@@ -164,8 +164,8 @@ document.addEventListener('DOMContentLoaded', () => {
               return { dePrev: this.iso(p1), atePrev: this.iso(p2) };
           }
           const len = this.daysLen(deISO, ateISO);
-          const atePrev = new Date(d1.getTime() - (1000 * 60 * 60 * 24));
-          const dePrev = new Date(atePrev.getTime() - ((len - 1) * (1000 * 60 * 60 * 24)));
+          const atePrev = new Date(d1.getTime() - 86400000);
+          const dePrev = new Date(atePrev.getTime() - (len - 1) * 86400000);
           return { dePrev: this.iso(dePrev), atePrev: this.iso(atePrev) };
       }
     };
@@ -428,26 +428,23 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("Erro detalhado em updateKPIs:", e);
         document.querySelectorAll('.kpi .val, .kpi .sub span').forEach(el => el.textContent = '—');
         document.querySelectorAll('.kpi .delta').forEach(el => { el.textContent = '—'; el.className = 'delta flat'; });
-        return null; // ADIÇÃO DE ROBUSTEZ
+        return null;
       }
       return allKpiValues;
     }
 
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
       const mainKpiCard = $('hero_main_kpi');
-      // VERIFICAÇÃO DE ROBUSTEZ: Garante que o elemento existe antes de prosseguir.
-      if (mainKpiCard) {
-          const mainValueEl = mainKpiCard.querySelector('.hero-value-number');
-          const mainDeltaEl = mainKpiCard.querySelector('.delta');
-          const mainSubEl = mainKpiCard.querySelector('.hero-sub-value');
-          
-          const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
-          if(totalKpis && totalKpis[kpi_key]) {
-              const meta = KPI_META[kpi_key];
-              mainValueEl.textContent = formatValueBy(meta.fmt, totalKpis[kpi_key].current);
-              mainSubEl.textContent = 'Anterior: ' + formatValueBy(meta.fmt, totalKpis[kpi_key].previous);
-              deltaBadge(mainDeltaEl, totalKpis[kpi_key].current, totalKpis[kpi_key].previous);
-          }
+      const mainValueEl = mainKpiCard?.querySelector('.hero-value-number');
+      const mainDeltaEl = mainKpiCard?.querySelector('.delta');
+      const mainSubEl = mainKpiCard?.querySelector('.hero-sub-value');
+      
+      const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
+      if(totalKpis && totalKpis[kpi_key] && mainValueEl) {
+          const meta = KPI_META[kpi_key];
+          mainValueEl.textContent = formatValueBy(meta.fmt, totalKpis[kpi_key].current);
+          mainSubEl.textContent = 'Anterior: ' + formatValueBy(meta.fmt, totalKpis[kpi_key].previous);
+          deltaBadge(mainDeltaEl, totalKpis[kpi_key].current, totalKpis[kpi_key].previous);
       }
 
       const fetchAndCalculateForUnit = async (unitName) => {
@@ -475,17 +472,17 @@ document.addEventListener('DOMContentLoaded', () => {
           renderUnit('unit-kpi-raja', rajaKpis);
           renderUnit('unit-kpi-savassi', savassiKpis);
           
+          return { total: totalKpis, raja: rajaKpis, savassi: savassiKpis };
       } catch(e) {
           console.error("Erro ao renderizar KPIs de unidade:", e);
+          return { total: totalKpis, raja: null, savassi: null }; // ROBUSTEZ: Retorna o que tiver
       }
     }
     
-    // ===================================================================================
-    // NOVA FUNÇÃO DE PROJEÇÕES (ISOLADA E ROBUSTA)
-    // ===================================================================================
+    // FUNÇÃO DE PROJEÇÃO CORRIGIDA E MELHORADA
     async function updateProjections(de, ate, dePrev, atePrev, analiticos) {
         const kpiKey = $('kpi-select').value;
-        const meta = KPI_META[kpiKey] || KPI_META.fat;
+        const meta = KPI_META[kpiKey] || { fmt: 'money' };
 
         const calculateTrendProjection = (current, previous) => {
             if (current == null || !isFinite(current) || previous == null || !isFinite(previous) || previous === 0) {
@@ -498,51 +495,54 @@ document.addEventListener('DOMContentLoaded', () => {
         const len = DateHelpers.daysLen(de, ate);
         const projectionMultiplier = len > 0 ? projectionDays / len : 1;
 
-        const resetUI = () => {
-            $('proj_total_label').textContent = `PROJEÇÃO ${meta.label.toUpperCase()} (${projectionDays}D)`;
-            $('proj_total_val').textContent = '—';
-            deltaBadge($('proj_total_delta'), null, null);
-            $('proj_raja_label').textContent = `UNI.RAJA - ${meta.label}`;
-            $('proj_raja_val').textContent = '—';
-            deltaBadge($('proj_raja_delta'), null, null);
-            $('proj_savassi_label').textContent = `UNI.SAVASSI - ${meta.label}`;
-            $('proj_savassi_val').textContent = '—';
-            deltaBadge($('proj_savassi_delta'), null, null);
+        const resetUI = (scope) => {
+            if(scope === 'total' || scope === 'all') {
+                $('proj_total_val').textContent = '—';
+                deltaBadge($('proj_total_delta'), null, null);
+            }
+            if(scope === 'raja' || scope === 'all') {
+                $('proj_raja_val').textContent = '—';
+                deltaBadge($('proj_raja_delta'), null, null);
+            }
+            if(scope === 'savassi' || scope === 'all') {
+                $('proj_savassi_val').textContent = '—';
+                deltaBadge($('proj_savassi_delta'), null, null);
+            }
         };
 
+        // Atualiza os títulos de forma síncrona
+        $('proj_total_label').textContent = `PROJEÇÃO ${meta.label.toUpperCase()} (${projectionDays}D)`;
+        $('proj_raja_label').textContent = `UNI.RAJA - ${meta.label}`;
+        $('proj_savassi_label').textContent = `UNI.SAVASSI - ${meta.label}`;
+
         try {
-            // Busca de dados independente para garantir isolamento
             const [totalData, rajaData, savassiData] = await Promise.all([
                 updateKPIs(de, ate, dePrev, atePrev, analiticos),
                 updateKPIs(de, ate, dePrev, atePrev, { ...analiticos, unidade: ['Uni.Raja'] }),
                 updateKPIs(de, ate, dePrev, atePrev, { ...analiticos, unidade: ['Uni.Savassi'] })
             ]);
 
-            // VERIFICAÇÃO DE ROBUSTEZ
-            if (!totalData || !rajaData || !savassiData) {
-                throw new Error("Falha na busca de dados para projeção.");
-            }
+            if (totalData && totalData[kpiKey]) {
+                const projTotal = calculateTrendProjection(totalData[kpiKey].current, totalData[kpiKey].previous);
+                $('proj_total_val').textContent = projTotal.value !== null ? formatValueBy(meta.fmt, projTotal.value * projectionMultiplier) : '—';
+                deltaBadge($('proj_total_delta'), projTotal.value, totalData[kpiKey].current);
+            } else { resetUI('total'); }
 
-            // Projeção Total
-            const projTotal = calculateTrendProjection(totalData[kpiKey]?.current, totalData[kpiKey]?.previous);
-            $('proj_total_label').textContent = `PROJEÇÃO ${meta.label.toUpperCase()} (${projectionDays}D)`;
-            $('proj_total_val').textContent = projTotal.value !== null ? formatValueBy(meta.fmt, projTotal.value * projectionMultiplier) : '—';
-            deltaBadge($('proj_total_delta'), projTotal.value, totalData[kpiKey]?.current);
-
-            // Projeções por Unidade
-            const projRaja = calculateTrendProjection(rajaData[kpiKey]?.current, rajaData[kpiKey]?.previous);
-            $('proj_raja_label').textContent = `UNI.RAJA - ${meta.label}`;
-            $('proj_raja_val').textContent = projRaja.value !== null ? formatValueBy(meta.fmt, projRaja.value * projectionMultiplier) : '—';
-            deltaBadge($('proj_raja_delta'), projRaja.value, rajaData[kpiKey]?.current);
+            if (rajaData && rajaData[kpiKey]) {
+                const projRaja = calculateTrendProjection(rajaData[kpiKey].current, rajaData[kpiKey].previous);
+                $('proj_raja_val').textContent = projRaja.value !== null ? formatValueBy(meta.fmt, projRaja.value * projectionMultiplier) : '—';
+                deltaBadge($('proj_raja_delta'), projRaja.value, rajaData[kpiKey].current);
+            } else { resetUI('raja'); }
             
-            const projSavassi = calculateTrendProjection(savassiData[kpiKey]?.current, savassiData[kpiKey]?.previous);
-            $('proj_savassi_label').textContent = `UNI.SAVASSI - ${meta.label}`;
-            $('proj_savassi_val').textContent = projSavassi.value !== null ? formatValueBy(meta.fmt, projSavassi.value * projectionMultiplier) : '—';
-            deltaBadge($('proj_savassi_delta'), projSavassi.value, savassiData[kpiKey]?.current);
+            if (savassiData && savassiData[kpiKey]) {
+                const projSavassi = calculateTrendProjection(savassiData[kpiKey].current, savassiData[kpiKey].previous);
+                $('proj_savassi_val').textContent = projSavassi.value !== null ? formatValueBy(meta.fmt, projSavassi.value * projectionMultiplier) : '—';
+                deltaBadge($('proj_savassi_delta'), projSavassi.value, savassiData[kpiKey].current);
+            } else { resetUI('savassi'); }
 
         } catch (error) {
             console.error("Erro ao calcular projeções:", error);
-            resetUI();
+            resetUI('all');
         }
     }
 
@@ -837,7 +837,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }finally{
         $('fileExcel').value='';
       }
-    });
+    }
+    );
     function mergeRankedAll(rankedList, allList){
       const rset = new Set(rankedList);
       const rest = allList.filter(x=>!rset.has(x));
@@ -979,19 +980,26 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const selectedKpiForDiag = $('kpi-select').value;
         
+        // ORQUESTRAÇÃO EXPLÍCITA: Funções são chamadas em sequência para garantir dependências.
+        const allKpiValues = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
+        const allDataForProjections = await getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos);
+
+        // A projeção só é chamada se os dados da etapa anterior foram calculados com sucesso.
+        if (allDataForProjections) {
+            await updateProjections(de, ate, dePrev, atePrev, analiticos);
+        }
+        
         await Promise.all([
-          updateKPIs(de, ate, dePrev, atePrev, analiticos),
-          getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos),
-          updateCharts(de,ate,dePrev,atePrev, analiticos),
+          updateCharts(de, ate, dePrev, atePrev, analiticos),
           updateMonth12x12(analiticos),
-          updateTop6(de,ate, analiticos),
-          updateInsights(de, ate, analiticos, selectedKpiForDiag),
-          updateProjections(de, ate, dePrev, atePrev, analiticos) // ADICIONA A CHAMADA DA PROJEÇÃO
+          updateTop6(de, ate, analiticos),
+          updateInsights(de, ate, analiticos, selectedKpiForDiag)
         ]);
         
         setStatus('OK','ok');
         matchPanelHeights();
-      }catch(e){
+
+      } catch(e) {
         console.error('Erro em applyAll:', e);
         setStatus('Erro: '+(e.message||e),'err');
       }
@@ -1037,7 +1045,7 @@ document.addEventListener('DOMContentLoaded', () => {
       $end: $('fxDuEnd'),
       $days: $('fxDuQuickDays'),
       $chips: $('fxQuickChips'),
-      $segProj: $('segProj'), // NOVO SELETOR PARA BOTÕES DE PROJEÇÃO
+      $segProj: $('segProj'),
     };
 
     fx.$segProj.addEventListener('click', (e) => {
@@ -1045,9 +1053,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!btn) return;
         const days = parseInt(btn.dataset.days, 10);
         if (!isNaN(days)) {
-            projectionDays = days; // Atualiza o estado
+            projectionDays = days;
             fx.$segProj.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
-            fxDispatchApply(); // Dispara a atualização do dashboard
+            fxDispatchApply();
         }
     });
 
