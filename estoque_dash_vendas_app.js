@@ -970,112 +970,71 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ===================================================================================
-    // NOVA FUNÇÃO DE PROJEÇÕES (Princípios C-Level aplicados)
+    // NOVA FUNÇÃO DE PROJEÇÕES POR UNIDADE (Princípios C-Level aplicados)
     // ===================================================================================
-    async function updateProjections(allKpiValues, de, ate) {
-        // Seleciona os elementos do DOM onde os resultados serão exibidos.
-        const valFatEl = $('proj_fat');
-        const valPedEl = $('proj_ped');
-        const valTktEl = $('proj_tkt');
-        const canvas = $('ch_proj');
+    async function updateUnitProjections(de, ate) {
+        // Helper interno para buscar e calcular a projeção para uma única unidade.
+        // Isso evita repetição de código e mantém a lógica isolada.
+        const fetchProjectionForUnit = async (unitName) => {
+            // Os filtros para esta consulta são fixos: apenas data e o nome da unidade.
+            // Ignora outros filtros da tela para uma análise de projeção limpa.
+            const params = {
+                p_dini: de,
+                p_dfim: ate,
+                p_unids: [unitName],
+                p_lojas: null, p_turnos: null, p_canais: null, p_pags: null, p_cancelado: null
+            };
 
-        // Função para resetar a UI em caso de erro ou dados insuficientes.
-        // Garante robustez e uma experiência de usuário consistente.
-        const resetProjectionUI = () => {
-            if(valFatEl) valFatEl.textContent = '—';
-            if(valPedEl) valPedEl.textContent = '—';
-            if(valTktEl) valTktEl.textContent = '—';
-            if(canvas && canvas.__chart) {
-                try { canvas.__chart.destroy(); } catch(e) {}
-                canvas.__chart = null;
-            }
-        };
+            // Chamada RPC para buscar os dados financeiros agregados.
+            const { data: finData, error: finErr } = await supa.rpc(RPC_KPI_FUNC, params);
+            if (finErr) throw finErr; // Lança o erro para ser capturado pelo bloco catch principal.
 
-        try {
-            // Princípio da Robustez: Verifica se os dados necessários existem.
-            if (!allKpiValues || !allKpiValues.fat || !allKpiValues.ped || !de || !ate) {
-                console.warn('[Projeção] Dados de KPI ou período insuficientes para cálculo.');
-                resetProjectionUI();
-                return;
-            }
+            // Chamada para contar o número de pedidos no período para a unidade.
+            const { count: pedCount, error: pedErr } = await supa.from('vendas_canon')
+                .select('*', { count: 'exact', head: true })
+                .eq('unidade', unitName)
+                .gte('dia', de)
+                .lte('dia', ate);
+            if (pedErr) throw pedErr;
 
-            // Extrai os valores do período atual para o cálculo da projeção.
-            const faturamentoAtual = allKpiValues.fat.current;
-            const pedidosAtuais = allKpiValues.ped.current;
-            
-            // Calcula a duração do período selecionado em dias.
+            const faturamentoAtual = finData?.[0]?.fat || 0;
+            const pedidosAtuais = pedCount || 0;
             const diasNoPeriodo = DateHelpers.daysLen(de, ate);
 
-            // Princípio da Regressão Zero: Lida com casos extremos para evitar erros (e.g., divisão por zero).
-            if (diasNoPeriodo <= 0) {
-                console.warn('[Projeção] Período inválido (0 dias). Projeção não pode ser calculada.');
-                resetProjectionUI();
-                return;
-            }
-
-            // Princípio da Verbosisdade Explícita: Cálculos claros e bem definidos.
+            if (diasNoPeriodo <= 0) return { fat: 0, ped: 0 }; // Retorna 0 se o período for inválido.
+            
+            // Lógica de projeção linear para os próximos 30 dias.
             const faturamentoMedioDiario = faturamentoAtual / diasNoPeriodo;
             const pedidosMediosDiarios = pedidosAtuais / diasNoPeriodo;
             
-            // A projeção padrão é para 30 dias.
-            const diasProjecao = 30; 
-            const faturamentoProjetado = faturamentoMedioDiario * diasProjecao;
-            const pedidosProjetados = pedidosMediosDiarios * diasProjecao;
-            const ticketMedioProjetado = (pedidosProjetados > 0) ? (faturamentoProjetado / pedidosProjetados) : 0;
+            return {
+                fat: faturamentoMedioDiario * 30,
+                ped: pedidosMediosDiarios * 30
+            };
+        };
 
-            // Atualiza a interface com os valores formatados usando helpers existentes.
-            valFatEl.textContent = money(faturamentoProjetado);
-            valPedEl.textContent = num(pedidosProjetados);
-            valTktEl.textContent = money(ticketMedioProjetado);
-
-            // GERAÇÃO DO GRÁFICO DE PROJEÇÃO DINÂMICO
-            if (!canvas) return; // Se o canvas não existir, encerra aqui.
-
-            // Destrói o gráfico anterior para evitar sobreposição.
-            if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
+        try {
+            // Executa as buscas para ambas as unidades em paralelo para maior performance.
+            const [raja, savassi] = await Promise.all([
+                fetchProjectionForUnit('Uni.Raja'),
+                fetchProjectionForUnit('Uni.Savassi')
+            ]);
             
-            const ctx = canvas.getContext('2d');
-            const labels = Array.from({length: diasProjecao}, (_, i) => `+${i+1}D`);
-            const data = Array.from({length: diasProjecao}, (_, i) => faturamentoMedioDiario * (i + 1));
+            // Atualiza a UI com os dados da Uni.Raja
+            $('proj_raja_fat').textContent = money(raja.fat);
+            $('proj_raja_ped').textContent = `${num(raja.ped)} pedidos`;
 
-            const chart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Faturamento Projetado (Acum.)',
-                        data: data,
-                        borderColor: 'var(--wine)',
-                        backgroundColor: 'rgba(123, 30, 58, 0.1)',
-                        fill: true,
-                        tension: 0.3,
-                        pointRadius: 0
-                    }]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false, animation: false,
-                    scales: {
-                        x: { display: false }, // Eixo X oculto para um visual mais limpo
-                        y: { beginAtZero: true, grid: { display: false }, ticks: { callback: (v) => formatTickBy('money', v) } }
-                    },
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            mode: 'index', intersect: false,
-                            callbacks: {
-                                label: (ctx) => `Projeção: ${formatValueBy('money', ctx.parsed.y || 0)}`
-                            }
-                        }
-                    }
-                }
-            });
-            canvas.__chart = chart;
+            // Atualiza a UI com os dados da Uni.Savassi
+            $('proj_savassi_fat').textContent = money(savassi.fat);
+            $('proj_savassi_ped').textContent = `${num(savassi.ped)} pedidos`;
 
         } catch (error) {
-            // Princípio do Diagnóstico Total: Loga o erro detalhado no console.
-            console.error('[Erro na Projeção]', error);
-            // Princípio da Robustez: Garante que a UI falhe de forma graciosa.
-            resetProjectionUI();
+            // Em caso de erro em qualquer uma das promises, a UI é resetada.
+            console.error('[Erro na Projeção por Unidade]', error);
+            $('proj_raja_fat').textContent = '—';
+            $('proj_raja_ped').textContent = 'Erro ao calcular';
+            $('proj_savassi_fat').textContent = '—';
+            $('proj_savassi_ped').textContent = 'Erro ao calcular';
         }
     }
 
@@ -1106,17 +1065,13 @@ document.addEventListener('DOMContentLoaded', () => {
           updateInsights(de, ate, analiticos, selectedKpiForDiag)
         ]);
         
-        // Verifica se os KPIs foram carregados antes de atualizar as abas que dependem deles
         if (allKpiValues) {
             updateDiagnosticTab(selectedKpiForDiag, allKpiValues);
-            // ==========================================================
-            // NOVA CHAMADA PARA A FUNÇÃO DE PROJEÇÕES
-            // Reutiliza os dados de KPIs e o período já consultados
-            // ==========================================================
-            await updateProjections(allKpiValues, de, ate);
         }
         
+        // Chamadas que devem ocorrer independentemente do sucesso dos KPIs principais
         await getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos);
+        await updateUnitProjections(de, ate); // NOVA CHAMADA PARA PROJEÇÕES POR UNIDADE
 
         if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
         else setStatus('OK','ok');
