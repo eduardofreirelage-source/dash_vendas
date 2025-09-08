@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -923,18 +923,21 @@ document.addEventListener('DOMContentLoaded', () => {
             // GERAÇÃO DE INSIGHTS A PARTIR DO CONTEXTO
             let insightsArray = [];
             if (data.context) {
-                const { top_stores, top_hours, top_channels } = data.context;
+                const { top_stores, top_hours } = data.context;
+                const kpiLabel = KPI_META[kpi_key]?.label || 'o indicador';
+                const isPositive = data.hero.delta >= 0;
+
                 if(top_stores && top_stores.length > 0) {
                     insightsArray.push({
-                        type: 'up',
-                        title: 'Lojas com Melhor Performance',
-                        subtitle: `Drivers: As lojas ${top_stores.join(', ')} se destacaram no período.`,
-                        action: 'Ação: Analisar as práticas destas lojas (mix de produtos, promoções) para replicar em outras unidades.'
+                        type: isPositive ? 'up' : 'down',
+                        title: `Performance por Loja (${kpiLabel})`,
+                        subtitle: `As lojas ${top_stores.join(', ')} apresentaram maior impacto no período.`,
+                        action: 'Ação: Analisar as práticas destas lojas para replicar os sucessos ou corrigir as falhas.'
                     });
                 }
                 if(top_hours && top_hours.length > 0) {
                     insightsArray.push({
-                        type: 'up',
+                        type: isPositive ? 'up' : 'down',
                         title: 'Oportunidade de Horário de Pico',
                         subtitle: `O período de ${top_hours.join(', ')} concentra a maior parte da performance.`,
                         action: 'Ação: Reforçar marketing e promoções focadas neste horário para maximizar o resultado.'
