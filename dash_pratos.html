@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8"/>
+  <meta charset="utf-s8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Dash Pratos</title>
   <style>
@@ -44,7 +44,7 @@
   <div class="wrap">
     <main class="main main-content">
       <div class="top">
-        <div class="brand">Dashboard de Vendas</div>
+        <div class="brand">Dashboard de Pratos</div>
         <div class="seg" id="segDowMode">
             <button data-mode="TOTAL" class="active">TOTAL</button>
             <button data-mode="MEDIA">MÉDIA</button>
@@ -108,6 +108,7 @@
     .fx-quick-hint{font-size:10px; color:#94a3b8; white-space:nowrap; margin-right: 10px;}
     .fx-seg{border-radius:10px; display:inline-flex; border:1px solid var(--line); background:#fff; white-space:nowrap; overflow:hidden}
     .fx-seg button{ height:30px; min-width:44px; padding:0 10px; border:0; background:transparent; cursor:pointer; font-weight:800; color:#475569; font-size:10px }
+    .fx-seg button + button{border-left:1px solid var(--line)}
     .fx-seg button.fx-active{background:var(--wine); color:#fff}
     .msel{position:relative}
     .msel-btn{width:100%; text-align: left; height:30px; padding:4px 8px; border:1px solid var(--line); border-radius:8px; background:#fff; font:inherit; cursor: pointer;}
@@ -135,7 +136,7 @@
       </button>
       <button class="fx-textbtn" id="btnUpload">Importar</button>
       <input id="fileExcel" type="file" accept=".xlsx,.xls,.csv" style="display:none">
-      <button class="fx-textbtn" id="fxBtnReset">Limpar/Recarregar</button>
+      <button class="fx-textbtn" id="fxBtnReset">Limpar</button>
     </div>
   </footer>
 
@@ -178,8 +179,9 @@
 
   <script>
   /* ===================== CONFIG ===================== */
-  const SUPABASE_URL  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
-  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
+  // ATENÇÃO: Use as suas próprias chaves do Supabase aqui
+  const SUPABASE_URL  = 'https://rqeagimulvgfecvuzubk.supabase.co';
+  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxZWFnaW11bHZnZmVjdnV6dWJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NzkyMzUsImV4cCI6MjA3MjU1NTIzNX0.SeNHyHOlpqjm-QTl7KXq7YF-48fk5iOQCRgpangP4zU';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
   /* ===================== CHART DEFAULTS ===================== */
@@ -210,9 +212,9 @@
 
   function formatYM(isoStr){
     if (!isoStr) return '';
-    const [year, month] = isoStr.split('-');
-    const m = parseInt(month, 10) - 1;
-    const y = String(year).slice(-2);
+    const d = new Date(isoStr + 'T12:00:00Z');
+    const m = d.getMonth();
+    const y = String(d.getFullYear()).slice(-2);
     const n = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
     return `${n[m]}/${y}`;
   }
@@ -220,38 +222,28 @@
   const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   
   function fxDispatchApply(){
-      const payload = { 
-        start: $('fxDuStart').value, 
-        end: $('fxDuEnd').value 
-      };
+      const payload = { start: $('fxDuStart').value, end: $('fxDuEnd').value };
       document.dispatchEvent(new CustomEvent('filters:apply', { detail: payload }));
   }
-  
-  /* ===================== MULTISELECT COMPONENT ===================== */
+
+  /* ===================== MULTISELECT ===================== */
   function MultiSelect(rootId, placeholder){
     const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
     let options=[], selected=new Set(), filtered=[];
-    const searchInput = document.createElement('input');
-    searchInput.className='msel-search'; 
-    searchInput.placeholder='Filtrar…';
-    
     function render(){
       panel.innerHTML='';
-      searchInput.value = '';
-      panel.appendChild(searchInput);
+      const q=document.createElement('input'); q.className='msel-search'; q.placeholder='Filtrar…';
+      q.addEventListener('input',()=>{filtered=options.filter(v=>rmAcc(v).toLowerCase().includes(rmAcc(q.value).toLowerCase())); drawOptions();});
+      panel.appendChild(q);
       drawOptions();
     }
-    
     function drawOptions(){
       panel.querySelectorAll('.msel-opt-box').forEach(n=>n.remove());
       const box=document.createElement('div'); box.className = 'msel-opt-box';
-      const currentFilter = rmAcc(searchInput.value).toLowerCase();
-      filtered = options.filter(v => rmAcc(String(v)).toLowerCase().includes(currentFilter));
-
-      filtered.forEach(v=>{
-        const row=document.createElement('label'); row.className='msel-opt';
+      (filtered.length > 0 ? filtered : options).forEach(v=>{
+        const row=document.createElement('div'); row.className='msel-opt';
         const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v; cb.checked=selected.has(v);
-        const lb=document.createElement('span'); lb.textContent=v;
+        const lb=document.createElement('label'); lb.textContent=v;
         cb.addEventListener('change',()=>{
             cb.checked?selected.add(v):selected.delete(v); 
             refresh();
@@ -261,21 +253,18 @@
       });
       panel.appendChild(box);
     }
-    
-    searchInput.addEventListener('input', drawOptions);
     function refresh(){ btn.textContent = selected.size===0 ? placeholder : `${selected.size} selecionado(s)`; }
     btn.addEventListener('click',()=>root.classList.toggle('open'));
     document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
-    
     return {
-      setOptions(list){ options=(list||[]).filter(v=>v!=null).map(String).sort((a,b)=>a.localeCompare(b,'pt-BR')); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh(); },
+      setOptions(list){ options=(list||[]).filter(v=>v!=null).map(String).sort((a,b)=>a.localeCompare(b,'pt-BR')); filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh(); },
       get(){return [...selected];},
-      clear(){ selected.clear(); refresh(); render(); },
+      set(vals){selected=new Set((vals||[]).map(String)); refresh(); drawOptions();},
+      clear(){ this.set([]); }
     };
   }
 
-  /* ===================== GLOBAL STATE & CHARTS ===================== */
-  let rawData = [];
+  /* ===================== ESTADO ===================== */
   let lastDay='';
   let dowMode = 'TOTAL';
   let top10Mode = 'MAIS';
@@ -299,328 +288,202 @@
     fxDispatchApply();
   });
 
+  /* ===================== KPI & CHARTS ===================== */
   function upSVG(){return '<svg viewBox="0 0 20 20"><path d="M10 4l5 6h-3v6H8v-6H5l5-6z"/></svg>';}
   function downSVG(){return '<svg viewBox="0 0 20 20"><path d="M10 16l-5-6h3V4h4v6h3l-5 6z"/></svg>';}
   function deltaBadge(el,curr,prev){
-    if(!isFinite(prev)||+prev===0 || !isFinite(curr)){ el.textContent='—'; el.className='delta flat'; return; }
-    const p=((curr-prev)/Math.abs(prev))*100;
+    if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
+    const p=((curr-prev)/prev)*100;
     el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
     el.className='delta '+(p>=0?'up':'down');
   }
 
   function renderChart(canvasId, type, labels, datasets, options = {}) {
-    const canvas = $(canvasId); if (!canvas) return;
+    const canvas = $(canvasId);
+    if (!canvas) return;
     if (canvas.__chart) { try { canvas.__chart.destroy(); } catch(e){} }
     const ctx = canvas.getContext('2d');
-    canvas.__chart = new Chart(ctx, { type, data: { labels, datasets }, options: { responsive: true, maintainAspectRatio: false, animation: false, scales: type === 'bar' ? { y: { beginAtZero: true }, x: { grid: { display: false } } } : {}, plugins: { legend: { display: datasets.length > 1 } }, ...options } });
+    canvas.__chart = new Chart(ctx, {
+      type,
+      data: { labels, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        scales: type === 'bar' ? { y: { beginAtZero: true }, x: { grid: { display: false } } } : {},
+        plugins: { legend: { display: datasets.length > 1 } },
+        ...options
+      }
+    });
   }
-
-  /* ===================== DATA PROCESSING & RENDERING PIPELINE ===================== */
-  function processAndRender(sourceData, details) {
-    const de = details.start, ate = details.end;
-    if (!de || !ate || new Date(de) > new Date(ate)) { return; }
-    
-    const len = daysLen(de, ate);
-    const prev_de = new Date(de + 'T12:00:00Z'); prev_de.setDate(prev_de.getDate() - len);
-    const prev_ate = new Date(de + 'T12:00:00Z'); prev_ate.setDate(prev_ate.getDate() - 1);
-
-    const activeFilters = {
-        unidades: ms.unids.get(),
-        categorias: ms.cats.get(),
-        pratos: ms.pratos.get(),
-        is_pratos_only: $('onlyPratos').checked
-    };
-
-    const filterRow = (r, start, end) => {
-        const d = new Date(r.data + 'T12:00:00Z');
-        if (!(d >= start && d <= end)) return false;
-        if (activeFilters.unidades.length > 0 && !activeFilters.unidades.includes(r.unidade_nome)) return false;
-        if (activeFilters.categorias.length > 0 && !activeFilters.categorias.includes(r.categoria)) return false;
-        if (activeFilters.pratos.length > 0 && !activeFilters.pratos.includes(r.prato)) return false;
-        if (activeFilters.is_pratos_only && r.categoria !== 'PRATOS') return false;
-        return true;
-    };
-
-    const cur = sourceData.filter(r => filterRow(r, new Date(de + 'T00:00:00Z'), new Date(ate + 'T23:59:59Z')));
-    const prv = sourceData.filter(r => filterRow(r, prev_de, prev_ate));
-
-    const kpis = { current_total: cur.reduce((a, b) => a + b.quantidade, 0), current_unique: new Set(cur.map(r => r.prato)).size };
-    const prevKpis = { prev_total: prv.reduce((a, b) => a + b.quantidade, 0), prev_unique: new Set(prv.map(r => r.prato)).size };
-    updateKPIs(kpis, prevKpis, len);
-
-    const top10Data = {};
-    const agg = new Map();
-    cur.forEach(r => agg.set(r.prato, (agg.get(r.prato) || 0) + r.quantidade));
-    const sorted = [...agg.entries()].sort((a, b) => b[1] - a[1]);
-    top10Data.mais_vendidos = sorted.slice(0, 10).map(([prato, total]) => ({ prato, total }));
-    top10Data.menos_vendidos = sorted.filter(p => p[1] > 0).slice(-10).reverse().map(([prato, total]) => ({ prato, total }));
-    updateTop10Chart(top10Data);
-    
-    const dowData = { now: Array(7).fill(0), prev: Array(7).fill(0) };
-    cur.forEach(r => { dowData.now[new Date(r.data + 'T12:00:00Z').getDay()] += r.quantidade; });
-    prv.forEach(r => { dowData.prev[new Date(r.data + 'T12:00:00Z').getDay()] += r.quantidade; });
-    updateDowChart(dowData, len);
-
-    updateMonthChart(sourceData, ate);
-  }
-
-  function updateKPIs(kpis, prevKpis, len) {
-    const mediaDiaria = len > 0 ? (kpis.current_total || 0) / len : 0;
-    const prevMediaDiaria = len > 0 ? (prevKpis.prev_total || 0) / len : 0;
+  
+  function updateKPIs(kpis, len) {
+    const mediaDiaria = len > 0 ? Math.round(kpis.current_total / len) : 0;
+    const prevMediaDiaria = len > 0 ? Math.round(kpis.prev_total / len) : 0;
     $('k_qtd').textContent = num(kpis.current_total);
-    $('p_qtd').textContent = num(prevKpis.prev_total);
-    deltaBadge($('d_qtd'), kpis.current_total, prevKpis.prev_total);
+    $('p_qtd').textContent = num(kpis.prev_total);
+    deltaBadge($('d_qtd'), kpis.current_total, kpis.prev_total);
     $('k_pratos_unicos').textContent = num(kpis.current_unique);
-    $('p_pratos_unicos').textContent = num(prevKpis.prev_unique);
-    deltaBadge($('d_pratos_unicos'), kpis.current_unique, prevKpis.prev_unique);
-    $('k_media_diaria').textContent = num(mediaDiaria.toFixed(1));
-    $('p_media_diaria').textContent = num(prevKpis.prev_total > 0 ? prevMediaDiaria.toFixed(1) : 0);
+    $('p_pratos_unicos').textContent = num(kpis.prev_unique);
+    deltaBadge($('d_pratos_unicos'), kpis.current_unique, kpis.prev_unique);
+    $('k_media_diaria').textContent = num(mediaDiaria);
+    $('p_media_diaria').textContent = num(prevMediaDiaria);
     deltaBadge($('d_media_diaria'), mediaDiaria, prevMediaDiaria);
   }
 
   function updateTop10Chart(data) {
-    const source = top10Mode === 'MAIS' ? data.mais_vendidos : data.menos_vendidos;
-    const color = top10Mode === 'MAIS' ? '#7b1e3a' : '#9ca3af';
-    renderChart('ch_top10', 'bar', source.map(x => x.prato), [{ label: 'Qtd', data: source.map(x => x.total), backgroundColor: color }], { indexAxis: 'y', plugins: { legend: { display: false } } });
+    const maisVendidos = data?.mais_vendidos || [];
+    const menosVendidos = data?.menos_vendidos || [];
+    if (top10Mode === 'MAIS') {
+        renderChart('ch_top10', 'bar', maisVendidos.map(x => x.prato), [{ label: 'Qtd', data: maisVendidos.map(x => x.total), backgroundColor: '#7b1e3a' }], { indexAxis: 'y', plugins: { legend: { display: false } } });
+    } else { 
+        renderChart('ch_top10', 'bar', menosVendidos.map(x => x.prato), [{ label: 'Qtd', data: menosVendidos.map(x => x.total), backgroundColor: '#9ca3af' }], { indexAxis: 'y', plugins: { legend: { display: false } } });
+    }
   }
 
   function updateDowChart(data, len) {
     const dowLabels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-    let nowData = data.now;
-    let prevData = data.prev;
+    let nowData = Array(7).fill(0), prevData = Array(7).fill(0);
+    for (let i = 0; i < 7; i++) {
+        if (data && data[i]) {
+            nowData[i] = data[i].current;
+            prevData[i] = data[i].previous;
+        }
+    }
     if (dowMode === 'MEDIA') {
         const de = $('fxDuStart').value, ate = $('fxDuEnd').value;
         const occNow = Array(7).fill(0);
         let d = new Date(de+'T12:00:00Z'), end = new Date(ate+'T12:00:00Z');
         while (d <= end) { occNow[d.getDay()]++; d.setDate(d.getDate()+1); }
         
-        const prevDe = new Date(de+'T12:00:00Z'); prevDe.setDate(prevDe.getDate() - len);
-        const prevAte = new Date(prevDe); prevAte.setDate(prevDe.getDate() + len - 1);
+        const occPrev = Array(7).fill(0);
+        d = new Date(de+'T12:00:00Z');
+        d.setDate(d.getDate() - len);
+        const endPrev = new Date(d);
+        endPrev.setDate(d.getDate() + len - 1);
+        while (d <= endPrev) { occPrev[d.getDay()]++; d.setDate(d.getDate()+1); }
         
-        const occPrev = Array(7).fill(0); let dPrev = prevDe;
-        while (dPrev <= prevAte) { occPrev[dPrev.getDay()]++; dPrev.setDate(dPrev.getDate()+1); }
-        
-        nowData = nowData.map((v,i)=> occNow[i] > 0 ? (v/occNow[i]) : 0);
-        prevData = prevData.map((v,i)=> occPrev[i] > 0 ? (v/occPrev[i]) : 0);
+        nowData = nowData.map((v,i)=> occNow[i] > 0 ? Math.round(v/occNow[i]) : 0);
+        prevData = prevData.map((v,i)=> occPrev[i] > 0 ? Math.round(v/occPrev[i]) : 0);
     }
     renderChart('ch_dow', 'bar', dowLabels, [{ label: 'Atual', data: nowData, backgroundColor: '#7b1e3a' }, { label: 'Anterior', data: prevData, backgroundColor: '#9ca3af' }]);
   }
 
-  function updateMonthChart(sourceData, endDate) {
-    const end = new Date(endDate + 'T12:00:00Z');
-    const months = Array(12).fill(0).map((_, i) => {
-        const d = new Date(end);
-        d.setMonth(d.getMonth() - i);
-        return { year: d.getFullYear(), month: d.getMonth() };
-    }).reverse();
+  async function updateMonthChart(endDate) {
+      try {
+        const params = {
+            end_date_iso: endDate,
+            unids_filter: ms.unids.get().length > 0 ? ms.unids.get() : null,
+            cats_filter: ms.cats.get().length > 0 ? ms.cats.get() : null,
+            pratos_filter: ms.pratos.get().length > 0 ? ms.pratos.get() : null,
+            is_pratos_only: $('onlyPratos').checked
+        };
+        const { data, error } = await supa.rpc('get_monthly_sales_chart_data', params);
+        if (error) throw error;
 
-    const nowData = [], prevData = [];
-    
-    for (const { year, month } of months) {
-        const currentMonthSales = sourceData.filter(r => {
-            const d = new Date(r.data + 'T12:00:00Z');
-            return d.getFullYear() === year && d.getMonth() === month;
-        }).reduce((sum, r) => sum + r.quantidade, 0);
+        const labels = (data || []).map(d => formatYM(d.period));
+        const nowData = (data || []).map(d => d.current_total);
+        const prevData = (data || []).map(d => d.prev_total);
 
-        const prevYearMonthSales = sourceData.filter(r => {
-            const d = new Date(r.data + 'T12:00:00Z');
-            return d.getFullYear() === year - 1 && d.getMonth() === month;
-        }).reduce((sum, r) => sum + r.quantidade, 0);
-
-        nowData.push(currentMonthSales);
-        prevData.push(prevYearMonthSales);
-    }
-    
-    const labels = months.map(({ year, month }) => formatYM(`${year}-${String(month + 1).padStart(2, '0')}`));
-    renderChart('ch_month', 'bar', labels, [
-        { label: 'Últimos 12M', data: nowData, backgroundColor: '#7b1e3a' },
-        { label: '12M Anteriores', data: prevData, backgroundColor: '#9ca3af' }
-    ], { plugins: { legend: { display: false } } });
+        renderChart('ch_month', 'bar', labels, [
+          { label: 'Últimos 12M', data: nowData, backgroundColor: '#7b1e3a' },
+          { label: '12M Anteriores', data: prevData, backgroundColor: '#9ca3af' }
+        ], { plugins: { legend: { display: false } } });
+      } catch (e) { console.error("Erro ao carregar gráfico mensal:", e); }
   }
 
-  /* ===================== DATA SOURCES & SYNC ===================== */
-  async function loadFromSupabase() {
-    const { data, error } = await supa.from('vendas_pratos_raw')
-      .select('*, unidades (nome)');
-    if (error) {
-      console.error("Erro ao carregar dados do Supabase:", error);
-      return [];
-    }
-    // Normaliza os dados para o formato que a UI espera
-    return data.map(r => ({
-        data: new Date(r.data + 'T12:00:00Z').toISOString().split('T')[0],
-        prato: r.prato,
-        categoria: r.categoria,
-        quantidade: r.quantidade,
-        unidade_nome: r.unidades?.nome || 'N/A'
-    }));
+  /* ===================== LOOP PRINCIPAL ===================== */
+  async function applyAll(details) {
+    try {
+      const de = details.start, ate = details.end;
+      if (!de || !ate || new Date(de) > new Date(ate)) { return; }
+      const len = daysLen(de, ate);
+      
+      const commonParams = {
+          de_iso: de, ate_iso: ate,
+          unids_filter: ms.unids.get().length > 0 ? ms.unids.get() : null,
+          cats_filter: ms.cats.get().length > 0 ? ms.cats.get() : null,
+          pratos_filter: ms.pratos.get().length > 0 ? ms.pratos.get() : null,
+          is_pratos_only: $('onlyPratos').checked
+      };
+
+      const [kpisResult, dowResult, top10Result] = await Promise.allSettled([
+          supa.rpc('get_pratos_kpis', commonParams),
+          supa.rpc('get_pratos_dow_chart', commonParams),
+          supa.rpc('get_pratos_top10_chart', commonParams)
+      ]);
+
+      if (kpisResult.status === 'fulfilled' && kpisResult.value.data) {
+        updateKPIs(kpisResult.value.data, len);
+      }
+      if (dowResult.status === 'fulfilled' && dowResult.value.data) {
+        updateDowChart(dowResult.value.data, len);
+      }
+      if (top10Result.status === 'fulfilled' && top10Result.value.data) {
+        updateTop10Chart(top10Result.value.data);
+      }
+      
+      // A função get_monthly_sales_chart_data não foi criada no SQL, então será comentada para evitar erros
+      // updateMonthChart(ate);
+
+    } catch (e) { console.error("Erro no applyAll:", e); }
   }
 
-  async function syncAndSaveData(aggregatedData) {
-    console.log("--- INICIANDO PROCESSO DE SINCRONIZAÇÃO E SALVAMENTO ---");
-    
-    // Sincroniza Categorias e Pratos
-    const categorias = [...new Set(aggregatedData.map(r => r.categoria))].filter(Boolean).map(c => ({ nome: c, tipo: 'PRATO', ativo: true }));
-    if(categorias.length > 0) await supa.from('categorias').upsert(categorias, { onConflict: 'nome' });
-    
-    const { data: allCategories } = await supa.from('categorias').select('id, nome');
-    const catMap = new Map(allCategories.map(c => [c.nome, c.id]));
-    
-    const pratos = [...new Set(aggregatedData.map(r => r.prato))].filter(Boolean).map(pNome => {
-        const item = aggregatedData.find(d => d.prato === pNome);
-        return { nome: pNome, categoria_id: catMap.get(item.categoria), ativo: true };
-    }).filter(p => p.categoria_id);
-
-    if (pratos.length > 0) await supa.from('pratos').upsert(pratos, { onConflict: 'nome' });
-    
-    const { data: allUnidades } = await supa.from('unidades').select('id, nome');
-    const unidMap = new Map(allUnidades.map(u => [u.nome, u.id]));
-
-    const unidadesNaoEncontradas = new Set();
-    const vendasParaSalvar = aggregatedData.map(r => {
-        const unidadeNomeCorrigido = r.unidade_nome.replace(/^Unidade\s+/i, '').trim();
-        const unidade_id = unidMap.get(unidadeNomeCorrigido);
-        if (!unidade_id) {
-            unidadesNaoEncontradas.add(r.unidade_nome);
-            return null;
-        }
-        return { data: r.data.toISOString().split('T')[0], prato: r.prato, categoria: r.categoria, quantidade: r.quantidade, unidade_id: unidade_id };
-    }).filter(Boolean);
-
-     if (unidadesNaoEncontradas.size > 0) {
-        alert(`ATENÇÃO: As seguintes Unidades do seu arquivo Excel não foram encontradas no banco de dados e suas vendas foram ignoradas:\n\n- ${[...unidadesNaoEncontradas].join('\n- ')}\n\nPor favor, cadastre essas unidades no sistema de Estoque (com o nome exato, sem "Unidade" na frente) ou corrija o nome na planilha.`);
-    }
-
-    if(vendasParaSalvar.length > 0) {
-        console.log(`Enviando ${vendasParaSalvar.length} registros de vendas para o Supabase...`);
-        const { error: vendasError } = await supa.from('vendas_pratos_raw').upsert(
-            vendasParaSalvar,
-            { onConflict: 'data, prato, unidade_id' }
-        );
-        if (vendasError) {
-             alert("Ocorreu um erro ao salvar os dados de vendas. Verifique o console para detalhes.");
-             console.error("ERRO CRÍTICO ao salvar dados de vendas:", vendasError);
-        } else {
-             alert(`${vendasParaSalvar.length} registros de vendas foram salvos/atualizados com sucesso!`);
-        }
-    } else {
-        alert("Nenhum registro de venda válido foi encontrado para salvar no banco de dados.");
-    }
-    console.log("--- PROCESSO DE SINCRONIZAÇÃO E SALVAMENTO CONCLUÍDO ---");
-  }
-  
-  async function onExcelUpload(file) {
-    if (!file) return;
-    const XLSX = window.XLSX;
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf);
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { raw: true, defval: "" });
-    
-    const pick = (row, keys) => {
-      const low = Object.fromEntries(Object.entries(row||{}).map(([k,v])=>[String(k).toLowerCase(), v]));
-      for (const k of keys){ const kk = String(k).toLowerCase(); const v = low[kk]; if (v!==undefined && v!==null && String(v) !== "") return v; }
-    };
-    const safe = (v)=> String(v ?? "").trim();
-    const toNumber = (v)=>{ if (v==null || v==="") return 0; let s=String(v); s=s.split(".").join(""); s=s.split(",").join("."); const n=Number(s); return Number.isFinite(n)?n:0; };
-    const parseExcelDate = (value)=>{
-      if (value==null) return null;
-      if (typeof value === "number"){ const d=new Date(Date.UTC(1899,11,30) + value * 86400000); return isNaN(d)?null:d; }
-      if (typeof value === "string"){ const d=new Date(value.trim().split(' ')[0].split('/').reverse().join('-') + 'T12:00:00Z'); return isNaN(d)?null:d; }
-      return null;
-    };
-
-    const norm = rows.map(r => ({
-        data: parseExcelDate(pick(r, ["data"])),
-        prato: safe(pick(r, ["prato"])),
-        categoria: safe(pick(r, ["categoria"])),
-        quantidade: toNumber(pick(r, ["quantidade"])),
-        unidade_nome: safe(pick(r, ["unidade"]))
-    })).filter(r => r.data && r.quantidade > 0 && r.prato && r.prato !== '0');
-    
-    // AGREGAÇÃO CORRETA DOS DADOS ANTES DE SALVAR
-    const aggregatedMap = new Map();
-    for (const row of norm) {
-        const key = `${row.data.toISOString().split('T')[0]}|${row.prato}|${row.unidade_nome}`;
-        if (aggregatedMap.has(key)) {
-            aggregatedMap.get(key).quantidade += row.quantidade;
-        } else {
-            aggregatedMap.set(key, { ...row });
-        }
-    }
-    const aggregatedData = Array.from(aggregatedMap.values());
-    console.log(`Recebidos ${norm.length} registros da planilha. Agregados em ${aggregatedData.length} registros únicos.`);
-    
-    await syncAndSaveData(aggregatedData);
-
-    rawData = await loadFromSupabase();
-    
-    if (rawData.length > 0) {
-        lastDay = rawData.reduce((max, r) => r.data > max ? r.data : max, rawData[0].data);
-        await reloadFilterOptions(rawData);
-    }
-    document.dispatchEvent(new Event('filters:init'));
-  }
-
-  /* ===================== INITIALIZATION & UI CONTROLS ===================== */
-  async function reloadFilterOptions(dataSource) {
-    let unids, cats, pratos;
-    if (typeof dataSource === 'object' && dataSource !== null && dataSource.length > 0) {
-        unids = [...new Set(dataSource.map(r => r.unidade_nome))];
-        cats = [...new Set(dataSource.map(r => r.categoria))];
-        pratos = [...new Set(dataSource.map(r => r.prato))];
-    } else {
-        const [unidsRes, catsRes, pratosRes] = await Promise.all([
-            supa.from('vendas_pratos_unidades').select('unidade'),
-            supa.from('vendas_pratos_categorias').select('categoria'),
-            supa.from('vendas_pratos_pratos').select('prato')
-        ]);
-        unids = unidsRes.data?.map(r => r.unidade) || [];
-        cats = catsRes.data?.map(r => r.categoria) || [];
-        pratos = pratosRes.data?.map(r => r.prato) || [];
-    }
-    ms.unids.setOptions(unids);
-    ms.cats.setOptions(cats);
-    ms.pratos.setOptions(pratos);
+  /* ===================== INICIALIZAÇÃO E CONTROLES DA UI ===================== */
+  async function reloadFilterOptions() {
+    // Para simplificar, vamos popular os filtros com base nos dados já existentes em vendas_pratos
+    const [unids, cats, pratos] = await Promise.all([
+      supa.from('vendas_pratos').select('unidade'),
+      supa.from('vendas_pratos').select('categoria'),
+      supa.from('vendas_pratos').select('prato')
+    ]);
+    const unique = (data, key) => [...new Set(data?.map(item => item[key]).filter(Boolean))];
+    ms.unids.setOptions(unique(unids.data, 'unidade'));
+    ms.cats.setOptions(unique(cats.data, 'categoria'));
+    ms.pratos.setOptions(unique(pratos.data, 'prato'));
   }
 
   async function init() {
     try {
-      rawData = await loadFromSupabase();
-
-      if (rawData.length > 0) {
-          lastDay = rawData.reduce((max, r) => r.data > max ? r.data : max, rawData[0].data);
-      } else {
-          lastDay = getTodayISO();
-      }
-      await reloadFilterOptions(rawData);
+      const { data, error } = await supa.from('vendas_pratos').select('data_venda').order('data_venda', {ascending: false}).limit(1);
+      if (error) throw error;
+      lastDay = (data?.length && data[0].data_venda) ? data[0].data_venda : getTodayISO();
+      await reloadFilterOptions();
       document.dispatchEvent(new Event('filters:init'));
-    } catch (e) { 
-      console.error("Erro na inicialização:", e);
-      lastDay = getTodayISO();
-      await reloadFilterOptions([]);
-      document.dispatchEvent(new Event('filters:init'));
-    }
+    } catch (e) { console.error(e); }
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    const fx = { $drop: $('fxDropup'), $btnMore: $('fxBtnMore'), $btnReset: $('fxBtnReset'), $start: $('fxDuStart'), $end: $('fxDuEnd'), $days: $('fxDuQuickDays'), $chips: $('fxQuickChips') };
+    const fx = {
+      $drop: $('fxDropup'), $btnMore: $('fxBtnMore'), $btnReset: $('fxBtnReset'),
+      $start: $('fxDuStart'), $end: $('fxDuEnd'),
+      $days: $('fxDuQuickDays'), $chips: $('fxQuickChips')
+    };
+
     function fxFmt(date){ return date.toISOString().split('T')[0]; }
     function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end); }
+    
     function setNamedPeriod(win) {
         const baseDate = new Date(lastDay + 'T12:00:00Z');
         let start, end;
         if (win === 'today') { start = end = baseDate; } 
-        else if (win === 'yesterday') { start = new Date(baseDate); start.setDate(baseDate.getDate() - 1); end = start; }
-        else if (win === 'lastMonth') { start = new Date(baseDate.getFullYear(), baseDate.getMonth() - 1, 1); end = new Date(baseDate.getFullYear(), baseDate.getMonth(), 0); }
-        else if (win === 'lastYear') { const y = baseDate.getFullYear() - 1; start = new Date(y, 0, 1); end = new Date(y, 11, 31); }
+        else if (win === 'yesterday') {
+            start = new Date(baseDate); start.setDate(baseDate.getDate() - 1); end = start;
+        } else if (win === 'lastMonth') {
+            start = new Date(baseDate.getFullYear(), baseDate.getMonth() - 1, 1);
+            end = new Date(baseDate.getFullYear(), baseDate.getMonth(), 0);
+        } else if (win === 'lastYear') {
+            const y = baseDate.getFullYear() - 1;
+            start = new Date(y, 0, 1); end = new Date(y, 11, 31);
+        }
         if (start && end) { fxSetRange(start, end); fxDispatchApply(); }
     }
+    
     function fxLastNDays(n){
       const end = new Date(lastDay + 'T12:00:00Z');
       const start = new Date(end);
       start.setDate(end.getDate() - (n - 1));
       fxSetRange(start, end);
     }
+
     function fxShowDrop(show){
       fx.$drop.classList.toggle('fx-show', show);
       fx.$btnMore.setAttribute('aria-expanded', show?'true':'false');
@@ -630,30 +493,31 @@
     fx.$btnMore.addEventListener('click', ()=> fxShowDrop(!fx.$drop.classList.contains('fx-show')));
     document.addEventListener('click', (e)=>{ if(!fx.$drop.classList.contains('fx-show')) return; if(!(fx.$drop.contains(e.target) || fx.$btnMore.contains(e.target))) fxShowDrop(false); });
     document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && fx.$drop.classList.contains('fx-show')) fxShowDrop(false) });
+    
     const clearActiveChips = () => [...fx.$chips.children, ...fx.$days.children].forEach(b => b.classList.remove('active'));
 
     fx.$chips.addEventListener('click', e => {
         const btn = e.target.closest('button'); if (!btn) return;
         clearActiveChips(); btn.classList.add('active'); setNamedPeriod(btn.dataset.win);
     });
-    const dateChangeHandler = () => { clearActiveChips(); fxDispatchApply(); };
-    fx.$start.addEventListener('change', dateChangeHandler);
-    fx.$end.addEventListener('change', dateChangeHandler);
+    fx.$start.addEventListener('change', () => { clearActiveChips(); fxDispatchApply(); });
+    fx.$end.addEventListener('change', () => { clearActiveChips(); fxDispatchApply(); });
     fx.$days.addEventListener('click', (e)=>{
       const b=e.target.closest('button'); if(!b) return;
       clearActiveChips(); b.classList.add('active');
-      const n=parseInt(b.dataset.win,10); if(!isNaN(n)) { fxLastNDays(n); fxDispatchApply(); }
+      const n=parseInt(b.dataset.win,10); 
+      if(!isNaN(n)) { fxLastNDays(n); fxDispatchApply(); }
     });
     fx.$btnReset.addEventListener('click', ()=>{
       Object.values(ms).forEach(m => m.clear());
       $('onlyPratos').checked = false;
-      rawData = [];
-      init();
+      clearActiveChips();
+      $('fxDuQuickDays').querySelector('[data-win="30"]').classList.add('active');
+      fxLastNDays(30);
+      fxDispatchApply();
     });
 
-    document.addEventListener('filters:apply', (e) => {
-        if(e.detail) { processAndRender(rawData, e.detail); }
-    });
+    document.addEventListener('filters:apply', (e) => { if(e.detail) { applyAll(e.detail); } });
     
     document.addEventListener('filters:init', () => {
         clearActiveChips();
@@ -661,11 +525,76 @@
         fxLastNDays(30);
         fxDispatchApply();
     });
-    
-    $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
-    $('fileExcel').addEventListener('change', (ev) => onExcelUpload(ev.target.files[0]));
 
     init();
+  });
+  
+  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
+  $('fileExcel').addEventListener('change', async (ev)=>{
+    const file = ev.target.files[0];
+    if (!file) return;
+
+    const btn = $('btnUpload');
+    const originalText = btn.textContent;
+    btn.textContent = 'Enviando...';
+    btn.disabled = true;
+
+    try {
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data);
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        // Converte para JSON, garantindo que cabeçalhos sejam lidos
+        const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        
+        if (json.length < 2) throw new Error("A planilha precisa ter um cabeçalho e pelo menos uma linha de dados.");
+
+        const headers = json[0].map(h => String(h).trim());
+        const requiredHeaders = ['Data', 'Nome do Prato', 'Quantidade', 'Preço Total'];
+        for(const rh of requiredHeaders) {
+            if(!headers.includes(rh)) throw new Error(`Coluna obrigatória não encontrada: "${rh}"`);
+        }
+
+        const rowsToInsert = json.slice(1).map(row => {
+            const rowData = headers.reduce((obj, header, index) => {
+                obj[header] = row[index];
+                return obj;
+            }, {});
+
+            // Tratamento robusto de data
+            let date;
+            if (typeof rowData['Data'] === 'number') { // Formato de data numérico do Excel
+                date = new Date(Math.round((rowData['Data'] - 25569) * 86400 * 1000));
+            } else { // Tenta parsear como string
+                date = new Date(rowData['Data']);
+            }
+             if (isNaN(date.getTime())) return null; // Ignora linhas com data inválida
+
+            return {
+                data_venda: date.toISOString().split('T')[0],
+                prato: rowData['Nome do Prato'],
+                categoria: rowData['Categoria'] || null,
+                unidade: rowData['Unidade'] || null,
+                quantidade: parseFloat(rowData['Quantidade']),
+                preco_total: parseFloat(rowData['Preço Total'])
+            };
+        }).filter(Boolean); // Remove linhas nulas (com data inválida)
+
+        if(rowsToInsert.length === 0) throw new Error("Nenhuma linha válida para importar foi encontrada.");
+
+        const { error } = await supa.from('vendas_pratos').insert(rowsToInsert);
+        if (error) throw error;
+        
+        alert(`${rowsToInsert.length} registros importados com sucesso! O dashboard será atualizado.`);
+        window.location.reload();
+
+    } catch (e) {
+        console.error("Erro no upload:", e);
+        alert(`Erro ao importar: ${e.message}`);
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+        ev.target.value = '';
+    }
   });
   </script>
 </body>
