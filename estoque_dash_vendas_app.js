@@ -294,9 +294,8 @@ document.addEventListener('DOMContentLoaded', () => {
     /* ===================== LÓGICA DE DADOS (KPIs, Gráficos, etc.) ===================== */
     function buildParams(de, ate, analiticos) {
       const isActive = (val) => val && val.length > 0;
-      let p_cancelado = null;
-      if (analiticos.cancelado === 'sim') p_cancelado = 'Sim';
-      if (analiticos.cancelado === 'nao') p_cancelado = 'Não';
+      // CORREÇÃO LÓGICA: O filtro 'cancelado' é tratado no baseQuery, não aqui.
+      // buildParams agora é usado apenas pelos gráficos.
       return {
         p_dini: de, p_dfim: ate,
         p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
@@ -304,22 +303,25 @@ document.addEventListener('DOMContentLoaded', () => {
         p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
         p_canais: isActive(analiticos.canal) ? analiticos.canal : null,
         p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
-        p_cancelado
+        p_cancelado: null // Gráficos sempre consideram tudo
       };
     }
 
-    async function baseQuery(de, ate, analiticos){
+    async function baseQuery(de, ate){
+      // Simplificado para apenas buscar por data, os filtros analíticos são aplicados no cliente.
       const PAGE_SIZE = 5000;
       let allRows = [];
       let page = 0;
       let keepFetching = true;
-      const params = buildParams(de, ate, analiticos);
 
       while (keepFetching) {
-          const { data, error } = await supa.rpc(RPC_FILTER_FUNC, params)
+          const { data, error } = await supa.from('vendas_canon')
+                                          .select('*')
+                                          .gte('dia', de)
+                                          .lte('dia', ate)
                                           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
           if (error) {
-              console.error(`[RPC ${RPC_FILTER_FUNC}]`, error);
+              console.error(`[baseQuery]`, error);
               throw error;
           }
           if (data && data.length > 0) {
@@ -336,21 +338,36 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // NOVA FUNÇÃO-CORE: Calcula todos os KPIs a partir de dados brutos. ÚNICA FONTE DA VERDADE.
-    function calculateKpiMetrics(rows, len) {
-        let fat = 0, des = 0, fre = 0, canc_val = 0;
-        
-        // Filtra as linhas canceladas para o cálculo correto dos pedidos
-        const validRows = rows.filter(r => r.cancelado !== 'Sim');
-        const ped = validRows.length;
-        const canc_ped = rows.length - ped;
-        
-        for (const r of validRows) {
+    function calculateKpiMetrics(rows, len, analiticos) {
+        // VERBOSIDADE E CLAREZA: Lógica de filtragem explícita baseada na seleção do usuário.
+        let processedRows;
+        if (analiticos.cancelado === 'sim') {
+            processedRows = rows.filter(r => r.cancelado === 'Sim');
+        } else if (analiticos.cancelado === 'nao') {
+            processedRows = rows.filter(r => r.cancelado !== 'Sim');
+        } else { // 'ambos'
+            processedRows = rows;
+        }
+
+        let fat = 0, des = 0, fre = 0;
+        let canc_val = 0, canc_ped = 0;
+
+        // Para Faturamento e Pedidos, consideramos apenas os não cancelados, a menos que o filtro seja 'sim'
+        const rowsForFat = (analiticos.cancelado === 'sim') ? [] : rows.filter(r => r.cancelado !== 'Sim');
+        const ped = rowsForFat.length;
+
+        for (const r of rowsForFat) {
             fat += +r.fat || 0;
             des += +r.des || 0;
             fre += +r.fre || 0;
         }
-        for (const r of rows.filter(r => r.cancelado === 'Sim')) {
-            canc_val += +r.fat || 0;
+        
+        // Pedidos e valor cancelado são calculados sobre o total de linhas.
+        for (const r of rows) {
+             if (r.cancelado === 'Sim') {
+                canc_val += +r.fat || 0;
+                canc_ped++;
+            }
         }
         
         return {
@@ -422,7 +439,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const meta = KPI_META[kpiKey] || KPI_META.fat;
         const calculateTrendProjection = (current, previous) => {
             if (current == null || !isFinite(current) || previous == null || !isFinite(previous) || previous === 0) {
-                return { value: current, deltaVal: 0 }; // Se não há tendência, projeta o valor atual.
+                return { value: current, deltaVal: 0 };
             }
             const delta = (current - previous) / previous;
             return { value: current * (1 + delta), deltaVal: delta };
@@ -446,6 +463,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('proj_savassi_val').textContent = projSavassi.value !== null ? formatValueBy(meta.fmt, projSavassi.value * projectionMultiplier) : '—';
         deltaBadge($('proj_savassi_delta'), projSavassi.value, kpiData.savassi[kpiKey]?.current);
     }
+
 
     let chartModeGlobal = 'total';
     const segGlobal = $('segGlobal');
@@ -840,28 +858,42 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // ETAPA 1: Buscar dados brutos. Única chamada de dados massivos.
         const [rowsNow, rowsPrev] = await Promise.all([
-            baseQuery(de, ate, analiticos),
-            baseQuery(dePrev, atePrev, analiticos)
+            baseQuery(de, ate),
+            baseQuery(dePrev, atePrev)
         ]);
 
         // ETAPA 2: Calcular todos os KPIs a partir dos dados brutos (Single Source of Truth).
         const lenNow = DateHelpers.daysLen(de, ate);
         const lenPrev = DateHelpers.daysLen(dePrev, atePrev);
 
-        const kpisTotalNow = calculateKpiMetrics(rowsNow, lenNow);
-        const kpisTotalPrev = calculateKpiMetrics(rowsPrev, lenPrev);
+        // Filtra os dados brutos de acordo com os filtros da UI
+        const filterRows = (rows) => {
+            return rows.filter(r => {
+                if (analiticos.unidade?.length > 0 && !analiticos.unidade.includes(r.unidade)) return false;
+                if (analiticos.loja?.length > 0 && !analiticos.loja.includes(r.loja)) return false;
+                if (analiticos.turno?.length > 0 && !analiticos.turno.includes(r.turno)) return false;
+                if (analiticos.canal?.length > 0 && !analiticos.canal.includes(r.canal)) return false;
+                if (analiticos.pagamento?.length > 0 && !analiticos.pagamento.includes(r.pagamento_base)) return false;
+                return true;
+            });
+        };
 
-        const rowsRajaNow = rowsNow.filter(r => r.unidade === 'Uni.Raja');
-        const rowsRajaPrev = rowsPrev.filter(r => r.unidade === 'Uni.Raja');
-        const kpisRajaNow = calculateKpiMetrics(rowsRajaNow, lenNow);
-        const kpisRajaPrev = calculateKpiMetrics(rowsRajaPrev, lenPrev);
+        const filteredRowsNow = filterRows(rowsNow);
+        const filteredRowsPrev = filterRows(rowsPrev);
+        
+        const kpisTotalNow = calculateKpiMetrics(filteredRowsNow, lenNow, analiticos);
+        const kpisTotalPrev = calculateKpiMetrics(filteredRowsPrev, lenPrev, analiticos);
 
-        const rowsSavassiNow = rowsNow.filter(r => r.unidade === 'Uni.Savassi');
-        const rowsSavassiPrev = rowsPrev.filter(r => r.unidade === 'Uni.Savassi');
-        const kpisSavassiNow = calculateKpiMetrics(rowsSavassiNow, lenNow);
-        const kpisSavassiPrev = calculateKpiMetrics(rowsSavassiPrev, lenPrev);
+        const rowsRajaNow = filteredRowsNow.filter(r => r.unidade === 'Uni.Raja');
+        const rowsRajaPrev = filteredRowsPrev.filter(r => r.unidade === 'Uni.Raja');
+        const kpisRajaNow = calculateKpiMetrics(rowsRajaNow, lenNow, analiticos);
+        const kpisRajaPrev = calculateKpiMetrics(rowsRajaPrev, lenPrev, analiticos);
 
-        // Monta o objeto de dados final e consolidado.
+        const rowsSavassiNow = filteredRowsNow.filter(r => r.unidade === 'Uni.Savassi');
+        const rowsSavassiPrev = filteredRowsPrev.filter(r => r.unidade === 'Uni.Savassi');
+        const kpisSavassiNow = calculateKpiMetrics(rowsSavassiNow, lenNow, analiticos);
+        const kpisSavassiPrev = calculateKpiMetrics(rowsSavassiPrev, lenPrev, analiticos);
+
         const allData = { total: {}, raja: {}, savassi: {} };
         Object.keys(kpisTotalNow).forEach(key => {
             allData.total[key] = { current: kpisTotalNow[key], previous: kpisTotalPrev[key] };
@@ -995,7 +1027,7 @@ document.addEventListener('DOMContentLoaded', () => {
       fx.$days.querySelectorAll('button').forEach(x=> x.classList.remove('fx-active'));
       
       Object.values(ms).forEach(m => m.clear());
-      fxCanceled.value = 'ambos'; // Default para ver todos os pedidos
+      fxCanceled.value = 'nao';
       
       fxLastNDays(30);
       fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
