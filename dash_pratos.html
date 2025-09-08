@@ -135,7 +135,7 @@
       </button>
       <button class="fx-textbtn" id="btnUpload">Importar</button>
       <input id="fileExcel" type="file" accept=".xlsx,.xls,.csv" style="display:none">
-      <button class="fx-textbtn" id="fxBtnReset">Limpar</button>
+      <button class="fx-textbtn" id="fxBtnReset">Limpar/Recarregar</button>
     </div>
   </footer>
 
@@ -217,7 +217,7 @@
     return `${n[m]}/${y}`;
   }
 
-  const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u300-\u036f]/g,'');
+  const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   
   function fxDispatchApply(){
       const payload = { 
@@ -443,14 +443,32 @@
   }
 
   /* ===================== DATA SOURCES & SYNC ===================== */
-  async function syncPratosToDatabase(data) {
-    console.log("Iniciando sincronização de pratos e categorias para o BD...");
+  async function loadFromSupabase() {
+    const { data, error } = await supa.from('vendas_pratos_raw')
+      .select('*, unidades (nome)');
+    if (error) {
+      console.error("Erro ao carregar dados do Supabase:", error);
+      return [];
+    }
+    return data.map(r => ({
+        data: new Date(r.data + 'T12:00:00Z').toISOString().split('T')[0],
+        prato: r.prato,
+        categoria: r.categoria,
+        quantidade: r.quantidade,
+        unidade_nome: r.unidades?.nome || 'N/A'
+    }));
+  }
+
+  async function syncAndSaveData(data) {
+    console.log("Iniciando sincronização e salvamento para o BD...");
+    
+    // 1. Sincroniza Categorias e Pratos
     const categorias = [...new Set(data.map(r => r.categoria))].map(c => ({ nome: c, tipo: 'PRATO', ativo: true }));
     const { error: catError } = await supa.from('categorias').upsert(categorias, { onConflict: 'nome' });
     if (catError) console.error("Erro ao sincronizar categorias:", catError);
     
     const { data: allCategories, error: getCatError } = await supa.from('categorias').select('id, nome');
-    if (getCatError) { console.error("Erro ao buscar categorias para mapeamento:", getCatError); return; }
+    if (getCatError) { console.error("Erro ao buscar categorias:", getCatError); return; }
     const catMap = new Map(allCategories.map(c => [c.nome, c.id]));
     
     const pratos = [...new Set(data.map(r => r.prato))].map(pNome => {
@@ -460,7 +478,23 @@
 
     const { error: pratoError } = await supa.from('pratos').upsert(pratos, { onConflict: 'nome' });
     if (pratoError) console.error("Erro ao sincronizar pratos:", pratoError);
-    else console.log("Sincronização de pratos e categorias concluída.");
+    
+    // 2. Salva os dados de vendas
+    const { data: allUnidades, error: getUnidError } = await supa.from('unidades').select('id, nome');
+    if (getUnidError) { console.error("Erro ao buscar unidades para mapeamento:", getUnidError); return; }
+    const unidMap = new Map(allUnidades.map(u => [u.nome, u.id]));
+
+    const vendasParaSalvar = data.map(r => ({
+        data: r.data,
+        prato: r.prato,
+        categoria: r.categoria,
+        quantidade: r.quantidade,
+        unidade_id: unidMap.get(r.unidade_nome)
+    })).filter(v => v.unidade_id);
+
+    const { error: vendasError } = await supa.from('vendas_pratos_raw').upsert(vendasParaSalvar);
+    if (vendasError) console.error("Erro ao salvar dados de vendas:", vendasError);
+    else console.log("Sincronização e salvamento de dados concluídos.");
   }
   
   async function onExcelUpload(file) {
@@ -491,7 +525,7 @@
         unidade_nome: safe(pick(r, ["unidade", "loja"]))
     })).filter(r => r.data && r.quantidade > 0);
     
-    await syncPratosToDatabase(norm);
+    await syncAndSaveData(norm);
 
     rawData = norm.map(r => ({ ...r, data: r.data.toISOString().split('T')[0] }));
     
@@ -526,26 +560,15 @@
 
   async function init() {
     try {
-        const { data, error } = await supa.from('vendas_pratos_raw')
-            .select('*, unidades (nome)');
+      rawData = await loadFromSupabase();
 
-        if (error) throw error;
-        
-        rawData = data.map(r => ({
-            data: r.data,
-            prato: r.prato,
-            categoria: r.categoria,
-            quantidade: r.quantidade,
-            unidade_nome: r.unidades?.nome || 'N/A'
-        }));
-
-        if (rawData.length > 0) {
-            lastDay = rawData.reduce((max, r) => r.data > max ? r.data : max, rawData[0].data);
-        } else {
-            lastDay = getTodayISO();
-        }
-        await reloadFilterOptions(rawData);
-        document.dispatchEvent(new Event('filters:init'));
+      if (rawData.length > 0) {
+          lastDay = rawData.reduce((max, r) => r.data > max ? r.data : max, rawData[0].data);
+      } else {
+          lastDay = getTodayISO();
+      }
+      await reloadFilterOptions(rawData);
+      document.dispatchEvent(new Event('filters:init'));
     } catch (e) { 
       console.error("Erro na inicialização:", e);
       lastDay = getTodayISO();
@@ -599,6 +622,7 @@
     fx.$btnReset.addEventListener('click', ()=>{
       Object.values(ms).forEach(m => m.clear());
       $('onlyPratos').checked = false;
+      rawData = []; // Limpa os dados do Excel
       init(); // Recarrega os dados do Supabase
     });
 
