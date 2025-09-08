@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -758,7 +758,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===================================================================================
     // LÓGICA PARA A ABA DE DIAGNÓSTICO
     // ===================================================================================
-
     function updateDiagnosticTab(kpi_key, allKpiValues) {
       const heroCard = document.querySelector('#tab-diagnostico .hero');
       if (!heroCard || !allKpiValues || !allKpiValues[kpi_key]) return;
@@ -793,7 +792,8 @@ document.addEventListener('DOMContentLoaded', () => {
           
           const [
             finNowResult, finPrevResult,
-            { count: pedNowCount }, { count: pedPrevCount },
+            { count: pedNowCount },
+            { count: pedPrevCount },
             { count: cnCount }, { count: vnCount },
             { count: cpCount }, { count: vpCount }
           ] = await Promise.all([
@@ -881,12 +881,14 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // VERSÃO DE DIAGNÓSTICO PARA INSIGHTS
+    // VERSÃO FINAL CORRIGIDA
     async function updateInsights(de, ate, analiticos, kpi_key) {
         const insightsContainer = document.querySelector('#tab-diagnostico .ins-list');
-        if (!insightsContainer) return;
+        const contextContainer = document.querySelector('#tab-diagnostico .hero-context');
+        if (!insightsContainer || !contextContainer) return;
 
-        insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px;">Gerando insights...</p>';
+        insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px;">Gerando insights...</p>`;
+        contextContainer.innerHTML = '<strong>Destaques:</strong> Carregando...';
 
         try {
             const isActive = (val) => val && val.length > 0;
@@ -899,34 +901,44 @@ document.addEventListener('DOMContentLoaded', () => {
                 p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
                 p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null
             };
-            
+
             const { data, error } = await supa.rpc(RPC_DIAGNOSTIC_FUNC, params);
 
             if (error) throw error;
+            if (!data) throw new Error("A resposta da função de diagnóstico está vazia.");
             
-            // --- INÍCIO DO CÓDIGO DE DIAGNÓSTICO ---
-            console.log("================================================");
-            console.log(">>> RESPOSTA EXATA DA FUNÇÃO DE INSIGHTS (IA) <<<");
-            console.log(JSON.stringify(data, null, 2)); // Mostra o objeto de forma legível
-            console.log("================================================");
-            // --- FIM DO CÓDIGO DE DIAGNÓSTICO ---
+            // ATUALIZAÇÃO DA SEÇÃO DE DESTAQUES (CONTEXT)
+            if(data.context) {
+                const { top_stores, top_hours, top_channels } = data.context;
+                let contextHTML = '<strong>Destaques:</strong> ';
+                if(top_stores && top_stores.length > 0) contextHTML += `Lojas: ${top_stores.join(' • ')} • `;
+                if(top_hours && top_hours.length > 0) contextHTML += `Horário: ${top_hours.join(' • ')} • `;
+                if(top_channels && top_channels.length > 0) contextHTML += `Canal: ${top_channels.join(' • ')}`;
+                contextContainer.innerHTML = contextHTML;
+            }
 
-            const insightsArray = Array.isArray(data) ? data : (data ? [data] : []);
+            // ATUALIZAÇÃO DA SEÇÃO DE INSIGHTS (TEXTO)
+            const insightsArray = Array.isArray(data.insights) ? data.insights : (data.insights ? [data.insights] : []);
 
             if (insightsArray.length === 0) {
-                insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px;">Nenhum insight encontrado para este período.</p>';
+                insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px;">Nenhum insight de texto gerado para este período.</p>';
                 return;
             }
 
             let allInsightsHTML = '';
             insightsArray.forEach(insight => {
+                const type = insight.type || '';
+                const title = insight.title || 'Insight sem título';
+                const subtitle = insight.subtitle || '';
+                const action = insight.action || '';
+                
                 const insightHTML = `
-                    <div class="ins-card ${insight.type || ''}">
+                    <div class="ins-card ${type}">
                         <div class="dot"></div>
                         <div>
-                            <div class="ins-title">${insight.title || 'Insight sem título'}</div>
-                            <div class="ins-sub">${insight.subtitle || ''}</div>
-                            <div class="ins-action">${insight.action || ''}</div>
+                            <div class="ins-title">${title}</div>
+                            <div class="ins-sub">${subtitle}</div>
+                            <div class="ins-action">${action}</div>
                         </div>
                     </div>
                 `;
@@ -936,7 +948,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (e) {
             console.error("Erro ao carregar insights de IA:", e);
-            insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px; color: var(--down);">Erro ao carregar insights.</p>';
+            insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px; color: var(--down);">Erro ao carregar insights.</p>`;
+            contextContainer.innerHTML = '<strong>Destaques:</strong> Erro ao carregar.';
         }
     }
 
