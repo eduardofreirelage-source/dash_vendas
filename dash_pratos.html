@@ -44,7 +44,7 @@
   <div class="wrap">
     <main class="main main-content">
       <div class="top">
-        <div class="brand">Dashboard de Pratos</div>
+        <div class="brand">Dashboard de Vendas</div>
         <div class="seg" id="segDowMode">
             <button data-mode="TOTAL" class="active">TOTAL</button>
             <button data-mode="MEDIA">MÉDIA</button>
@@ -344,12 +344,10 @@
     const cur = sourceData.filter(r => filterRow(r, new Date(de + 'T00:00:00Z'), new Date(ate + 'T23:59:59Z')));
     const prv = sourceData.filter(r => filterRow(r, prev_de, prev_ate));
 
-    // KPIs
     const kpis = { current_total: cur.reduce((a, b) => a + b.quantidade, 0), current_unique: new Set(cur.map(r => r.prato)).size };
     const prevKpis = { prev_total: prv.reduce((a, b) => a + b.quantidade, 0), prev_unique: new Set(prv.map(r => r.prato)).size };
     updateKPIs(kpis, prevKpis, len);
 
-    // Top 10 Chart
     const top10Data = {};
     const agg = new Map();
     cur.forEach(r => agg.set(r.prato, (agg.get(r.prato) || 0) + r.quantidade));
@@ -358,13 +356,11 @@
     top10Data.menos_vendidos = sorted.filter(p => p[1] > 0).slice(-10).reverse().map(([prato, total]) => ({ prato, total }));
     updateTop10Chart(top10Data);
     
-    // DOW Chart
     const dowData = { now: Array(7).fill(0), prev: Array(7).fill(0) };
     cur.forEach(r => { dowData.now[new Date(r.data + 'T12:00:00Z').getDay()] += r.quantidade; });
     prv.forEach(r => { dowData.prev[new Date(r.data + 'T12:00:00Z').getDay()] += r.quantidade; });
     updateDowChart(dowData, len);
 
-    // Month Chart
     updateMonthChart(sourceData, ate);
   }
 
@@ -460,10 +456,9 @@
   }
 
   async function syncAndSaveData(data) {
-    console.log("--- INICIANDO PROCESSO DE SINCRONIZAÇÃO E SALVAMENTO ---");
-    console.log(`Recebidos ${data.length} registros da planilha.`);
+    alert("Iniciando sincronização com o banco de dados. Por favor, aguarde...");
+    console.log("Iniciando sincronização e salvamento para o BD...");
     
-    // Sincroniza Categorias e Pratos
     const categorias = [...new Set(data.map(r => r.categoria))].filter(Boolean).map(c => ({ nome: c, tipo: 'PRATO', ativo: true }));
     if(categorias.length > 0) {
         const { error: catError } = await supa.from('categorias').upsert(categorias, { onConflict: 'nome' });
@@ -484,59 +479,38 @@
         if (pratoError) console.error("Erro ao sincronizar pratos:", pratoError);
     }
     
-    // Adiciona ou atualiza (Upsert) os dados de vendas
-    console.log("Mapeando dados de vendas para o formato do banco de dados...");
     const { data: allUnidades, error: getUnidError } = await supa.from('unidades').select('id, nome');
-    if (getUnidError) {
-        console.error("ERRO CRÍTICO: Não foi possível buscar a lista de unidades do banco de dados.", getUnidError);
-        alert("ERRO: Não foi possível buscar a lista de unidades. Verifique o console.");
-        return;
-    }
+    if (getUnidError) { alert("ERRO: Não foi possível buscar a lista de unidades. Verifique o console."); return; }
     const unidMap = new Map(allUnidades.map(u => [u.nome, u.id]));
-    console.log("Mapa de Unidades criado:", unidMap);
+    console.log("Mapa de Unidades do BD:", unidMap);
 
-    let successfullyMapped = 0;
-    let failedToMap = 0;
     const unidadesNaoEncontradas = new Set();
-
     const vendasParaSalvar = data.map(r => {
-        const unidade_id = unidMap.get(r.unidade_nome);
+        const unidadeNomeCorrigido = r.unidade_nome.replace(/^Unidade\s+/i, '').trim();
+        const unidade_id = unidMap.get(unidadeNomeCorrigido);
         if (!unidade_id) {
             unidadesNaoEncontradas.add(r.unidade_nome);
-            failedToMap++;
-        } else {
-            successfullyMapped++;
+            return null;
         }
-        return {
-            data: r.data,
-            prato: r.prato,
-            categoria: r.categoria,
-            quantidade: r.quantidade,
-            unidade_id: unidade_id
-        };
-    }).filter(v => v.unidade_id);
+        return { data: r.data, prato: r.prato, categoria: r.categoria, quantidade: r.quantidade, unidade_id: unidade_id };
+    }).filter(Boolean);
 
-    console.log(`Mapeamento concluído: ${successfullyMapped} linhas mapeadas com sucesso, ${failedToMap} falharam.`);
      if (unidadesNaoEncontradas.size > 0) {
-        alert(`ATENÇÃO: As seguintes Unidades/Lojas do seu arquivo Excel não foram encontradas no banco de dados e suas vendas foram ignoradas:\n\n- ${[...unidadesNaoEncontradas].join('\n- ')}\n\nPor favor, cadastre essas unidades no sistema de Estoque ou corrija o nome na planilha.`);
+        alert(`ATENÇÃO: As seguintes Unidades do seu arquivo Excel não foram encontradas no banco de dados e suas vendas foram ignoradas:\n\n- ${[...unidadesNaoEncontradas].join('\n- ')}\n\nPor favor, cadastre essas unidades no sistema de Estoque (com o nome exato, sem "Unidade" na frente) ou corrija o nome na planilha.`);
     }
 
     if(vendasParaSalvar.length > 0) {
         console.log(`Enviando ${vendasParaSalvar.length} registros de vendas para o Supabase...`);
-        const { error: vendasError } = await supa.from('vendas_pratos_raw').upsert(
-            vendasParaSalvar,
-            { onConflict: 'data, prato, unidade_id' }
-        );
+        const { error: vendasError } = await supa.from('vendas_pratos_raw').upsert(vendasParaSalvar, { onConflict: 'data, prato, unidade_id' });
         if (vendasError) {
              console.error("ERRO CRÍTICO ao salvar dados de vendas:", vendasError);
-             alert("Ocorreu um erro ao salvar os dados de vendas no banco de dados. Verifique o console para detalhes.");
+             alert("Ocorreu um erro ao salvar os dados de vendas. Verifique o console para detalhes.");
         } else {
-             alert(`${vendasParaSalvar.length} registros de vendas foram salvos com sucesso no banco de dados!`);
+             alert(`${vendasParaSalvar.length} registros de vendas foram salvos/atualizados com sucesso!`);
         }
-    } else if (failedToMap > 0) {
-        console.error("NENHUM DADO DE VENDA FOI SALVO.");
+    } else {
+        alert("Nenhum registro de venda válido foi encontrado para salvar no banco de dados.");
     }
-    
     console.log("--- PROCESSO DE SINCRONIZAÇÃO E SALVAMENTO CONCLUÍDO ---");
   }
   
@@ -545,7 +519,7 @@
     const XLSX = window.XLSX;
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf);
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { raw: true });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { raw: true, defval: "" });
     
     const pick = (row, keys) => {
       const low = Object.fromEntries(Object.entries(row||{}).map(([k,v])=>[String(k).toLowerCase(), v]));
@@ -562,15 +536,15 @@
 
     const norm = rows.map(r => ({
         data: parseExcelDate(pick(r, ["data", "data venda"])),
-        prato: safe(pick(r, ["produto", "prato"])),
+        prato: safe(pick(r, ["prato", "produto"])),
         categoria: safe(pick(r, ["categoria"])),
         quantidade: toNumber(pick(r, ["quantidade", "qtd"])),
         unidade_nome: safe(pick(r, ["unidade", "loja"]))
-    })).filter(r => r.data && r.quantidade > 0);
+    })).filter(r => r.data && r.quantidade > 0 && r.prato && r.prato !== '0');
     
     await syncAndSaveData(norm);
 
-    rawData = norm.map(r => ({ ...r, data: r.data.toISOString().split('T')[0] }));
+    rawData = await loadFromSupabase();
     
     if (rawData.length > 0) {
         lastDay = rawData.reduce((max, r) => r.data > max ? r.data : max, rawData[0].data);
@@ -665,8 +639,8 @@
     fx.$btnReset.addEventListener('click', ()=>{
       Object.values(ms).forEach(m => m.clear());
       $('onlyPratos').checked = false;
-      rawData = []; // Limpa os dados em memória
-      init(); // Recarrega os dados do Supabase
+      rawData = [];
+      init();
     });
 
     document.addEventListener('filters:apply', (e) => {
