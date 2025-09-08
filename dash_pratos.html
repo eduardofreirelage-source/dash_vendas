@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Dash Pratos</title>
+  <title>Dash Pratos (Modo Depuração)</title>
   <style>
     :root{
       --bg:#f7f7fa; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e5e7eb;
@@ -462,8 +462,8 @@
   async function syncAndSaveData(data) {
     console.log("Iniciando sincronização e salvamento para o BD...");
     
-    // 1. Sincroniza Categorias e Pratos
-    const categorias = [...new Set(data.map(r => r.categoria))].map(c => ({ nome: c, tipo: 'PRATO', ativo: true }));
+    // Sincroniza Categorias e Pratos
+    const categorias = [...new Set(data.map(r => r.categoria))].filter(Boolean).map(c => ({ nome: c, tipo: 'PRATO', ativo: true }));
     if(categorias.length > 0) {
         const { error: catError } = await supa.from('categorias').upsert(categorias, { onConflict: 'nome' });
         if (catError) console.error("Erro ao sincronizar categorias:", catError);
@@ -473,7 +473,7 @@
     if (getCatError) { console.error("Erro ao buscar categorias:", getCatError); return; }
     const catMap = new Map(allCategories.map(c => [c.nome, c.id]));
     
-    const pratos = [...new Set(data.map(r => r.prato))].map(pNome => {
+    const pratos = [...new Set(data.map(r => r.prato))].filter(Boolean).map(pNome => {
         const item = data.find(d => d.prato === pNome);
         return { nome: pNome, categoria_id: catMap.get(item.categoria), ativo: true };
     }).filter(p => p.categoria_id);
@@ -483,7 +483,7 @@
         if (pratoError) console.error("Erro ao sincronizar pratos:", pratoError);
     }
     
-    // 2. Adiciona ou atualiza (Upsert) os dados de vendas
+    // Adiciona ou atualiza (Upsert) os dados de vendas
     const { data: allUnidades, error: getUnidError } = await supa.from('unidades').select('id, nome');
     if (getUnidError) { console.error("Erro ao buscar unidades:", getUnidError); return; }
     const unidMap = new Map(allUnidades.map(u => [u.nome, u.id]));
@@ -497,7 +497,6 @@
     })).filter(v => v.unidade_id);
 
     if(vendasParaSalvar.length > 0) {
-        // Usa UPSERT em vez de INSERT para adicionar ou atualizar
         const { error: vendasError } = await supa.from('vendas_pratos_raw').upsert(
             vendasParaSalvar,
             { onConflict: 'data, prato, unidade_id' }
@@ -538,8 +537,7 @@
     
     await syncAndSaveData(norm);
 
-    // Após salvar, recarrega TODOS os dados do banco para ter a visão completa
-    rawData = await loadFromSupabase();
+    rawData = norm.map(r => ({ ...r, data: r.data.toISOString().split('T')[0] }));
     
     if (rawData.length > 0) {
         lastDay = rawData.reduce((max, r) => r.data > max ? r.data : max, rawData[0].data);
@@ -634,7 +632,7 @@
     fx.$btnReset.addEventListener('click', ()=>{
       Object.values(ms).forEach(m => m.clear());
       $('onlyPratos').checked = false;
-      rawData = []; // Limpa os dados do Excel
+      rawData = []; // Limpa os dados em memória
       init(); // Recarrega os dados do Supabase
     });
 
