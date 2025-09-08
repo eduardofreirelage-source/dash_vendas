@@ -63,7 +63,6 @@ function setupRouting() {
     });
   });
   
-  // CORREÇÃO: Assegurar que o roteamento de sub-abas seja aplicado a ambos os menus
   setupSubTabs('cadastro-subtabs', '#tab-cadastros .subpage');
   setupSubTabs('estoque-subtabs', '#tab-estoque .subpage');
 }
@@ -994,6 +993,7 @@ const EstoqueModule = {
        if (!tbody) return;
        tbody.innerHTML = '<tr><td colspan="6">Carregando saldos...</td></tr>';
        try {
+           console.log("Iniciando loadSaldos...");
            const { data, error } = await supa.from('estoque_saldo').select(`
                 saldo_atual,
                 item_tipo,
@@ -1001,9 +1001,19 @@ const EstoqueModule = {
                 ingredientes ( nome, estoque_minimo, estoque_maximo, unidades_medida(sigla) )
             `).eq('item_tipo', 'INGREDIENTE');
 
+            // DEBUG: Exibe a resposta crua do Supabase no console
+            console.log("Dados recebidos do Supabase:", data);
+            console.error("Erro recebido do Supabase:", error);
+
            if (error) throw error;
            
-           tbody.innerHTML = '';
+            tbody.innerHTML = '';
+            if (data.length === 0) {
+                console.warn("Nenhum dado de saldo encontrado para exibir.");
+                tbody.innerHTML = '<tr><td colspan="6">Nenhum saldo encontrado.</td></tr>';
+                return; // Interrompe a função se não houver dados
+            }
+
            data.forEach(item => {
                if (!item.ingredientes) return; 
                const saldo = item.saldo_atual;
@@ -1026,7 +1036,7 @@ const EstoqueModule = {
                tbody.appendChild(tr);
            });
        } catch(e) {
-           tbody.innerHTML = `<tr><td colspan="6">Erro ao carregar saldos. Verifique o console.</td></tr>`;
+           tbody.innerHTML = `<tr><td colspan="6">Erro ao carregar saldos. Verifique o console do navegador.</td></tr>`;
            console.error("Erro em loadSaldos:", e);
        }
     },
@@ -1263,8 +1273,8 @@ async function init(){
     await loadPratos(); 
     await loadReceitas(); 
     await loadIngredientes(); 
-    await preencherCategorias(); 
-    await populateStockFilters(); // Adicionado para carregar filtro de categoria do estoque
+    await preencherCategorias();
+    await populateStockFilters();
     await loadDash?.();
     EstoqueModule.init();
     setStatus('Pronto','ok');
