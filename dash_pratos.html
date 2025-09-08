@@ -464,8 +464,10 @@
     
     // 1. Sincroniza Categorias e Pratos
     const categorias = [...new Set(data.map(r => r.categoria))].map(c => ({ nome: c, tipo: 'PRATO', ativo: true }));
-    const { error: catError } = await supa.from('categorias').upsert(categorias, { onConflict: 'nome' });
-    if (catError) console.error("Erro ao sincronizar categorias:", catError);
+    if(categorias.length > 0) {
+        const { error: catError } = await supa.from('categorias').upsert(categorias, { onConflict: 'nome' });
+        if (catError) console.error("Erro ao sincronizar categorias:", catError);
+    }
     
     const { data: allCategories, error: getCatError } = await supa.from('categorias').select('id, nome');
     if (getCatError) { console.error("Erro ao buscar categorias:", getCatError); return; }
@@ -476,12 +478,14 @@
         return { nome: pNome, categoria_id: catMap.get(item.categoria), ativo: true };
     }).filter(p => p.categoria_id);
 
-    const { error: pratoError } = await supa.from('pratos').upsert(pratos, { onConflict: 'nome' });
-    if (pratoError) console.error("Erro ao sincronizar pratos:", pratoError);
+    if (pratos.length > 0) {
+        const { error: pratoError } = await supa.from('pratos').upsert(pratos, { onConflict: 'nome' });
+        if (pratoError) console.error("Erro ao sincronizar pratos:", pratoError);
+    }
     
-    // 2. Salva os dados de vendas
+    // 2. Adiciona ou atualiza (Upsert) os dados de vendas
     const { data: allUnidades, error: getUnidError } = await supa.from('unidades').select('id, nome');
-    if (getUnidError) { console.error("Erro ao buscar unidades para mapeamento:", getUnidError); return; }
+    if (getUnidError) { console.error("Erro ao buscar unidades:", getUnidError); return; }
     const unidMap = new Map(allUnidades.map(u => [u.nome, u.id]));
 
     const vendasParaSalvar = data.map(r => ({
@@ -492,9 +496,16 @@
         unidade_id: unidMap.get(r.unidade_nome)
     })).filter(v => v.unidade_id);
 
-    const { error: vendasError } = await supa.from('vendas_pratos_raw').upsert(vendasParaSalvar);
-    if (vendasError) console.error("Erro ao salvar dados de vendas:", vendasError);
-    else console.log("Sincronização e salvamento de dados concluídos.");
+    if(vendasParaSalvar.length > 0) {
+        // Usa UPSERT em vez de INSERT para adicionar ou atualizar
+        const { error: vendasError } = await supa.from('vendas_pratos_raw').upsert(
+            vendasParaSalvar,
+            { onConflict: 'data, prato, unidade_id' }
+        );
+        if (vendasError) console.error("Erro ao salvar dados de vendas:", vendasError);
+    }
+    
+    console.log("Sincronização e salvamento de dados concluídos.");
   }
   
   async function onExcelUpload(file) {
@@ -527,7 +538,8 @@
     
     await syncAndSaveData(norm);
 
-    rawData = norm.map(r => ({ ...r, data: r.data.toISOString().split('T')[0] }));
+    // Após salvar, recarrega TODOS os dados do banco para ter a visão completa
+    rawData = await loadFromSupabase();
     
     if (rawData.length > 0) {
         lastDay = rawData.reduce((max, r) => r.data > max ? r.data : max, rawData[0].data);
