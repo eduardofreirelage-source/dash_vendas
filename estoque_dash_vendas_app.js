@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -422,64 +422,83 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
-      const fetchAndCalculateForUnit = async (unitName) => {
+        // CORREÇÃO: Esta função agora renderiza o KPI Master também.
+        const mainKpiCard = $('hero_main_kpi');
+        const mainValueEl = mainKpiCard.querySelector('.hero-value-number');
+        const mainDeltaEl = mainKpiCard.querySelector('.delta');
+        const mainSubEl = mainKpiCard.querySelector('.hero-sub-value');
+        
+        // Renderiza o KPI Master usando os dados globais
+        const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
+        if(totalKpis && totalKpis[kpi_key]) {
+            const meta = KPI_META[kpi_key];
+            mainValueEl.textContent = formatValueBy(meta.fmt, totalKpis[kpi_key].current);
+            mainSubEl.textContent = 'Anterior: ' + formatValueBy(meta.fmt, totalKpis[kpi_key].previous);
+            deltaBadge(mainDeltaEl, totalKpis[kpi_key].current, totalKpis[kpi_key].previous);
+        }
+
+        const fetchAndCalculateForUnit = async (unitName) => {
           const unitAnaliticos = { ...analiticos, unidade: [unitName] };
-          // Reutiliza a função principal de KPIs, agora com filtro de unidade
           return await updateKPIs(de, ate, dePrev, atePrev, unitAnaliticos);
-      };
+        };
       
-      try {
-          const [rajaKpis, savassiKpis] = await Promise.all([
-            fetchAndCalculateForUnit('Uni.Raja'), 
-            fetchAndCalculateForUnit('Uni.Savassi')
-          ]);
+        try {
+            const [rajaKpis, savassiKpis] = await Promise.all([
+              fetchAndCalculateForUnit('Uni.Raja'), 
+              fetchAndCalculateForUnit('Uni.Savassi')
+            ]);
 
-          const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
-          const renderUnit = (unitId, unitData) => {
-            const card = $(unitId);
-            const data = unitData?.[kpi_key];
-            if (card && data) {
-              card.querySelector('.unit-kpi-value').textContent = formatValueBy(kpiMeta.fmt, data.current);
-              card.querySelector('.unit-kpi-sub').textContent = 'Anterior: ' + formatValueBy(kpiMeta.fmt, data.previous);
-              deltaBadge(card.querySelector('.delta'), data.current, data.previous);
-            }
-          };
+            const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
+            const renderUnit = (unitId, unitData) => {
+              const card = $(unitId);
+              const data = unitData?.[kpi_key];
+              if (card && data) {
+                card.querySelector('.unit-kpi-value').textContent = formatValueBy(kpiMeta.fmt, data.current);
+                card.querySelector('.unit-kpi-sub').textContent = 'Anterior: ' + formatValueBy(kpiMeta.fmt, data.previous);
+                deltaBadge(card.querySelector('.delta'), data.current, data.previous);
+              }
+            };
 
-          renderUnit('unit-kpi-raja', rajaKpis);
-          renderUnit('unit-kpi-savassi', savassiKpis);
-          
-          return { raja: rajaKpis, savassi: savassiKpis };
-      } catch(e) {
-          console.error("Erro ao renderizar KPIs de unidade:", e);
-          return null;
-      }
+            renderUnit('unit-kpi-raja', rajaKpis);
+            renderUnit('unit-kpi-savassi', savassiKpis);
+            
+            return { total: totalKpis, raja: rajaKpis, savassi: savassiKpis };
+        } catch(e) {
+            console.error("Erro ao renderizar KPIs de unidade:", e);
+            return null;
+        }
     }
     
-    function updateProjections(totalKpiData, unitKpiData, kpiKey) {
+    function updateProjections(kpiData, kpiKey) {
         const meta = KPI_META[kpiKey] || KPI_META.fat;
         
         const calculateTrendProjection = (current, previous) => {
             if (current == null || !isFinite(current) || previous == null || !isFinite(previous) || previous === 0) {
-                return null;
+                return { value: null, delta: null };
             }
             const delta = (current - previous) / previous;
-            return current * (1 + delta);
+            return { value: current * (1 + delta), delta: delta };
         };
         
         const len = DateHelpers.daysLen(fx.$start.value, fx.$end.value);
-        const projectionMultiplier = len > 0 ? projectionDays / len : 0;
+        const projectionMultiplier = len > 0 ? projectionDays / len : 1;
         
-        const totalProjectedValue = totalKpiData ? calculateTrendProjection(totalKpiData[kpiKey].current, totalKpiData[kpiKey].previous) : null;
+        // Projeção Total
+        const projTotal = kpiData?.total ? calculateTrendProjection(kpiData.total[kpiKey].current, kpiData.total[kpiKey].previous) : { value: null };
         $('proj_total_label').textContent = `PROJEÇÃO ${meta.label.toUpperCase()} (${projectionDays}D)`;
-        $('proj_total_val').textContent = totalProjectedValue !== null ? formatValueBy(meta.fmt, totalProjectedValue * projectionMultiplier) : '—';
+        $('proj_total_val').textContent = projTotal.value !== null ? formatValueBy(meta.fmt, projTotal.value * projectionMultiplier) : '—';
+        deltaBadge($('proj_total_delta'), projTotal.value, kpiData?.total[kpiKey].current);
 
-        const rajaProjectedValue = unitKpiData?.raja ? calculateTrendProjection(unitKpiData.raja[kpiKey].current, unitKpiData.raja[kpiKey].previous) : null;
+        // Projeções por Unidade
+        const projRaja = kpiData?.raja ? calculateTrendProjection(kpiData.raja[kpiKey].current, kpiData.raja[kpiKey].previous) : { value: null };
         $('proj_raja_label').textContent = `UNI.RAJA - ${meta.label}`;
-        $('proj_raja_val').textContent = rajaProjectedValue !== null ? formatValueBy(meta.fmt, rajaProjectedValue * projectionMultiplier) : '—';
+        $('proj_raja_val').textContent = projRaja.value !== null ? formatValueBy(meta.fmt, projRaja.value * projectionMultiplier) : '—';
+        deltaBadge($('proj_raja_delta'), projRaja.value, kpiData?.raja[kpiKey].current);
         
-        const savassiProjectedValue = unitKpiData?.savassi ? calculateTrendProjection(unitKpiData.savassi[kpiKey].current, unitKpiData.savassi[kpiKey].previous) : null;
+        const projSavassi = kpiData?.savassi ? calculateTrendProjection(kpiData.savassi[kpiKey].current, kpiData.savassi[kpiKey].previous) : { value: null };
         $('proj_savassi_label').textContent = `UNI.SAVASSI - ${meta.label}`;
-        $('proj_savassi_val').textContent = savassiProjectedValue !== null ? formatValueBy(meta.fmt, savassiProjectedValue * projectionMultiplier) : '—';
+        $('proj_savassi_val').textContent = projSavassi.value !== null ? formatValueBy(meta.fmt, projSavassi.value * projectionMultiplier) : '—';
+        deltaBadge($('proj_savassi_delta'), projSavassi.value, kpiData?.savassi[kpiKey].current);
     }
 
 
@@ -915,14 +934,17 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const selectedKpiKey = $('kpi-select').value;
         
+        // CORREÇÃO: `updateKPIs` é chamado primeiro para renderizar a aba principal.
         const allKpiValues = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
-        const unitKpiValues = await getAndRenderUnitKPIs(selectedKpiKey, de, ate, dePrev, atePrev, analiticos);
+        
+        // Em seguida, `getAndRenderUnitKPIs` renderiza o painel de diagnóstico e retorna os dados.
+        const allDataForProjections = await getAndRenderUnitKPIs(selectedKpiKey, de, ate, dePrev, atePrev, analiticos);
 
-        if (allKpiValues && unitKpiValues) {
-            // A função de projeção é chamada aqui, após todos os dados estarem disponíveis
-            updateProjections(allKpiValues, unitKpiValues, selectedKpiKey);
+        if (allDataForProjections) {
+            updateProjections(allDataForProjections.total, allDataForProjections, selectedKpiKey);
         }
         
+        // Demais gráficos que não têm dependências complexas.
         await Promise.all([
           updateCharts(de, ate, dePrev, atePrev, analiticos),
           updateMonth12x12(analiticos),
