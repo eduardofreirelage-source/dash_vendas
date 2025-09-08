@@ -780,6 +780,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
+    // VERSÃO FINAL CORRIGIDA com os nomes corretos ("Uni.Raja", "Uni.Savassi")
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
       
       const fetchAndCalculateForUnit = async (unitName) => {
