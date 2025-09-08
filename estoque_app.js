@@ -78,20 +78,40 @@ async function fillOptionsFrom(table, selId, valKey, labelKey, whereEq){
   }
 }
 
+// ============================================================================
+// FUNÇÃO loadPratos CORRIGIDA PARA COMUNICAR COM O DASHBOARD
+// ============================================================================
 async function loadPratos(){
   const tb=$('#tblPratos')?.querySelector('tbody'); if(!tb) return;
-  tb.innerHTML='<tr><td colspan="5">Carregando…</td></tr>';
-  const {data,error} = await supa.from('v_pratos_resumo').select('*').order('nome',{ascending:true});
-  if(error) return tb.innerHTML='<tr><td colspan="5">Erro ao carregar pratos.</td></tr>';
-  tb.innerHTML = '';
-  (data||[]).forEach(p=>{
-    const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${p.nome}</td><td>${p.categoria?.nome || '—'}</td><td>${p.receitas ?? '—'}</td>
-      <td>${p.ativo?'<span class="pill ok">Ativo</span>':'<span class="pill bad">Inativo</span>'}</td>
-      <td class="row-actions"><button class="btn small" data-act="edit" data-id="${p.id}">Editar</button>
-      <button class="btn small" data-act="toggle" data-id="${p.id}">${p.ativo?'Desativar':'Ativar'}</button></td>`;
-    tb.appendChild(tr);
-  });
+  tb.innerHTML='<tr><td colspan="5">Carregando pratos…</td></tr>';
+  
+  try {
+    // A consulta agora busca na tabela 'pratos' e pede ao Supabase para incluir
+    // o nome da categoria relacionada e a contagem de receitas.
+    const { data, error } = await supa.from('pratos')
+      .select('*, categorias ( nome ), prato_receitas ( count )')
+      .order('nome', { ascending: true });
+
+    if (error) throw error;
+
+    tb.innerHTML = '';
+    (data || []).forEach(p => {
+        const tr = document.createElement('tr');
+        const categoriaNome = p.categorias ? p.categorias.nome : '—'; // Acessa o nome da categoria aninhada
+        const receitasCount = p.prato_receitas.length > 0 ? p.prato_receitas[0].count : 0; // Acessa a contagem de receitas
+
+        tr.innerHTML=`<td>${p.nome}</td>
+          <td>${categoriaNome}</td>
+          <td>${receitasCount}</td>
+          <td>${p.ativo ? '<span class="pill ok">Ativo</span>' : '<span class="pill bad">Inativo</span>'}</td>
+          <td class="row-actions"><button class="btn small" data-act="edit" data-id="${p.id}">Editar</button>
+          <button class="btn small" data-act="toggle" data-id="${p.id}">${p.ativo ? 'Desativar' : 'Ativar'}</button></td>`;
+        tb.appendChild(tr);
+    });
+  } catch (e) {
+    console.error("Erro ao carregar pratos:", e);
+    tb.innerHTML='<tr><td colspan="5">Erro ao carregar pratos. Verifique o console.</td></tr>';
+  }
 }
 
 const EstoqueModule = {
@@ -100,7 +120,6 @@ const EstoqueModule = {
        if (!tbody) return;
        tbody.innerHTML = '<tr><td colspan="6">Carregando saldos...</td></tr>';
        try {
-           console.log("Iniciando loadSaldos...");
            const { data, error } = await supa.from('estoque_saldo').select(`
                 saldo_atual,
                 item_tipo,
@@ -108,9 +127,6 @@ const EstoqueModule = {
                 ingredientes ( nome, estoque_minimo, estoque_maximo, unidades_medida(sigla) )
             `);
             
-            console.log("Dados recebidos do Supabase:", data);
-            console.error("Erro recebido do Supabase:", error);
-
            if (error) throw error;
            
             tbody.innerHTML = '';
@@ -189,19 +205,23 @@ const EstoqueModule = {
         }
     },
     async init() {
+        // Event listeners para os botões de ação de movimentação
         $$('.mov-actions .btn').forEach(btn => btn.addEventListener('click', (e) => {
             const type = e.currentTarget.dataset.movType;
             const container = $('mov-form-container');
             container.style.display = 'block';
             $('frmMov').dataset.movType = type;
-            $('mov-form-title').textContent = `Registrar ${type}`;
+            $('mov-form-title').textContent = `Registrar ${type.charAt(0).toUpperCase() + type.slice(1).toLowerCase()}`;
         }));
         
         addSafeEventListener('btnMovCancel', 'click', () => $('mov-form-container').style.display = 'none');
         addSafeEventListener('frmMov', 'submit', (e) => this.handleMovimentacao(e));
         
+        // Popula os dropdowns do formulário de movimentação
         await fillOptionsFrom('unidades', 'mov-unidade-destino', 'id', 'nome');
         await fillOptionsFrom('ingredientes', 'mov-item', 'id', 'nome', {ativo: true});
+        
+        // Carrega os dados da "Visão Geral"
         await this.loadSaldos();
     }
 };
@@ -212,8 +232,16 @@ async function init(){
   try{
     setStatus('Inicializando...');
     setupRouting();
+    
+    // Carrega os dados da primeira aba visível
     await loadPratos();
+    
+    // Inicializa o módulo de estoque (que carrega seus próprios dados)
     EstoqueModule.init();
+
+    // Adiciona event listeners para as outras abas de cadastro, se necessário
+    // (A lógica de CRUD para as outras abas foi omitida para simplificar, mas pode ser adicionada aqui)
+
     setStatus('Pronto','ok');
   }catch(e){ 
     console.error("Erro fatal na inicialização:", e);
