@@ -882,7 +882,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // VERSÃO DE DIAGNÓSTICO PARA INSIGHTS
     async function updateInsights(de, ate, analiticos, kpi_key) {
         const insightsContainer = document.querySelector('#tab-diagnostico .ins-list');
         if (!insightsContainer) return;
@@ -902,7 +901,7 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             
             const { data, error } = await supa.rpc(RPC_DIAGNOSTIC_FUNC, params);
-
+            
             // --- INÍCIO DO CÓDIGO DE DIAGNÓSTICO ---
             console.log("================================================");
             console.log(">>> RESPOSTA EXATA DA FUNÇÃO DE INSIGHTS (IA) <<<");
@@ -1123,8 +1122,7 @@ document.addEventListener('DOMContentLoaded', () => {
         fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
         fxDispatchApply();
       }catch(e){
-        console.error('Erro na inicialização:', e);
-        setStatus('Erro ao iniciar: '+(e.message||e),'err');
+        console.error('Erro ao iniciar: '+(e.message||e),'err');
       }
     })();
 
