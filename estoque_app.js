@@ -13,7 +13,7 @@ const weekDayPt=(iso)=> new Date(iso+'T00:00:00').toLocaleDateString('pt-BR',{we
 
 /* ===== Supabase ===== */
 const SUPABASE_URL  = 'https://rqeagimulvgfecvuzubk.supabase.co';
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxZWFnaW11bHZnZmVjdnV6dWJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NzkyMzUsImV4cCI6MjA3MjU1NTIzNX0.SeNHyHOlpqjm-QTl7KXq7YF-48fk5iOQCRgpangP4zU';
+const SUPABASE_ANON = 'sb_publishable_xG9AiHycrkItwGyDDSgWTQ_c-PMd4SK';
 const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
 // Função de segurança para adicionar Event Listeners
@@ -1241,7 +1241,7 @@ async function init(){
         const payload = { id: f.id.value||undefined, nome: f.nome.value?.trim(), ativo: f.ativo.checked };
         const q = payload.id ? supa.from(itemTiposTableName).update(payload).eq('id', payload.id) : supa.from(itemTiposTableName).insert(payload);
         const { error } = await q;
-        if(error){ setStatus(error.message||error, 'err'); return; }
+        if(error){ setStatus(error.message || error, 'err'); return; }
         setStatus('Tipo de item salvo', 'ok');
         if($('btnCancelItemTiposEdit')) $('btnCancelItemTiposEdit').click();
         await detectAndLoadItemTipos();
