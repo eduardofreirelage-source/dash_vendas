@@ -758,7 +758,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===================================================================================
     // LÓGICA PARA A ABA DE DIAGNÓSTICO
     // ===================================================================================
-
     function updateDiagnosticTab(kpi_key, allKpiValues) {
       const heroCard = document.querySelector('#tab-diagnostico .hero');
       if (!heroCard || !allKpiValues || !allKpiValues[kpi_key]) return;
@@ -1029,18 +1028,28 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    function fxLocalMidday(d){ const x=new Date(d); x.setHours(12,0,0,0); return x }
+    // CORREÇÃO: As funções de data agora usam 'lastDay' como referência
+    function fxLocalMidday(d) {
+        // Se d for uma string YYYY-MM-DD, cria a data em UTC para evitar problemas de fuso horário
+        if (typeof d === 'string' && d.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            return new Date(d + 'T12:00:00Z');
+        }
+        const x = new Date(d);
+        x.setHours(12, 0, 0, 0);
+        return x;
+    }
     function fxFmt(date){ return date.toISOString().slice(0,10); }
     function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
+    
     function fxLastNDays(n){
-      const baseDate = lastDay ? fxLocalMidday(new Date(lastDay)) : fxLocalMidday(new Date());
+      const baseDate = lastDay ? fxLocalMidday(lastDay) : new Date();
       const end = new Date(baseDate);
       const start = new Date(baseDate);
       start.setDate(baseDate.getDate()-(n-1));
       fxSetRange(start,end);
     }
     function fxNamed(win){
-      const baseDate = lastDay ? fxLocalMidday(new Date(lastDay)) : fxLocalMidday(new Date());
+      const baseDate = lastDay ? fxLocalMidday(lastDay) : new Date();
       if(win==='today'){ fxSetRange(baseDate,baseDate) }
       else if(win==='yesterday'){ const y=new Date(baseDate); y.setDate(baseDate.getDate()-1); fxSetRange(y,y) }
       else if(win==='lastMonth'){ const y=baseDate.getFullYear(), m=baseDate.getMonth(); fxSetRange(new Date(y,m-1,1), new Date(y,m,0)) }
@@ -1095,16 +1104,17 @@ document.addEventListener('DOMContentLoaded', () => {
       fxDispatchApply();
     });
 
+    // CORREÇÃO: O seletor estava errado, agora busca por 'button'
     fx.$days.addEventListener('click', (e)=>{
-      const b=e.target.closest('.fx-chip'); if(!b) return;
-      fx.$days.querySelectorAll('button').forEach(x=> x.classList.toggle('active', x===b));
-      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('fx-active'));
+      const b=e.target.closest('button'); if(!b) return;
+      fx.$days.querySelectorAll('button').forEach(x=> x.classList.toggle('fx-active', x===b));
+      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('active'));
       const n=parseInt(b.dataset.win,10); if(!isNaN(n)) fxLastNDays(n);
       fxDispatchApply();
     });
 
     fx.$btnReset.addEventListener('click', ()=>{
-      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('fx-active'));
+      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('active'));
       fx.$days.querySelectorAll('button').forEach(x=> x.classList.remove('fx-active'));
       
       Object.values(ms).forEach(m => m.clear());
