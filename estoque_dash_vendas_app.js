@@ -780,7 +780,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // VERSÃO FINAL CORRIGIDA
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
       
       const fetchAndCalculateForUnit = async (unitName) => {
@@ -860,8 +859,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       try {
         const [rajaKpis, savassiKpis] = await Promise.all([
-          fetchAndCalculateForUnit('Uni.Raja'), // NOME CORRIGIDO
-          fetchAndCalculateForUnit('Uni.Savassi') // NOME CORRIGIDO
+          fetchAndCalculateForUnit('Uni.Raja'), 
+          fetchAndCalculateForUnit('Uni.Savassi')
         ]);
 
         const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
