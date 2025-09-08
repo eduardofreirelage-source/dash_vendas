@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -920,8 +920,27 @@ document.addEventListener('DOMContentLoaded', () => {
                  contextContainer.innerHTML = '<strong>Destaques:</strong> Nenhum dado de contexto retornado.';
             }
 
-            // ATUALIZAÇÃO DA SEÇÃO DE INSIGHTS (TEXTO)
-            const insightsArray = Array.isArray(data.insights) ? data.insights : (data.insights ? [data.insights] : []);
+            // GERAÇÃO DE INSIGHTS A PARTIR DO CONTEXTO
+            let insightsArray = [];
+            if (data.context) {
+                const { top_stores, top_hours, top_channels } = data.context;
+                if(top_stores && top_stores.length > 0) {
+                    insightsArray.push({
+                        type: 'up',
+                        title: 'Lojas com Melhor Performance',
+                        subtitle: `Drivers: As lojas ${top_stores.join(', ')} se destacaram no período.`,
+                        action: 'Ação: Analisar as práticas destas lojas (mix de produtos, promoções) para replicar em outras unidades.'
+                    });
+                }
+                if(top_hours && top_hours.length > 0) {
+                    insightsArray.push({
+                        type: 'up',
+                        title: 'Oportunidade de Horário de Pico',
+                        subtitle: `O período de ${top_hours.join(', ')} concentra a maior parte da performance.`,
+                        action: 'Ação: Reforçar marketing e promoções focadas neste horário para maximizar o resultado.'
+                    });
+                }
+            }
 
             if (insightsArray.length === 0) {
                 insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px;">Nenhum insight de texto gerado para este período.</p>';
@@ -930,18 +949,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let allInsightsHTML = '';
             insightsArray.forEach(insight => {
-                const type = insight.type || '';
-                const title = insight.title || 'Insight sem título';
-                const subtitle = insight.subtitle || '';
-                const action = insight.action || '';
-                
                 const insightHTML = `
-                    <div class="ins-card ${type}">
+                    <div class="ins-card ${insight.type || ''}">
                         <div class="dot"></div>
                         <div>
-                            <div class="ins-title">${title}</div>
-                            <div class="ins-sub">${subtitle}</div>
-                            <div class.ins-action">${action}</div>
+                            <div class="ins-title">${insight.title || ''}</div>
+                            <div class="ins-sub">${insight.subtitle || ''}</div>
+                            <div class="ins-action">${insight.action || ''}</div>
                         </div>
                     </div>
                 `;
