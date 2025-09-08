@@ -793,7 +793,8 @@ document.addEventListener('DOMContentLoaded', () => {
           
           const [
             finNowResult, finPrevResult,
-            { count: pedNowCount }, { count: pedPrevCount },
+            { count: pedNowCount },
+            { count: pedPrevCount },
             { count: cnCount }, { count: vnCount },
             { count: cpCount }, { count: vpCount }
           ] = await Promise.all([
