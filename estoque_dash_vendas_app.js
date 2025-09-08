@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v1';
     
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
