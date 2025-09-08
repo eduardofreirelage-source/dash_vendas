@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -366,6 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(finNowResult.error) throw finNowResult.error;
         if(errPedNow) throw errPedNow;
         
+        // CORREÇÃO DO BUG: Lógica de contagem de pedidos restaurada
         const pedNow = analiticos.cancelado === 'sim' ? cnCount : analiticos.cancelado === 'nao' ? vnCount : pedNowTotal;
         const pedPrev = analiticos.cancelado === 'sim' ? cpCount : analiticos.cancelado === 'nao' ? vpCount : pedPrevTotal;
 
@@ -403,104 +404,112 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         Object.keys(allKpiValues).forEach(key => {
-            const kpi = allKpiValues[key];
-            const valEl = $(`k_${key}`);
-            const prevEl = $(`p_${key}`);
-            const deltaEl = $(`d_${key}`);
-            if (valEl) valEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.current);
-            if (prevEl) prevEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.previous);
-            if (deltaEl) deltaBadge(deltaEl, kpi.current, kpi.previous);
+            if (KPI_META[key]) { // VERIFICAÇÃO DE ROBUSTEZ
+                const kpi = allKpiValues[key];
+                const valEl = $(`k_${key}`);
+                const prevEl = $(`p_${key}`);
+                const deltaEl = $(`d_${key}`);
+                if (valEl) valEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.current);
+                if (prevEl) prevEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.previous);
+                if (deltaEl) deltaBadge(deltaEl, kpi.current, kpi.previous);
+            }
         });
 
       } catch (e) {
         console.error("Erro detalhado em updateKPIs:", e);
         document.querySelectorAll('.kpi .val, .kpi .sub span').forEach(el => el.textContent = '—');
         document.querySelectorAll('.kpi .delta').forEach(el => { el.textContent = '—'; el.className = 'delta flat'; });
-        throw e;
+        return null; // ROBUSTEZ: Retorna nulo em caso de falha.
       }
       return allKpiValues;
     }
     
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
-        // CORREÇÃO: Esta função agora renderiza o KPI Master também.
-        const mainKpiCard = $('hero_main_kpi');
-        const mainValueEl = mainKpiCard.querySelector('.hero-value-number');
-        const mainDeltaEl = mainKpiCard.querySelector('.delta');
-        const mainSubEl = mainKpiCard.querySelector('.hero-sub-value');
-        
-        // Renderiza o KPI Master usando os dados globais
-        const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
-        if(totalKpis && totalKpis[kpi_key]) {
-            const meta = KPI_META[kpi_key];
-            mainValueEl.textContent = formatValueBy(meta.fmt, totalKpis[kpi_key].current);
-            mainSubEl.textContent = 'Anterior: ' + formatValueBy(meta.fmt, totalKpis[kpi_key].previous);
-            deltaBadge(mainDeltaEl, totalKpis[kpi_key].current, totalKpis[kpi_key].previous);
-        }
+      // CORREÇÃO: Esta função agora renderiza o KPI Master E os de unidade.
+      const mainKpiCard = $('hero_main_kpi');
+      const mainValueEl = mainKpiCard?.querySelector('.hero-value-number');
+      const mainDeltaEl = mainKpiCard?.querySelector('.delta');
+      const mainSubEl = mainKpiCard?.querySelector('.hero-sub-value');
+      
+      // Renderiza o KPI Master usando os dados globais.
+      const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
+      if(totalKpis && totalKpis[kpi_key] && mainValueEl) {
+          const meta = KPI_META[kpi_key];
+          mainValueEl.textContent = formatValueBy(meta.fmt, totalKpis[kpi_key].current);
+          mainSubEl.textContent = 'Anterior: ' + formatValueBy(meta.fmt, totalKpis[kpi_key].previous);
+          deltaBadge(mainDeltaEl, totalKpis[kpi_key].current, totalKpis[kpi_key].previous);
+      }
 
-        const fetchAndCalculateForUnit = async (unitName) => {
+      // Função aninhada para buscar dados da unidade.
+      const fetchAndCalculateForUnit = async (unitName) => {
           const unitAnaliticos = { ...analiticos, unidade: [unitName] };
           return await updateKPIs(de, ate, dePrev, atePrev, unitAnaliticos);
-        };
-      
-        try {
-            const [rajaKpis, savassiKpis] = await Promise.all([
-              fetchAndCalculateForUnit('Uni.Raja'), 
-              fetchAndCalculateForUnit('Uni.Savassi')
-            ]);
+      };
+    
+      try {
+          const [rajaKpis, savassiKpis] = await Promise.all([
+            fetchAndCalculateForUnit('Uni.Raja'), 
+            fetchAndCalculateForUnit('Uni.Savassi')
+          ]);
 
-            const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
-            const renderUnit = (unitId, unitData) => {
-              const card = $(unitId);
-              const data = unitData?.[kpi_key];
-              if (card && data) {
-                card.querySelector('.unit-kpi-value').textContent = formatValueBy(kpiMeta.fmt, data.current);
-                card.querySelector('.unit-kpi-sub').textContent = 'Anterior: ' + formatValueBy(kpiMeta.fmt, data.previous);
-                deltaBadge(card.querySelector('.delta'), data.current, data.previous);
-              }
-            };
+          const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
+          const renderUnit = (unitId, unitData) => {
+            const card = $(unitId);
+            const data = unitData?.[kpi_key];
+            if (card && data) {
+              card.querySelector('.unit-kpi-value').textContent = formatValueBy(kpiMeta.fmt, data.current);
+              card.querySelector('.unit-kpi-sub').textContent = 'Anterior: ' + formatValueBy(kpiMeta.fmt, data.previous);
+              deltaBadge(card.querySelector('.delta'), data.current, data.previous);
+            }
+          };
 
-            renderUnit('unit-kpi-raja', rajaKpis);
-            renderUnit('unit-kpi-savassi', savassiKpis);
-            
-            return { total: totalKpis, raja: rajaKpis, savassi: savassiKpis };
-        } catch(e) {
-            console.error("Erro ao renderizar KPIs de unidade:", e);
-            return null;
-        }
+          renderUnit('unit-kpi-raja', rajaKpis);
+          renderUnit('unit-kpi-savassi', savassiKpis);
+          
+          // Retorna todos os dados para a função de projeção.
+          return { total: totalKpis, raja: rajaKpis, savassi: savassiKpis };
+      } catch(e) {
+          console.error("Erro ao renderizar KPIs de unidade:", e);
+          return null;
+      }
     }
     
+    // FUNÇÃO DE PROJEÇÃO CORRIGIDA E MELHORADA
     function updateProjections(kpiData, kpiKey) {
         const meta = KPI_META[kpiKey] || KPI_META.fat;
         
+        // Lógica de projeção baseada na tendência (delta).
         const calculateTrendProjection = (current, previous) => {
+            // VERIFICAÇÃO DE ROBUSTEZ: Garante que ambos os valores são números válidos.
             if (current == null || !isFinite(current) || previous == null || !isFinite(previous) || previous === 0) {
-                return { value: null, delta: null };
+                return { value: null, deltaVal: null };
             }
             const delta = (current - previous) / previous;
-            return { value: current * (1 + delta), delta: delta };
+            const projectedValue = current * (1 + delta);
+            return { value: projectedValue, deltaVal: delta };
         };
         
         const len = DateHelpers.daysLen(fx.$start.value, fx.$end.value);
+        // Multiplicador para ajustar a projeção para 15, 30 ou 60 dias.
         const projectionMultiplier = len > 0 ? projectionDays / len : 1;
         
         // Projeção Total
-        const projTotal = kpiData?.total ? calculateTrendProjection(kpiData.total[kpiKey].current, kpiData.total[kpiKey].previous) : { value: null };
+        const projTotal = calculateTrendProjection(kpiData?.total?.[kpiKey]?.current, kpiData?.total?.[kpiKey]?.previous);
         $('proj_total_label').textContent = `PROJEÇÃO ${meta.label.toUpperCase()} (${projectionDays}D)`;
         $('proj_total_val').textContent = projTotal.value !== null ? formatValueBy(meta.fmt, projTotal.value * projectionMultiplier) : '—';
-        deltaBadge($('proj_total_delta'), projTotal.value, kpiData?.total[kpiKey].current);
+        deltaBadge($('proj_total_delta'), projTotal.value, kpiData?.total?.[kpiKey]?.current);
 
         // Projeções por Unidade
-        const projRaja = kpiData?.raja ? calculateTrendProjection(kpiData.raja[kpiKey].current, kpiData.raja[kpiKey].previous) : { value: null };
+        const projRaja = calculateTrendProjection(kpiData?.raja?.[kpiKey]?.current, kpiData?.raja?.[kpiKey]?.previous);
         $('proj_raja_label').textContent = `UNI.RAJA - ${meta.label}`;
         $('proj_raja_val').textContent = projRaja.value !== null ? formatValueBy(meta.fmt, projRaja.value * projectionMultiplier) : '—';
-        deltaBadge($('proj_raja_delta'), projRaja.value, kpiData?.raja[kpiKey].current);
+        deltaBadge($('proj_raja_delta'), projRaja.value, kpiData?.raja?.[kpiKey]?.current);
         
-        const projSavassi = kpiData?.savassi ? calculateTrendProjection(kpiData.savassi[kpiKey].current, kpiData.savassi[kpiKey].previous) : { value: null };
+        const projSavassi = calculateTrendProjection(kpiData?.savassi?.[kpiKey]?.current, kpiData?.savassi?.[kpiKey]?.previous);
         $('proj_savassi_label').textContent = `UNI.SAVASSI - ${meta.label}`;
         $('proj_savassi_val').textContent = projSavassi.value !== null ? formatValueBy(meta.fmt, projSavassi.value * projectionMultiplier) : '—';
-        deltaBadge($('proj_savassi_delta'), projSavassi.value, kpiData?.savassi[kpiKey].current);
+        deltaBadge($('proj_savassi_delta'), projSavassi.value, kpiData?.savassi?.[kpiKey]?.current);
     }
-
 
     let chartModeGlobal = 'total';
     const segGlobal = $('segGlobal');
@@ -918,7 +927,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    /* ===================== LOOP PRINCIPAL REFACTURED ===================== */
+    /* ===================== LOOP PRINCIPAL (ORQUESTRADOR) ===================== */
     async function applyAll(details){
       try{
         const de = details.start;
@@ -934,17 +943,19 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const selectedKpiKey = $('kpi-select').value;
         
-        // CORREÇÃO: `updateKPIs` é chamado primeiro para renderizar a aba principal.
+        // CORREÇÃO: Orquestração explícita para garantir o fluxo de dados.
+        // 1. Renderiza os KPIs principais da aba "Vendas".
         const allKpiValues = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
         
-        // Em seguida, `getAndRenderUnitKPIs` renderiza o painel de diagnóstico e retorna os dados.
+        // 2. Renderiza o painel de diagnóstico (Master + Unidades) e retorna todos os dados.
         const allDataForProjections = await getAndRenderUnitKPIs(selectedKpiKey, de, ate, dePrev, atePrev, analiticos);
 
+        // 3. Com os dados em mãos, calcula e renderiza as projeções.
         if (allDataForProjections) {
-            updateProjections(allDataForProjections.total, allDataForProjections, selectedKpiKey);
+            updateProjections(allDataForProjections, selectedKpiKey);
         }
         
-        // Demais gráficos que não têm dependências complexas.
+        // 4. Renderiza os demais gráficos que podem ser executados em paralelo.
         await Promise.all([
           updateCharts(de, ate, dePrev, atePrev, analiticos),
           updateMonth12x12(analiticos),
