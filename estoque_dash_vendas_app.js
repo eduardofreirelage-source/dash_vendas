@@ -882,6 +882,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
+    // VERSÃO DE DIAGNÓSTICO PARA INSIGHTS
     async function updateInsights(de, ate, analiticos, kpi_key) {
         const insightsContainer = document.querySelector('#tab-diagnostico .ins-list');
         if (!insightsContainer) return;
@@ -899,8 +900,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
                 p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null
             };
+            
+            // --- INÍCIO DO CÓDIGO DE DIAGNÓSTICO ---
+            console.log("================================================");
+            console.log(">>> ENVIANDO PARA A FUNÇÃO DE INSIGHTS (IA) <<<");
+            console.log(params);
+            console.log("================================================");
+            // --- FIM DO CÓDIGO DE DIAGNÓSTICO ---
 
             const { data, error } = await supa.rpc(RPC_DIAGNOSTIC_FUNC, params);
+            
+            // --- INÍCIO DO CÓDIGO DE DIAGNÓSTICO ---
+            console.log("================================================");
+            console.log(">>> RESPOSTA REAL DA FUNÇÃO DE INSIGHTS (IA) <<<");
+            console.log("Dados recebidos:", data);
+            console.log("================================================");
+            // --- FIM DO CÓDIGO DE DIAGNÓSTICO ---
 
             if (error) {
                 throw error;
