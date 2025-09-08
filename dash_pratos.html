@@ -344,12 +344,10 @@
     const cur = sourceData.filter(r => filterRow(r, new Date(de + 'T00:00:00Z'), new Date(ate + 'T23:59:59Z')));
     const prv = sourceData.filter(r => filterRow(r, prev_de, prev_ate));
 
-    // KPIs
     const kpis = { current_total: cur.reduce((a, b) => a + b.quantidade, 0), current_unique: new Set(cur.map(r => r.prato)).size };
     const prevKpis = { prev_total: prv.reduce((a, b) => a + b.quantidade, 0), prev_unique: new Set(prv.map(r => r.prato)).size };
     updateKPIs(kpis, prevKpis, len);
 
-    // Top 10 Chart
     const top10Data = {};
     const agg = new Map();
     cur.forEach(r => agg.set(r.prato, (agg.get(r.prato) || 0) + r.quantidade));
@@ -358,13 +356,11 @@
     top10Data.menos_vendidos = sorted.filter(p => p[1] > 0).slice(-10).reverse().map(([prato, total]) => ({ prato, total }));
     updateTop10Chart(top10Data);
     
-    // DOW Chart
     const dowData = { now: Array(7).fill(0), prev: Array(7).fill(0) };
     cur.forEach(r => { dowData.now[new Date(r.data + 'T12:00:00Z').getDay()] += r.quantidade; });
     prv.forEach(r => { dowData.prev[new Date(r.data + 'T12:00:00Z').getDay()] += r.quantidade; });
     updateDowChart(dowData, len);
 
-    // Month Chart
     updateMonthChart(sourceData, ate);
   }
 
@@ -460,58 +456,44 @@
   }
 
   async function syncAndSaveData(data) {
-    console.log("--- INICIANDO PROCESSO DE SINCRONIZAÇÃO E SALVAMENTO ---");
+    console.log("Iniciando sincronização e salvamento para o BD...");
     
-    // AGREGA OS DADOS DE VENDAS ANTES DE ENVIAR
-    const salesMap = new Map();
-    data.forEach(row => {
-        const key = `${row.data.toISOString().split('T')[0]}|${row.prato}|${row.unidade_nome}`;
-        const existing = salesMap.get(key);
-        if (existing) {
-            existing.quantidade += row.quantidade;
-        } else {
-            salesMap.set(key, { ...row });
-        }
-    });
-    const aggregatedData = Array.from(salesMap.values());
-    console.log(`Recebidos ${data.length} registros da planilha. Agregados em ${aggregatedData.length} registros únicos.`);
-
-    // Sincroniza Categorias e Pratos
-    const categorias = [...new Set(aggregatedData.map(r => r.categoria))].filter(Boolean).map(c => ({ nome: c, tipo: 'PRATO', ativo: true }));
+    const categorias = [...new Set(data.map(r => r.categoria))].filter(Boolean).map(c => ({ nome: c, tipo: 'PRATO', ativo: true }));
     if(categorias.length > 0) await supa.from('categorias').upsert(categorias, { onConflict: 'nome' });
     
     const { data: allCategories } = await supa.from('categorias').select('id, nome');
     const catMap = new Map(allCategories.map(c => [c.nome, c.id]));
     
-    const pratos = [...new Set(aggregatedData.map(r => r.prato))].filter(Boolean).map(pNome => {
-        const item = aggregatedData.find(d => d.prato === pNome);
+    const pratos = [...new Set(data.map(r => r.prato))].filter(Boolean).map(pNome => {
+        const item = data.find(d => d.prato === pNome);
         return { nome: pNome, categoria_id: catMap.get(item.categoria), ativo: true };
     }).filter(p => p.categoria_id);
 
     if (pratos.length > 0) await supa.from('pratos').upsert(pratos, { onConflict: 'nome' });
     
     const { data: allUnidades } = await supa.from('unidades').select('id, nome');
-    if (!allUnidades) { alert("ERRO: Não foi possível buscar a lista de unidades. Verifique o console."); return; }
     const unidMap = new Map(allUnidades.map(u => [u.nome, u.id]));
 
     const unidadesNaoEncontradas = new Set();
-    const vendasParaSalvar = aggregatedData.map(r => {
+    const vendasParaSalvar = data.map(r => {
         const unidadeNomeCorrigido = r.unidade_nome.replace(/^Unidade\s+/i, '').trim();
         const unidade_id = unidMap.get(unidadeNomeCorrigido);
         if (!unidade_id) {
             unidadesNaoEncontradas.add(r.unidade_nome);
             return null;
         }
-        return { data: r.data.toISOString().split('T')[0], prato: r.prato, categoria: r.categoria, quantidade: r.quantidade, unidade_id: unidade_id };
+        return { data: r.data, prato: r.prato, categoria: r.categoria, quantidade: r.quantidade, unidade_id: unidade_id };
     }).filter(Boolean);
 
      if (unidadesNaoEncontradas.size > 0) {
-        alert(`ATENÇÃO: As seguintes Unidades do seu arquivo Excel não foram encontradas no banco de dados e suas vendas foram ignoradas:\n\n- ${[...unidadesNaoEncontradas].join('\n- ')}`);
+        alert(`ATENÇÃO: As seguintes Unidades do seu arquivo Excel não foram encontradas no banco de dados e suas vendas foram ignoradas:\n\n- ${[...unidadesNaoEncontradas].join('\n- ')}\n\nPor favor, cadastre essas unidades no sistema de Estoque (com o nome exato, sem "Unidade" na frente) ou corrija o nome na planilha.`);
     }
 
     if(vendasParaSalvar.length > 0) {
-        console.log(`Enviando ${vendasParaSalvar.length} registros de vendas para o Supabase...`);
-        const { error: vendasError } = await supa.from('vendas_pratos_raw').upsert(vendasParaSalvar, { onConflict: 'data, prato, unidade_id' });
+        const { error: vendasError } = await supa.from('vendas_pratos_raw').upsert(
+            vendasParaSalvar,
+            { onConflict: 'data, prato, unidade_id' }
+        );
         if (vendasError) {
              alert("Ocorreu um erro ao salvar os dados de vendas. Verifique o console para detalhes.");
              console.error("ERRO CRÍTICO ao salvar dados de vendas:", vendasError);
@@ -521,7 +503,6 @@
     } else {
         alert("Nenhum registro de venda válido foi encontrado para salvar no banco de dados.");
     }
-    console.log("--- PROCESSO DE SINCRONIZAÇÃO E SALVAMENTO CONCLUÍDO ---");
   }
   
   async function onExcelUpload(file) {
@@ -546,13 +527,26 @@
 
     const norm = rows.map(r => ({
         data: parseExcelDate(pick(r, ["data", "data venda"])),
-        prato: safe(pick(r, ["prato", "produto", "item código mãe"])),
+        prato: safe(pick(r, ["prato", "produto"])),
         categoria: safe(pick(r, ["categoria"])),
         quantidade: toNumber(pick(r, ["quantidade", "qtd"])),
         unidade_nome: safe(pick(r, ["unidade", "loja"]))
     })).filter(r => r.data && r.quantidade > 0 && r.prato && r.prato !== '0');
     
-    await syncAndSaveData(norm);
+    // AGREGAÇÃO DOS DADOS ANTES DE SALVAR
+    const aggregatedMap = new Map();
+    for (const row of norm) {
+        const key = `${row.data.toISOString().split('T')[0]}|${row.prato}|${row.unidade_nome}`;
+        if (aggregatedMap.has(key)) {
+            aggregatedMap.get(key).quantidade += row.quantidade;
+        } else {
+            aggregatedMap.set(key, { ...row });
+        }
+    }
+    const aggregatedData = Array.from(aggregatedMap.values());
+    console.log(`Recebidos ${norm.length} registros da planilha. Agregados em ${aggregatedData.length} registros únicos.`);
+    
+    await syncAndSaveData(aggregatedData);
 
     rawData = await loadFromSupabase();
     
