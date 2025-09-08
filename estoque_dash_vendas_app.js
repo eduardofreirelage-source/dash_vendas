@@ -335,7 +335,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return allRows;
     }
     
-    // Função original, sem alterações, para garantir estabilidade
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
       let allKpiValues = {};
       try {
@@ -760,30 +759,37 @@ document.addEventListener('DOMContentLoaded', () => {
     // LÓGICA PARA A ABA DE DIAGNÓSTICO
     // ===================================================================================
 
-    // Função original, sem alterações. Responsável apenas pelo KPI Master.
     function updateDiagnosticTab(kpi_key, allKpiValues) {
       const heroCard = document.querySelector('#tab-diagnostico .hero');
       if (!heroCard || !allKpiValues || !allKpiValues[kpi_key]) return;
 
       try {
         const kpiData = allKpiValues[kpi_key];
+        
         const valEl = heroCard.querySelector('.hero-value-number');
         const deltaEl = heroCard.querySelector('.hero-main-value .delta'); 
         const subEl = heroCard.querySelector('.hero-sub-value');
+
         const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
         valEl.textContent = formatValueBy(kpiMeta.fmt, kpiData.current);
         subEl.textContent = 'Período anterior: ' + formatValueBy(kpiMeta.fmt, kpiData.previous);
         deltaBadge(deltaEl, kpiData.current, kpiData.previous);
+        
       } catch (e) {
         console.error('Erro ao atualizar aba de diagnóstico:', e);
       }
     }
     
-    // Função de diagnóstico para espelhar os dados.
+    // VERSÃO DE DIAGNÓSTICO: PASSO 1
     function renderUnitKPIsForDebug(kpi_key, allKpiValues) {
+        console.log("--- MODO DE DIAGNÓSTICO ATIVO ---");
+        console.log("Exibindo dados do KPI Master nos Mini KPIs para teste.");
+
         const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
         const kpiData = allKpiValues[kpi_key];
+
         if (!kpiData) return;
+
         const renderUnit = (unitId) => {
             const card = $(unitId);
             if (card) {
@@ -792,17 +798,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 deltaBadge(card.querySelector('.delta'), kpiData.current, kpiData.previous);
             }
         };
+
         renderUnit('unit-kpi-raja');
         renderUnit('unit-kpi-savassi');
     }
 
-    // Função de diagnóstico para descobrir os nomes exatos das unidades.
+    // VERSÃO DE DIAGNÓSTICO: PASSO 2
     async function logActualUnitNames() {
       try {
         const { data, error } = await supa.from('vw_vendas_unidades').select('unidade');
         if (error) throw error;
         const unitNames = data.map(item => item.unidade);
         console.log(">>> UNIDADES REAIS NO BANCO DE DADOS:", unitNames);
+        console.log("Por favor, copie e cole esta lista ^^^^^^");
       } catch(e) {
         console.error("ERRO CRÍTICO AO BUSCAR NOMES DAS UNIDADES:", e);
       }
@@ -824,7 +832,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setStatus('Consultando…');
         let kpiOk=true;
 
-        // ** AÇÃO DE DIAGNÓSTICO PASSO 2 ** await logActualUnitNames();
+        // ** AÇÃO DE DIAGNÓSTICO ** await logActualUnitNames();
 
         const allKpiValues = await updateKPIs(de, ate, dePrev, atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
         
@@ -838,7 +846,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (allKpiValues && allKpiValues[selectedKpiForDiag]) {
             updateDiagnosticTab(selectedKpiForDiag, allKpiValues);
             
-            // ** AÇÃO DE DIAGNÓSTICO PASSO 1 ** renderUnitKPIsForDebug(selectedKpiForDiag, allKpiValues);
+            // ** AÇÃO DE DIAGNÓSTICO ** renderUnitKPIsForDebug(selectedKpiForDiag, allKpiValues);
         }
         
         if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
@@ -933,7 +941,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fx.$days.addEventListener('click', (e)=>{
       const b=e.target.closest('.fx-chip'); if(!b) return;
       fx.$days.querySelectorAll('button').forEach(x=> x.classList.toggle('active', x===b));
-      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('fx-active'));
+      fx.$chips.querySelectorAll('button').forEach(x=> x.classList.remove('fx-active'));
       const n=parseInt(b.dataset.win,10); if(!isNaN(n)) fxLastNDays(n);
       fxDispatchApply();
     });
