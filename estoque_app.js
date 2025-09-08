@@ -999,7 +999,7 @@ const EstoqueModule = {
                 item_tipo,
                 unidades ( nome ),
                 ingredientes ( nome, estoque_minimo, estoque_maximo, unidades_medida(sigla) )
-            `).eq('item_tipo', 'INGREDIENTE');
+            `);
 
             // DEBUG: Exibe a resposta crua do Supabase no console
             console.log("Dados recebidos do Supabase:", data);
@@ -1008,7 +1008,7 @@ const EstoqueModule = {
            if (error) throw error;
            
             tbody.innerHTML = '';
-            if (data.length === 0) {
+            if (!data || data.length === 0) {
                 console.warn("Nenhum dado de saldo encontrado para exibir.");
                 tbody.innerHTML = '<tr><td colspan="6">Nenhum saldo encontrado.</td></tr>';
                 return; // Interrompe a função se não houver dados
