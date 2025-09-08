@@ -341,9 +341,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ARQUITETURA RESTAURADA E CORRIGIDA
     // ===================================================================================
 
-    // FUNÇÃO ANTIGA, AGORA RESPONSÁVEL POR RENDERIZAR E RETORNAR OS DADOS GLOBAIS
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
-      // Esta função mantém sua lógica original e verbosa, garantindo a regra do prompt.
       let allKpiValues = {};
       try {
         const pNow = buildParams(de, ate, analiticos);
@@ -368,7 +366,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if(finNowResult.error) throw finNowResult.error;
         if(errPedNow) throw errPedNow;
         
-        // LÓGICA DE CONTAGEM DE PEDIDOS RESTAURADA
         const pedNow = analiticos.cancelado === 'sim' ? cnCount : analiticos.cancelado === 'nao' ? vnCount : pedNowTotal;
         const pedPrev = analiticos.cancelado === 'sim' ? cpCount : analiticos.cancelado === 'nao' ? vpCount : pedPrevTotal;
 
@@ -421,74 +418,68 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.kpi .delta').forEach(el => { el.textContent = '—'; el.className = 'delta flat'; });
         throw e;
       }
-      return allKpiValues; // ADIÇÃO CRÍTICA: Retorna os dados para outras funções.
+      return allKpiValues;
     }
     
-    // FUNÇÃO ANTIGA, AGORA RESPONSÁVEL POR RENDERIZAR E RETORNAR OS DADOS DAS UNIDADES
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
-        // Esta função também mantém sua estrutura original.
-        const fetchAndCalculateForUnit = async (unitName) => {
-          // Lógica interna para buscar dados de uma unidade...
-          // ... (código interno da função original foi mantido para verbosidade)
-          // E no final, retorna o objeto de dados calculado
-          const pNow = buildParams(de, ate, { ...analiticos, unidade: [unitName] });
-          const pPrev = buildParams(dePrev, atePrev, { ...analiticos, unidade: [unitName] });
-          const [resNow, resPrev] = await Promise.all([updateKPIs(pNow.p_dini, pNow.p_dfim, pPrev.p_dini, pPrev.p_dfim, pNow)]);
-          return resNow;
-        };
-        
-        try {
-            const [rajaKpis, savassiKpis] = await Promise.all([
-              fetchAndCalculateForUnit('Uni.Raja'), 
-              fetchAndCalculateForUnit('Uni.Savassi')
-            ]);
+      const fetchAndCalculateForUnit = async (unitName) => {
+          const unitAnaliticos = { ...analiticos, unidade: [unitName] };
+          // Reutiliza a função principal de KPIs, agora com filtro de unidade
+          return await updateKPIs(de, ate, dePrev, atePrev, unitAnaliticos);
+      };
+      
+      try {
+          const [rajaKpis, savassiKpis] = await Promise.all([
+            fetchAndCalculateForUnit('Uni.Raja'), 
+            fetchAndCalculateForUnit('Uni.Savassi')
+          ]);
 
-            const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
-            const renderUnit = (unitId, unitData) => {
-              const card = $(unitId);
-              const data = unitData[kpi_key];
-              if (card && data) {
-                card.querySelector('.unit-kpi-value').textContent = formatValueBy(kpiMeta.fmt, data.current);
-                card.querySelector('.unit-kpi-sub').textContent = 'Anterior: ' + formatValueBy(kpiMeta.fmt, data.previous);
-                deltaBadge(card.querySelector('.delta'), data.current, data.previous);
-              }
-            };
+          const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
+          const renderUnit = (unitId, unitData) => {
+            const card = $(unitId);
+            const data = unitData?.[kpi_key];
+            if (card && data) {
+              card.querySelector('.unit-kpi-value').textContent = formatValueBy(kpiMeta.fmt, data.current);
+              card.querySelector('.unit-kpi-sub').textContent = 'Anterior: ' + formatValueBy(kpiMeta.fmt, data.previous);
+              deltaBadge(card.querySelector('.delta'), data.current, data.previous);
+            }
+          };
 
-            renderUnit('unit-kpi-raja', rajaKpis);
-            renderUnit('unit-kpi-savassi', savassiKpis);
-            
-            return { raja: rajaKpis, savassi: savassiKpis }; // ADIÇÃO CRÍTICA: Retorna os dados.
-        } catch(e) {
-            console.error("Erro ao renderizar KPIs de unidade:", e);
-            return null; // Retorna nulo em caso de erro.
-        }
+          renderUnit('unit-kpi-raja', rajaKpis);
+          renderUnit('unit-kpi-savassi', savassiKpis);
+          
+          return { raja: rajaKpis, savassi: savassiKpis };
+      } catch(e) {
+          console.error("Erro ao renderizar KPIs de unidade:", e);
+          return null;
+      }
     }
     
-    // FUNÇÃO DE PROJEÇÃO CORRIGIDA - Usa dados recebidos e lógica de tendência.
-    async function updateProjections(totalKpiData, unitKpiData, kpiKey) {
+    function updateProjections(totalKpiData, unitKpiData, kpiKey) {
         const meta = KPI_META[kpiKey] || KPI_META.fat;
         
         const calculateTrendProjection = (current, previous) => {
             if (current == null || !isFinite(current) || previous == null || !isFinite(previous) || previous === 0) {
-                return null; // Tendência não calculável.
+                return null;
             }
             const delta = (current - previous) / previous;
             return current * (1 + delta);
         };
         
-        // Projeção Total
+        const len = DateHelpers.daysLen(fx.$start.value, fx.$end.value);
+        const projectionMultiplier = len > 0 ? projectionDays / len : 0;
+        
         const totalProjectedValue = totalKpiData ? calculateTrendProjection(totalKpiData[kpiKey].current, totalKpiData[kpiKey].previous) : null;
         $('proj_total_label').textContent = `PROJEÇÃO ${meta.label.toUpperCase()} (${projectionDays}D)`;
-        $('proj_total_val').textContent = totalProjectedValue !== null ? formatValueBy(meta.fmt, totalProjectedValue * (projectionDays / 30)) : '—';
+        $('proj_total_val').textContent = totalProjectedValue !== null ? formatValueBy(meta.fmt, totalProjectedValue * projectionMultiplier) : '—';
 
-        // Projeções por Unidade
-        const rajaProjectedValue = unitKpiData ? calculateTrendProjection(unitKpiData.raja[kpiKey].current, unitKpiData.raja[kpiKey].previous) : null;
+        const rajaProjectedValue = unitKpiData?.raja ? calculateTrendProjection(unitKpiData.raja[kpiKey].current, unitKpiData.raja[kpiKey].previous) : null;
         $('proj_raja_label').textContent = `UNI.RAJA - ${meta.label}`;
-        $('proj_raja_val').textContent = rajaProjectedValue !== null ? formatValueBy(meta.fmt, rajaProjectedValue * (projectionDays / 30)) : '—';
+        $('proj_raja_val').textContent = rajaProjectedValue !== null ? formatValueBy(meta.fmt, rajaProjectedValue * projectionMultiplier) : '—';
         
-        const savassiProjectedValue = unitKpiData ? calculateTrendProjection(unitKpiData.savassi[kpiKey].current, unitKpiData.savassi[kpiKey].previous) : null;
+        const savassiProjectedValue = unitKpiData?.savassi ? calculateTrendProjection(unitKpiData.savassi[kpiKey].current, unitKpiData.savassi[kpiKey].previous) : null;
         $('proj_savassi_label').textContent = `UNI.SAVASSI - ${meta.label}`;
-        $('proj_savassi_val').textContent = savassiProjectedValue !== null ? formatValueBy(meta.fmt, savassiProjectedValue * (projectionDays / 30)) : '—';
+        $('proj_savassi_val').textContent = savassiProjectedValue !== null ? formatValueBy(meta.fmt, savassiProjectedValue * projectionMultiplier) : '—';
     }
 
 
@@ -924,18 +915,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const selectedKpiKey = $('kpi-select').value;
         
-        // ORQUESTRADOR: Executa as chamadas de dados e depois as de renderização.
         const allKpiValues = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
         const unitKpiValues = await getAndRenderUnitKPIs(selectedKpiKey, de, ate, dePrev, atePrev, analiticos);
 
-        if (allKpiValues) {
-            updateDiagnosticTab(allKpiValues, selectedKpiKey);
-        }
         if (allKpiValues && unitKpiValues) {
+            // A função de projeção é chamada aqui, após todos os dados estarem disponíveis
             updateProjections(allKpiValues, unitKpiValues, selectedKpiKey);
         }
         
-        // Gráficos podem continuar em paralelo.
         await Promise.all([
           updateCharts(de, ate, dePrev, atePrev, analiticos),
           updateMonth12x12(analiticos),
@@ -995,15 +982,14 @@ document.addEventListener('DOMContentLoaded', () => {
       $segProj: $('segProj'),
     };
 
-    // CORREÇÃO DO BUG DOS BOTÕES DE PROJEÇÃO
     fx.$segProj.addEventListener('click', (e) => {
         const btn = e.target.closest('button');
         if (!btn) return;
         const days = parseInt(btn.dataset.days, 10);
         if (!isNaN(days)) {
-            projectionDays = days; // Atualiza o estado global de dias de projeção
+            projectionDays = days;
             fx.$segProj.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
-            fxDispatchApply(); // Dispara o fluxo de atualização completo
+            fxDispatchApply();
         }
     });
 
