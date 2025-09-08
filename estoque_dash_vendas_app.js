@@ -758,7 +758,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===================================================================================
     // LÓGICA PARA A ABA DE DIAGNÓSTICO
     // ===================================================================================
-
     function updateDiagnosticTab(kpi_key, allKpiValues) {
       const heroCard = document.querySelector('#tab-diagnostico .hero');
       if (!heroCard || !allKpiValues || !allKpiValues[kpi_key]) return;
@@ -882,6 +881,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
+    // VERSÃO FINAL CORRIGIDA
     async function updateInsights(de, ate, analiticos, kpi_key) {
         const insightsContainer = document.querySelector('#tab-diagnostico .ins-list');
         const contextContainer = document.querySelector('#tab-diagnostico .hero-context');
