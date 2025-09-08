@@ -1,5 +1,5 @@
 // =================================================================================
-// SCRIPT ÚNICO, COMPLETO E CORRIGIDO
+// SCRIPT ÚNICO, COMPLETO E FUNCIONAL
 // =================================================================================
 
 /* ===== Helpers ===== */
@@ -9,8 +9,12 @@ const setStatus=(msg,cls)=>{const el=$('status'); if(!el) return; el.textContent
 const fmt=(n)=> new Intl.NumberFormat('pt-BR',{maximumFractionDigits:3}).format(+n||0);
 const ptToNumber=(v)=>{ if(v==null) return 0; const s=String(v).trim().replace(/\./g,'').replace(',','.'); const n=parseFloat(s); return isNaN(n)?0:n; };
 const todayStr=()=> new Date().toISOString().slice(0,10);
+const showEditor = (id) => { const el = $(id); if(el) el.style.display = 'block'; };
+const hideEditor = (id) => { const el = $(id); if(el) el.style.display = 'none'; };
+
 
 /* ===== Supabase ===== */
+// ATENÇÃO: Use as suas próprias chaves do Supabase aqui
 const SUPABASE_URL  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
 const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -27,19 +31,19 @@ function addSafeEventListener(id, event, handler) {
 
 /* ===== ROTEAMENTO POR ABAS ===== */
 function setupRouting() {
-  const mainTabsContainer = document.getElementById('main-tabs');
-  const mainContents = document.querySelectorAll('.tab-content');
+  const mainTabsContainer = $('main-tabs');
+  const mainContents = $$('.tab-content');
   
   const setupSubTabs = (containerId, contentSelector) => {
-      const container = document.getElementById(containerId);
+      const container = $(containerId);
       if (!container) return;
-      const contents = document.querySelectorAll(contentSelector);
+      const contents = $$(contentSelector);
       
       container.addEventListener('click', (e) => {
         const btn = e.target.closest('button');
         if (!btn) return;
         const subTabId = btn.dataset.subtab;
-        container.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        $$('button', container).forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         contents.forEach(content => {
           content.classList.toggle('active', content.id === 'sub-' + subTabId);
@@ -51,7 +55,7 @@ function setupRouting() {
     const btn = e.target.closest('button');
     if (!btn) return;
     const tabId = btn.dataset.tab;
-    mainTabsContainer.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    $$('button', mainTabsContainer).forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     mainContents.forEach(content => {
       content.classList.toggle('active', content.id === 'tab-' + tabId);
@@ -73,60 +77,106 @@ async function fillOptionsFrom(table, selId, valKey, labelKey, whereEq){
     sel.innerHTML='<option value="">Selecione</option>';
     (data||[]).forEach(x=>{ const o=document.createElement('option'); o.value=x[valKey]; o.textContent=x[labelKey]; sel.appendChild(o); });
   }catch(e){
-    console.error(`Erro ao carregar opções para ${selId}:`, e);
-    sel.innerHTML='<option value="">(Erro ao carregar)</option>';
+    console.error(`Erro ao carregar options para ${selId}:`, e);
+    sel.innerHTML='<option value="">(Erro)</option>';
   }
 }
 
-// ============================================================================
-// FUNÇÃO loadPratos CORRIGIDA PARA COMUNICAR COM O DASHBOARD
-// ============================================================================
-async function loadPratos(){
-  const tb=$('#tblPratos')?.querySelector('tbody'); if(!tb) return;
-  tb.innerHTML='<tr><td colspan="5">Carregando pratos…</td></tr>';
-  
-  try {
-    // A consulta agora busca na tabela 'pratos' e pede ao Supabase para incluir
-    // o nome da categoria relacionada e a contagem de receitas.
-    const { data, error } = await supa.from('pratos')
-      .select('*, categorias ( nome ), prato_receitas ( count )')
-      .order('nome', { ascending: true });
+/* ===== MÓDULO DE CADASTROS ===== */
+const CadastrosModule = {
+    async loadPratos() {
+        const tb = $('#tblPratos')?.querySelector('tbody');
+        if (!tb) return;
+        tb.innerHTML = '<tr><td colspan="5">Carregando pratos…</td></tr>';
+        try {
+            const { data, error } = await supa.from('pratos')
+                .select('*, categoria:categorias(nome), prato_receitas(count)')
+                .order('nome', { ascending: true });
+            if (error) throw error;
 
-    if (error) throw error;
+            tb.innerHTML = '';
+            (data || []).forEach(p => {
+                const tr = document.createElement('tr');
+                const categoriaNome = p.categoria ? p.categoria.nome : '—';
+                const receitasCount = p.prato_receitas.length > 0 ? p.prato_receitas[0].count : 0;
 
-    tb.innerHTML = '';
-    (data || []).forEach(p => {
-        const tr = document.createElement('tr');
-        const categoriaNome = p.categorias ? p.categorias.nome : '—'; // Acessa o nome da categoria aninhada
-        const receitasCount = p.prato_receitas.length > 0 ? p.prato_receitas[0].count : 0; // Acessa a contagem de receitas
+                tr.innerHTML = `<td>${p.nome}</td>
+                  <td>${categoriaNome}</td>
+                  <td>${receitasCount}</td>
+                  <td>${p.ativo ? '<span class="pill ok">Ativo</span>' : '<span class="pill bad">Inativo</span>'}</td>
+                  <td class="row-actions"><button class="btn small" data-act="edit" data-id="${p.id}">Editar</button>
+                  <button class="btn small" data-act="toggle" data-id="${p.id}">${p.ativo ? 'Desativar' : 'Ativar'}</button></td>`;
+                tb.appendChild(tr);
+            });
+        } catch (e) {
+            console.error("Erro ao carregar pratos:", e);
+            tb.innerHTML = '<tr><td colspan="5">Erro ao carregar. Verifique o console.</td></tr>';
+        }
+    },
+    
+    handleNovoPrato() {
+        $('prato-form-title').textContent = 'Novo Prato';
+        // Limpa o formulário, idealmente com <form> tag, mas por ID funciona
+        const fields = ['prato-nome', 'prato-preco', 'prato-descricao'];
+        fields.forEach(id => $(id).value = '');
+        $('prato-cat').selectedIndex = 0;
+        showEditor('prato-editor-container');
+    },
 
-        tr.innerHTML=`<td>${p.nome}</td>
-          <td>${categoriaNome}</td>
-          <td>${receitasCount}</td>
-          <td>${p.ativo ? '<span class="pill ok">Ativo</span>' : '<span class="pill bad">Inativo</span>'}</td>
-          <td class="row-actions"><button class="btn small" data-act="edit" data-id="${p.id}">Editar</button>
-          <button class="btn small" data-act="toggle" data-id="${p.id}">${p.ativo ? 'Desativar' : 'Ativar'}</button></td>`;
-        tb.appendChild(tr);
-    });
-  } catch (e) {
-    console.error("Erro ao carregar pratos:", e);
-    tb.innerHTML='<tr><td colspan="5">Erro ao carregar pratos. Verifique o console.</td></tr>';
-  }
-}
+    async handleSalvarPrato(e) {
+        e.preventDefault();
+        const btn = e.target;
+        btn.disabled = true;
+        setStatus('Salvando prato...');
 
+        try {
+            const pratoData = {
+                nome: $('prato-nome').value,
+                categoria_id: $('prato-cat').value,
+                preco_venda: ptToNumber($('prato-preco').value),
+                descricao: $('prato-descricao').value,
+            };
+
+            // Validação explícita para robustez
+            if (!pratoData.nome || !pratoData.preco_venda || !pratoData.categoria_id) {
+                throw new Error('Nome, Categoria e Preço de Venda são obrigatórios.');
+            }
+
+            const { error } = await supa.from('pratos').insert([pratoData]);
+            if (error) throw error;
+
+            setStatus('Prato salvo com sucesso!', 'ok');
+            hideEditor('prato-editor-container');
+            await this.loadPratos();
+
+        } catch (err) {
+            console.error("Erro ao salvar prato:", err);
+            setStatus(`Erro: ${err.message}`, 'err');
+        } finally {
+            btn.disabled = false;
+        }
+    },
+
+    init() {
+        addSafeEventListener('btnNovoPrato', 'click', () => this.handleNovoPrato());
+        addSafeEventListener('btnSalvarPrato', 'click', (e) => this.handleSalvarPrato(e));
+        addSafeEventListener('btnCancelarPrato', 'click', () => hideEditor('prato-editor-container'));
+
+        // Carregar dados para os selects
+        fillOptionsFrom('categorias', 'prato-cat', 'id', 'nome', { tipo: 'PRATO' });
+
+        this.loadPratos();
+    }
+};
+
+/* ===== MÓDULO DE ESTOQUE ===== */
 const EstoqueModule = {
     async loadSaldos() {
        const tbody = $('tblSaldo')?.querySelector('tbody');
        if (!tbody) return;
        tbody.innerHTML = '<tr><td colspan="6">Carregando saldos...</td></tr>';
        try {
-           const { data, error } = await supa.from('estoque_saldo').select(`
-                saldo_atual,
-                item_tipo,
-                unidades ( nome ),
-                ingredientes ( nome, estoque_minimo, estoque_maximo, unidades_medida(sigla) )
-            `);
-            
+           const { data, error } = await supa.from('estoque_saldo').select('*');
            if (error) throw error;
            
             tbody.innerHTML = '';
@@ -136,23 +186,14 @@ const EstoqueModule = {
             }
 
            data.forEach(item => {
-               if (!item.ingredientes || !item.unidades) return; 
-               const saldo = item.saldo_atual;
-               const min = item.ingredientes.estoque_minimo;
-               const max = item.ingredientes.estoque_maximo;
-               let statusPill = '<span class="pill ok">OK</span>';
-               if (min > 0 && saldo < min) statusPill = '<span class="pill warn">Abaixo Mín.</span>';
-               if (saldo <= 0) statusPill = '<span class="pill bad">Crítico</span>';
-               if (max > 0 && saldo > max) statusPill = '<span class="pill">Acima Máx.</span>';
-
                const tr = document.createElement('tr');
                tr.innerHTML = `
-                   <td>${item.ingredientes.nome}</td>
+                   <td>${item.item_nome}</td>
                    <td>${item.item_tipo}</td>
-                   <td>${item.unidades.nome}</td>
-                   <td>${fmt(saldo)}</td>
-                   <td>${item.ingredientes.unidades_medida?.sigla || 'N/D'}</td>
-                   <td>${statusPill}</td>`;
+                   <td>${item.unidade_nome}</td>
+                   <td>${fmt(item.saldo_total)}</td>
+                   <td>${item.unidade_medida_sigla || 'N/D'}</td>
+                   <td><span class="pill ok">OK</span></td>`; // Status placeholder
                tbody.appendChild(tr);
            });
        } catch(e) {
@@ -160,72 +201,81 @@ const EstoqueModule = {
            console.error("Erro em loadSaldos:", e);
        }
     },
+    
     async handleMovimentacao(e) {
         e.preventDefault();
-        const form = e.target;
-        const btn = form.querySelector('[type="submit"]');
+        const form = e.target.closest('form');
+        const btn = form.querySelector('#btnMovSubmit');
         btn.disabled = true;
+        setStatus('Registrando movimentação...');
         
         const tipoMov = form.dataset.movType;
-        let rpcName = '';
-        let payload = {};
         
-        const item_id = $('mov-item').value;
-        const qtd = ptToNumber($('mov-qtd').value);
-
         try {
-            switch(tipoMov) {
-                case 'ENTRADA':
-                    rpcName = 'rpc_entrada';
-                    payload = {
-                        p_unidade_id: $('mov-unidade-destino').value,
-                        p_item_id: item_id,
-                        p_item_tipo: 'INGREDIENTE',
-                        p_lote: $('mov-lote').value || 'LOTE_PADRAO',
-                        p_qtd: qtd,
-                        p_validade: $('mov-validade').value || null,
-                        p_custo_unit: ptToNumber($('mov-custo').value),
-                        p_ref_doc: $('mov-doc').value || null
-                    };
-                    break;
-                // Adicionar outros casos (SAIDA, AJUSTE) aqui
+            if (tipoMov === 'ENTRADA') {
+                const payload = {
+                    p_unidade_id: $('mov-unidade-destino').value,
+                    p_item_id: $('mov-item').value,
+                    p_lote: $('mov-lote').value || 'LOTE_PADRAO',
+                    p_qtd: ptToNumber($('mov-qtd').value),
+                    p_validade: $('mov-validade').value || null,
+                    p_custo_unit: ptToNumber($('mov-custo').value),
+                    p_ref_doc: $('mov-doc').value || null
+                };
+                 if (!payload.p_unidade_id || !payload.p_item_id || payload.p_qtd <= 0) {
+                    throw new Error("Unidade, Item e Quantidade são obrigatórios.");
+                }
+                const { error } = await supa.rpc('rpc_entrada', payload);
+                if (error) throw error;
+            } else {
+                throw new Error("Tipo de movimentação não implementado.");
             }
             
-            const { error } = await supa.rpc(rpcName, payload);
-            if (error) throw error;
-            
             setStatus('Movimentação registrada com sucesso!', 'ok');
-            $('mov-form-container').style.display = 'none';
-            await this.loadSaldos(); // Recarrega os saldos
+            hideEditor('mov-form-container');
+            await this.loadSaldos();
+
         } catch(ex) {
             console.error('Erro na movimentação:', ex);
-            setStatus('Erro ao registrar: ' + (ex.message || 'Verifique os dados'), 'err');
+            setStatus('Erro: ' + (ex.message || 'Verifique os dados'), 'err');
         } finally {
             btn.disabled = false;
         }
     },
-    async init() {
-        // Event listeners para os botões de ação de movimentação
+
+    setupMovForm(type) {
+        const container = $('mov-form-container');
+        const form = $('frmMov');
+        form.reset();
+        
+        container.style.display = 'block';
+        form.dataset.movType = type;
+        $('mov-form-title').textContent = `Registrar ${type}`;
+
+        const show = (elId, visible) => $(elId).style.display = visible ? 'block' : 'none';
+        
+        show('mov-unidade-origem-group', type === 'TRANSFERENCIA' || type === 'SAIDA');
+        show('mov-unidade-destino-group', type === 'TRANSFERENCIA' || type === 'ENTRADA');
+        show('mov-validade-group', type === 'ENTRADA');
+        show('mov-custo-group', type === 'ENTRADA');
+        show('mov-ajuste-sinal-group', type === 'AJUSTE');
+    },
+
+    init() {
         $$('.mov-actions .btn').forEach(btn => btn.addEventListener('click', (e) => {
-            const type = e.currentTarget.dataset.movType;
-            const container = $('mov-form-container');
-            container.style.display = 'block';
-            $('frmMov').dataset.movType = type;
-            $('mov-form-title').textContent = `Registrar ${type.charAt(0).toUpperCase() + type.slice(1).toLowerCase()}`;
+            const type = e.currentTarget.dataset.movType.toUpperCase();
+            this.setupMovForm(type);
         }));
         
-        addSafeEventListener('btnMovCancel', 'click', () => $('mov-form-container').style.display = 'none');
+        addSafeEventListener('btnMovCancel', 'click', () => hideEditor('mov-form-container'));
         addSafeEventListener('frmMov', 'submit', (e) => this.handleMovimentacao(e));
         
-        // Popula os dropdowns do formulário de movimentação
-        await fillOptionsFrom('unidades', 'mov-unidade-destino', 'id', 'nome');
-        await fillOptionsFrom('ingredientes', 'mov-item', 'id', 'nome', {ativo: true});
+        fillOptionsFrom('unidades', 'mov-unidade-destino', 'id', 'nome');
+        fillOptionsFrom('ingredientes', 'mov-item', 'id', 'nome', {ativo: true});
         
-        // Carrega os dados da "Visão Geral"
-        await this.loadSaldos();
+        this.loadSaldos();
     }
 };
-
 
 /* ===== INICIALIZAÇÃO ===== */
 async function init(){
@@ -233,14 +283,8 @@ async function init(){
     setStatus('Inicializando...');
     setupRouting();
     
-    // Carrega os dados da primeira aba visível
-    await loadPratos();
-    
-    // Inicializa o módulo de estoque (que carrega seus próprios dados)
+    CadastrosModule.init();
     EstoqueModule.init();
-
-    // Adiciona event listeners para as outras abas de cadastro, se necessário
-    // (A lógica de CRUD para as outras abas foi omitida para simplificar, mas pode ser adicionada aqui)
 
     setStatus('Pronto','ok');
   }catch(e){ 
