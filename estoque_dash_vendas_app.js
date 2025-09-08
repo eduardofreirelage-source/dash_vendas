@@ -780,11 +780,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // =============================== INÍCIO DO CÓDIGO CORRIGIDO ===============================
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
       
       const fetchAndCalculateForUnit = async (unitName) => {
-          // Filtro APENAS por unidade e pelo status de cancelado. Outros filtros (loja, canal) são ignorados.
           const unitAnaliticos = { 
             unidade: [unitName],
             cancelado: analiticos.cancelado
@@ -795,7 +793,8 @@ document.addEventListener('DOMContentLoaded', () => {
           
           const [
             finNowResult, finPrevResult,
-            { count: pedNowCount }, { count: pedPrevCount },
+            { count: pedNowCount },
+            { count: pedPrevCount },
             { count: cnCount }, { count: vnCount },
             { count: cpCount }, { count: vpCount }
           ] = await Promise.all([
@@ -860,8 +859,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       try {
         const [rajaKpis, savassiKpis] = await Promise.all([
-          fetchAndCalculateForUnit('Uni.Raja'), // NOME CORRIGIDO (ponto em vez de espaço)
-          fetchAndCalculateForUnit('Uni.Savassi') // NOME CORRIGIDO (ponto em vez de espaço)
+          fetchAndCalculateForUnit('Uni.Raja'), 
+          fetchAndCalculateForUnit('Uni.Savassi')
         ]);
 
         const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
@@ -890,7 +889,6 @@ document.addEventListener('DOMContentLoaded', () => {
         insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px;">Gerando insights...</p>';
 
         try {
-            // CORREÇÃO: Criação de um objeto de parâmetros específico para esta função.
             const isActive = (val) => val && val.length > 0;
             const params = {
                 p_dini: de,
@@ -908,13 +906,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw error;
             }
 
-            if (!data || data.length === 0) {
+            // CORREÇÃO: Lida com a resposta sendo um objeto ou um array.
+            const insightsArray = Array.isArray(data) ? data : (data ? [data] : []);
+
+            if (insightsArray.length === 0) {
                 insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px;">Nenhum insight encontrado para este período.</p>';
                 return;
             }
 
             let allInsightsHTML = '';
-            data.forEach(insight => {
+            insightsArray.forEach(insight => {
                 const insightHTML = `
                     <div class="ins-card ${insight.type || ''}">
                         <div class="dot"></div>
@@ -934,7 +935,6 @@ document.addEventListener('DOMContentLoaded', () => {
             insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px; color: var(--down);">Erro ao carregar insights.</p>';
         }
     }
-    // =============================== FIM DO CÓDIGO CORRIGIDO ================================
 
 
     /* ===================== LOOP PRINCIPAL ===================== */
@@ -960,7 +960,7 @@ document.addEventListener('DOMContentLoaded', () => {
           updateCharts(de,ate,dePrev,atePrev, analiticos),
           updateMonth12x12(analiticos),
           updateTop6(de,ate, analiticos),
-          updateInsights(de, ate, analiticos, selectedKpiForDiag) // Chamada corrigida
+          updateInsights(de, ate, analiticos, selectedKpiForDiag)
         ]);
         
         if (allKpiValues) {
