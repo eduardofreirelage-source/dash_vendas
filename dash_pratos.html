@@ -173,20 +173,18 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <script>
-  /* ===================== CONFIG ===================== */
-  const SUPABASE_URL  = 'https://rqeagimulvgfecvuzubk.supabase.co';
-  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInRypeCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxZWFnaW11bHZnZmVjdnV6dWJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NzkyMzUsImV4cCI6MjA3MjU1NTIzNX0.SeNHyHOlpqjm-QTl7KXq7YF-48fk5iOQCRgpangP4zU';
-  const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+    /* ===================== CONFIG ===================== */
+    // ATENÇÃO: SUBSTITUA COM AS SUAS CREDENCIAIS DO SUPABASE
+    const SUPABASE_URL  = 'SUA_URL_COPIADA_DO_PAINEL';
+    const SUPABASE_ANON = 'SUA_CHAVE_ANON_COPIADA_DO_PAINEL';
+    const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  /* ===================== CÓDIGO JS ANTERIOR (Helpers, Charts, etc.) ===================== */
-  // Todo o código anterior de setup, helpers, charts, etc. está aqui. Foi omitido por brevidade.
-  // Cole aqui o código JS da sua versão funcional anterior, antes da seção de UPLOAD.
-  // ======================================================================================
+    /* ===================== CÓDIGO JS DA APLICAÇÃO ===================== */
     Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif';
     Chart.defaults.color = '#334155';
     Chart.defaults.plugins.legend.position = 'top';
@@ -215,104 +213,95 @@
     async function reloadFilterOptions() { const { data, error } = await supa.from('vendas_pratos').select('unidade, categoria, prato'); if(error) { console.error("Erro ao carregar opções de filtro", error); return; } const unique = (key) => [...new Set(data?.map(item => item[key]).filter(Boolean))]; ms.unids.setOptions(unique('unidade')); ms.cats.setOptions(unique('categoria')); ms.pratos.setOptions(unique('prato')); }
     async function init() { try { const { data, error } = await supa.from('vendas_pratos').select('data_venda').order('data_venda', {ascending: false}).limit(1); if (error) throw error; lastDay = (data?.length && data[0].data_venda) ? data[0].data_venda : getTodayISO(); await reloadFilterOptions(); document.dispatchEvent(new Event('filters:init')); } catch (e) { console.error(e); } }
     document.addEventListener('DOMContentLoaded', () => { const fx = { $drop: $('fxDropup'), $btnMore: $('fxBtnMore'), $btnReset: $('fxBtnReset'), $start: $('fxDuStart'), $end: $('fxDuEnd'), $days: $('fxDuQuickDays'), $chips: $('fxQuickChips') }; function fxFmt(date){ return date.toISOString().split('T')[0]; } function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end); } function setNamedPeriod(win) { const baseDate = new Date(lastDay + 'T12:00:00Z'); let start, end; if (win === 'today') { start = end = baseDate; } else if (win === 'yesterday') { start = new Date(baseDate); start.setDate(baseDate.getDate() - 1); end = start; } else if (win === 'lastMonth') { start = new Date(baseDate.getFullYear(), baseDate.getMonth() - 1, 1); end = new Date(baseDate.getFullYear(), baseDate.getMonth(), 0); } else if (win === 'lastYear') { const y = baseDate.getFullYear() - 1; start = new Date(y, 0, 1); end = new Date(y, 11, 31); } if (start && end) { fxSetRange(start, end); fxDispatchApply(); } } function fxLastNDays(n){ const end = new Date(lastDay + 'T12:00:00Z'); const start = new Date(end); start.setDate(end.getDate() - (n - 1)); fxSetRange(start, end); } function fxShowDrop(show){ fx.$drop.classList.toggle('fx-show', show); fx.$btnMore.setAttribute('aria-expanded', show?'true':'false'); if(show) fx.$start?.focus(); } fx.$btnMore.addEventListener('click', ()=> fxShowDrop(!fx.$drop.classList.contains('fx-show'))); document.addEventListener('click', (e)=>{ if(!fx.$drop.classList.contains('fx-show')) return; if(!(fx.$drop.contains(e.target) || fx.$btnMore.contains(e.target))) fxShowDrop(false); }); document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && fx.$drop.classList.contains('fx-show')) fxShowDrop(false) }); const clearActiveChips = () => [...fx.$chips.children, ...fx.$days.children].forEach(b => b.classList.remove('active')); fx.$chips.addEventListener('click', e => { const btn = e.target.closest('button'); if (!btn) return; clearActiveChips(); btn.classList.add('active'); setNamedPeriod(btn.dataset.win); }); fx.$start.addEventListener('change', () => { clearActiveChips(); fxDispatchApply(); }); fx.$end.addEventListener('change', () => { clearActiveChips(); fxDispatchApply(); }); fx.$days.addEventListener('click', (e)=>{ const b=e.target.closest('button'); if(!b) return; clearActiveChips(); b.classList.add('active'); const n=parseInt(b.dataset.win,10); if(!isNaN(n)) { fxLastNDays(n); fxDispatchApply(); } }); fx.$btnReset.addEventListener('click', ()=>{ Object.values(ms).forEach(m => m.clear()); $('onlyPratos').checked = false; clearActiveChips(); $('fxDuQuickDays').querySelector('[data-win="30"]').classList.add('active'); fxLastNDays(30); fxDispatchApply(); }); document.addEventListener('filters:apply', (e) => { if(e.detail) { applyAll(e.detail); } }); document.addEventListener('filters:init', () => { clearActiveChips(); $('fxDuQuickDays').querySelector('[data-win="30"]').classList.add('active'); fxLastNDays(30); fxDispatchApply(); }); init(); });
+  
+    // =================================================================================
+    // LÓGICA DE UPLOAD: RESILIENTE E INTELIGENTE
+    // =================================================================================
+    $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
+    $('fileExcel').addEventListener('change', async (ev)=>{
+      const file = ev.target.files[0];
+      if (!file) return;
 
+      const btn = $('btnUpload');
+      const originalText = btn.textContent;
+      btn.textContent = 'Enviando...';
+      btn.disabled = true;
 
-  // =================================================================================
-  // NOVA LÓGICA DE UPLOAD: RESILIENTE E INTELIGENTE
-  // =================================================================================
-  $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
-  $('fileExcel').addEventListener('change', async (ev)=>{
-    const file = ev.target.files[0];
-    if (!file) return;
+      try {
+          const data = await file.arrayBuffer();
+          const workbook = XLSX.read(data);
+          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+          const json = XLSX.utils.sheet_to_json(worksheet);
+          
+          if (json.length === 0) throw new Error("A planilha está vazia ou em formato inválido.");
 
-    const btn = $('btnUpload');
-    const originalText = btn.textContent;
-    btn.textContent = 'Enviando...';
-    btn.disabled = true;
+          const columnMapping = {
+              data_venda: ['Data', 'data'],
+              prato: ['DESCRIÇÃO', 'Descricao', 'Descrição', 'Nome do Prato', 'Produto'],
+              categoria: ['CATEGORIA', 'Categoria'],
+              unidade: ['UNIDADE', 'Unidade', 'Loja'],
+              quantidade: ['QUANT', 'Quantidade', 'Qtd', 'quant'],
+              preco_total: ['VALOR', 'Valor', 'Preço Total', 'Total']
+          };
 
-    try {
-        const data = await file.arrayBuffer();
-        const workbook = XLSX.read(data);
-        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(worksheet);
-        
-        if (json.length === 0) throw new Error("A planilha está vazia ou em formato inválido.");
+          const getValue = (row, field) => {
+              for (const alias of columnMapping[field]) {
+                  if (row[alias] !== undefined) return row[alias];
+              }
+              return undefined;
+          };
+          
+          const rowsToInsert = json.map(row => {
+              const dateValue = getValue(row, 'data_venda');
+              let date;
+              if (typeof dateValue === 'number') {
+                  date = new Date(Math.round((dateValue - 25569) * 86400 * 1000));
+              } else {
+                  date = new Date(dateValue);
+              }
+              if (isNaN(date.getTime())) return null;
 
-        // ======================= MAPEAMENTO DE COLUNAS FLEXÍVEL =======================
-        // Define todos os nomes possíveis para as colunas que procuramos.
-        // Isso torna o importador tolerante a pequenas variações nos nomes dos cabeçalhos.
-        const columnMapping = {
-            data_venda: ['Data', 'data'],
-            prato: ['DESCRIÇÃO', 'Descricao', 'Descrição', 'Nome do Prato', 'Produto'],
-            categoria: ['CATEGORIA', 'Categoria'],
-            unidade: ['UNIDADE', 'Unidade', 'Loja'],
-            quantidade: ['QUANT', 'Quantidade', 'Qtd', 'quant'],
-            preco_total: ['VALOR', 'Valor', 'Preço Total', 'Total']
-        };
+              const quantityStr = String(getValue(row, 'quantidade') || '0').replace(',', '.');
+              const priceStr = String(getValue(row, 'preco_total') || '0').replace(',', '.');
 
-        // Função auxiliar para encontrar o valor em uma linha usando o mapeamento
-        const getValue = (row, field) => {
-            for (const alias of columnMapping[field]) {
-                if (row[alias] !== undefined) return row[alias];
-            }
-            return undefined;
-        };
-        
-        // ======================= TRANSFORMAÇÃO E LIMPEZA DOS DADOS =======================
-        const rowsToInsert = json.map(row => {
-            const dateValue = getValue(row, 'data_venda');
-            let date;
-            if (typeof dateValue === 'number') {
-                date = new Date(Math.round((dateValue - 25569) * 86400 * 1000));
-            } else {
-                date = new Date(dateValue);
-            }
-            if (isNaN(date.getTime())) return null;
+              return {
+                  data_venda: date.toISOString().split('T')[0],
+                  prato:       getValue(row, 'prato'),
+                  categoria:   getValue(row, 'categoria'),
+                  unidade:     getValue(row, 'unidade'),
+                  quantidade:  parseFloat(quantityStr),
+                  preco_total: parseFloat(priceStr)
+              };
+          }).filter(row => row && row.prato && !isNaN(row.quantidade) && !isNaN(row.preco_total));
 
-            const quantityStr = String(getValue(row, 'quantidade') || '0').replace(',', '.');
-            const priceStr = String(getValue(row, 'preco_total') || '0').replace(',', '.');
+          if (rowsToInsert.length === 0) {
+              throw new Error("Nenhuma linha válida para importar foi encontrada. Verifique se os nomes das colunas (Data, DESCRIÇÃO, QUANT, VALOR, etc.) e os dados estão corretos.");
+          }
+          
+          const BATCH_SIZE = 500;
+          for (let i = 0; i < rowsToInsert.length; i += BATCH_SIZE) {
+              const batch = rowsToInsert.slice(i, i + BATCH_SIZE);
+              const { error } = await supa.from('vendas_pratos').insert(batch);
+              if (error) {
+                  throw error;
+              }
+          }
+          
+          alert(`${rowsToInsert.length} registros importados com sucesso! O dashboard será atualizado.`);
+          window.location.reload();
 
-            return {
-                data_venda: date.toISOString().split('T')[0],
-                prato:       getValue(row, 'prato'),
-                categoria:   getValue(row, 'categoria'),
-                unidade:     getValue(row, 'unidade'),
-                quantidade:  parseFloat(quantityStr),
-                preco_total: parseFloat(priceStr)
-            };
-        }).filter(row => row && row.prato && !isNaN(row.quantidade) && !isNaN(row.preco_total));
-
-        if (rowsToInsert.length === 0) {
-            throw new Error("Nenhuma linha válida para importar foi encontrada. Verifique se os nomes das colunas (Data, DESCRIÇÃO, QUANT, VALOR, etc.) e os dados estão corretos.");
-        }
-        
-        // ======================= ENVIO EM LOTES PARA O SUPABASE =======================
-        const BATCH_SIZE = 500;
-        for (let i = 0; i < rowsToInsert.length; i += BATCH_SIZE) {
-            const batch = rowsToInsert.slice(i, i + BATCH_SIZE);
-            const { error } = await supa.from('vendas_pratos').insert(batch);
-            if (error) {
-                // Se houver um erro do Supabase, o lançamos para ser pego pelo catch
-                throw error;
-            }
-        }
-        
-        alert(`${rowsToInsert.length} registros importados com sucesso! O dashboard será atualizado.`);
-        window.location.reload();
-
-    } catch (e) {
-        console.error("Erro no upload:", e);
-        // Aprimora a mensagem de erro para o usuário
-        const errorMessage = e.code === 'PGRST205' ? 
-            `Erro de Banco de Dados: A tabela 'vendas_pratos' não foi encontrada. Execute o Passo 1 (SQL) novamente.` :
-            e.message;
-        alert(`Erro ao importar: ${errorMessage}`);
-    } finally {
-        btn.textContent = originalText;
-        btn.disabled = false;
-        ev.target.value = '';
-    }
-  });
+      } catch (e) {
+          console.error("Erro no upload:", e);
+          const errorMessage = e.code === 'PGRST205' ? 
+              `Erro de Banco de Dados: A tabela 'vendas_pratos' não foi encontrada. Execute o Passo 1 (SQL) novamente.` :
+              e.message;
+          alert(`Erro ao importar: ${errorMessage}`);
+      } finally {
+          btn.textContent = originalText;
+          btn.disabled = false;
+          ev.target.value = '';
+      }
+    });
   </script>
 </body>
 </html>
