@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const REFRESH_RPC     = 'refresh_sales_materialized';
     // ATUALIZAÇÃO DA CHAVE DE API
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -338,10 +338,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return allRows;
     }
 
-    // NOVA FUNÇÃO: dedicada a renderizar os KPIs da aba "Vendas"
     function renderVendasKPIs(allKpiValues) {
         if (!allKpiValues) {
-            // Limpa os KPIs em caso de erro
             document.querySelectorAll('.kpi .val, .kpi .sub span').forEach(el => el.textContent = '—');
             document.querySelectorAll('.kpi .delta').forEach(el => { el.textContent = '—'; el.className = 'delta flat'; });
             return;
@@ -358,7 +356,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // MODIFICADO: Esta função agora SÓ CALCULA e RETORNA os dados, não atualiza a tela diretamente.
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
         let allKpiValues = {};
         try {
@@ -441,7 +438,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (e) {
             console.error("Erro detalhado em updateKPIs:", e);
-            // Em caso de erro, retorna null para que a função de renderização possa limpar a tela.
             return null;
         }
         return allKpiValues;
@@ -455,7 +451,6 @@ document.addEventListener('DOMContentLoaded', () => {
           const mainSubEl = mainKpiCard.querySelector('.hero-sub-value');
           
           const totalAnaliticos = {...analiticos, unidade: [], loja: []};
-          // A função updateKPIs é chamada aqui apenas para obter os dados, sem efeito colateral de renderização.
           const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, totalAnaliticos);
           
           if(totalKpis && totalKpis[kpi_key]) {
@@ -500,7 +495,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // NOVA FUNÇÃO DE PROJEÇÕES (ISOLADA E ROBUSTA)
     async function updateProjections(de, ate, dePrev, atePrev, analiticos) {
         const kpiKey = $('kpi-select').value;
         const meta = KPI_META[kpiKey] || { fmt: 'money' };
@@ -533,10 +527,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 deltaBadge($('proj_savassi_delta'), null, null);
             }
         };
-        resetUI('all'); // Reseta a UI antes de buscar os dados
+        resetUI('all');
 
         try {
-            // Busca de dados independente e paralela para garantir isolamento e performance.
             const [totalData, rajaData, savassiData] = await Promise.all([
                 updateKPIs(de, ate, dePrev, atePrev, analiticos),
                 updateKPIs(de, ate, dePrev, atePrev, { ...analiticos, unidade: ['Uni.Raja'] }),
@@ -1001,16 +994,16 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const totalViewAnaliticos = { ...analiticos, unidade: [], loja: [] };
         
-        // ETAPA 1: Busca e renderiza os KPIs principais primeiro para evitar o "pisca" e garantir o valor total.
         const kpiData = await updateKPIs(de, ate, dePrev, atePrev, totalViewAnaliticos);
         renderVendasKPIs(kpiData);
 
-        // ETAPA 2: Busca e renderiza todo o resto em paralelo, agora sem risco de sobrescrever os KPIs principais.
         const selectedKpiForDiag = $('kpi-select').value;
         await Promise.all([
           updateMonth12x12(totalViewAnaliticos),
           getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos),
           updateCharts(de,ate,dePrev,atePrev, analiticos),
+          // A nova função de gráficos do diagnóstico é adicionada aqui
+          updateDiagnosticCharts(de, ate, analiticos),
           updateTop6(de,ate, analiticos),
           updateInsights(de, ate, analiticos, selectedKpiForDiag),
           updateProjections(de, ate, dePrev, atePrev, analiticos)
