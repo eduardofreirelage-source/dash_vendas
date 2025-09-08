@@ -5,13 +5,17 @@ document.addEventListener('DOMContentLoaded', () => {
     
     /* ===================== CONFIG ===================== */
     const RPC_FILTER_FUNC = 'filter_vendas';
+    const RPC_KPI_FUNC = 'kpi_vendas_unificado';
     const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes_v1';
     const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v1';
     const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v1';
     const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v1';
-    
+    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
+
+    const DEST_INSERT_TABLE= 'vendas_xlsx';
+    const REFRESH_RPC     = 'refresh_sales_materialized';
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -154,13 +158,11 @@ document.addEventListener('DOMContentLoaded', () => {
           if(!deISO || !ateISO) return {dePrev:null, atePrev:null};
           const d1 = new Date(deISO + 'T12:00:00');
           const d2 = new Date(ateISO + 'T12:00:00');
-          
           if (this.isFullYear(d1, d2) || this.isFullMonthsAligned(d1, d2)) {
               const p1 = this.shiftYear(d1, -1);
               const p2 = this.shiftYear(d2, -1);
               return { dePrev: this.iso(p1), atePrev: this.iso(p2) };
           }
-          
           const len = this.daysLen(deISO, ateISO);
           const atePrev = new Date(d1.getTime() - (1000 * 60 * 60 * 24));
           const dePrev = new Date(atePrev.getTime() - ((len - 1) * (1000 * 60 * 60 * 24)));
@@ -294,8 +296,9 @@ document.addEventListener('DOMContentLoaded', () => {
     /* ===================== LÓGICA DE DADOS (KPIs, Gráficos, etc.) ===================== */
     function buildParams(de, ate, analiticos) {
       const isActive = (val) => val && val.length > 0;
-      // CORREÇÃO LÓGICA: O filtro 'cancelado' é tratado no baseQuery, não aqui.
-      // buildParams agora é usado apenas pelos gráficos.
+      let p_cancelado = null;
+      if (analiticos.cancelado === 'sim') p_cancelado = 'Sim';
+      if (analiticos.cancelado === 'nao') p_cancelado = 'Não';
       return {
         p_dini: de, p_dfim: ate,
         p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
@@ -303,25 +306,22 @@ document.addEventListener('DOMContentLoaded', () => {
         p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
         p_canais: isActive(analiticos.canal) ? analiticos.canal : null,
         p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
-        p_cancelado: null // Gráficos sempre consideram tudo
+        p_cancelado
       };
     }
 
-    async function baseQuery(de, ate){
-      // Simplificado para apenas buscar por data, os filtros analíticos são aplicados no cliente.
-      const PAGE_SIZE = 5000;
+    async function baseQuery(de, ate, analiticos){
+      const PAGE_SIZE = 1000;
       let allRows = [];
       let page = 0;
       let keepFetching = true;
+      const params = buildParams(de, ate, analiticos);
 
       while (keepFetching) {
-          const { data, error } = await supa.from('vendas_canon')
-                                          .select('*')
-                                          .gte('dia', de)
-                                          .lte('dia', ate)
+          const { data, error } = await supa.rpc(RPC_FILTER_FUNC, params)
                                           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
           if (error) {
-              console.error(`[baseQuery]`, error);
+              console.error(`[RPC ${RPC_FILTER_FUNC}]`, error);
               throw error;
           }
           if (data && data.length > 0) {
@@ -337,106 +337,156 @@ document.addEventListener('DOMContentLoaded', () => {
       return allRows;
     }
     
-    // NOVA FUNÇÃO-CORE: Calcula todos os KPIs a partir de dados brutos. ÚNICA FONTE DA VERDADE.
-    function calculateKpiMetrics(rows, len, analiticos) {
-        // VERBOSIDADE E CLAREZA: Lógica de filtragem explícita baseada na seleção do usuário.
-        let processedRows;
-        if (analiticos.cancelado === 'sim') {
-            processedRows = rows.filter(r => r.cancelado === 'Sim');
-        } else if (analiticos.cancelado === 'nao') {
-            processedRows = rows.filter(r => r.cancelado !== 'Sim');
-        } else { // 'ambos'
-            processedRows = rows;
-        }
-
-        let fat = 0, des = 0, fre = 0;
-        let canc_val = 0, canc_ped = 0;
-
-        // Para Faturamento e Pedidos, consideramos apenas os não cancelados, a menos que o filtro seja 'sim'
-        const rowsForFat = (analiticos.cancelado === 'sim') ? [] : rows.filter(r => r.cancelado !== 'Sim');
-        const ped = rowsForFat.length;
-
-        for (const r of rowsForFat) {
-            fat += +r.fat || 0;
-            des += +r.des || 0;
-            fre += +r.fre || 0;
-        }
+    // ===================================================================================
+    // ARQUITETURA ESTÁVEL (BASE ENVIADA) COM ADIÇÃO DAS PROJEÇÕES
+    // ===================================================================================
+    async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
+      let allKpiValues = {};
+      try {
+        const pNow = buildParams(de, ate, analiticos);
+        const pPrev = buildParams(dePrev, atePrev, analiticos);
         
-        // Pedidos e valor cancelado são calculados sobre o total de linhas.
-        for (const r of rows) {
-             if (r.cancelado === 'Sim') {
-                canc_val += +r.fat || 0;
-                canc_ped++;
-            }
-        }
+        const [
+          finNowResult, finPrevResult,
+          { count: pedNowCount, error: errPedNow },
+          { count: pedPrevCount, error: errPedPrev },
+          { count: cnCount, error: errCn }, { count: vnCount, error: errVn },
+          { count: cpCount, error: errCp }, { count: vpCount, error: errVp }
+        ] = await Promise.all([
+            supa.rpc(RPC_KPI_FUNC, pNow),
+            supa.rpc(RPC_KPI_FUNC, pPrev),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Sim'),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Não'),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Sim'),
+            supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Não')
+        ]);
+
+        if(finNowResult.error) throw finNowResult.error;
+        if(errPedNow) throw errPedNow;
         
-        return {
-            fat: fat,
-            ped: ped,
-            tkt: ped > 0 ? fat / ped : 0,
-            des: des,
-            fatmed: len > 0 ? fat / len : 0,
-            roi: des > 0 ? (fat - des) / des : Infinity,
-            desperc: fat > 0 ? des / fat : 0,
-            canc_val: canc_val,
-            fre: fre,
-            fremed: ped > 0 ? fre / ped : 0,
-            canc_ped: canc_ped,
+        const pedTotalNow = analiticos.cancelado === 'sim' ? cnCount : analiticos.cancelado === 'nao' ? vnCount : pedNowCount;
+
+        const N = {
+            ped: pedTotalNow,
+            fat: +(finNowResult.data[0]?.fat || 0),
+            des: +(finNowResult.data[0]?.des || 0),
+            fre: +(finNowResult.data[0]?.fre || 0)
         };
-    }
-    
-    function updateKPIs(kpiData) {
-        if (!kpiData) return;
-        Object.keys(kpiData).forEach(key => {
-            if (KPI_META[key]) {
-                const kpi = kpiData[key];
-                const valEl = $(`k_${key}`);
-                const prevEl = $(`p_${key}`);
-                const deltaEl = $(`d_${key}`);
-                if (valEl) valEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.current);
-                if (prevEl) prevEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.previous);
-                if (deltaEl) deltaBadge(deltaEl, kpi.current, kpi.previous);
-            }
+        const P = {
+            ped: pedPrevCount,
+            fat: +(finPrevResult.data[0]?.fat || 0),
+            des: +(finPrevResult.data[0]?.des || 0),
+            fre: +(finPrevResult.data[0]?.fre || 0)
+        };
+
+        const {data: cancDataNow} = await supa.rpc(RPC_KPI_FUNC, { ...pNow, p_cancelado: 'Sim' });
+        const {data: cancDataPrev} = await supa.rpc(RPC_KPI_FUNC, { ...pPrev, p_cancelado: 'Sim' });
+        
+        const len = DateHelpers.daysLen(de, ate);
+        const prevLen = DateHelpers.daysLen(dePrev, atePrev);
+
+        const tktN = (N.ped > 0) ? (N.fat / N.ped) : 0;
+        const tktP = (P.ped > 0) ? (P.fat / P.ped) : 0;
+        const fatMedN = len > 0 ? (N.fat / len) : 0;
+        const fatMedP = prevLen > 0 ? (P.fat / prevLen) : 0;
+        const desPercN = N.fat > 0 ? (N.des / N.fat) : 0;
+        const desPercP = P.fat > 0 ? (P.des / P.fat) : 0;
+        const freMedN = N.ped > 0 ? (N.fre / N.ped) : 0;
+        const freMedP = P.ped > 0 ? (P.fre / P.ped) : 0;
+        const cancValN = +(cancDataNow[0]?.fat || 0);
+        const cancValP = +(cancDataPrev[0]?.fat || 0);
+        const roiN = N.des > 0 ? (N.fat - N.des) / N.des : NaN;
+        const roiP = P.des > 0 ? (P.fat - P.des) / P.des : NaN;
+
+        allKpiValues = {
+            fat: { current: N.fat, previous: P.fat },
+            ped: { current: N.ped, previous: P.ped },
+            tkt: { current: tktN, previous: tktP },
+            des: { current: N.des, previous: P.des },
+            fatmed: { current: fatMedN, previous: fatMedP },
+            roi: { current: roiN, previous: roiP },
+            desperc: { current: desPercN, previous: desPercP },
+            canc_val: { current: cancValN, previous: cancValP },
+            fre: { current: N.fre, previous: P.fre },
+            fremed: { current: freMedN, previous: freMedP },
+            canc_ped: { current: cnCount, previous: cpCount },
+        };
+
+        Object.keys(allKpiValues).forEach(key => {
+            const kpi = allKpiValues[key];
+            const valEl = $(`k_${key}`);
+            const prevEl = $(`p_${key}`);
+            const deltaEl = $(`d_${key}`);
+            if (valEl) valEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.current);
+            if (prevEl) prevEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.previous);
+            if (deltaEl) deltaBadge(deltaEl, kpi.current, kpi.previous);
         });
+
+      } catch (e) {
+        console.error("Erro detalhado em updateKPIs:", e);
+        document.querySelectorAll('.kpi .val, .kpi .sub span').forEach(el => el.textContent = '—');
+        document.querySelectorAll('.kpi .delta').forEach(el => { el.textContent = '—'; el.className = 'delta flat'; });
+        return null; // ADIÇÃO DE ROBUSTEZ
+      }
+      return allKpiValues;
     }
 
-    function renderDiagnosticHero(kpiData, kpiKey) {
-        if (!kpiData) return;
-        const meta = KPI_META[kpiKey] || KPI_META.fat;
-        
-        const mainKpiCard = $('hero_main_kpi');
-        if (mainKpiCard) {
-            mainKpiCard.querySelector('.hero-value-number').textContent = formatValueBy(meta.fmt, kpiData.total[kpiKey]?.current);
-            mainKpiCard.querySelector('.hero-sub-value').textContent = 'Anterior: ' + formatValueBy(meta.fmt, kpiData.total[kpiKey]?.previous);
-            deltaBadge(mainKpiCard.querySelector('.delta'), kpiData.total[kpiKey]?.current, kpiData.total[kpiKey]?.previous);
-        }
+    async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
+      const mainKpiCard = $('hero_main_kpi');
+      // VERIFICAÇÃO DE ROBUSTEZ: Garante que o elemento existe antes de prosseguir.
+      if (mainKpiCard) {
+          const mainValueEl = mainKpiCard.querySelector('.hero-value-number');
+          const mainDeltaEl = mainKpiCard.querySelector('.delta');
+          const mainSubEl = mainKpiCard.querySelector('.hero-sub-value');
+          
+          const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
+          if(totalKpis && totalKpis[kpi_key]) {
+              const meta = KPI_META[kpi_key];
+              mainValueEl.textContent = formatValueBy(meta.fmt, totalKpis[kpi_key].current);
+              mainSubEl.textContent = 'Anterior: ' + formatValueBy(meta.fmt, totalKpis[kpi_key].previous);
+              deltaBadge(mainDeltaEl, totalKpis[kpi_key].current, totalKpis[kpi_key].previous);
+          }
+      }
 
-        const rajaCard = $('unit-kpi-raja');
-        if(rajaCard){
-            rajaCard.querySelector('.unit-kpi-value').textContent = formatValueBy(meta.fmt, kpiData.raja[kpiKey]?.current);
-            rajaCard.querySelector('.unit-kpi-sub').textContent = 'Anterior: ' + formatValueBy(meta.fmt, kpiData.raja[kpiKey]?.previous);
-            deltaBadge(rajaCard.querySelector('.delta'), kpiData.raja[kpiKey]?.current, kpiData.raja[kpiKey]?.previous);
-        }
-        
-        const savassiCard = $('unit-kpi-savassi');
-        if(savassiCard){
-            savassiCard.querySelector('.unit-kpi-value').textContent = formatValueBy(meta.fmt, kpiData.savassi[kpiKey]?.current);
-            savassiCard.querySelector('.unit-kpi-sub').textContent = 'Anterior: ' + formatValueBy(meta.fmt, kpiData.savassi[kpiKey]?.previous);
-            deltaBadge(savassiCard.querySelector('.delta'), kpiData.savassi[kpiKey]?.current, kpiData.savassi[kpiKey]?.previous);
-        }
+      const fetchAndCalculateForUnit = async (unitName) => {
+          const unitAnaliticos = { ...analiticos, unidade: [unitName] };
+          return await updateKPIs(de, ate, dePrev, atePrev, unitAnaliticos);
+      };
+    
+      try {
+          const [rajaKpis, savassiKpis] = await Promise.all([
+            fetchAndCalculateForUnit('Uni.Raja'), 
+            fetchAndCalculateForUnit('Uni.Savassi')
+          ]);
+
+          const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
+          const renderUnit = (unitId, unitData) => {
+            const card = $(unitId);
+            const data = unitData?.[kpi_key];
+            if (card && data) {
+              card.querySelector('.unit-kpi-value').textContent = formatValueBy(kpiMeta.fmt, data.current);
+              card.querySelector('.unit-kpi-sub').textContent = 'Anterior: ' + formatValueBy(kpiMeta.fmt, data.previous);
+              deltaBadge(card.querySelector('.delta'), data.current, data.previous);
+            }
+          };
+
+          renderUnit('unit-kpi-raja', rajaKpis);
+          renderUnit('unit-kpi-savassi', savassiKpis);
+          
+      } catch(e) {
+          console.error("Erro ao renderizar KPIs de unidade:", e);
+      }
     }
     
-    function updateProjections(kpiData, kpiKey) {
-        if (!kpiData) {
-            $('proj_total_val').textContent = '—';
-            deltaBadge($('proj_total_delta'), null, null);
-            $('proj_raja_val').textContent = '—';
-            deltaBadge($('proj_raja_delta'), null, null);
-            $('proj_savassi_val').textContent = '—';
-            deltaBadge($('proj_savassi_delta'), null, null);
-            return;
-        }
+    // ===================================================================================
+    // NOVA FUNÇÃO DE PROJEÇÕES (ISOLADA E ROBUSTA)
+    // ===================================================================================
+    async function updateProjections(de, ate, dePrev, atePrev, analiticos) {
+        const kpiKey = $('kpi-select').value;
         const meta = KPI_META[kpiKey] || KPI_META.fat;
+
         const calculateTrendProjection = (current, previous) => {
             if (current == null || !isFinite(current) || previous == null || !isFinite(previous) || previous === 0) {
                 return { value: current, deltaVal: 0 };
@@ -444,24 +494,56 @@ document.addEventListener('DOMContentLoaded', () => {
             const delta = (current - previous) / previous;
             return { value: current * (1 + delta), deltaVal: delta };
         };
-        
-        const len = DateHelpers.daysLen(fx.$start.value, fx.$end.value);
-        const projectionMultiplier = len > 0 ? projectionDays / len : 1;
-        
-        const projTotal = calculateTrendProjection(kpiData.total[kpiKey]?.current, kpiData.total[kpiKey]?.previous);
-        $('proj_total_label').textContent = `PROJEÇÃO ${meta.label.toUpperCase()} (${projectionDays}D)`;
-        $('proj_total_val').textContent = projTotal.value !== null ? formatValueBy(meta.fmt, projTotal.value * projectionMultiplier) : '—';
-        deltaBadge($('proj_total_delta'), projTotal.value, kpiData.total[kpiKey]?.current);
 
-        const projRaja = calculateTrendProjection(kpiData.raja[kpiKey]?.current, kpiData.raja[kpiKey]?.previous);
-        $('proj_raja_label').textContent = `UNI.RAJA - ${meta.label}`;
-        $('proj_raja_val').textContent = projRaja.value !== null ? formatValueBy(meta.fmt, projRaja.value * projectionMultiplier) : '—';
-        deltaBadge($('proj_raja_delta'), projRaja.value, kpiData.raja[kpiKey]?.current);
-        
-        const projSavassi = calculateTrendProjection(kpiData.savassi[kpiKey]?.current, kpiData.savassi[kpiKey]?.previous);
-        $('proj_savassi_label').textContent = `UNI.SAVASSI - ${meta.label}`;
-        $('proj_savassi_val').textContent = projSavassi.value !== null ? formatValueBy(meta.fmt, projSavassi.value * projectionMultiplier) : '—';
-        deltaBadge($('proj_savassi_delta'), projSavassi.value, kpiData.savassi[kpiKey]?.current);
+        const len = DateHelpers.daysLen(de, ate);
+        const projectionMultiplier = len > 0 ? projectionDays / len : 1;
+
+        const resetUI = () => {
+            $('proj_total_label').textContent = `PROJEÇÃO ${meta.label.toUpperCase()} (${projectionDays}D)`;
+            $('proj_total_val').textContent = '—';
+            deltaBadge($('proj_total_delta'), null, null);
+            $('proj_raja_label').textContent = `UNI.RAJA - ${meta.label}`;
+            $('proj_raja_val').textContent = '—';
+            deltaBadge($('proj_raja_delta'), null, null);
+            $('proj_savassi_label').textContent = `UNI.SAVASSI - ${meta.label}`;
+            $('proj_savassi_val').textContent = '—';
+            deltaBadge($('proj_savassi_delta'), null, null);
+        };
+
+        try {
+            // Busca de dados independente para garantir isolamento
+            const [totalData, rajaData, savassiData] = await Promise.all([
+                updateKPIs(de, ate, dePrev, atePrev, analiticos),
+                updateKPIs(de, ate, dePrev, atePrev, { ...analiticos, unidade: ['Uni.Raja'] }),
+                updateKPIs(de, ate, dePrev, atePrev, { ...analiticos, unidade: ['Uni.Savassi'] })
+            ]);
+
+            // VERIFICAÇÃO DE ROBUSTEZ
+            if (!totalData || !rajaData || !savassiData) {
+                throw new Error("Falha na busca de dados para projeção.");
+            }
+
+            // Projeção Total
+            const projTotal = calculateTrendProjection(totalData[kpiKey]?.current, totalData[kpiKey]?.previous);
+            $('proj_total_label').textContent = `PROJEÇÃO ${meta.label.toUpperCase()} (${projectionDays}D)`;
+            $('proj_total_val').textContent = projTotal.value !== null ? formatValueBy(meta.fmt, projTotal.value * projectionMultiplier) : '—';
+            deltaBadge($('proj_total_delta'), projTotal.value, totalData[kpiKey]?.current);
+
+            // Projeções por Unidade
+            const projRaja = calculateTrendProjection(rajaData[kpiKey]?.current, rajaData[kpiKey]?.previous);
+            $('proj_raja_label').textContent = `UNI.RAJA - ${meta.label}`;
+            $('proj_raja_val').textContent = projRaja.value !== null ? formatValueBy(meta.fmt, projRaja.value * projectionMultiplier) : '—';
+            deltaBadge($('proj_raja_delta'), projRaja.value, rajaData[kpiKey]?.current);
+            
+            const projSavassi = calculateTrendProjection(savassiData[kpiKey]?.current, savassiData[kpiKey]?.previous);
+            $('proj_savassi_label').textContent = `UNI.SAVASSI - ${meta.label}`;
+            $('proj_savassi_val').textContent = projSavassi.value !== null ? formatValueBy(meta.fmt, projSavassi.value * projectionMultiplier) : '—';
+            deltaBadge($('proj_savassi_delta'), projSavassi.value, savassiData[kpiKey]?.current);
+
+        } catch (error) {
+            console.error("Erro ao calcular projeções:", error);
+            resetUI();
+        }
     }
 
 
@@ -540,7 +622,6 @@ document.addEventListener('DOMContentLoaded', () => {
     async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
       const meta = KPI_META[selectedKPI] || KPI_META.fat;
       const mode = effectiveMode();
-      let returnData = {};
       try {
           setDiag('');
           const paramsNow = buildParams(de, ate, analiticos);
@@ -588,7 +669,6 @@ document.addEventListener('DOMContentLoaded', () => {
                   const nowData = range.map(h => nArr[h]);
                   const prevData = range.map(h => pArr[h]);
                   ensureChart('ch_hour', labels, nowData, prevData, tip, KPI_META[selectedKPI].fmt);
-                  returnData.hours = { labels, data: nowData };
               }
           }
           {
@@ -603,9 +683,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (e) {
           console.error("Erro ao atualizar gráficos analíticos:", e); 
           setDiag('Erro ao atualizar gráficos');
-          return null;
       }
-      return returnData;
     }
     async function updateMonth12x12(analiticos){
       try{
@@ -678,7 +756,6 @@ document.addEventListener('DOMContentLoaded', () => {
       cvs.__chart = chart;
     }
     async function updateTop6(de, ate, analiticos){
-      let finalData = [];
       try{
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
         const data = await baseQuery(de, ate, analiticos);
@@ -722,6 +799,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const allStoresData = Array.from(m.entries()).map(([loja, aggData]) => ({ loja, valor: metricVal(aggData) }));
         allStoresData.sort((a,b)=> b.valor - a.valor);
         
+        let finalData = allStoresData;
         if (allStoresData.length > 6) {
             const top5 = allStoresData.slice(0, 5);
             const othersValue = allStoresData.slice(5).reduce((acc, curr) => acc + curr.valor, 0);
@@ -730,8 +808,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
               finalData = top5;
             }
-        } else {
-            finalData = allStoresData;
         }
         
         const labels = finalData.map(d => d.loja);
@@ -743,7 +819,6 @@ document.addEventListener('DOMContentLoaded', () => {
         console.warn('top6 erro:', e.message||e);
         ensureDonutTop6([],[], 'Total: R$ 0,00','money');
       }
-      return finalData;
     }
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
     $('fileExcel').addEventListener('change', async (ev)=>{
@@ -800,48 +875,95 @@ document.addEventListener('DOMContentLoaded', () => {
       ms.turnos.setOptions(['Dia','Noite'], true);
     }
     
-    async function updateInsights(top6Data, chartData, kpiData, kpi_key) {
+    async function updateInsights(de, ate, analiticos, kpi_key) {
         const insightsContainer = document.querySelector('#tab-diagnostico .ins-list');
         const contextContainer = document.querySelector('#tab-diagnostico .hero-context');
         if (!insightsContainer || !contextContainer) return;
-        
-        try {
-            const top_stores = (top6Data || []).slice(0, 2).map(d => d.loja);
-            const isPositive = (kpiData?.total?.[kpi_key]?.current ?? 0) >= (kpiData?.total?.[kpi_key]?.previous ?? 0);
 
-            let contextHTML = '<strong>Destaques:</strong> ';
-            if(top_stores.length > 0) contextHTML += `Lojas: ${top_stores.join(' • ')}`;
-            contextContainer.innerHTML = contextHTML;
+        insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px;">Gerando insights...</p>`;
+        contextContainer.innerHTML = '<strong>Destaques:</strong> Carregando...';
+
+        try {
+            const isActive = (val) => val && val.length > 0;
+            const params = {
+                p_dini: de,
+                p_dfim: ate,
+                p_kpi_key: kpi_key,
+                p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
+                p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
+                p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
+                p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null
+            };
+
+            const { data, error } = await supa.rpc(RPC_DIAGNOSTIC_FUNC, params);
+
+            if (error) throw error;
+            if (!data) throw new Error("A resposta da função de diagnóstico está vazia.");
+            
+            if(data.context) {
+                const { top_stores, top_hours, top_channels } = data.context;
+                let contextHTML = '<strong>Destaques:</strong> ';
+                if(top_stores && top_stores.length > 0) contextHTML += `Lojas: ${top_stores.join(' • ')} • `;
+                if(top_hours && top_hours.length > 0) contextHTML += `Horário: ${top_hours.join(' • ')} • `;
+                if(top_channels && top_channels.length > 0) contextHTML += `Canal: ${top_channels.join(' • ')}`;
+                contextContainer.innerHTML = contextHTML;
+            } else {
+                 contextContainer.innerHTML = '<strong>Destaques:</strong> Nenhum dado de contexto retornado.';
+            }
 
             let insightsArray = [];
-            if(top_stores.length > 0) {
-                insightsArray.push({
-                    type: isPositive ? 'up' : 'down',
-                    title: `Performance por Loja (${KPI_META[kpi_key].label})`,
-                    subtitle: `As lojas ${top_stores.join(', ')} apresentaram maior impacto no período.`,
-                    action: 'Ação: Analisar as práticas destas lojas para replicar os sucessos ou corrigir as falhas.'
-                });
+            if (data.context) {
+                const { top_stores, top_hours } = data.context;
+                const kpiLabel = KPI_META[kpi_key]?.label || 'o indicador';
+                const isPositive = data.hero.delta >= 0;
+
+                if(top_stores && top_stores.length > 0) {
+                    insightsArray.push({
+                        type: isPositive ? 'up' : 'down',
+                        title: `Performance por Loja (${kpiLabel})`,
+                        subtitle: `As lojas ${top_stores.join(', ')} apresentaram maior impacto no período.`,
+                        action: 'Ação: Analisar as práticas destas lojas para replicar os sucessos ou corrigir as falhas.'
+                    });
+                }
+                if(top_hours && top_hours.length > 0) {
+                    insightsArray.push({
+                        type: 'up',
+                        title: 'Oportunidade de Horário de Pico',
+                        subtitle: `O período de ${top_hours.join(', ')} concentra a maior parte da performance.`,
+                        action: 'Ação: Reforçar marketing e promoções focadas neste horário para maximizar o resultado.'
+                    });
+                }
             }
 
             if (insightsArray.length === 0) {
-                insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px;">Nenhum insight gerado para este período.</p>';
+                insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px;">Nenhum insight de texto gerado para este período.</p>';
                 return;
             }
 
             let allInsightsHTML = '';
             insightsArray.forEach(insight => {
-                allInsightsHTML += `<div class="ins-card ${insight.type || ''}"><div class="dot"></div><div><div class="ins-title">${insight.title || ''}</div><div class="ins-sub">${insight.subtitle || ''}</div><div class="ins-action">${insight.action || ''}</div></div></div>`;
+                const insightHTML = `
+                    <div class="ins-card ${insight.type || ''}">
+                        <div class="dot"></div>
+                        <div>
+                            <div class="ins-title">${insight.title || ''}</div>
+                            <div class="ins-sub">${insight.subtitle || ''}</div>
+                            <div class="ins-action">${insight.action || ''}</div>
+                        </div>
+                    </div>
+                `;
+                allInsightsHTML += insightHTML;
             });
             insightsContainer.innerHTML = allInsightsHTML;
 
         } catch (e) {
-            console.error("Erro ao gerar insights:", e);
-            insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px; color: var(--down);">Erro ao gerar insights.</p>`;
+            console.error("Erro ao carregar insights de IA:", e);
+            insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px; color: var(--down);">Erro ao carregar insights.</p>`;
             contextContainer.innerHTML = '<strong>Destaques:</strong> Erro ao carregar.';
         }
     }
     
-    /* ===================== LOOP PRINCIPAL (ORQUESTRADOR) ===================== */
+    /* ===================== LOOP PRINCIPAL ===================== */
     async function applyAll(details){
       try{
         const de = details.start;
@@ -854,70 +976,22 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
         setStatus('Consultando…');
-        const selectedKpiKey = $('kpi-select').value;
         
-        // ETAPA 1: Buscar dados brutos. Única chamada de dados massivos.
-        const [rowsNow, rowsPrev] = await Promise.all([
-            baseQuery(de, ate),
-            baseQuery(dePrev, atePrev)
+        const selectedKpiForDiag = $('kpi-select').value;
+        
+        await Promise.all([
+          updateKPIs(de, ate, dePrev, atePrev, analiticos),
+          getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos),
+          updateCharts(de,ate,dePrev,atePrev, analiticos),
+          updateMonth12x12(analiticos),
+          updateTop6(de,ate, analiticos),
+          updateInsights(de, ate, analiticos, selectedKpiForDiag),
+          updateProjections(de, ate, dePrev, atePrev, analiticos) // ADICIONA A CHAMADA DA PROJEÇÃO
         ]);
-
-        // ETAPA 2: Calcular todos os KPIs a partir dos dados brutos (Single Source of Truth).
-        const lenNow = DateHelpers.daysLen(de, ate);
-        const lenPrev = DateHelpers.daysLen(dePrev, atePrev);
-
-        // Filtra os dados brutos de acordo com os filtros da UI
-        const filterRows = (rows) => {
-            return rows.filter(r => {
-                if (analiticos.unidade?.length > 0 && !analiticos.unidade.includes(r.unidade)) return false;
-                if (analiticos.loja?.length > 0 && !analiticos.loja.includes(r.loja)) return false;
-                if (analiticos.turno?.length > 0 && !analiticos.turno.includes(r.turno)) return false;
-                if (analiticos.canal?.length > 0 && !analiticos.canal.includes(r.canal)) return false;
-                if (analiticos.pagamento?.length > 0 && !analiticos.pagamento.includes(r.pagamento_base)) return false;
-                return true;
-            });
-        };
-
-        const filteredRowsNow = filterRows(rowsNow);
-        const filteredRowsPrev = filterRows(rowsPrev);
-        
-        const kpisTotalNow = calculateKpiMetrics(filteredRowsNow, lenNow, analiticos);
-        const kpisTotalPrev = calculateKpiMetrics(filteredRowsPrev, lenPrev, analiticos);
-
-        const rowsRajaNow = filteredRowsNow.filter(r => r.unidade === 'Uni.Raja');
-        const rowsRajaPrev = filteredRowsPrev.filter(r => r.unidade === 'Uni.Raja');
-        const kpisRajaNow = calculateKpiMetrics(rowsRajaNow, lenNow, analiticos);
-        const kpisRajaPrev = calculateKpiMetrics(rowsRajaPrev, lenPrev, analiticos);
-
-        const rowsSavassiNow = filteredRowsNow.filter(r => r.unidade === 'Uni.Savassi');
-        const rowsSavassiPrev = filteredRowsPrev.filter(r => r.unidade === 'Uni.Savassi');
-        const kpisSavassiNow = calculateKpiMetrics(rowsSavassiNow, lenNow, analiticos);
-        const kpisSavassiPrev = calculateKpiMetrics(rowsSavassiPrev, lenPrev, analiticos);
-
-        const allData = { total: {}, raja: {}, savassi: {} };
-        Object.keys(kpisTotalNow).forEach(key => {
-            allData.total[key] = { current: kpisTotalNow[key], previous: kpisTotalPrev[key] };
-            allData.raja[key] = { current: kpisRajaNow[key], previous: kpisRajaPrev[key] };
-            allData.savassi[key] = { current: kpisSavassiNow[key], previous: kpisSavassiPrev[key] };
-        });
-
-        // ETAPA 3: Renderizar todos os componentes com o mesmo objeto de dados confiável.
-        updateKPIs(allData.total);
-        renderDiagnosticHero(allData, selectedKpiKey);
-        updateProjections(allData, selectedKpiKey);
-        
-        const [chartData, top6Data] = await Promise.all([
-          updateCharts(de, ate, dePrev, atePrev, analiticos),
-          updateTop6(de, ate, analiticos),
-          updateMonth12x12(analiticos)
-        ]);
-        
-        await updateInsights(top6Data, chartData, allData, selectedKpiKey);
         
         setStatus('OK','ok');
         matchPanelHeights();
-
-      } catch(e) {
+      }catch(e){
         console.error('Erro em applyAll:', e);
         setStatus('Erro: '+(e.message||e),'err');
       }
@@ -963,7 +1037,7 @@ document.addEventListener('DOMContentLoaded', () => {
       $end: $('fxDuEnd'),
       $days: $('fxDuQuickDays'),
       $chips: $('fxQuickChips'),
-      $segProj: $('segProj'),
+      $segProj: $('segProj'), // NOVO SELETOR PARA BOTÕES DE PROJEÇÃO
     };
 
     fx.$segProj.addEventListener('click', (e) => {
@@ -971,9 +1045,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!btn) return;
         const days = parseInt(btn.dataset.days, 10);
         if (!isNaN(days)) {
-            projectionDays = days;
+            projectionDays = days; // Atualiza o estado
             fx.$segProj.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
-            fxDispatchApply();
+            fxDispatchApply(); // Dispara a atualização do dashboard
         }
     });
 
