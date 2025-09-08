@@ -882,6 +882,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
+    // VERSÃO DE DIAGNÓSTICO PARA INSIGHTS
     async function updateInsights(de, ate, analiticos, kpi_key) {
         const insightsContainer = document.querySelector('#tab-diagnostico .ins-list');
         if (!insightsContainer) return;
@@ -899,14 +900,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
                 p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null
             };
-
+            
             const { data, error } = await supa.rpc(RPC_DIAGNOSTIC_FUNC, params);
+
+            // --- INÍCIO DO CÓDIGO DE DIAGNÓSTICO ---
+            console.log("================================================");
+            console.log(">>> RESPOSTA EXATA DA FUNÇÃO DE INSIGHTS (IA) <<<");
+            console.log(JSON.stringify(data, null, 2)); // Mostra o objeto de forma legível
+            console.log("================================================");
+            // --- FIM DO CÓDIGO DE DIAGNÓSTICO ---
 
             if (error) {
                 throw error;
             }
-            
-            // Lógica de normalização para garantir que 'data' seja sempre um array
+
             const insightsArray = Array.isArray(data) ? data : (data ? [data] : []);
 
             if (insightsArray.length === 0) {
@@ -916,19 +923,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let allInsightsHTML = '';
             insightsArray.forEach(insight => {
-                // Lógica robusta para encontrar os nomes das propriedades
-                const type = insight.type || insight.TIPO || '';
-                const title = insight.title || insight.TITULO || insight.titulo || 'Insight sem título';
-                const subtitle = insight.subtitle || insight.SUBTITLE || insight.subtitulo || '';
-                const action = insight.action || insight.ACTION || insight.acao || '';
-                
                 const insightHTML = `
-                    <div class="ins-card ${type}">
+                    <div class="ins-card ${insight.type || ''}">
                         <div class="dot"></div>
                         <div>
-                            <div class="ins-title">${title}</div>
-                            <div class="ins-sub">${subtitle}</div>
-                            <div class="ins-action">${action}</div>
+                            <div class="ins-title">${insight.title || 'Insight sem título'}</div>
+                            <div class="ins-sub">${insight.subtitle || ''}</div>
+                            <div class="ins-action">${insight.action || ''}</div>
                         </div>
                     </div>
                 `;
@@ -1122,7 +1123,8 @@ document.addEventListener('DOMContentLoaded', () => {
         fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
         fxDispatchApply();
       }catch(e){
-        console.error('Erro ao iniciar: '+(e.message||e),'err');
+        console.error('Erro na inicialização:', e);
+        setStatus('Erro ao iniciar: '+(e.message||e),'err');
       }
     })();
 
