@@ -14,8 +14,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
+    // ATUALIZAÇÃO DA CHAVE DE API
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -435,16 +436,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
       const mainKpiCard = $('hero_main_kpi');
-      const mainValueEl = mainKpiCard?.querySelector('.hero-value-number');
-      const mainDeltaEl = mainKpiCard?.querySelector('.delta');
-      const mainSubEl = mainKpiCard?.querySelector('.hero-sub-value');
-      
-      const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
-      if(totalKpis && totalKpis[kpi_key] && mainValueEl) {
-          const meta = KPI_META[kpi_key];
-          mainValueEl.textContent = formatValueBy(meta.fmt, totalKpis[kpi_key].current);
-          mainSubEl.textContent = 'Anterior: ' + formatValueBy(meta.fmt, totalKpis[kpi_key].previous);
-          deltaBadge(mainDeltaEl, totalKpis[kpi_key].current, totalKpis[kpi_key].previous);
+      if (mainKpiCard) {
+          const mainValueEl = mainKpiCard.querySelector('.hero-value-number');
+          const mainDeltaEl = mainKpiCard.querySelector('.delta');
+          const mainSubEl = mainKpiCard.querySelector('.hero-sub-value');
+          
+          const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
+          if(totalKpis && totalKpis[kpi_key]) {
+              const meta = KPI_META[kpi_key];
+              mainValueEl.textContent = formatValueBy(meta.fmt, totalKpis[kpi_key].current);
+              mainSubEl.textContent = 'Anterior: ' + formatValueBy(meta.fmt, totalKpis[kpi_key].previous);
+              deltaBadge(mainDeltaEl, totalKpis[kpi_key].current, totalKpis[kpi_key].previous);
+          }
       }
 
       const fetchAndCalculateForUnit = async (unitName) => {
@@ -466,20 +469,22 @@ document.addEventListener('DOMContentLoaded', () => {
               card.querySelector('.unit-kpi-value').textContent = formatValueBy(kpiMeta.fmt, data.current);
               card.querySelector('.unit-kpi-sub').textContent = 'Anterior: ' + formatValueBy(kpiMeta.fmt, data.previous);
               deltaBadge(card.querySelector('.delta'), data.current, data.previous);
+            } else if (card) {
+                card.querySelector('.unit-kpi-value').textContent = '—';
+                card.querySelector('.unit-kpi-sub').textContent = 'Anterior: —';
+                deltaBadge(card.querySelector('.delta'), null, null);
             }
           };
 
           renderUnit('unit-kpi-raja', rajaKpis);
           renderUnit('unit-kpi-savassi', savassiKpis);
           
-          return { total: totalKpis, raja: rajaKpis, savassi: savassiKpis };
       } catch(e) {
           console.error("Erro ao renderizar KPIs de unidade:", e);
-          return { total: totalKpis, raja: null, savassi: null }; // ROBUSTEZ: Retorna o que tiver
       }
     }
     
-    // FUNÇÃO DE PROJEÇÃO CORRIGIDA E MELHORADA
+    // NOVA FUNÇÃO DE PROJEÇÕES (ISOLADA E ROBUSTA)
     async function updateProjections(de, ate, dePrev, atePrev, analiticos) {
         const kpiKey = $('kpi-select').value;
         const meta = KPI_META[kpiKey] || { fmt: 'money' };
@@ -496,6 +501,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const projectionMultiplier = len > 0 ? projectionDays / len : 1;
 
         const resetUI = (scope) => {
+            $('proj_total_label').textContent = `PROJEÇÃO ${meta.label.toUpperCase()} (${projectionDays}D)`;
+            $('proj_raja_label').textContent = `UNI.RAJA - ${meta.label}`;
+            $('proj_savassi_label').textContent = `UNI.SAVASSI - ${meta.label}`;
             if(scope === 'total' || scope === 'all') {
                 $('proj_total_val').textContent = '—';
                 deltaBadge($('proj_total_delta'), null, null);
@@ -509,13 +517,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 deltaBadge($('proj_savassi_delta'), null, null);
             }
         };
-
-        // Atualiza os títulos de forma síncrona
-        $('proj_total_label').textContent = `PROJEÇÃO ${meta.label.toUpperCase()} (${projectionDays}D)`;
-        $('proj_raja_label').textContent = `UNI.RAJA - ${meta.label}`;
-        $('proj_savassi_label').textContent = `UNI.SAVASSI - ${meta.label}`;
+        resetUI('all'); // Reseta a UI antes de buscar os dados
 
         try {
+            // Busca de dados independente e paralela para garantir isolamento e performance.
             const [totalData, rajaData, savassiData] = await Promise.all([
                 updateKPIs(de, ate, dePrev, atePrev, analiticos),
                 updateKPIs(de, ate, dePrev, atePrev, { ...analiticos, unidade: ['Uni.Raja'] }),
@@ -526,19 +531,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 const projTotal = calculateTrendProjection(totalData[kpiKey].current, totalData[kpiKey].previous);
                 $('proj_total_val').textContent = projTotal.value !== null ? formatValueBy(meta.fmt, projTotal.value * projectionMultiplier) : '—';
                 deltaBadge($('proj_total_delta'), projTotal.value, totalData[kpiKey].current);
-            } else { resetUI('total'); }
+            }
 
             if (rajaData && rajaData[kpiKey]) {
                 const projRaja = calculateTrendProjection(rajaData[kpiKey].current, rajaData[kpiKey].previous);
                 $('proj_raja_val').textContent = projRaja.value !== null ? formatValueBy(meta.fmt, projRaja.value * projectionMultiplier) : '—';
                 deltaBadge($('proj_raja_delta'), projRaja.value, rajaData[kpiKey].current);
-            } else { resetUI('raja'); }
+            }
             
             if (savassiData && savassiData[kpiKey]) {
                 const projSavassi = calculateTrendProjection(savassiData[kpiKey].current, savassiData[kpiKey].previous);
                 $('proj_savassi_val').textContent = projSavassi.value !== null ? formatValueBy(meta.fmt, projSavassi.value * projectionMultiplier) : '—';
                 deltaBadge($('proj_savassi_delta'), projSavassi.value, savassiData[kpiKey].current);
-            } else { resetUI('savassi'); }
+            }
 
         } catch (error) {
             console.error("Erro ao calcular projeções:", error);
@@ -980,26 +985,19 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const selectedKpiForDiag = $('kpi-select').value;
         
-        // ORQUESTRAÇÃO EXPLÍCITA: Funções são chamadas em sequência para garantir dependências.
-        const allKpiValues = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
-        const allDataForProjections = await getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos);
-
-        // A projeção só é chamada se os dados da etapa anterior foram calculados com sucesso.
-        if (allDataForProjections) {
-            await updateProjections(de, ate, dePrev, atePrev, analiticos);
-        }
-        
         await Promise.all([
-          updateCharts(de, ate, dePrev, atePrev, analiticos),
+          updateKPIs(de, ate, dePrev, atePrev, analiticos),
+          getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos),
+          updateCharts(de,ate,dePrev,atePrev, analiticos),
           updateMonth12x12(analiticos),
-          updateTop6(de, ate, analiticos),
-          updateInsights(de, ate, analiticos, selectedKpiForDiag)
+          updateTop6(de,ate, analiticos),
+          updateInsights(de, ate, analiticos, selectedKpiForDiag),
+          updateProjections(de, ate, dePrev, atePrev, analiticos)
         ]);
         
         setStatus('OK','ok');
         matchPanelHeights();
-
-      } catch(e) {
+      }catch(e){
         console.error('Erro em applyAll:', e);
         setStatus('Erro: '+(e.message||e),'err');
       }
