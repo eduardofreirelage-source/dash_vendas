@@ -785,7 +785,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
       
       const fetchAndCalculateForUnit = async (unitName) => {
-          // CORREÇÃO: Cria um objeto de filtro limpo para a unidade,
+          // CORREÇÃO CRÍTICA: Cria um objeto de filtro limpo para a unidade,
           // mantendo apenas o filtro de 'cancelado' do principal para consistência.
           // Filtros como loja, canal, etc., são ignorados para pegar o total da unidade.
           const unitAnaliticos = { 
@@ -836,6 +836,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const len = DateHelpers.daysLen(de, ate);
           const prevLen = DateHelpers.daysLen(dePrev, atePrev);
 
+          // Lógica de cálculo completa, copiada de updateKPIs
           const tktN = (N.ped > 0) ? (N.fat / N.ped) : 0;
           const tktP = (P.ped > 0) ? (P.fat / P.ped) : 0;
           const fatMedN = len > 0 ? (N.fat / len) : 0;
