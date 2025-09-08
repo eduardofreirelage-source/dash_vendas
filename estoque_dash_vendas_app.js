@@ -335,7 +335,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return allRows;
     }
     
-    // Função original, sem alterações, para garantir estabilidade
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
       let allKpiValues = {};
       try {
@@ -760,6 +759,47 @@ document.addEventListener('DOMContentLoaded', () => {
     // LÓGICA PARA A ABA DE DIAGNÓSTICO
     // ===================================================================================
 
+    // PLANO DE AÇÃO: PASSO 1 - FAZER OS MINI KPIS ESPELHAREM O MASTER PARA VALIDAR A RENDERIZAÇÃO
+    function renderUnitKPIsForDebug(kpi_key, allKpiValues) {
+        console.log("--- MODO DE DIAGNÓSTICO ATIVO ---");
+        console.log("Exibindo dados do KPI Master nos Mini KPIs para teste.");
+
+        const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
+        const kpiData = allKpiValues[kpi_key];
+
+        if (!kpiData) return;
+
+        const renderUnit = (unitId) => {
+            const card = $(unitId);
+            if (card) {
+                card.querySelector('.unit-kpi-value').textContent = formatValueBy(kpiMeta.fmt, kpiData.current);
+                card.querySelector('.unit-kpi-sub').textContent = 'Anterior: ' + formatValueBy(kpiMeta.fmt, kpiData.previous);
+                deltaBadge(card.querySelector('.delta'), kpiData.current, kpiData.previous);
+            }
+        };
+
+        renderUnit('unit-kpi-raja');
+        renderUnit('unit-kpi-savassi');
+    }
+
+    // PLANO DE AÇÃO: PASSO 2 - VERIFICAR NOMES DAS UNIDADES NO BANCO DE DADOS
+    async function logUniqueUnits(de, ate, analiticos) {
+        try {
+            const params = buildParams(de, ate, { ...analiticos, unidade: [] }); // Pega de todas as unidades
+            const { data, error } = await supa.rpc('opt_unidades_ranked', params);
+            if (error) throw error;
+            
+            const unitNames = data.map(item => item.unidade);
+            console.log("--- DIAGNÓSTICO DE UNIDADES ---");
+            console.log("Unidades encontradas no período selecionado:", unitNames);
+            console.log("Por favor, verifique se os nomes 'Uni. Raja' e 'Uni. Savassi' correspondem EXATAMENTE a algum item desta lista.");
+            
+        } catch(e) {
+            console.error("Erro ao buscar lista de unidades para diagnóstico:", e);
+        }
+    }
+
+
     function updateDiagnosticTab(kpi_key, allKpiValues) {
       const heroCard = document.querySelector('#tab-diagnostico .hero');
       if (!heroCard || !allKpiValues || !allKpiValues[kpi_key]) return;
@@ -781,115 +821,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // FUNÇÃO TOTALMENTE REFEITA PARA CORRIGIR O BUG DOS VALORES ZERADOS
-    async function getAndRenderUnitKPIs(kpi_key, de, ate, dePrev, atePrev, analiticos) {
-      
-      const fetchAndCalculateForUnit = async (unitName) => {
-          // CORREÇÃO CRÍTICA: Cria um objeto de filtro limpo para a unidade,
-          // mantendo apenas o filtro de 'cancelado' do principal para consistência.
-          // Filtros como loja, canal, etc., são ignorados para pegar o total da unidade.
-          const unitAnaliticos = { 
-            unidade: [unitName],
-            cancelado: analiticos.cancelado,
-            loja: [], canal: [], turno: [], pagamento: []
-          };
-
-          const pNow = buildParams(de, ate, unitAnaliticos);
-          const pPrev = buildParams(dePrev, atePrev, unitAnaliticos);
-          
-          const [
-            finNowResult, finPrevResult,
-            { count: pedNowCount },
-            { count: pedPrevCount },
-            { count: cnCount }, { count: vnCount },
-            { count: cpCount }, { count: vpCount }
-          ] = await Promise.all([
-              supa.rpc(RPC_KPI_FUNC, pNow),
-              supa.rpc(RPC_KPI_FUNC, pPrev),
-              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', de).lte('dia', ate),
-              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', dePrev).lte('dia', atePrev),
-              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', de).lte('dia', ate).eq('cancelado', 'Sim'),
-              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', de).lte('dia', ate).eq('cancelado', 'Não'),
-              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Sim'),
-              supa.from('vendas_canon').select('*', { count: 'exact', head: true }).eq('unidade', unitName).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Não')
-          ]);
-
-          // CORREÇÃO: Usa o 'unitAnaliticos' para decidir qual contagem de pedidos usar.
-          const pedTotalNow = unitAnaliticos.cancelado === 'sim' ? cnCount : unitAnaliticos.cancelado === 'nao' ? vnCount : pedNowCount;
-
-          const N = {
-              ped: pedTotalNow,
-              fat: +(finNowResult.data[0]?.fat || 0),
-              des: +(finNowResult.data[0]?.des || 0),
-              fre: +(finNowResult.data[0]?.fre || 0)
-          };
-          const P = {
-              ped: pedPrevCount,
-              fat: +(finPrevResult.data[0]?.fat || 0),
-              des: +(finPrevResult.data[0]?.des || 0),
-              fre: +(finPrevResult.data[0]?.fre || 0)
-          };
-
-          const {data: cancDataNow} = await supa.rpc(RPC_KPI_FUNC, { ...pNow, p_cancelado: 'Sim' });
-          const {data: cancDataPrev} = await supa.rpc(RPC_KPI_FUNC, { ...pPrev, p_cancelado: 'Sim' });
-          
-          const len = DateHelpers.daysLen(de, ate);
-          const prevLen = DateHelpers.daysLen(dePrev, atePrev);
-
-          // Lógica de cálculo completa, copiada de updateKPIs
-          const tktN = (N.ped > 0) ? (N.fat / N.ped) : 0;
-          const tktP = (P.ped > 0) ? (P.fat / P.ped) : 0;
-          const fatMedN = len > 0 ? (N.fat / len) : 0;
-          const fatMedP = prevLen > 0 ? (P.fat / prevLen) : 0;
-          const desPercN = N.fat > 0 ? (N.des / N.fat) : 0;
-          const desPercP = P.fat > 0 ? (P.des / P.fat) : 0;
-          const freMedN = N.ped > 0 ? (N.fre / N.ped) : 0;
-          const freMedP = P.ped > 0 ? (P.fre / P.ped) : 0;
-          const cancValN = +(cancDataNow[0]?.fat || 0);
-          const cancValP = +(cancDataPrev[0]?.fat || 0);
-          const roiN = N.des > 0 ? (N.fat - N.des) / N.des : NaN;
-          const roiP = P.des > 0 ? (P.fat - P.des) / P.des : NaN;
-
-          return {
-              fat: { current: N.fat, previous: P.fat },
-              ped: { current: N.ped, previous: P.ped },
-              tkt: { current: tktN, previous: tktP },
-              des: { current: N.des, previous: P.des },
-              fatmed: { current: fatMedN, previous: fatMedP },
-              roi: { current: roiN, previous: roiP },
-              desperc: { current: desPercN, previous: desPercP },
-              canc_val: { current: cancValN, previous: cancValP },
-              fre: { current: N.fre, previous: P.fre },
-              fremed: { current: freMedN, previous: freMedP },
-              canc_ped: { current: cnCount, previous: cpCount },
-          };
-      };
-
-      try {
-        const [rajaKpis, savassiKpis] = await Promise.all([
-          fetchAndCalculateForUnit('Uni. Raja'),
-          fetchAndCalculateForUnit('Uni. Savassi')
-        ]);
-
-        const kpiMeta = KPI_META[kpi_key] || { fmt: 'money' };
-        
-        const renderUnit = (unitId, unitData) => {
-            const card = $(unitId);
-            const data = unitData[kpi_key];
-            if (card && data) {
-              card.querySelector('.unit-kpi-value').textContent = formatValueBy(kpiMeta.fmt, data.current);
-              card.querySelector('.unit-kpi-sub').textContent = 'Anterior: ' + formatValueBy(kpiMeta.fmt, data.previous);
-              deltaBadge(card.querySelector('.delta'), data.current, data.previous);
-            }
-          };
-
-        renderUnit('unit-kpi-raja', rajaKpis);
-        renderUnit('unit-kpi-savassi', savassiKpis);
-      } catch(e) {
-          console.error("Erro ao renderizar KPIs de unidade:", e);
-      }
-    }
-
+    // Função original getAndRenderUnitKPIs foi desativada temporariamente para o diagnóstico.
+    // A função de diagnóstico `renderUnitKPIsForDebug` será usada em seu lugar.
 
     /* ===================== LOOP PRINCIPAL ===================== */
     async function applyAll(details){
@@ -906,6 +839,9 @@ document.addEventListener('DOMContentLoaded', () => {
         setStatus('Consultando…');
         let kpiOk=true;
 
+        // ** AÇÃO DE DIAGNÓSTICO PASSO 2 ** // A linha abaixo irá imprimir a lista de unidades no console.
+        await logUniqueUnits(de, ate, analiticos);
+
         const allKpiValues = await updateKPIs(de, ate, dePrev, atePrev, analiticos).catch(e=>{ console.error('Erro em KPIs:', e); kpiOk=false; });
         
         await Promise.all([
@@ -917,10 +853,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedKpiForDiag = $('kpi-select').value;
         if (allKpiValues) {
             updateDiagnosticTab(selectedKpiForDiag, allKpiValues);
+            
+            // ** AÇÃO DE DIAGNÓSTICO PASSO 1 ** // A linha abaixo fará os Mini KPIs espelharem o Master.
+            renderUnitKPIsForDebug(selectedKpiForDiag, allKpiValues);
         }
         
-        await getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos);
-
         if(!kpiOk) setStatus('OK (sem KPIs — erro)', 'err');
         else setStatus('OK','ok');
         
