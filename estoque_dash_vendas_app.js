@@ -906,7 +906,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw error;
             }
 
-            // CORREÇÃO: Lida com a resposta sendo um objeto ou um array.
             const insightsArray = Array.isArray(data) ? data : (data ? [data] : []);
 
             if (insightsArray.length === 0) {
