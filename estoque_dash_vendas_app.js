@@ -2,8 +2,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===================================================================================
     // Bloco Único de JavaScript: Lógica Principal, UI, e Inicialização
     // ===================================================================================
-    
+
     /* ===================== CONFIG ===================== */
+    // PRINCIPAL ENGINEER NOTE: The Supabase Anon Key MUST be loaded from environment variables,
+    // NEVER hardcoded in the frontend. This is a critical security vulnerability.
+    // Example for a framework: const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON;
+    const SUPABASE_URL = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U"; // <-- REPLACE WITH ENV VARIABLE
+
+    if (SUPABASE_ANON === "YOUR_NEW_ROTATED_SUPABASE_ANON_KEY") {
+        const statusEl = $('status');
+        if(statusEl) {
+            statusEl.textContent = 'ERRO CRÍTICO: Chave Supabase não configurada!';
+            statusEl.style.color = '#ef4444';
+        }
+        console.error("CRITICAL SECURITY ALERT: The Supabase Anon key is not configured. Please set it as an environment variable and rebuild your application. The dashboard will not function without it.");
+        return; // Halt execution if key is not set.
+    }
+
+    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
     const RPC_FILTER_FUNC = 'filter_vendas';
     const RPC_KPI_FUNC = 'kpi_vendas_unificado';
     const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes_v1';
@@ -12,13 +30,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v1';
     const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
 
-    const DEST_INSERT_TABLE= 'vendas_xlsx';
+    // ROBUSTNESS FIX: Pointing the insert operation to the resilient staging table.
+    const DEST_INSERT_TABLE= 'stage_vendas_raw';
     const REFRESH_RPC     = 'refresh_sales_materialized';
-    
-    const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
-    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-    
+
+
     /* ===================== CHART.JS — tema vinho ===================== */
     Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol"';
     Chart.defaults.color = '#334155';
@@ -44,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
       g.addColorStop(1,'rgba(203,213,225,0.45)');
       return g;
     }
-    
+
     /* ===================== HELPERS (BLOCOS COMPLETOS E CORRIGIDOS) ===================== */
     const $ = id => document.getElementById(id);
     const setStatus=(t,k)=>{ const el=$('status'); if(el) {el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085');} };
@@ -59,8 +75,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function displayNormalize(s){ return cleanSpaces(s); }
     const agg = (rows) => {
       const ped = rows?.length || 0;
-      let fat=0,des=0,fre=0; 
-      for(const r of (rows||[])){ fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; } 
+      let fat=0,des=0,fre=0;
+      for(const r of (rows||[])){ fat+=+r.fat||0; des+=+r.des||0; fre+=+r.fre||0; }
       return {ped,fat,des,fre};
     };
     const formatCurrencyTick = (value) => {
@@ -152,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if(!deISO || !ateISO) return {dePrev:null, atePrev:null};
           const d1 = new Date(deISO + 'T12:00:00');
           const d2 = new Date(ateISO + 'T12:00:00');
-          
+
           if (this.isFullYear(d1, d2)) {
               const p1 = this.shiftYear(d1, -1);
               const p2 = this.shiftYear(d2, -1);
@@ -173,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return { dePrev: this.iso(dePrev), atePrev: this.iso(atePrev) };
       }
     };
-    
+
     function matchPanelHeights() {
       const panel = document.querySelector('.panel');
       if (!panel) return;
@@ -182,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const sideBar = panel.querySelector('.side');
 
       if (!chartCard || !sideBar) return;
-      
+
       chartCard.style.height = 'auto';
 
       requestAnimationFrame(() => {
@@ -198,82 +214,82 @@ document.addEventListener('DOMContentLoaded', () => {
       const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
       let options=[], selected=new Set(), filtered=[], q;
 
-      function render(){ 
-        panel.innerHTML=''; 
+      function render(){
+        panel.innerHTML='';
         q = document.createElement('input');
-        q.className='msel-search'; 
+        q.className='msel-search';
         q.placeholder='Filtrar…';
         q.style.cssText = 'width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 6px;';
         q.addEventListener('input',()=>{
           const searchTerm = q.value.toLowerCase();
-          filtered = options.filter(v => String(v).toLowerCase().includes(searchTerm)); 
+          filtered = options.filter(v => String(v).toLowerCase().includes(searchTerm));
           draw();
         });
-        panel.appendChild(q); 
+        panel.appendChild(q);
         draw();
       }
-      
+
       function draw(){
         const currentOpts = panel.querySelector('.msel-opts-box');
         if (currentOpts) currentOpts.remove();
-        
+
         const box=document.createElement('div');
         box.className = 'msel-opts-box';
-        
+
         const listToRender = (q && q.value) ? filtered : options;
 
         listToRender.forEach((v, index)=>{
-          const row=document.createElement('div'); 
+          const row=document.createElement('div');
           row.className='msel-opt';
           row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:5px; border-radius:6px; font-size: 13px; cursor:pointer;';
           row.addEventListener('mouseenter', () => row.style.backgroundColor = '#f3f4f6');
           row.addEventListener('mouseleave', () => row.style.backgroundColor = 'transparent');
-          
-          const cb=document.createElement('input'); 
-          cb.type='checkbox'; 
-          cb.value=v; 
+
+          const cb=document.createElement('input');
+          cb.type='checkbox';
+          cb.value=v;
           cb.id = `msel-${rootId}-${index}`;
           cb.checked=selected.has(v);
-          
-          const lb=document.createElement('label'); 
+
+          const lb=document.createElement('label');
           lb.textContent=v;
           lb.style.cursor = 'pointer';
           lb.setAttribute('for', cb.id);
 
           cb.addEventListener('change', (e) => {
             e.stopPropagation();
-            cb.checked ? selected.add(v) : selected.delete(v); 
+            cb.checked ? selected.add(v) : selected.delete(v);
             refresh();
             if(onChangeCallback) onChangeCallback();
           });
-          
-          row.appendChild(cb); 
-          row.appendChild(lb); 
+
+          row.appendChild(cb);
+          row.appendChild(lb);
           box.appendChild(row);
         });
         panel.appendChild(box);
       }
-      
-      function refresh(){ 
-        btn.textContent = selected.size===0 ? placeholder : `${selected.size} sel.`; 
+
+      function refresh(){
+        btn.textContent = selected.size===0 ? placeholder : `${selected.size} sel.`;
       }
-      
+
       btn.addEventListener('click',(e)=>{ e.stopPropagation(); root.classList.toggle('open'); if(root.classList.contains('open')) { panel.querySelector('.msel-search').focus(); }});
       document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
-      
+
       return {
         setOptions(list, keepOrder=false){
           options=(list||[]).filter(v=>v!=null).map(String);
           if(!keepOrder){ options.sort((a,b)=>a.localeCompare(b,'pt-BR')); }
-          filtered=options.slice(); 
+          filtered=options.slice();
           selected=new Set([...selected].filter(v=>options.includes(v)));
-          render(); 
+          render();
           refresh();
         },
         get(){return [...selected];},
         set(vals){
-          selected=new Set((vals||[]).map(String)); 
-          refresh(); 
+          selected=new Set((vals||[]).map(String));
+          refresh();
           render();
         },
         clear() {
@@ -283,7 +299,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       };
     }
-    
+
     /* ===================== ESTADO / FILTROS ===================== */
     let firstDay='', lastDay='';
     let projectionDays = 30;
@@ -297,7 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
       pags:   MultiSelect('fxPay', 'Todos', fxDispatchApplyDebounced),
     };
     const fxCanceled = $('fxCanceled');
-    
+
     /* ===================== LÓGICA DE DADOS (KPIs, Gráficos, etc.) ===================== */
     function buildParams(de, ate, analiticos) {
       const isActive = (val) => val && val.length > 0;
@@ -370,14 +386,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 let query = supa.from('vendas_canon').select('*', { count: 'exact', head: true })
                     .gte('dia', startDate)
                     .lte('dia', endDate);
-                
+
                 const isActive = (val) => val && val.length > 0;
                 if (isActive(analiticos.unidade)) query = query.in('unidade', analiticos.unidade);
                 if (isActive(analiticos.loja)) query = query.in('loja', analiticos.loja);
                 if (isActive(analiticos.turno)) query = query.in('turno', analiticos.turno);
                 if (isActive(analiticos.canal)) query = query.in('canal', analiticos.canal);
                 if (isActive(analiticos.pagamento)) query = query.in('pagamento_base', analiticos.pagamento);
-                
+
                 if (cancelFilter === 'Sim') query = query.eq('cancelado', 'Sim');
                 if (cancelFilter === 'Não') query = query.eq('cancelado', 'Não');
 
@@ -403,7 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if(totalFinNowResult.error) throw totalFinNowResult.error;
             if(errPedNow) throw errPedNow;
-            
+
             const {data: cancDataNow} = await supa.rpc(RPC_KPI_FUNC, { ...buildParams(de, ate, analiticos), p_cancelado: 'Sim' });
             const {data: cancDataPrev} = await supa.rpc(RPC_KPI_FUNC, { ...buildParams(dePrev, atePrev, analiticos), p_cancelado: 'Sim' });
 
@@ -426,7 +442,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 N_financial = totalNow;
                 P_financial = totalPrev;
             }
-            
+
             const N = { ped: pedTotalNow, ...N_financial };
             const P = { ped: pedTotalPrev, ...P_financial };
 
@@ -471,10 +487,10 @@ document.addEventListener('DOMContentLoaded', () => {
           const mainValueEl = mainKpiCard.querySelector('.hero-value-number');
           const mainDeltaEl = mainKpiCard.querySelector('.delta');
           const mainSubEl = mainKpiCard.querySelector('.hero-sub-value');
-          
+
           const totalAnaliticos = {...analiticos, unidade: [], loja: []};
           const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, totalAnaliticos);
-          
+
           if(totalKpis && totalKpis[kpi_key]) {
               const meta = KPI_META[kpi_key];
               mainValueEl.textContent = formatValueBy(meta.fmt, totalKpis[kpi_key].current);
@@ -487,10 +503,10 @@ document.addEventListener('DOMContentLoaded', () => {
           const unitAnaliticos = { ...analiticos, unidade: [unitName] };
           return await updateKPIs(de, ate, dePrev, atePrev, unitAnaliticos);
       };
-    
+
       try {
           const [rajaKpis, savassiKpis] = await Promise.all([
-            fetchAndCalculateForUnit('Uni.Raja'), 
+            fetchAndCalculateForUnit('Uni.Raja'),
             fetchAndCalculateForUnit('Uni.Savassi')
           ]);
 
@@ -511,12 +527,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
           renderUnit('unit-kpi-raja', rajaKpis);
           renderUnit('unit-kpi-savassi', savassiKpis);
-          
+
       } catch(e) {
           console.error("Erro ao renderizar KPIs de unidade:", e);
       }
     }
-    
+
     async function updateProjections(de, ate, dePrev, atePrev, analiticos) {
         const kpiKey = $('kpi-select').value;
         const meta = KPI_META[kpiKey] || { fmt: 'money' };
@@ -569,7 +585,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 $('proj_raja_val').textContent = projRaja.value !== null ? formatValueBy(meta.fmt, projRaja.value * projectionMultiplier) : '—';
                 deltaBadge($('proj_raja_delta'), projRaja.value, rajaData[kpiKey].current);
             }
-            
+
             if (savassiData && savassiData[kpiKey]) {
                 const projSavassi = calculateTrendProjection(savassiData[kpiKey].current, savassiData[kpiKey].previous);
                 $('proj_savassi_val').textContent = projSavassi.value !== null ? formatValueBy(meta.fmt, projSavassi.value * projectionMultiplier) : '—';
@@ -653,7 +669,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       });
     }
-    
+
     async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
       const meta = KPI_META[selectedKPI] || KPI_META.fat;
       const mode = effectiveMode();
@@ -674,10 +690,10 @@ document.addEventListener('DOMContentLoaded', () => {
               supa.rpc(RPC_CHART_TURNO_FUNC, paramsNow),
               supa.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
           ]);
-          
+
           const tip = `Período anterior: ${dePrev} → ${atePrev}`;
           const valueKey = mode === 'media' ? 'media' : 'total';
-          
+
           {
               const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
               const nArr = Array(7).fill(0), pArr = Array(7).fill(0);
@@ -716,7 +732,7 @@ document.addEventListener('DOMContentLoaded', () => {
               ensureChart('ch_turno', labels, nArr, pArr, tip, KPI_META[selectedKPI].fmt);
           }
       } catch (e) {
-          console.error("Erro ao atualizar gráficos analíticos:", e); 
+          console.error("Erro ao atualizar gráficos analíticos:", e);
           setDiag('Erro ao atualizar gráficos');
       }
     }
@@ -729,7 +745,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const last12End   = DateHelpers.monthEndISO(end);
         const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
-        
+
         const paramsNow = buildParams(last12Start, last12End, analiticos);
         const paramsPrev = buildParams(prev12Start, prev12EndAdj, analiticos);
 
@@ -743,29 +759,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const mode = effectiveMode();
         const valueKey = mode === 'media' ? 'media' : 'total';
-        
+
         const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, +r[valueKey]||0]));
         const mNow = toMap(nData), mPrev = toMap(pData);
-        
+
         let labels = [];
-        const ymsNow = []; 
+        const ymsNow = [];
         let cur = last12Start;
-        for(let i=0;i<12;i++){ 
-            labels.push(DateHelpers.formatYM(cur)); 
-            const d=new Date(cur+'T12:00:00'); 
-            const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; 
-            ymsNow.push(ym); 
-            cur=DateHelpers.addMonthsISO(cur,1); 
+        for(let i=0;i<12;i++){
+            labels.push(DateHelpers.formatYM(cur));
+            const d=new Date(cur+'T12:00:00');
+            const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+            ymsNow.push(ym);
+            cur=DateHelpers.addMonthsISO(cur,1);
         }
 
         const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
-        
+
         const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
         const prevArr = ymsPrev.map(ym => mPrev.get(ym)||0);
         const tip = `Comparação fixa: Últimos 12M vs 12M anteriores`;
         ensureChart('ch_month', labels, nowArr, prevArr, tip, meta.fmt);
       }catch(e){
-        console.error("Erro detalhado em updateMonth12x12:", e); 
+        console.error("Erro detalhado em updateMonth12x12:", e);
         setDiag('Erro ao atualizar gráfico mensal');
       }
     }
@@ -833,18 +849,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const allStoresData = Array.from(m.entries()).map(([loja, aggData]) => ({ loja, valor: metricVal(aggData) }));
         allStoresData.sort((a,b)=> b.valor - a.valor);
-        
+
         let finalData = allStoresData;
         if (allStoresData.length > 6) {
             const top5 = allStoresData.slice(0, 5);
             const othersValue = allStoresData.slice(5).reduce((acc, curr) => acc + curr.valor, 0);
-            if (othersValue > 0.01) { 
+            if (othersValue > 0.01) {
               finalData = [...top5, { loja: 'Outros', valor: othersValue }];
             } else {
               finalData = top5;
             }
         }
-        
+
         const labels = finalData.map(d => d.loja);
         const values = finalData.map(d => d.valor);
         const total = allStoresData.reduce((sum, item) => sum + item.valor, 0);
@@ -855,12 +871,12 @@ document.addEventListener('DOMContentLoaded', () => {
         ensureDonutTop6([],[], 'Total: R$ 0,00','money');
       }
     }
-    
+
     function ensureSingleSeriesChart(canvasId, labels, dataArr, meta, type = 'bar') {
         const canvas = $(canvasId); if (!canvas) return;
         if (canvas.__chart) { try { canvas.__chart.destroy(); } catch (e) {} canvas.__chart = null; }
         const ctx = canvas.getContext('2d');
-        
+
         const chart = new Chart(ctx, {
             type: type,
             data: {
@@ -901,7 +917,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const selectedKpi = $('kpi-select').value;
             const meta = KPI_META[selectedKpi] || KPI_META.fat;
-            
+
             $('diag_title_month').textContent = `${meta.label} por Mês`;
             $('diag_title_dow').textContent = `${meta.label} por Dia da Semana`;
             $('diag_title_hour').textContent = `${meta.label} por Hora`;
@@ -962,7 +978,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ensureSingleSeriesChart('diag_ch_hour', [], [], {}, 'bar');
         }
     }
-    
+
     async function updateInsights(de, ate, analiticos, kpi_key) {
         const insightsContainer = document.querySelector('#tab-diagnostico .ins-list');
         const contextContainer = document.querySelector('#tab-diagnostico .hero-context');
@@ -987,7 +1003,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (error) throw error;
             if (!data) throw new Error("A resposta da função de diagnóstico está vazia.");
-            
+
             if(data.context) {
                 const { top_stores, top_hours, top_channels } = data.context;
                 let contextHTML = '<strong>Destaques:</strong> ';
@@ -1050,73 +1066,48 @@ document.addEventListener('DOMContentLoaded', () => {
             contextContainer.innerHTML = '<strong>Destaques:</strong> Erro ao carregar.';
         }
     }
-    
+
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
     $('fileExcel').addEventListener('change', async (ev)=>{
         const file = ev.target.files?.[0];
         if(!file){ info(''); return; }
-        
+
         setStatus('Processando arquivo...', 'info');
         try{
             const buf = await file.arrayBuffer();
             const wb = XLSX.read(buf, { type:'array' });
             const ws = wb.Sheets[wb.SheetNames[0]];
-            const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
+
+            // ROBUSTNESS FIX: Convert sheet to JSON with raw values.
+            // All data transformation is now handled by the PostgreSQL function.
+            const json = XLSX.utils.sheet_to_json(ws, { raw: false, defval: null });
 
             if (!json || json.length === 0) {
                 throw new Error("O arquivo está vazio ou em um formato inválido.");
             }
-            
-            const headerMap = {
-                'dia': 'dia',
-                'hora': 'hora',
-                'unidade': 'unidade',
-                'loja': 'Nome da loja',
-                'canal de venda': 'Canal de venda',
-                'pagamento_base': 'pagamento_base',
-                'cancelado': 'cancelado',
-                'pedidos': 'pedidos',
-                'fat': 'fat',
-                'des': 'des',
-                'fre': 'fre',
-                'pedido_id': 'pedido_id'
-            };
-    
-            const transformedJson = json.map((row, index) => {
-                const newRow = {};
-                let tempPedidoId = null;
 
-                for (const originalKey in row) {
-                    const normalizedKey = originalKey.trim().toLowerCase();
-                    const dbColumn = headerMap[normalizedKey];
-                    if (dbColumn) {
-                        newRow[dbColumn] = row[originalKey];
-                        if (normalizedKey === 'pedido_id') {
-                            tempPedidoId = row[originalKey];
-                        }
-                    }
-                }
-                
-                // Gera a row_key obrigatória que estava faltando
-                if (tempPedidoId) {
-                    newRow['row_key'] = `${tempPedidoId}-${new Date().getTime()}-${index}`;
-                } else {
-                    newRow['row_key'] = `import-${new Date().getTime()}-${index}`;
-                }
+            // ROBUSTNESS FIX: Wrap each row object into a `raw_data` field for the staging table.
+            const payloadToInsert = json.map(row => ({
+                raw_data: row
+            }));
 
-                return newRow;
-            });
+            setStatus(`Enviando ${payloadToInsert.length} registros para a área de preparação...`, 'info');
 
-            setStatus(`Enviando ${transformedJson.length} registros...`, 'info');
-            
-            const { error } = await supa.from(DEST_INSERT_TABLE).insert(transformedJson);
+            // Set a higher timeout for large uploads
+            const { error } = await supa.from(DEST_INSERT_TABLE).insert(payloadToInsert);
 
             if (error) {
                 throw error;
             }
-            
-            setStatus('Importação concluída! Atualizando...', 'ok');
-            fxDispatchApply();
+
+            setStatus('Carga concluída! Processando no servidor...', 'ok');
+
+            // Give the backend trigger a moment to process before refreshing the view.
+            setTimeout(() => {
+                setStatus('Atualizando visualização...', 'ok');
+                fxDispatchApply();
+            }, 3000); // 3-second delay, adjust as needed based on average processing time.
+
 
         } catch(e) {
             console.error("Erro na importação:", e);
@@ -1164,7 +1155,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ms.pags.setOptions(  mergeRankedAll(tPags, allPags), true );
       ms.turnos.setOptions(['Dia','Noite'], true);
     }
-    
+
     /* ===================== LOOP PRINCIPAL (CORRIGIDO) ===================== */
     async function applyAll(details){
       try{
@@ -1175,12 +1166,12 @@ document.addEventListener('DOMContentLoaded', () => {
             setStatus('Selecione um período', 'err');
             return;
         }
-        
+
         const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
         setStatus('Consultando…');
-        
+
         const totalViewAnaliticos = { ...analiticos, unidade: [], loja: [] };
-        
+
         const kpiData = await updateKPIs(de, ate, dePrev, atePrev, totalViewAnaliticos);
         renderVendasKPIs(kpiData);
 
@@ -1194,7 +1185,7 @@ document.addEventListener('DOMContentLoaded', () => {
           updateInsights(de, ate, analiticos, selectedKpiForDiag),
           updateProjections(de, ate, dePrev, atePrev, analiticos)
         ]);
-        
+
         setStatus('OK','ok');
         matchPanelHeights();
       }catch(e){
@@ -1283,7 +1274,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function fxDispatchApply(){
       const payload = {
-        start: fx.$start.value, 
+        start: fx.$start.value,
         end: fx.$end.value,
         analiticos: {
           unidade: ms.unids.get(),
@@ -1316,10 +1307,10 @@ document.addEventListener('DOMContentLoaded', () => {
     fx.$btnReset.addEventListener('click', ()=>{
       fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('active'));
       fx.$days.querySelectorAll('button').forEach(x=> x.classList.remove('fx-active'));
-      
+
       Object.values(ms).forEach(m => m.clear());
       fxCanceled.value = 'nao';
-      
+
       fxLastNDays(30);
       fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
       fxDispatchApply();
@@ -1340,20 +1331,20 @@ document.addEventListener('DOMContentLoaded', () => {
         updateChartTitles();
         fxDispatchApply();
     });
-    
+
     /* ===================== INICIALIZAÇÃO ===================== */
     (async function init(){
       try{
         setStatus('Carregando…');
         const dr = await supa.from('vw_vendas_daterange').select('min_dia, max_dia').limit(1);
         if(dr.error) throw dr.error;
-        if(dr.data?.length){ 
-          firstDay=dr.data[0].min_dia; 
-          lastDay=dr.data[0].max_dia; 
+        if(dr.data?.length){
+          firstDay=dr.data[0].min_dia;
+          lastDay=dr.data[0].max_dia;
         }
-        
+
         await reloadStaticOptions();
-        
+
         bindKPIClick();
         updateChartTitles();
 
