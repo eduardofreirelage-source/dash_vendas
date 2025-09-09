@@ -1066,10 +1066,37 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!json || json.length === 0) {
                 throw new Error("O arquivo está vazio ou em um formato inválido.");
             }
-
-            setStatus(`Enviando ${json.length} registros...`, 'info');
             
-            const { error } = await supa.from(DEST_INSERT_TABLE).insert(json);
+            const headerMap = {
+                'dia': 'dia',
+                'hora': 'hora',
+                'unidade': 'unidade',
+                'loja': 'Nome da loja',
+                'canal de venda': 'Canal de venda',
+                'pagamento_base': 'pagamento_base',
+                'cancelado': 'cancelado',
+                'pedidos': 'pedidos',
+                'fat': 'fat',
+                'des': 'des',
+                'fre': 'fre',
+                'pedido_id': 'pedido_id'
+            };
+    
+            const transformedJson = json.map(row => {
+                const newRow = {};
+                for (const originalKey in row) {
+                    const normalizedKey = originalKey.trim().toLowerCase();
+                    const dbColumn = headerMap[normalizedKey];
+                    if (dbColumn) {
+                        newRow[dbColumn] = row[originalKey];
+                    }
+                }
+                return newRow;
+            });
+
+            setStatus(`Enviando ${transformedJson.length} registros...`, 'info');
+            
+            const { error } = await supa.from(DEST_INSERT_TABLE).insert(transformedJson);
 
             if (error) {
                 throw error;
