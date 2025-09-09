@@ -301,7 +301,7 @@
     const canvas = $(canvasId);
     if (!canvas) return;
     if (canvas.__chart) { try { canvas.__chart.destroy(); } catch(e){} }
-    const ctx = canvas.getContext('2d'); // CORRIGIDO: de 'd' para '2d'
+    const ctx = canvas.getContext('2d');
     canvas.__chart = new Chart(ctx, {
       type,
       data: { labels, datasets },
@@ -438,13 +438,15 @@
 
   async function init() {
     try {
+      console.info('[Status] [info]: Inicializando aplicação (v10.3 ELT)...');
+      console.info('[Status] [info]: Buscando dados analytics (RPC)...');
       const { data, error } = await supa.from('vendas_pratos_daterange').select('max_data').limit(1);
       if (error) throw error;
       lastDay = (data?.length && data[0].max_data) ? data[0].max_data : getTodayISO();
       await reloadFilterOptions();
       
-      // ===== LÓGICA DE FILTRO INICIAL MELHORADA =====
       document.dispatchEvent(new Event('filters:init'));
+      console.info('[Status] [ok]: Dados atualizados.');
 
     } catch (e) { console.error(e); }
   }
@@ -459,7 +461,6 @@
     function fxFmt(date){ return date.toISOString().split('T')[0]; }
     function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end); }
     
-    // NOVA FUNÇÃO para definir o filtro para o último mês com dados
     function fxSetToLastMonthWithData(baseDateStr) {
         if (!baseDateStr || baseDateStr.startsWith('1970')) return fxLastNDays(30);
         const baseDate = new Date(baseDateStr + 'T12:00:00Z');
@@ -529,14 +530,13 @@
     fx.$btnReset.addEventListener('click', ()=>{
       Object.values(ms).forEach(m => m.clear());
       $('onlyPratos').checked = false;
-      fxSetToLastMonthWithData(lastDay); // Botão de reset agora também usa o filtro inteligente
+      fxSetToLastMonthWithData(lastDay);
       fxDispatchApply();
     });
 
     document.addEventListener('filters:apply', (e) => { if(e.detail) { applyAll(e.detail); } });
     
     document.addEventListener('filters:init', () => {
-        // A LÓGICA INICIAL AGORA É MAIS INTELIGENTE
         fxSetToLastMonthWithData(lastDay);
         fxDispatchApply();
     });
@@ -592,12 +592,11 @@
         if (parts.length === 3) {
             let day = parts[0], month = parts[1], year = parts[2];
             if (year.length === 2) year = '20' + year;
-            // Validação simples
             if (parseInt(month,10) > 0 && parseInt(month,10) <= 12 && parseInt(day,10) > 0 && parseInt(day,10) <= 31) {
-              return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+              return `${year.padStart(4, '20')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
             }
         }
-        return null; // Retorna null se não conseguir converter
+        return null;
       };
 
       const dadosFormatados = json_data.map(linha => {
@@ -605,7 +604,7 @@
         if (dataValue === null || typeof dataValue === 'undefined') return null;
         
         const parsedDate = parseDate(dataValue);
-        if (!parsedDate) return null; // Ignora linhas com data inválida
+        if (!parsedDate) return null;
 
         return {
           data: parsedDate,
