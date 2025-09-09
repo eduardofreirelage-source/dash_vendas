@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /* ===================== CONFIG ===================== */
     const SUPABASE_URL = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "YOUR_NEW_ROTATED_SUPABASE_ANON_KEY"; // <-- SUBSTITUA PELA SUA CHAVE (VIA ENV VAR)
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U"; // <-- SUBSTITUA PELA SUA CHAVE (VIA ENV VAR)
 
     if (SUPABASE_ANON.includes("YOUR_NEW")) {
         const statusEl = $('status');
