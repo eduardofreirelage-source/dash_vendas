@@ -14,9 +14,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
-    // ATUALIZAÇÃO DA CHAVE DE API
+    
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -277,6 +277,7 @@ document.addEventListener('DOMContentLoaded', () => {
     /* ===================== ESTADO / FILTROS ===================== */
     let firstDay='', lastDay='';
     let projectionDays = 30;
+    let diagChartMode = 'total';
     const fxDispatchApplyDebounced = debounce(() => fxDispatchApply(), 500);
     const ms={
       unids:  MultiSelect('fxUnit', 'Todas', fxDispatchApplyDebounced),
@@ -1059,6 +1060,11 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     );
+    function mergeRankedAll(rankedList, allList){
+      const rset = new Set(rankedList);
+      const rest = allList.filter(x=>!rset.has(x));
+      return [...rankedList, ...rest];
+    }
     async function reloadStaticOptions(){
       const de = firstDay || '1900-01-01';
       const ate= lastDay  || DateHelpers.iso(new Date());
