@@ -1078,10 +1078,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 'data': 'data_completa', // Nome temporário para processamento
                 'unidade': 'unidade',
                 'loja': 'loja',
-                'canal': 'canal',
+                'canal': 'canal de venda', // <<< CORREÇÃO APLICADA AQUI
                 'pagamento': 'pagamento_base',
                 'cancelado': 'cancelado',
-                'pedido': 'pedidos', // Mapeado para o antigo 'pedidos' se necessário
+                'pedido': 'pedidos',
                 'total': 'fat',
                 'desconto': 'des',
                 'entrega': 'fre',
@@ -1129,11 +1129,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 tempPedidoId = newRow['pedido_id'];
                 
                 // Geração da chave primária (row_key)
-                // Usar o ID do pedido garante idempotência. Se não houver, a chave será menos previsível.
                 if (tempPedidoId) {
                     newRow['row_key'] = `${tempPedidoId}-${newRow.dia}-${index}`;
                 } else {
-                    // Fallback para garantir a inserção, mas com risco de duplicidade se re-importado
                     newRow['row_key'] = `import-${new Date().getTime()}-${index}`;
                 }
 
@@ -1145,7 +1143,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return newRow;
             });
 
-            // Validação final antes do envio
             if(transformedJson.length === 0){
                 throw new Error("Nenhum registro válido foi processado. Verifique o arquivo.");
             }
@@ -1160,7 +1157,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             setStatus('Importação concluída! Atualizando...', 'ok');
-            // Dispara a atualização dos dados no dashboard.
             document.dispatchEvent(new Event('filters:apply:internal'));
 
         } catch(e) {
@@ -1169,7 +1165,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.details) userMessage += ` (${e.details})`;
             setStatus(`Erro: ${userMessage}`, 'err');
         } finally {
-            // Limpa o input de arquivo para permitir o upload do mesmo arquivo novamente
             $('fileExcel').value='';
         }
     });
