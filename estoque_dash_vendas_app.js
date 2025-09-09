@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const REFRESH_RPC     = 'refresh_sales_materialized';
     // ATUALIZAÇÃO DA CHAVE DE API
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -834,6 +834,132 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
+    // ===================================================================================
+    // NOVAS FUNÇÕES PARA OS GRÁFICOS DO DIAGNÓSTICO
+    // ===================================================================================
+    function ensureSingleSeriesChart(canvasId, labels, dataArr, meta, type = 'bar') {
+        const canvas = $(canvasId); if (!canvas) return;
+        if (canvas.__chart) { try { canvas.__chart.destroy(); } catch (e) {} canvas.__chart = null; }
+        const ctx = canvas.getContext('2d');
+        
+        const chart = new Chart(ctx, {
+            type: type,
+            data: {
+                labels,
+                datasets: [{
+                    label: meta.label,
+                    data: dataArr.map(v => +v || 0),
+                    backgroundColor: type === 'bar' ? gradNow(ctx) : 'rgba(123, 30, 58, 0.1)',
+                    borderColor: '#7b1e3a',
+                    borderWidth: 2,
+                    pointBackgroundColor: '#7b1e3a',
+                    tension: 0.1,
+                    fill: type === 'line'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                scales: {
+                    x: { grid: { display: false } },
+                    y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: (v) => formatTickBy(meta.fmt, v) } }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.dataset.label}: ${formatValueBy(meta.fmt, ctx.parsed.y || 0)}`
+                        }
+                    }
+                }
+            }
+        });
+        canvas.__chart = chart;
+    }
+
+    async function updateDiagnosticCharts(de, ate, analiticos) {
+        try {
+            const selectedKpi = $('kpi-select').value;
+            const meta = KPI_META[selectedKpi] || KPI_META.fat;
+            
+            $('diag_title_month').textContent = `${meta.label} por Mês`;
+            $('diag_title_dow').textContent = `${meta.label} por Dia da Semana`;
+            $('diag_title_hour').textContent = `${meta.label} por Hora`;
+
+            const paramsNow = buildParams(de, ate, analiticos);
+
+            const [
+                { data: monthData, error: monthErr },
+                { data: dowData, error: dowErr },
+                { data: hourData, error: hourErr }
+            ] = await Promise.all([
+                supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
+                supa.rpc(RPC_CHART_DOW_FUNC, paramsNow),
+                supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow)
+            ]);
+
+            if (monthErr || dowErr || hourErr) throw (monthErr || dowErr || hourErr);
+
+            const valueKey = 'total';
+
+            // Gráfico por Mês
+            {
+                const monthMap = new Map((monthData || []).map(r => [r.ym, +r[valueKey] || 0]));
+                let labels = [];
+                const dataArr = [];
+                if (DateHelpers.daysLen(de, ate) > 0) {
+                    let currentDate = new Date(de + 'T12:00:00');
+                    const endDate = new Date(ate + 'T12:00:00');
+                    let iterations = 0; // safety break
+                    while (currentDate <= endDate && iterations < 100) {
+                        const ym = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+                        labels.push(DateHelpers.formatYM(currentDate.toISOString().slice(0, 10)));
+                        dataArr.push(monthMap.get(ym) || 0);
+                        currentDate.setMonth(currentDate.getMonth() + 1);
+                        iterations++;
+                    }
+                }
+                ensureSingleSeriesChart('diag_ch_month', labels, dataArr, meta, 'line');
+            }
+
+            // Gráfico por Dia da Semana
+            {
+                const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+                const dataArr = Array(7).fill(0);
+                (dowData || []).forEach(r => dataArr[r.dow] = r[valueKey]);
+                ensureSingleSeriesChart('diag_ch_dow', labels, dataArr, meta, 'bar');
+            }
+
+            // Gráfico por Hora
+            {
+                const dataArr = Array(24).fill(0);
+                (hourData || []).forEach(r => dataArr[r.h] = r[valueKey]);
+                let minHour = 24, maxHour = -1;
+                for (let i = 0; i < 24; i++) {
+                    if (dataArr[i] > 0) {
+                        if (i < minHour) minHour = i;
+                        if (i > maxHour) maxHour = i;
+                    }
+                }
+
+                if (minHour > maxHour) {
+                    ensureSingleSeriesChart('diag_ch_hour', [], [], meta, 'bar');
+                } else {
+                    const range = Array.from({ length: maxHour - minHour + 1 }, (_, i) => i + minHour);
+                    const labels = range.map(h => String(h).padStart(2, '0') + 'h');
+                    const slicedData = range.map(h => dataArr[h]);
+                    ensureSingleSeriesChart('diag_ch_hour', labels, slicedData, meta, 'bar');
+                }
+            }
+        } catch (e) {
+            console.error("Erro ao atualizar gráficos de diagnóstico:", e);
+            ensureSingleSeriesChart('diag_ch_month', [], [], {}, 'line');
+            ensureSingleSeriesChart('diag_ch_dow', [], [], {}, 'bar');
+            ensureSingleSeriesChart('diag_ch_hour', [], [], {}, 'bar');
+        }
+    }
+
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
     $('fileExcel').addEventListener('change', async (ev)=>{
       const file = ev.target.files?.[0];
