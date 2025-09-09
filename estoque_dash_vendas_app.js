@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const REFRESH_RPC     = 'refresh_sales_materialized';
     
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -78,13 +78,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if(fmt==='count') return num(v);
       if(fmt==='percent') return pctf(v);
       return money(v);
-    };
-    const bucketKey = (type, row) => {
-      if(type==='dow'){ return (new Date(row.dia+'T12:00:00')).getDay(); }
-      if(type==='hour'){ return row.hora ?? null; }
-      if(type==='turno'){ return row.turno ?? null; }
-      if(type==='month'){ const d=new Date(row.dia+'T12:00:00'); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
-      return null;
     };
     const upSVG = () => '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4l5 6h-3v6H8v-6H5l5-6z"/></svg>';
     const downSVG = () => '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 16l-5-6h3V4h4v6h3l-5 6z"/></svg>';
@@ -284,7 +277,7 @@ document.addEventListener('DOMContentLoaded', () => {
     /* ===================== ESTADO / FILTROS ===================== */
     let firstDay='', lastDay='';
     let projectionDays = 30;
-    let diagChartMode = 'total'; // Estado para o novo seletor Total/Média
+    let diagChartMode = 'total';
     const fxDispatchApplyDebounced = debounce(() => fxDispatchApply(), 500);
     const ms={
       unids:  MultiSelect('fxUnit', 'Todas', fxDispatchApplyDebounced),
@@ -919,14 +912,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const valueKey = diagChartMode;
 
-            // Gráfico por Mês (Lógica Simplificada)
             {
                 const labels = (monthData || []).map(r => DateHelpers.formatYM(r.ym + '-01T12:00:00'));
                 const dataArr = (monthData || []).map(r => +r[valueKey] || 0);
                 ensureSingleSeriesChart('diag_ch_month', labels, dataArr, meta, 'line');
             }
 
-            // Gráfico por Dia da Semana
             {
                 const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
                 const dataArr = Array(7).fill(0);
@@ -934,7 +925,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 ensureSingleSeriesChart('diag_ch_dow', labels, dataArr, meta, 'bar');
             }
 
-            // Gráfico por Hora
             {
                 const dataArr = Array(24).fill(0);
                 (hourData || []).forEach(r => dataArr[r.h] = r[valueKey]);
@@ -1143,7 +1133,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Listener para o novo seletor Total/Média dos gráficos de diagnóstico
     const segDiagCharts = $('segDiagCharts');
     if (segDiagCharts) {
         segDiagCharts.addEventListener('click', (e) => {
