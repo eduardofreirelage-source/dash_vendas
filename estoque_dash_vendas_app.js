@@ -14,9 +14,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
-    // ATUALIZAÇÃO DA CHAVE DE API
+    
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -284,6 +284,7 @@ document.addEventListener('DOMContentLoaded', () => {
     /* ===================== ESTADO / FILTROS ===================== */
     let firstDay='', lastDay='';
     let projectionDays = 30;
+    let diagChartMode = 'total'; // Estado para o novo seletor Total/Média
     const fxDispatchApplyDebounced = debounce(() => fxDispatchApply(), 500);
     const ms={
       unids:  MultiSelect('fxUnit', 'Todas', fxDispatchApplyDebounced),
@@ -362,7 +363,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const pTotalNow = buildParams(de, ate, { ...analiticos, cancelado: 'ambos' });
             const pTotalPrev = buildParams(dePrev, atePrev, { ...analiticos, cancelado: 'ambos' });
 
-            // CORREÇÃO: Função auxiliar para construir as queries de contagem, aplicando todos os filtros.
             const buildCountQuery = (startDate, endDate, cancelFilter) => {
                 let query = supa.from('vendas_canon').select('*', { count: 'exact', head: true })
                     .gte('dia', startDate)
@@ -853,9 +853,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // ===================================================================================
-    // NOVAS FUNÇÕES PARA OS GRÁFICOS DO DIAGNÓSTICO (DEFINIÇÃO COMPLETA)
-    // ===================================================================================
     function ensureSingleSeriesChart(canvasId, labels, dataArr, meta, type = 'bar') {
         const canvas = $(canvasId); if (!canvas) return;
         if (canvas.__chart) { try { canvas.__chart.destroy(); } catch (e) {} canvas.__chart = null; }
@@ -920,25 +917,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (monthErr || dowErr || hourErr) throw (monthErr || dowErr || hourErr);
 
-            const valueKey = 'total';
+            const valueKey = diagChartMode;
 
-            // Gráfico por Mês
+            // Gráfico por Mês (Lógica Simplificada)
             {
-                const monthMap = new Map((monthData || []).map(r => [r.ym, +r[valueKey] || 0]));
-                let labels = [];
-                const dataArr = [];
-                if (DateHelpers.daysLen(de, ate) > 0) {
-                    let currentDate = new Date(de + 'T12:00:00');
-                    const endDate = new Date(ate + 'T12:00:00');
-                    let iterations = 0; // safety break
-                    while (currentDate <= endDate && iterations < 100) {
-                        const ym = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
-                        labels.push(DateHelpers.formatYM(currentDate.toISOString().slice(0, 10)));
-                        dataArr.push(monthMap.get(ym) || 0);
-                        currentDate.setMonth(currentDate.getMonth() + 1);
-                        iterations++;
-                    }
-                }
+                const labels = (monthData || []).map(r => DateHelpers.formatYM(r.ym + '-01T12:00:00'));
+                const dataArr = (monthData || []).map(r => +r[valueKey] || 0);
                 ensureSingleSeriesChart('diag_ch_month', labels, dataArr, meta, 'line');
             }
 
@@ -977,62 +961,6 @@ document.addEventListener('DOMContentLoaded', () => {
             ensureSingleSeriesChart('diag_ch_dow', [], [], {}, 'bar');
             ensureSingleSeriesChart('diag_ch_hour', [], [], {}, 'bar');
         }
-    }
-    
-    $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
-    $('fileExcel').addEventListener('change', async (ev)=>{
-      const file = ev.target.files?.[0];
-      if(!file){ info(''); return; }
-      info('Lendo arquivo…');
-      try{
-        const buf = await file.arrayBuffer();
-        const wb = XLSX.read(buf, { type:'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
-      }catch(e){
-        console.error(e);
-        setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
-        info('');
-      }finally{
-        $('fileExcel').value='';
-      }
-    }
-    );
-    function mergeRankedAll(rankedList, allList){
-      const rset = new Set(rankedList);
-      const rest = allList.filter(x=>!rset.has(x));
-      return [...rankedList, ...rest];
-    }
-    async function reloadStaticOptions(){
-      const de = firstDay || '1900-01-01';
-      const ate= lastDay  || DateHelpers.iso(new Date());
-      const TOPN = 50;
-      const [topUnids, topLojas, topPags, topCanais] = await Promise.allSettled([
-        supa.rpc('opt_unidades_ranked',  { p_dini: de, p_dfim: ate, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
-        supa.rpc('opt_lojas_ranked',     { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
-        supa.rpc('opt_pagamentos_ranked',{ p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_lojas:null, p_cancelado:null, p_limit: TOPN }),
-        supa.rpc('opt_canais_ranked',    { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_lojas:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
-      ]);
-      const tUnids = (topUnids.status==='fulfilled' && !topUnids.value.error) ? (topUnids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
-      const tLojas = (topLojas.status==='fulfilled'  && !topLojas.value.error)  ? (topLojas.value.data||[]).map(r=>r.loja).filter(Boolean)       : [];
-      const tPags  = (topPags.status==='fulfilled'   && !topPags.value.error)   ? (topPags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean): [];
-      const tCanais= (topCanais.status==='fulfilled' && !topCanais.value.error) ? (topCanais.value.data||[]).map(r=>r.canal).filter(Boolean)      : [];
-      const [unids,lojas,canais,pags] = await Promise.allSettled([
-        supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
-        supa.from('vw_vendas_lojas').select('loja').order('loja'),
-        supa.from('vw_vendas_canais').select('canal').order('canal'),
-        supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
-      ]);
-      const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
-      const allUnids = ok(unids) ? (unids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
-      const allLojas = ok(lojas) ? (lojas.value.data||[]).map(r=>r.loja).filter(Boolean) : [];
-      const allCanais= ok(canais)? (canais.value.data||[]).map(r=>r.canal).filter(Boolean): [];
-      const allPags  = ok(pags)  ? (pags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean) : [];
-      ms.unids.setOptions( mergeRankedAll(tUnids, allUnids), true );
-      ms.lojas.setOptions( mergeRankedAll(tLojas, allLojas), true );
-      ms.canais.setOptions(mergeRankedAll(tCanais, allCanais), true );
-      ms.pags.setOptions(  mergeRankedAll(tPags, allPags), true );
-      ms.turnos.setOptions(['Dia','Noite'], true);
     }
     
     async function updateInsights(de, ate, analiticos, kpi_key) {
@@ -1214,6 +1142,18 @@ document.addEventListener('DOMContentLoaded', () => {
             fxDispatchApply();
         }
     });
+
+    // Listener para o novo seletor Total/Média dos gráficos de diagnóstico
+    const segDiagCharts = $('segDiagCharts');
+    if (segDiagCharts) {
+        segDiagCharts.addEventListener('click', (e) => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+            diagChartMode = btn.dataset.mode;
+            segDiagCharts.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+            fxDispatchApply();
+        });
+    }
 
     function fxShowDrop(show){
       fx.$drop.classList.toggle('fx-show', show);
