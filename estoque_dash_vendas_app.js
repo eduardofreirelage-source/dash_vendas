@@ -362,6 +362,25 @@ document.addEventListener('DOMContentLoaded', () => {
             const pTotalNow = buildParams(de, ate, { ...analiticos, cancelado: 'ambos' });
             const pTotalPrev = buildParams(dePrev, atePrev, { ...analiticos, cancelado: 'ambos' });
 
+            // CORREÇÃO: Função auxiliar para construir as queries de contagem, aplicando todos os filtros.
+            const buildCountQuery = (startDate, endDate, cancelFilter) => {
+                let query = supa.from('vendas_canon').select('*', { count: 'exact', head: true })
+                    .gte('dia', startDate)
+                    .lte('dia', endDate);
+                
+                const isActive = (val) => val && val.length > 0;
+                if (isActive(analiticos.unidade)) query = query.in('unidade', analiticos.unidade);
+                if (isActive(analiticos.loja)) query = query.in('loja', analiticos.loja);
+                if (isActive(analiticos.turno)) query = query.in('turno', analiticos.turno);
+                if (isActive(analiticos.canal)) query = query.in('canal', analiticos.canal);
+                if (isActive(analiticos.pagamento)) query = query.in('pagamento_base', analiticos.pagamento);
+                
+                if (cancelFilter === 'Sim') query = query.eq('cancelado', 'Sim');
+                if (cancelFilter === 'Não') query = query.eq('cancelado', 'Não');
+
+                return query;
+            };
+
             const [
                 totalFinNowResult, totalFinPrevResult,
                 { count: pedNowCount, error: errPedNow },
@@ -371,12 +390,12 @@ document.addEventListener('DOMContentLoaded', () => {
             ] = await Promise.all([
                 supa.rpc(RPC_KPI_FUNC, pTotalNow),
                 supa.rpc(RPC_KPI_FUNC, pTotalPrev),
-                supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate),
-                supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev),
-                supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Sim'),
-                supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', de).lte('dia', ate).eq('cancelado', 'Não'),
-                supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Sim'),
-                supa.from('vendas_canon').select('*', { count: 'exact', head: true }).gte('dia', dePrev).lte('dia', atePrev).eq('cancelado', 'Não')
+                buildCountQuery(de, ate, null),
+                buildCountQuery(dePrev, atePrev, null),
+                buildCountQuery(de, ate, 'Sim'),
+                buildCountQuery(de, ate, 'Não'),
+                buildCountQuery(dePrev, atePrev, 'Sim'),
+                buildCountQuery(dePrev, atePrev, 'Não')
             ]);
 
             if(totalFinNowResult.error) throw totalFinNowResult.error;
@@ -400,7 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (analiticos.cancelado === 'sim') {
                 N_financial = cancNow;
                 P_financial = cancPrev;
-            } else { // 'ambos'
+            } else {
                 N_financial = totalNow;
                 P_financial = totalPrev;
             }
@@ -835,7 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // ===================================================================================
-    // NOVAS FUNÇÕES PARA OS GRÁFICOS DO DIAGNÓSTICO
+    // NOVAS FUNÇÕES PARA OS GRÁFICOS DO DIAGNÓSTICO (DEFINIÇÃO COMPLETA)
     // ===================================================================================
     function ensureSingleSeriesChart(canvasId, labels, dataArr, meta, type = 'bar') {
         const canvas = $(canvasId); if (!canvas) return;
@@ -959,7 +978,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ensureSingleSeriesChart('diag_ch_hour', [], [], {}, 'bar');
         }
     }
-
+    
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
     $('fileExcel').addEventListener('change', async (ev)=>{
       const file = ev.target.files?.[0];
