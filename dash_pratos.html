@@ -530,14 +530,11 @@
     init();
   });
   
-  // ===================== LÓGICA DE UPLOAD IMPLEMENTADA =====================
+  // ===================== LÓGICA DE UPLOAD MELHORADA =====================
   $('btnUpload').addEventListener('click', () => $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev) => {
     const file = ev.target.files[0];
-    if (!file) {
-      alert('Nenhum arquivo selecionado.');
-      return;
-    }
+    if (!file) return;
     
     const btn = $('btnUpload');
     btn.textContent = 'Importando...';
@@ -548,40 +545,84 @@
       const workbook = XLSX.read(data);
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
-      
-      const json_data = XLSX.utils.sheet_to_json(worksheet, { raw: false });
+      const json_data = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: null });
 
       if (json_data.length === 0) {
         throw new Error("O arquivo está vazio ou em um formato inválido.");
       }
 
-      // IMPORTANTE: Mapeie as colunas do seu arquivo para as colunas do banco de dados.
-      // O nome da propriedade (ex: 'Data da Venda') DEVE ser exatamente igual ao nome do cabeçalho no seu arquivo CSV/Excel.
-      const dadosFormatados = json_data.map(linha => ({
-        data: linha['Data da Venda'] || linha['data'], // Suporta "Data da Venda" ou "data"
-        unidade: linha['UNIDADE'] || linha['unidade'],
-        prato: linha['PRATO'] || linha['prato'],
-        categoria: linha['CATEGORIA'] || linha['categoria'],
-        quantidade: parseInt(linha['QUANTIDADE'] || linha['quantidade'], 10)
-      }));
+      const headers = Object.keys(json_data[0]);
+      
+      const findHeader = (possibleNames) => {
+          for (const name of possibleNames) {
+              const found = headers.find(h => h.toLowerCase().trim() === name);
+              if (found) return found;
+          }
+          return null;
+      };
 
-      // A importação será feita em lotes para não sobrecarregar o Supabase
+      const dateKey = findHeader(['data', 'data da venda', 'data da operacao', 'data faturamento', 'date']);
+      const unitKey = findHeader(['unidade', 'unidades']);
+      const dishKey = findHeader(['prato', 'pratos', 'produto', 'produtos']);
+      const categoryKey = findHeader(['categoria', 'categorias']);
+      const quantityKey = findHeader(['quantidade', 'qtd', 'quantia']);
+
+      if (!dateKey) {
+        throw new Error(`Coluna de data não encontrada. Certifique-se que seu arquivo tem uma coluna com um nome como: 'data', 'data da venda', etc.`);
+      }
+      if (!quantityKey) {
+        throw new Error(`Coluna de quantidade não encontrada. Certifique-se que seu arquivo tem uma coluna com um nome como: 'quantidade', 'qtd', etc.`);
+      }
+      
+      const excelToJSDate = (excelDate) => {
+          if (typeof excelDate === 'number' && excelDate > 1) {
+              const date = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
+              date.setMinutes(date.getMinutes() + date.getTimezoneOffset()); // Ajuste de fuso horário
+              return date.toISOString().split('T')[0];
+          }
+          // Tenta converter formatos como DD/MM/YYYY ou MM/DD/YYYY para YYYY-MM-DD
+          const parts = String(excelDate).match(/(\d+)/g);
+          if (parts && parts.length === 3) {
+              const [p1, p2, p3] = parts.map(Number);
+              // Assume ano com 4 dígitos. Se for ano com 2, adiciona 2000.
+              const year = p3 > 1000 ? p3 : p3 + 2000;
+              // Assume DD/MM/YYYY se o segundo valor for <= 12
+              if (p2 <= 12) {
+                  return `${year}-${String(p2).padStart(2, '0')}-${String(p1).padStart(2, '0')}`;
+              }
+          }
+          return excelDate; // Retorna o valor original se não conseguir converter
+      };
+
+      const dadosFormatados = json_data.map(linha => {
+        const dataValue = linha[dateKey];
+        if (dataValue === null || typeof dataValue === 'undefined') {
+            return null; // Ignora linhas sem data
+        }
+        return {
+          data: excelToJSDate(dataValue),
+          unidade: unitKey ? linha[unitKey] : null,
+          prato: dishKey ? linha[dishKey] : null,
+          categoria: categoryKey ? linha[categoryKey] : null,
+          quantidade: parseInt(linha[quantityKey], 10) || 0
+        };
+      }).filter(Boolean); // Remove as linhas que retornaram null
+
+      if (dadosFormatados.length === 0) {
+        throw new Error("Nenhuma linha com dados de data válidos foi encontrada no arquivo.");
+      }
+
       const CHUNK_SIZE = 500;
       for (let i = 0; i < dadosFormatados.length; i += CHUNK_SIZE) {
           const chunk = dadosFormatados.slice(i, i + CHUNK_SIZE);
-          const { error } = await supa
-            .from('vendas_pratos')
-            .insert(chunk);
-
+          const { error } = await supa.from('vendas_pratos').insert(chunk);
           if (error) {
-            throw new Error(`Erro ao importar lote para o banco de dados: ${error.message}`);
+            throw new Error(`Erro ao importar lote para o banco: ${error.message}`);
           }
       }
 
-      alert(`Importação concluída com sucesso! ${dadosFormatados.length} linhas inseridas.`);
-      
-      // Recarrega tudo para exibir os novos dados
-      window.location.reload(); 
+      alert(`Importação concluída! ${dadosFormatados.length} linhas inseridas.`);
+      window.location.reload();
 
     } catch (e) {
       console.error(e);
@@ -589,7 +630,7 @@
     } finally {
       btn.textContent = 'Importar';
       btn.disabled = false;
-      ev.target.value = ''; // Limpa o seletor de arquivo
+      ev.target.value = '';
     }
   });
   </script>
