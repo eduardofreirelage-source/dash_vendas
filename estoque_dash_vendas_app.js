@@ -3,63 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Bloco Único de JavaScript: Lógica Principal, UI, e Inicialização
     // ===================================================================================
 
-    /* ===================== CONFIG ===================== */
-    const SUPABASE_URL = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U"; // <-- SUBSTITUA PELA SUA CHAVE (VIA ENV VAR)
-
-    if (SUPABASE_ANON.includes("YOUR_NEW")) {
-        const statusEl = $('status');
-        if(statusEl) {
-            statusEl.textContent = 'ERRO CRÍTICO: Chave Supabase não configurada!';
-            statusEl.style.color = '#ef4444';
-        }
-        console.error("CRITICAL SECURITY ALERT: The Supabase Anon key is not configured. Please set it as an environment variable and rebuild your application. The dashboard will not function without it.");
-        return;
-    }
-
-    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-
-    const RPC_FILTER_FUNC = 'filter_vendas';
-    const RPC_KPI_FUNC = 'kpi_vendas_unificado';
-    // ======================= FIX FINAL: Apontar TODAS as funções para as versões _v2 =======================
-    const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes_v2';
-    const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v2';
-    const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v2';
-    const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v2';
-    // =====================================================================================================
-    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
-
-    const DEST_INSERT_TABLE= 'stage_vendas_raw';
-    const REFRESH_RPC     = 'refresh_sales_materialized';
-
-
-    /* ===================== CHART.JS — tema vinho ===================== */
-    Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol"';
-    Chart.defaults.color = '#334155';
-    Chart.defaults.plugins.legend.position = 'top';
-    Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(15,23,42,.95)';
-    Chart.defaults.plugins.tooltip.titleColor = '#e2e8f0';
-    Chart.defaults.plugins.tooltip.bodyColor = '#e2e8f0';
-    Chart.defaults.plugins.tooltip.borderColor = 'rgba(148,163,184,.25)';
-    Chart.defaults.plugins.tooltip.borderWidth = 1;
-    Chart.defaults.datasets.bar.borderRadius = 6;
-    Chart.defaults.datasets.bar.borderSkipped = false;
-    Chart.defaults.datasets.bar.maxBarThickness = 42;
-    Chart.defaults.devicePixelRatio = Math.max(1, window.devicePixelRatio || 1);
-    function gradNow(ctx){
-      const g = ctx.createLinearGradient(0,0,0,240);
-      g.addColorStop(0,'rgba(123,30,58,0.95)');
-      g.addColorStop(1,'rgba(156,53,84,0.55)');
-      return g;
-    }
-    function gradPrev(ctx){
-      const g = ctx.createLinearGradient(0,0,0,240);
-      g.addColorStop(0,'rgba(148,163,184,0.85)');
-      g.addColorStop(1,'rgba(203,213,225,0.45)');
-      return g;
-    }
-
-    /* ===================== HELPERS (BLOCOS COMPLETOS E CORRIGIDOS) ===================== */
+    // ======================= HELPERS MOVIDOS PARA O TOPO =======================
     const $ = id => document.getElementById(id);
     const setStatus=(t,k)=>{ const el=$('status'); if(el) {el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085');} };
     const setDiag=(msg)=>{ const el=$('diag'); if(el) el.textContent = msg || ''; };
@@ -110,6 +54,50 @@ document.addEventListener('DOMContentLoaded', () => {
             timeout = setTimeout(() => func.apply(this, args), delay);
         };
     };
+
+    /* ===================== CONFIG ===================== */
+    const SUPABASE_URL = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
+    // Chave anon incluída conforme solicitado para testes
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+
+    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+    const RPC_FILTER_FUNC = 'filter_vendas';
+    const RPC_KPI_FUNC = 'kpi_vendas_unificado';
+    const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes_v2';
+    const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v2';
+    const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v2';
+    const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v2';
+    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
+
+    const DEST_INSERT_TABLE= 'stage_vendas_raw';
+    const REFRESH_RPC     = 'refresh_sales_materialized';
+
+    /* ===================== CHART.JS — tema vinho ===================== */
+    Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol"';
+    Chart.defaults.color = '#334155';
+    Chart.defaults.plugins.legend.position = 'top';
+    Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(15,23,42,.95)';
+    Chart.defaults.plugins.tooltip.titleColor = '#e2e8f0';
+    Chart.defaults.plugins.tooltip.bodyColor = '#e2e8f0';
+    Chart.defaults.plugins.tooltip.borderColor = 'rgba(148,163,184,.25)';
+    Chart.defaults.plugins.tooltip.borderWidth = 1;
+    Chart.defaults.datasets.bar.borderRadius = 6;
+    Chart.defaults.datasets.bar.borderSkipped = false;
+    Chart.defaults.datasets.bar.maxBarThickness = 42;
+    Chart.defaults.devicePixelRatio = Math.max(1, window.devicePixelRatio || 1);
+    function gradNow(ctx){
+      const g = ctx.createLinearGradient(0,0,0,240);
+      g.addColorStop(0,'rgba(123,30,58,0.95)');
+      g.addColorStop(1,'rgba(156,53,84,0.55)');
+      return g;
+    }
+    function gradPrev(ctx){
+      const g = ctx.createLinearGradient(0,0,0,240);
+      g.addColorStop(0,'rgba(148,163,184,0.85)');
+      g.addColorStop(1,'rgba(203,213,225,0.45)');
+      return g;
+    }
 
     const DateHelpers = {
       iso: (d) => d.toISOString().slice(0, 10),
@@ -673,15 +661,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const mode = effectiveMode();
       try {
           setDiag('');
-          // ======================= FIX FINAL: Passar o KPI selecionado para TODAS as funções SQL =======================
           const paramsNow = { ...buildParams(de, ate, analiticos), p_kpi_key: selectedKPI };
           const paramsPrev = { ...buildParams(dePrev, atePrev, analiticos), p_kpi_key: selectedKPI };
-          // ========================================================================================================
 
           const [
-              {data: dowData}, {data: dowDataPrev},
-              {data: hourData}, {data: hourDataPrev},
-              {data: turnoData}, {data: turnoDataPrev}
+              {data: dowData, error: dowErr}, {data: dowDataPrev, error: dowErrPrev},
+              {data: hourData, error: hourErr}, {data: hourDataPrev, error: hourErrPrev},
+              {data: turnoData, error: turnoErr}, {data: turnoDataPrev, error: turnoErrPrev}
           ] = await Promise.all([
               supa.rpc(RPC_CHART_DOW_FUNC, paramsNow),
               supa.rpc(RPC_CHART_DOW_FUNC, paramsPrev),
@@ -690,6 +676,10 @@ document.addEventListener('DOMContentLoaded', () => {
               supa.rpc(RPC_CHART_TURNO_FUNC, paramsNow),
               supa.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
           ]);
+          
+          if(dowErr) throw dowErr;
+          if(hourErr) throw hourErr;
+          if(turnoErr) throw turnoErr;
 
           const tip = `Período anterior: ${dePrev} → ${atePrev}`;
           const valueKey = mode === 'media' ? 'media' : 'total';
@@ -733,7 +723,7 @@ document.addEventListener('DOMContentLoaded', () => {
           }
       } catch (e) {
           console.error("Erro ao atualizar gráficos analíticos:", e);
-          setDiag('Erro ao atualizar gráficos');
+          setDiag('Erro ao atualizar gráficos: ' + (e.message || ''));
       }
     }
     async function updateMonth12x12(analiticos){
@@ -934,7 +924,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow)
             ]);
 
-            if (monthErr || dowErr || hourErr) throw (monthErr || dowErr || hourErr);
+            if (monthErr) throw monthErr;
+            if (dowErr) throw dowErr;
+            if (hourErr) throw hourErr;
 
             const valueKey = diagChartMode;
 
@@ -973,6 +965,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (e) {
             console.error("Erro ao atualizar gráficos de diagnóstico:", e);
+            setDiag('Erro ao atualizar gráficos: ' + (e.message || ''));
             ensureSingleSeriesChart('diag_ch_month', [], [], {}, 'line');
             ensureSingleSeriesChart('diag_ch_dow', [], [], {}, 'bar');
             ensureSingleSeriesChart('diag_ch_hour', [], [], {}, 'bar');
