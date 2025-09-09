@@ -1051,7 +1051,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // ===================================================================================
-    // LÓGICA DE IMPORTAÇÃO
+    // LÓGICA DE IMPORTAÇÃO (COM CORREÇÃO FINAL)
     // ===================================================================================
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
     
@@ -1102,10 +1102,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 // *** INÍCIO DA CORREÇÃO DEFINITIVA ***
-                // Validação robusta para a coluna 'pedidos'
+                // Validação robusta para a coluna 'pedidos', que pode conter texto como "Ficha".
                 const pedidoValue = newRow.pedidos;
                 if (pedidoValue === null || pedidoValue === undefined || isNaN(parseInt(pedidoValue, 10))) {
-                    newRow.pedidos = null; // Envia nulo se não for um número válido
+                    newRow.pedidos = null; // Envia nulo para o banco se não for um número válido.
                 } else {
                     newRow.pedidos = parseInt(pedidoValue, 10);
                 }
@@ -1166,7 +1166,7 @@ document.addEventListener('DOMContentLoaded', () => {
             $('fileExcel').value='';
         }
     });
-
+    
     // ===================================================================================
     // LÓGICA DA INTERFACE DE FILTROS
     // ===================================================================================
