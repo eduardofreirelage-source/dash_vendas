@@ -1051,7 +1051,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
+    // ===================================================================================
+    // INÍCIO DO BLOCO DE CÓDIGO CORRIGIDO PARA IMPORTAÇÃO
+    // ===================================================================================
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
+    
     $('fileExcel').addEventListener('change', async (ev)=>{
         const file = ev.target.files?.[0];
         if(!file){ info(''); return; }
@@ -1061,62 +1065,103 @@ document.addEventListener('DOMContentLoaded', () => {
             const buf = await file.arrayBuffer();
             const wb = XLSX.read(buf, { type:'array' });
             const ws = wb.Sheets[wb.SheetNames[0]];
+            // raw:false garante que datas sejam lidas corretamente, se possível
             const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
             if (!json || json.length === 0) {
                 throw new Error("O arquivo está vazio ou em um formato inválido.");
             }
             
+            // MAPA DE CABEÇALHO CORRIGIDO E INTENCIONAL
+            // Mapeia a chave do arquivo (em minúsculas, após trim) para a coluna do DB
             const headerMap = {
-                'dia': 'dia',
-                'hora': 'hora',
+                'data': 'data_completa', // Nome temporário para processamento
                 'unidade': 'unidade',
-                'loja': 'Nome da loja',
-                'canal de venda': 'Canal de venda',
-                'pagamento_base': 'pagamento_base',
+                'loja': 'loja',
+                'canal': 'canal',
+                'pagamento': 'pagamento_base',
                 'cancelado': 'cancelado',
-                'pedidos': 'pedidos',
-                'fat': 'fat',
-                'des': 'des',
-                'fre': 'fre',
-                'pedido_id': 'pedido_id'
+                'pedido': 'pedidos', // Mapeado para o antigo 'pedidos' se necessário
+                'total': 'fat',
+                'desconto': 'des',
+                'entrega': 'fre',
+                'número do pedido no parceiro': 'pedido_id'
             };
     
             const transformedJson = json.map((row, index) => {
                 const newRow = {};
                 let tempPedidoId = null;
 
+                // Transforma as chaves do objeto lido para um formato padronizado
+                const normalizedRow = {};
                 for (const originalKey in row) {
                     const normalizedKey = originalKey.trim().toLowerCase();
-                    const dbColumn = headerMap[normalizedKey];
-                    if (dbColumn) {
-                        newRow[dbColumn] = row[originalKey];
-                        if (normalizedKey === 'pedido_id') {
-                            tempPedidoId = row[originalKey];
-                        }
+                    normalizedRow[normalizedKey] = row[originalKey];
+                }
+
+                // Mapeia os dados normalizados para as colunas do banco de dados
+                for (const fileHeader in headerMap) {
+                    if (normalizedRow[fileHeader] !== undefined) {
+                        const dbColumn = headerMap[fileHeader];
+                        newRow[dbColumn] = normalizedRow[fileHeader];
                     }
                 }
+
+                // Tratamento específico e robusto para data e hora
+                if (newRow.data_completa) {
+                    const [dataPart, timePart] = String(newRow.data_completa).split(' ');
+                    const [dia, mes, ano] = dataPart.split('/');
+                    
+                    if(dia && mes && ano && timePart) {
+                        // Formato esperado pelo Supabase: YYYY-MM-DD
+                        newRow['dia'] = `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
+                        // Formato esperado pelo Supabase: HH:mm:ss
+                        newRow['hora'] = `${timePart}:00`; 
+                    } else {
+                        // Log de aviso para dados malformados, sem quebrar a importação
+                        console.warn(`[Importação] Linha ${index + 2}: Formato de data inválido. Valor: '${newRow.data_completa}'`);
+                        newRow['dia'] = null;
+                        newRow['hora'] = null;
+                    }
+                    delete newRow.data_completa; // Remove a coluna temporária
+                }
+
+                tempPedidoId = newRow['pedido_id'];
                 
-                // Gera a row_key obrigatória que estava faltando
+                // Geração da chave primária (row_key)
+                // Usar o ID do pedido garante idempotência. Se não houver, a chave será menos previsível.
                 if (tempPedidoId) {
-                    newRow['row_key'] = `${tempPedidoId}-${new Date().getTime()}-${index}`;
+                    newRow['row_key'] = `${tempPedidoId}-${newRow.dia}-${index}`;
                 } else {
+                    // Fallback para garantir a inserção, mas com risco de duplicidade se re-importado
                     newRow['row_key'] = `import-${new Date().getTime()}-${index}`;
                 }
 
+                // Garante que todos os campos numéricos sejam números
+                newRow.fat = parseFloat(String(newRow.fat || 0).replace(',', '.')) || 0;
+                newRow.des = parseFloat(String(newRow.des || 0).replace(',', '.')) || 0;
+                newRow.fre = parseFloat(String(newRow.fre || 0).replace(',', '.')) || 0;
+
                 return newRow;
             });
+
+            // Validação final antes do envio
+            if(transformedJson.length === 0){
+                throw new Error("Nenhum registro válido foi processado. Verifique o arquivo.");
+            }
 
             setStatus(`Enviando ${transformedJson.length} registros...`, 'info');
             
             const { error } = await supa.from(DEST_INSERT_TABLE).insert(transformedJson);
 
             if (error) {
-                throw error;
+                console.error("Erro detalhado do Supabase:", error);
+                throw new Error(`O banco de dados retornou um erro: ${error.message}. Detalhes: ${error.details}`);
             }
             
             setStatus('Importação concluída! Atualizando...', 'ok');
-            fxDispatchApply();
+            // Dispara a atualização dos dados no dashboard.
+            document.dispatchEvent(new Event('filters:apply:internal'));
 
         } catch(e) {
             console.error("Erro na importação:", e);
@@ -1124,9 +1169,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.details) userMessage += ` (${e.details})`;
             setStatus(`Erro: ${userMessage}`, 'err');
         } finally {
+            // Limpa o input de arquivo para permitir o upload do mesmo arquivo novamente
             $('fileExcel').value='';
         }
     });
+    
+    // ===================================================================================
+    // FIM DO BLOCO DE CÓDIGO CORRIGIDO
+    // ===================================================================================
 
     function mergeRankedAll(rankedList, allList){
       const rset = new Set(rankedList);
