@@ -36,15 +36,11 @@
     .seg button.active{background:var(--wine);color:#fff}
     .chart-box{position:relative;flex-grow:1;min-height:180px;}
     .chart-box canvas{display:block;width:100%;height:100%}
-    /* Estilos para feedback de loading e overlay */
-    #loader-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.7); z-index: 1000; display: none; justify-content: center; align-items: center; }
-    #loader-overlay .loader-text { font-size: 14px; font-weight: bold; color: var(--ink); }
     @media (max-width:1200px){ .kpis{grid-template-columns:repeat(2,1fr)} .charts-grid{grid-template-columns:1fr} }
     @media (max-width: 768px) { .kpis{ grid-template-columns: 1fr; } .top { flex-direction: column; align-items: flex-start; } }
   </style>
 </head>
 <body>
-  <div id="loader-overlay"><div class="loader-text">Processando...</div></div>
   <div class="wrap">
     <main class="main main-content">
       <div class="top">
@@ -182,13 +178,12 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <script>
-  /* ========================================================================== */
-  /* ===================== CONFIGURAÇÃO E INICIALIZAÇÃO ===================== */
-  /* ========================================================================== */
-  const SUPABASE_URL  = 'https://rqeagimulvgfecvuzubk.supabase.co';
-  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxZWFnaW11bHZnZmVjdnV6dWJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NzkyMzUsImV4cCI6MjA3MjU1NTIzNX0.SeNHyHOlpqjm-QTl7KXq7YF-48fk5iOQCRgpangP4zU';
+  /* ===================== CONFIG ===================== */
+  const SUPABASE_URL  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
+  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
+  /* ===================== CHART DEFAULTS ===================== */
   Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif';
   Chart.defaults.color = '#334155';
   Chart.defaults.plugins.legend.position = 'top';
@@ -197,193 +192,121 @@
   Chart.defaults.datasets.bar.borderSkipped = false;
   Chart.defaults.devicePixelRatio = Math.max(1, window.devicePixelRatio || 1);
 
-  /* ========================================================================== */
-  /* ===================== FUNÇÕES AUXILIARES (HELPERS) ===================== */
-  /* ========================================================================== */
-  const getElementById = id => document.getElementById(id);
-  const formatNumber = value => (value == null || !isFinite(+value)) ? '0' : (+value).toLocaleString('pt-BR');
-  const removeAccents = (str) => String(str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-  /**
-   * Mostra um overlay de carregamento para fornecer feedback visual ao usuário
-   * durante operações assíncronas, prevenindo ações repetidas.
-   * @param {string} message - A mensagem a ser exibida no loader.
-   */
-  function showLoader(message = 'Processando...') {
-    const loader = getElementById('loader-overlay');
-    loader.querySelector('.loader-text').textContent = message;
-    loader.style.display = 'flex';
-  }
-
-  /**
-   * Oculta o overlay de carregamento.
-   */
-  function hideLoader() {
-    getElementById('loader-overlay').style.display = 'none';
-  }
-
+  /* ===================== HELPERS ===================== */
+  const $ = id => document.getElementById(id);
+  const num = v => (v==null||!isFinite(+v)) ? '0' : (+v).toLocaleString('pt-BR');
+  
   function getTodayISO(baseDate) {
     const d = baseDate ? new Date(baseDate + 'T12:00:00Z') : new Date();
-    d.setHours(12, 0, 0, 0); // Normaliza para o meio-dia UTC para evitar problemas de fuso
+    d.setHours(12, 0, 0, 0);
     return d.toISOString().split('T')[0];
   }
 
-  function getDaysBetween(startDateISO, endDateISO) {
-    if (!startDateISO || !endDateISO) return 0;
-    const d1 = new Date(startDateISO + 'T12:00:00Z');
-    const d2 = new Date(endDateISO + 'T12:00:00Z');
+  function daysLen(de, ate) {
+    if (!de || !ate) return 0;
+    const d1 = new Date(de + 'T12:00:00Z');
+    const d2 = new Date(ate + 'T12:00:00Z');
     return Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
   }
 
-  function formatYearMonth(isoStr) {
+  function formatYM(isoStr){
     if (!isoStr) return '';
     const d = new Date(isoStr + 'T12:00:00Z');
     const m = d.getMonth();
     const y = String(d.getFullYear()).slice(-2);
-    const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-    return `${monthNames[m]}/${y}`;
+    const n = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    return `${n[m]}/${y}`;
   }
+
+  const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   
-  /**
-   * Dispara um evento customizado para aplicar os filtros.
-   * Centraliza a lógica de gatilho para atualizações de dados.
-   */
-  function dispatchFiltersApplyEvent() {
-      const payload = { 
-          start: getElementById('fxDuStart').value, 
-          end: getElementById('fxDuEnd').value 
-      };
+  function fxDispatchApply(){
+      const payload = { start: $('fxDuStart').value, end: $('fxDuEnd').value };
       document.dispatchEvent(new CustomEvent('filters:apply', { detail: payload }));
   }
 
-  /* ========================================================================== */
-  /* ===================== COMPONENTE: MULTI-SELECT ===================== */
-  /* ========================================================================== */
-  function MultiSelect(rootId, placeholder) {
-    const rootEl = getElementById(rootId);
-    const buttonEl = rootEl.querySelector('.msel-btn');
-    const panelEl = rootEl.querySelector('.msel-panel');
-    let options = [], selectedValues = new Set(), filteredOptions = [];
-    
-    function renderOptionsList() {
-      panelEl.querySelectorAll('.msel-opt-box').forEach(node => node.remove());
-      const optionsContainer = document.createElement('div');
-      optionsContainer.className = 'msel-opt-box';
-      
-      const listToRender = filteredOptions.length > 0 ? filteredOptions : options;
-      
-      listToRender.forEach(value => {
-        const row = document.createElement('div');
-        row.className = 'msel-opt';
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.value = value;
-        checkbox.checked = selectedValues.has(value);
-        const label = document.createElement('label');
-        label.textContent = value;
-        
-        checkbox.addEventListener('change', () => {
-            checkbox.checked ? selectedValues.add(value) : selectedValues.delete(value); 
-            updateButtonText();
-            dispatchFiltersApplyEvent();
+  /* ===================== MULTISELECT ===================== */
+  function MultiSelect(rootId, placeholder){
+    const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
+    let options=[], selected=new Set(), filtered=[];
+    function render(){
+      panel.innerHTML='';
+      const q=document.createElement('input'); q.className='msel-search'; q.placeholder='Filtrar…';
+      q.addEventListener('input',()=>{filtered=options.filter(v=>rmAcc(v).toLowerCase().includes(rmAcc(q.value).toLowerCase())); drawOptions();});
+      panel.appendChild(q);
+      drawOptions();
+    }
+    function drawOptions(){
+      panel.querySelectorAll('.msel-opt-box').forEach(n=>n.remove());
+      const box=document.createElement('div'); box.className = 'msel-opt-box';
+      (filtered.length > 0 ? filtered : options).forEach(v=>{
+        const row=document.createElement('div'); row.className='msel-opt';
+        const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v; cb.checked=selected.has(v);
+        const lb=document.createElement('label'); lb.textContent=v;
+        cb.addEventListener('change',()=>{
+            cb.checked?selected.add(v):selected.delete(v); 
+            refresh();
+            fxDispatchApply();
         });
-        
-        row.appendChild(checkbox);
-        row.appendChild(label);
-        optionsContainer.appendChild(row);
+        row.appendChild(cb); row.appendChild(lb); box.appendChild(row);
       });
-      panelEl.appendChild(optionsContainer);
+      panel.appendChild(box);
     }
-    
-    function updateButtonText() {
-        buttonEl.textContent = selectedValues.size === 0 ? placeholder : `${selectedValues.size} selecionado(s)`;
-    }
-
-    function initialize() {
-      panelEl.innerHTML = '';
-      const searchInput = document.createElement('input');
-      searchInput.className = 'msel-search';
-      searchInput.placeholder = 'Filtrar…';
-      searchInput.addEventListener('input', () => {
-        const searchTerm = removeAccents(searchInput.value).toLowerCase();
-        filteredOptions = options.filter(v => removeAccents(v).toLowerCase().includes(searchTerm));
-        renderOptionsList();
-      });
-      panelEl.appendChild(searchInput);
-      renderOptionsList();
-    }
-    
-    buttonEl.addEventListener('click', () => rootEl.classList.toggle('open'));
-    document.addEventListener('click', (e) => {
-      if (!rootEl.contains(e.target)) rootEl.classList.remove('open');
-    });
-    
+    function refresh(){ btn.textContent = selected.size===0 ? placeholder : `${selected.size} selecionado(s)`; }
+    btn.addEventListener('click',()=>root.classList.toggle('open'));
+    document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
     return {
-      setOptions(list) {
-        options = (list || []).filter(v => v != null).map(String).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-        filteredOptions = options.slice();
-        selectedValues = new Set([...selectedValues].filter(v => options.includes(v)));
-        initialize();
-        updateButtonText();
-      },
-      getSelected() { return [...selectedValues]; },
-      set(values) {
-        selectedValues = new Set((values || []).map(String));
-        updateButtonText();
-        renderOptionsList(); // Garante que os checkboxes reflitam a seleção
-      },
-      clear() { this.set([]); }
+      setOptions(list){ options=(list||[]).filter(v=>v!=null).map(String).sort((a,b)=>a.localeCompare(b,'pt-BR')); filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh(); },
+      get(){return [...selected];},
+      set(vals){selected=new Set((vals||[]).map(String)); refresh(); drawOptions();},
+      clear(){ this.set([]); }
     };
   }
-  
-  /* ========================================================================== */
-  /* ===================== ESTADO GLOBAL DA APLICAÇÃO ===================== */
-  /* ========================================================================== */
-  let lastAvailableDate = '';
-  let dayOfWeekMode = 'TOTAL';
+
+  /* ===================== ESTADO ===================== */
+  let lastDay='';
+  let dowMode = 'TOTAL';
   let top10Mode = 'MAIS';
-  
-  const multiSelects = {
+  const ms = {
     unids: MultiSelect('ms-unids', 'Todas as Unidades'),
     cats:  MultiSelect('ms-cats', 'Todas as Categorias'),
     pratos: MultiSelect('ms-pratos', 'Todos os Pratos')
   };
 
-  /* ========================================================================== */
-  /* ===================== RENDERIZAÇÃO DE KPIs E GRÁFICOS ===================== */
-  /* ========================================================================== */
-  function getUpArrowSVG() { return '<svg viewBox="0 0 20 20"><path d="M10 4l5 6h-3v6H8v-6H5l5-6z"/></svg>'; }
-  function getDownArrowSVG() { return '<svg viewBox="0 0 20 20"><path d="M10 16l-5-6h3V4h4v6h3l-5 6z"/></svg>'; }
-  
-  function renderDeltaBadge(element, currentValue, previousValue) {
-    if (!isFinite(previousValue) || +previousValue === 0) {
-      element.textContent = '—';
-      element.className = 'delta flat';
-      return;
-    }
-    const percentageChange = ((currentValue - previousValue) / previousValue) * 100;
-    element.innerHTML = (percentageChange >= 0 ? getUpArrowSVG() : getDownArrowSVG()) + ' ' + Math.abs(percentageChange).toFixed(1) + '%';
-    element.className = 'delta ' + (percentageChange >= 0 ? 'up' : 'down');
+  $('onlyPratos').addEventListener('change', fxDispatchApply);
+  $('segDowMode').addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if(!btn) return;
+    [...e.currentTarget.children].forEach(b=>b.classList.toggle('active', b===btn));
+    dowMode = btn.dataset.mode;
+    fxDispatchApply();
+  });
+  $('segTop10').addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if(!btn) return;
+    [...e.currentTarget.children].forEach(b=>b.classList.toggle('active', b===btn));
+    top10Mode = btn.dataset.mode;
+    fxDispatchApply();
+  });
+
+  /* ===================== KPI & CHARTS ===================== */
+  function upSVG(){return '<svg viewBox="0 0 20 20"><path d="M10 4l5 6h-3v6H8v-6H5l5-6z"/></svg>';}
+  function downSVG(){return '<svg viewBox="0 0 20 20"><path d="M10 16l-5-6h3V4h4v6h3l-5 6z"/></svg>';}
+  function deltaBadge(el,curr,prev){
+    if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
+    const p=((curr-prev)/prev)*100;
+    el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
+    el.className='delta '+(p>=0?'up':'down');
   }
 
   function renderChart(canvasId, type, labels, datasets, options = {}) {
-    const canvas = getElementById(canvasId);
-    if (!canvas) {
-      console.error(`Canvas com ID "${canvasId}" não encontrado.`);
-      return;
-    }
-    // Destruir instância anterior do gráfico para evitar memory leaks e bugs de renderização
-    if (canvas.__chart) {
-      try { canvas.__chart.destroy(); } catch (e) {}
-    }
+    const canvas = $(canvasId);
+    if (!canvas) return;
+    if (canvas.__chart) { try { canvas.__chart.destroy(); } catch(e){} }
     const ctx = canvas.getContext('2d');
     canvas.__chart = new Chart(ctx, {
       type,
       data: { labels, datasets },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: false,
+        responsive: true, maintainAspectRatio: false, animation: false,
         scales: type === 'bar' ? { y: { beginAtZero: true }, x: { grid: { display: false } } } : {},
         plugins: { legend: { display: datasets.length > 1 } },
         ...options
@@ -391,85 +314,70 @@
     });
   }
   
-  function updateKPIs(kpisData, periodLengthInDays) {
-    const dailyAverage = periodLengthInDays > 0 ? Math.round(kpisData.current_total / periodLengthInDays) : 0;
-    const prevDailyAverage = periodLengthInDays > 0 ? Math.round(kpisData.prev_total / periodLengthInDays) : 0;
-    
-    getElementById('k_qtd').textContent = formatNumber(kpisData.current_total);
-    getElementById('p_qtd').textContent = formatNumber(kpisData.prev_total);
-    renderDeltaBadge(getElementById('d_qtd'), kpisData.current_total, kpisData.prev_total);
-    
-    getElementById('k_pratos_unicos').textContent = formatNumber(kpisData.current_unique);
-    getElementById('p_pratos_unicos').textContent = formatNumber(kpisData.prev_unique);
-    renderDeltaBadge(getElementById('d_pratos_unicos'), kpisData.current_unique, kpisData.prev_unique);
-
-    getElementById('k_media_diaria').textContent = formatNumber(dailyAverage);
-    getElementById('p_media_diaria').textContent = formatNumber(prevDailyAverage);
-    renderDeltaBadge(getElementById('d_media_diaria'), dailyAverage, prevDailyAverage);
+  function updateKPIs(kpis, len) {
+    const mediaDiaria = len > 0 ? Math.round(kpis.current_total / len) : 0;
+    const prevMediaDiaria = len > 0 ? Math.round(kpis.prev_total / len) : 0;
+    $('k_qtd').textContent = num(kpis.current_total);
+    $('p_qtd').textContent = num(kpis.prev_total);
+    deltaBadge($('d_qtd'), kpis.current_total, kpis.prev_total);
+    $('k_pratos_unicos').textContent = num(kpis.current_unique);
+    $('p_pratos_unicos').textContent = num(kpis.prev_unique);
+    deltaBadge($('d_pratos_unicos'), kpis.current_unique, kpis.prev_unique);
+    $('k_media_diaria').textContent = num(mediaDiaria);
+    $('p_media_diaria').textContent = num(prevMediaDiaria);
+    deltaBadge($('d_media_diaria'), mediaDiaria, prevMediaDiaria);
   }
 
-  function updateTop10Chart(top10Data) {
-    const maisVendidos = top10Data?.mais_vendidos || [];
-    const menosVendidos = top10Data?.menos_vendidos || [];
+  function updateTop10Chart(data) {
+    const maisVendidos = data?.mais_vendidos || [];
+    const menosVendidos = data?.menos_vendidos || [];
     if (top10Mode === 'MAIS') {
-        renderChart('ch_top10', 'bar', maisVendidos.map(item => item.prato), [{ label: 'Qtd', data: maisVendidos.map(item => item.total), backgroundColor: '#7b1e3a' }], { indexAxis: 'y', plugins: { legend: { display: false } } });
+        renderChart('ch_top10', 'bar', maisVendidos.map(x => x.prato), [{ label: 'Qtd', data: maisVendidos.map(x => x.total), backgroundColor: '#7b1e3a' }], { indexAxis: 'y', plugins: { legend: { display: false } } });
     } else { 
-        renderChart('ch_top10', 'bar', menosVendidos.map(item => item.prato), [{ label: 'Qtd', data: menosVendidos.map(item => item.total), backgroundColor: '#9ca3af' }], { indexAxis: 'y', plugins: { legend: { display: false } } });
+        renderChart('ch_top10', 'bar', menosVendidos.map(x => x.prato), [{ label: 'Qtd', data: menosVendidos.map(x => x.total), backgroundColor: '#9ca3af' }], { indexAxis: 'y', plugins: { legend: { display: false } } });
     }
   }
 
-  function updateDayOfWeekChart(dowData, periodLengthInDays) {
-    const dowLabels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  function updateDowChart(data, len) {
+    const dowLabels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
     let nowData = Array(7).fill(0), prevData = Array(7).fill(0);
-    for (let i = 0; i < 7; i++) {
-        if (dowData && dowData[i]) {
-            nowData[i] = dowData[i].current;
-            prevData[i] = dowData[i].previous;
-        }
+    for (let item of (data || [])) {
+        nowData[item.dow] = item.current;
+        prevData[item.dow] = item.previous;
     }
-    
-    if (dayOfWeekMode === 'MEDIA') {
-        const startDateISO = getElementById('fxDuStart').value, endDateISO = getElementById('fxDuEnd').value;
-        const currentOccurrences = Array(7).fill(0);
-        let currentDate = new Date(startDateISO + 'T12:00:00Z'), endDate = new Date(endDateISO + 'T12:00:00Z');
-        while (currentDate <= endDate) {
-            currentOccurrences[currentDate.getDay()]++;
-            currentDate.setDate(currentDate.getDate() + 1);
-        }
+
+    if (dowMode === 'MEDIA') {
+        const de = $('fxDuStart').value, ate = $('fxDuEnd').value;
+        const occNow = Array(7).fill(0);
+        let d = new Date(de+'T12:00:00Z'), end = new Date(ate+'T12:00:00Z');
+        while (d <= end) { occNow[d.getUTCDay()]++; d.setUTCDate(d.getUTCDate()+1); }
         
-        const prevOccurrences = Array(7).fill(0);
-        let prevStartDate = new Date(startDateISO + 'T12:00:00Z');
-        prevStartDate.setDate(prevStartDate.getDate() - periodLengthInDays);
-        let prevEndDate = new Date(prevStartDate);
-        prevEndDate.setDate(prevStartDate.getDate() + periodLengthInDays - 1);
-        while (prevStartDate <= prevEndDate) {
-            prevOccurrences[prevStartDate.getDay()]++;
-            prevStartDate.setDate(prevStartDate.getDate() + 1);
-        }
+        const occPrev = Array(7).fill(0);
+        d = new Date(de+'T12:00:00Z');
+        d.setUTCDate(d.getUTCDate() - len);
+        const endPrev = new Date(d);
+        endPrev.setUTCDate(d.getUTCDate() + len - 1);
+        while (d <= endPrev) { occPrev[d.getUTCDay()]++; d.setUTCDate(d.getUTCDate()+1); }
         
-        nowData = nowData.map((value, i) => currentOccurrences[i] > 0 ? Math.round(value / currentOccurrences[i]) : 0);
-        prevData = prevData.map((value, i) => prevOccurrences[i] > 0 ? Math.round(value / prevOccurrences[i]) : 0);
+        nowData = nowData.map((v,i)=> occNow[i] > 0 ? Math.round(v/occNow[i]) : 0);
+        prevData = prevData.map((v,i)=> occPrev[i] > 0 ? Math.round(v/occPrev[i]) : 0);
     }
-    
-    renderChart('ch_dow', 'bar', dowLabels, [
-        { label: 'Atual', data: nowData, backgroundColor: '#7b1e3a' },
-        { label: 'Anterior', data: prevData, backgroundColor: '#9ca3af' }
-    ]);
+    renderChart('ch_dow', 'bar', dowLabels, [{ label: 'Atual', data: nowData, backgroundColor: '#7b1e3a' }, { label: 'Anterior', data: prevData, backgroundColor: '#9ca3af' }]);
   }
 
-  async function updateMonthlySalesChart(endDateISO) {
+  async function updateMonthChart(endDate) {
       try {
         const params = {
-            end_date_iso: endDateISO,
-            unids_filter: multiSelects.unids.getSelected().length > 0 ? multiSelects.unids.getSelected() : null,
-            cats_filter: multiSelects.cats.getSelected().length > 0 ? multiSelects.cats.getSelected() : null,
-            pratos_filter: multiSelects.pratos.getSelected().length > 0 ? multiSelects.pratos.getSelected() : null,
-            is_pratos_only: getElementById('onlyPratos').checked
+            end_date_iso: endDate,
+            unids_filter: ms.unids.get().length > 0 ? ms.unids.get() : null,
+            cats_filter: ms.cats.get().length > 0 ? ms.cats.get() : null,
+            pratos_filter: ms.pratos.get().length > 0 ? ms.pratos.get() : null,
+            is_pratos_only: $('onlyPratos').checked
         };
         const { data, error } = await supa.rpc('get_monthly_sales_chart_data', params);
         if (error) throw error;
 
-        const labels = (data || []).map(d => formatYearMonth(d.period));
+        const labels = (data || []).map(d => formatYM(d.period));
         const nowData = (data || []).map(d => d.current_total);
         const prevData = (data || []).map(d => d.prev_total);
 
@@ -477,319 +385,213 @@
           { label: 'Últimos 12M', data: nowData, backgroundColor: '#7b1e3a' },
           { label: '12M Anteriores', data: prevData, backgroundColor: '#9ca3af' }
         ], { plugins: { legend: { display: false } } });
-      } catch (error) {
-        console.error("Erro ao carregar gráfico mensal:", error);
-        alert(`Não foi possível carregar o gráfico de vendas mensais: ${error.message}`);
-      }
+      } catch (e) { console.error("Erro ao carregar gráfico mensal:", e); }
   }
 
-  /* ========================================================================== */
-  /* ===================== LÓGICA PRINCIPAL DE DADOS ===================== */
-  /* ========================================================================== */
-  async function applyFiltersAndReloadDashboard(filterDetails) {
-    showLoader('Carregando dados...');
+  /* ===================== LOOP PRINCIPAL ===================== */
+  async function applyAll(details) {
     try {
-      const { start: startDateISO, end: endDateISO } = filterDetails;
-      if (!startDateISO || !endDateISO || new Date(startDateISO) > new Date(endDateISO)) {
-        alert("Período inválido. A data inicial não pode ser maior que a data final.");
-        return;
-      }
-      const periodLengthInDays = getDaysBetween(startDateISO, endDateISO);
+      const de = details.start, ate = details.end;
+      if (!de || !ate || new Date(de) > new Date(ate)) { return; }
+      const len = daysLen(de, ate);
       
       const commonParams = {
-          de_iso: startDateISO, ate_iso: endDateISO,
-          unids_filter: multiSelects.unids.getSelected().length > 0 ? multiSelects.unids.getSelected() : null,
-          cats_filter: multiSelects.cats.getSelected().length > 0 ? multiSelects.cats.getSelected() : null,
-          pratos_filter: multiSelects.pratos.getSelected().length > 0 ? multiSelects.pratos.getSelected() : null,
-          is_pratos_only: getElementById('onlyPratos').checked
+          de_iso: de, ate_iso: ate,
+          unids_filter: ms.unids.get().length > 0 ? ms.unids.get() : null,
+          cats_filter: ms.cats.get().length > 0 ? ms.cats.get() : null,
+          pratos_filter: ms.pratos.get().length > 0 ? ms.pratos.get() : null,
+          is_pratos_only: $('onlyPratos').checked
       };
 
-      // Promise.allSettled é usado para garantir que todas as chamadas terminem,
-      // mesmo que uma delas falhe. Isso aumenta a resiliência do dashboard.
       const [kpisResult, dowResult, top10Result] = await Promise.allSettled([
-          supa.rpc('get_pratos_kpis', commonParams),
+          supa.rpc('get_pratos_kpis', commonParams).then(res => res.data[0]),
           supa.rpc('get_pratos_dow_chart', commonParams),
-          supa.rpc('get_pratos_top10_chart', commonParams)
+          supa.rpc('get_pratos_top10_chart', commonParams).then(res => res.data)
       ]);
 
-      if (kpisResult.status === 'fulfilled' && kpisResult.value.data) {
-        updateKPIs(kpisResult.value.data, periodLengthInDays);
-      } else if (kpisResult.status === 'rejected') {
-        console.error("Erro ao buscar KPIs:", kpisResult.reason);
+      if (kpisResult.status === 'fulfilled' && kpisResult.value) {
+        updateKPIs(kpisResult.value, len);
       }
-
       if (dowResult.status === 'fulfilled' && dowResult.value.data) {
-        updateDayOfWeekChart(dowResult.value.data, periodLengthInDays);
-      } else if (dowResult.status === 'rejected') {
-         console.error("Erro ao buscar dados DOW:", dowResult.reason);
+        updateDowChart(dowResult.value.data, len);
       }
-
-      if (top10Result.status === 'fulfilled' && top10Result.value.data) {
-        updateTop10Chart(top10Result.value.data);
-      } else if (top10Result.status === 'rejected') {
-        console.error("Erro ao buscar dados Top 10:", top10Result.reason);
+      if (top10Result.status === 'fulfilled' && top10Result.value) {
+        updateTop10Chart(top10Result.value);
       }
       
-      // Gráfico mensal é carregado separadamente pois sua lógica de período é diferente
-      await updateMonthlySalesChart(endDateISO);
+      updateMonthChart(ate);
 
-    } catch (error) {
-      console.error("Erro no applyAll:", error);
-      alert(`Ocorreu um erro inesperado ao carregar o dashboard: ${error.message}`);
-    } finally {
-      // É crucial garantir que o loader seja escondido, mesmo em caso de erro.
-      hideLoader();
-    }
+    } catch (e) { console.error("Erro no applyAll:", e); }
   }
 
-  /* ========================================================================== */
-  /* ===================== CONTROLES DA UI E EVENTOS ===================== */
-  /* ========================================================================== */
-  
-  /**
-   * Busca as opções de filtros (unidades, categorias, pratos) do banco de dados
-   * e popula os componentes de multi-seleção.
-   */
+  /* ===================== INICIALIZAÇÃO E CONTROLES DA UI ===================== */
   async function reloadFilterOptions() {
     const [unids, cats, pratos] = await Promise.all([
       supa.from('vendas_pratos_unidades').select('unidade'),
       supa.from('vendas_pratos_categorias').select('categoria'),
       supa.from('vendas_pratos_pratos').select('prato')
     ]);
-    multiSelects.unids.setOptions((unids.data?.map(r => r.unidade) || []).filter(Boolean));
-    multiSelects.cats.setOptions(cats.data?.map(r => r.categoria).filter(c => c !== null) || []);
-    multiSelects.pratos.setOptions(pratos.data?.map(r => r.prato).filter(p => p !== null) || []);
+    ms.unids.setOptions((unids.data?.map(r => r.unidade) || []).filter(Boolean));
+    ms.cats.setOptions(cats.data?.map(r => r.categoria).filter(c => c !== null) || []);
+    ms.pratos.setOptions(pratos.data?.map(r => r.prato).filter(p => p !== null) || []);
   }
 
-  /**
-   * Função de inicialização principal da página.
-   * Busca a data mais recente de vendas para definir os períodos padrão.
-   */
-  async function initializeDashboard() {
-    showLoader('Inicializando...');
+  async function init() {
     try {
       const { data, error } = await supa.from('vendas_pratos_daterange').select('max_data').limit(1);
       if (error) throw error;
-      lastAvailableDate = (data?.length && data[0].max_data) ? data[0].max_data : getTodayISO();
+      lastDay = (data?.length && data[0].max_data) ? data[0].max_data : getTodayISO();
       await reloadFilterOptions();
-      document.dispatchEvent(new Event('dashboard:initialized'));
-    } catch (error) {
-      console.error(error);
-      alert(`Falha ao inicializar o dashboard: ${error.message}`);
-    } finally {
-        hideLoader();
-    }
+      document.dispatchEvent(new Event('filters:init'));
+    } catch (e) { console.error(e); }
   }
 
-  // Lógica de manipulação do DOM e eventos
   document.addEventListener('DOMContentLoaded', () => {
-    const ui = {
-      $dropup: getElementById('fxDropup'), $btnMore: getElementById('fxBtnMore'),
-      $btnReset: getElementById('fxBtnReset'), $startDate: getElementById('fxDuStart'),
-      $endDate: getElementById('fxDuEnd'), $quickDays: getElementById('fxDuQuickDays'),
-      $quickChips: getElementById('fxQuickChips'), $onlyPratos: getElementById('onlyPratos'),
-      $segDowMode: getElementById('segDowMode'), $segTop10: getElementById('segTop10'),
-      $btnUpload: getElementById('btnUpload'), $fileInput: getElementById('fileExcel')
+    const fx = {
+      $drop: $('fxDropup'), $btnMore: $('fxBtnMore'), $btnReset: $('fxBtnReset'),
+      $start: $('fxDuStart'), $end: $('fxDuEnd'),
+      $days: $('fxDuQuickDays'), $chips: $('fxQuickChips')
     };
 
-    function formatDateToISO(date) { return date.toISOString().split('T')[0]; }
-    function setDateRangeInputs(start, end) {
-        ui.$startDate.value = formatDateToISO(start);
-        ui.$endDate.value = formatDateToISO(end);
-    }
+    function fxFmt(date){ return date.toISOString().split('T')[0]; }
+    function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end); }
     
-    function setNamedPeriod(windowName) {
-        const baseDate = new Date(lastAvailableDate + 'T12:00:00Z');
-        let startDate, endDate;
-        if (windowName === 'today') { startDate = endDate = baseDate; } 
-        else if (windowName === 'yesterday') {
-            startDate = new Date(baseDate);
-            startDate.setDate(baseDate.getDate() - 1);
-            endDate = startDate;
-        } else if (windowName === 'lastMonth') {
-            startDate = new Date(baseDate.getFullYear(), baseDate.getMonth() - 1, 1);
-            endDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), 0);
-        } else if (windowName === 'lastYear') {
-            const year = baseDate.getFullYear() - 1;
-            startDate = new Date(year, 0, 1);
-            endDate = new Date(year, 11, 31);
+    function setNamedPeriod(win) {
+        const baseDate = new Date(lastDay + 'T12:00:00Z');
+        let start, end;
+        if (win === 'today') { start = end = baseDate; } 
+        else if (win === 'yesterday') {
+            start = new Date(baseDate);
+            start.setUTCDate(baseDate.getUTCDate() - 1);
+            end = start;
+        } else if (win === 'lastMonth') {
+            start = new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth() - 1, 1));
+            end = new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), 0));
+        } else if (win === 'lastYear') {
+            const y = baseDate.getUTCFullYear() - 1;
+            start = new Date(Date.UTC(y, 0, 1));
+            end = new Date(Date.UTC(y, 11, 31));
         }
-        if (startDate && endDate) {
-            setDateRangeInputs(startDate, endDate);
-            dispatchFiltersApplyEvent();
-        }
+        if (start && end) { fxSetRange(start, end); fxDispatchApply(); }
     }
     
-    function setLastNDays(numberOfDays) {
-      const endDate = new Date(lastAvailableDate + 'T12:00:00Z');
-      const startDate = new Date(endDate);
-      startDate.setDate(endDate.getDate() - (numberOfDays - 1));
-      setDateRangeInputs(startDate, endDate);
+    function fxLastNDays(n){
+      const end = new Date(lastDay + 'T12:00:00Z');
+      const start = new Date(end);
+      start.setUTCDate(end.getUTCDate() - (n - 1));
+      fxSetRange(start, end);
     }
 
-    function showDropup(shouldShow) {
-      ui.$dropup.classList.toggle('fx-show', shouldShow);
-      ui.$btnMore.setAttribute('aria-expanded', shouldShow ? 'true' : 'false');
-      if (shouldShow) ui.$startDate?.focus();
+    function fxShowDrop(show){
+      fx.$drop.classList.toggle('fx-show', show);
+      fx.$btnMore.setAttribute('aria-expanded', show?'true':'false');
+      if(show) fx.$start?.focus();
     }
     
-    function clearActiveChips() {
-        [...ui.$quickChips.children, ...ui.$quickDays.children].forEach(button => button.classList.remove('active', 'fx-active'));
-    }
+    fx.$btnMore.addEventListener('click', ()=> fxShowDrop(!fx.$drop.classList.contains('fx-show')));
+    document.addEventListener('click', (e)=>{ if(!fx.$drop.classList.contains('fx-show')) return; if(!(fx.$drop.contains(e.target) || fx.$btnMore.contains(e.target))) fxShowDrop(false); });
+    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && fx.$drop.classList.contains('fx-show')) fxShowDrop(false) });
+    
+    const clearActiveChips = () => [...fx.$chips.children, ...fx.$days.children].forEach(b => b.classList.remove('active'));
 
-    // --- Event Listeners ---
-    ui.$btnMore.addEventListener('click', () => showDropup(!ui.$dropup.classList.contains('fx-show')));
-    document.addEventListener('click', (e) => {
-      if (!ui.$dropup.classList.contains('fx-show')) return;
-      if (!(ui.$dropup.contains(e.target) || ui.$btnMore.contains(e.target))) showDropup(false);
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && ui.$dropup.classList.contains('fx-show')) showDropup(false);
-    });
-    
-    ui.$quickChips.addEventListener('click', e => {
-        const button = e.target.closest('button');
-        if (!button) return;
+    fx.$chips.addEventListener('click', e => {
+        const btn = e.target.closest('button'); if (!btn) return;
         clearActiveChips();
-        button.classList.add('active');
-        setNamedPeriod(button.dataset.win);
+        btn.classList.add('active');
+        setNamedPeriod(btn.dataset.win);
     });
-
-    ui.$startDate.addEventListener('change', () => { clearActiveChips(); dispatchFiltersApplyEvent(); });
-    ui.$endDate.addEventListener('change', () => { clearActiveChips(); dispatchFiltersApplyEvent(); });
-
-    ui.$quickDays.addEventListener('click', (e) => {
-      const button = e.target.closest('button');
-      if (!button) return;
+    fx.$start.addEventListener('change', () => { clearActiveChips(); fxDispatchApply(); });
+    fx.$end.addEventListener('change', () => { clearActiveChips(); fxDispatchApply(); });
+    fx.$days.addEventListener('click', (e)=>{
+      const b=e.target.closest('button'); if(!b) return;
       clearActiveChips();
-      button.classList.add('active', 'fx-active');
-      const numberOfDays = parseInt(button.dataset.win, 10); 
-      if (!isNaN(numberOfDays)) {
-          setLastNDays(numberOfDays);
-          dispatchFiltersApplyEvent();
-      }
+      b.classList.add('active');
+      const n=parseInt(b.dataset.win,10); 
+      if(!isNaN(n)) { fxLastNDays(n); fxDispatchApply(); }
     });
-
-    ui.$btnReset.addEventListener('click', () => {
-      Object.values(multiSelects).forEach(m => m.clear());
-      ui.$onlyPratos.checked = false;
+    fx.$btnReset.addEventListener('click', ()=>{
+      Object.values(ms).forEach(m => m.clear());
+      $('onlyPratos').checked = false;
       clearActiveChips();
-      ui.$quickDays.querySelector('[data-win="30"]').classList.add('active', 'fx-active');
-      setLastNDays(30);
-      dispatchFiltersApplyEvent();
+      $('fxDuQuickDays').querySelector('[data-win="30"]').classList.add('active');
+      fxLastNDays(30);
+      fxDispatchApply();
     });
 
-    ui.$onlyPratos.addEventListener('change', dispatchFiltersApplyEvent);
-
-    ui.$segDowMode.addEventListener('click', (e) => {
-        const btn = e.target.closest('button'); if(!btn) return;
-        [...e.currentTarget.children].forEach(b=>b.classList.toggle('active', b===btn));
-        dayOfWeekMode = btn.dataset.mode;
-        dispatchFiltersApplyEvent();
-    });
+    document.addEventListener('filters:apply', (e) => { if(e.detail) { applyAll(e.detail); } });
     
-    ui.$segTop10.addEventListener('click', (e) => {
-        const btn = e.target.closest('button'); if(!btn) return;
-        [...e.currentTarget.children].forEach(b=>b.classList.toggle('active', b===btn));
-        top10Mode = btn.dataset.mode;
-        dispatchFiltersApplyEvent();
-    });
-
-    // --- Eventos customizados do ciclo de vida da aplicação ---
-    document.addEventListener('filters:apply', (e) => {
-      if (e.detail) { applyFiltersAndReloadDashboard(e.detail); }
-    });
-    
-    document.addEventListener('dashboard:initialized', () => {
+    document.addEventListener('filters:init', () => {
         clearActiveChips();
-        ui.$quickDays.querySelector('[data-win="30"]').classList.add('active', 'fx-active');
-        setLastNDays(30);
-        dispatchFiltersApplyEvent();
+        $('fxDuQuickDays').querySelector('[data-win="30"]').classList.add('active');
+        fxLastNDays(30);
+        fxDispatchApply();
     });
 
-    // --- Upload ---
-    ui.$btnUpload.addEventListener('click', () => ui.$fileInput.click());
-    ui.$fileInput.addEventListener('change', (event) => handleFileUpload(event));
-
-    // --- Inicia a aplicação ---
-    initializeDashboard();
+    init();
   });
   
-  /* ========================================================================== */
-  /* ===================== FUNCIONALIDADE DE UPLOAD DE ARQUIVO ===================== */
-  /* ========================================================================== */
-
-  /**
-   * Lida com o processo de upload de arquivo: leitura, validação e envio para o Supabase.
-   * @param {Event} event - O evento de 'change' do input de arquivo.
-   */
-  async function handleFileUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    showLoader(`Lendo arquivo ${file.name}...`);
+  // ===================== LÓGICA DE UPLOAD IMPLEMENTADA =====================
+  $('btnUpload').addEventListener('click', () => $('fileExcel').click());
+  $('fileExcel').addEventListener('change', async (ev) => {
+    const file = ev.target.files[0];
+    if (!file) {
+      alert('Nenhum arquivo selecionado.');
+      return;
+    }
+    
+    const btn = $('btnUpload');
+    btn.textContent = 'Importando...';
+    btn.disabled = true;
 
     try {
-        const data = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target.result);
-            reader.onerror = (err) => reject(err);
-            reader.readAsArrayBuffer(file);
-        });
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      
+      const json_data = XLSX.utils.sheet_to_json(worksheet, { raw: false });
 
-        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-        const sheetName = workbook.SheetNames[0]; // Considera apenas a primeira aba
-        const worksheet = workbook.Sheets[sheetName];
-        const json_data = XLSX.utils.sheet_to_json(worksheet, { raw: false });
+      if (json_data.length === 0) {
+        throw new Error("O arquivo está vazio ou em um formato inválido.");
+      }
 
-        if (json_data.length === 0) {
-            throw new Error("A planilha está vazia ou em formato incorreto.");
-        }
+      // IMPORTANTE: Mapeie as colunas do seu arquivo para as colunas do banco de dados.
+      // O nome da propriedade (ex: 'Data da Venda') DEVE ser exatamente igual ao nome do cabeçalho no seu arquivo CSV/Excel.
+      const dadosFormatados = json_data.map(linha => ({
+        data: linha['Data da Venda'] || linha['data'], // Suporta "Data da Venda" ou "data"
+        unidade: linha['UNIDADE'] || linha['unidade'],
+        prato: linha['PRATO'] || linha['prato'],
+        categoria: linha['CATEGORIA'] || linha['categoria'],
+        quantidade: parseInt(linha['QUANTIDADE'] || linha['quantidade'], 10)
+      }));
 
-        showLoader(`Processando ${json_data.length} registros...`);
+      // A importação será feita em lotes para não sobrecarregar o Supabase
+      const CHUNK_SIZE = 500;
+      for (let i = 0; i < dadosFormatados.length; i += CHUNK_SIZE) {
+          const chunk = dadosFormatados.slice(i, i + CHUNK_SIZE);
+          const { error } = await supa
+            .from('vendas_pratos')
+            .insert(chunk);
 
-        // Mapeamento explícito das colunas para os campos do banco de dados.
-        // Isso torna o processo mais robusto a mudanças de ordem ou nomes de colunas.
-        const recordsToInsert = json_data.map(row => {
-            const mappedRow = {
-                data_venda: row['Data Venda'] || row['data_venda'],
-                unidade: row['Unidade'] || row['unidade'],
-                categoria: row['Categoria'] || row['categoria'],
-                prato: row['Prato'] || row['prato'],
-                quantidade: row['Quantidade'] || row['quantidade'],
-                valor_total: row['Valor Total'] || row['valor_total'],
-            };
-            // Validação simples de cada linha
-            if (!mappedRow.data_venda || !mappedRow.prato || !mappedRow.quantidade) {
-                throw new Error(`Linha inválida encontrada: ${JSON.stringify(row)}`);
-            }
-            return mappedRow;
-        });
+          if (error) {
+            throw new Error(`Erro ao importar lote para o banco de dados: ${error.message}`);
+          }
+      }
 
-        showLoader(`Enviando ${recordsToInsert.length} registros para o banco de dados...`);
-        
-        // Usar bulk insert para performance.
-        const { error } = await supa.from('vendas').insert(recordsToInsert);
+      alert(`Importação concluída com sucesso! ${dadosFormatados.length} linhas inseridas.`);
+      
+      // Recarrega tudo para exibir os novos dados
+      window.location.reload(); 
 
-        if (error) {
-            // Erros do Supabase são detalhados e devem ser mostrados ao usuário.
-            throw new Error(`Erro do Supabase: ${error.message}`);
-        }
-
-        alert(`${recordsToInsert.length} registros importados com sucesso! O dashboard será recarregado.`);
-        
-        // Recarrega o dashboard para refletir os novos dados.
-        initializeDashboard();
-
-    } catch (error) {
-        console.error("Falha no processo de upload:", error);
-        alert(`Erro ao importar o arquivo: ${error.message}`);
+    } catch (e) {
+      console.error(e);
+      alert(`Falha na importação: ${e.message}`);
     } finally {
-        hideLoader();
-        event.target.value = ''; // Limpa o input de arquivo para permitir novo upload do mesmo arquivo.
+      btn.textContent = 'Importar';
+      btn.disabled = false;
+      ev.target.value = ''; // Limpa o seletor de arquivo
     }
-  }
-
+  });
   </script>
 </body>
 </html>
