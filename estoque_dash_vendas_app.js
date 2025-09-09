@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /* ===================== CONFIG ===================== */
     const SUPABASE_URL = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U"; // <-- SUBSTITUA PELA SUA CHAVE (VIA ENV VAR)
+    const SUPABASE_ANON = "YOUR_NEW_ROTATED_SUPABASE_ANON_KEY"; // <-- SUBSTITUA PELA SUA CHAVE (VIA ENV VAR)
 
     if (SUPABASE_ANON.includes("YOUR_NEW")) {
         const statusEl = $('status');
@@ -21,12 +21,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const RPC_FILTER_FUNC = 'filter_vendas';
     const RPC_KPI_FUNC = 'kpi_vendas_unificado';
-    // ======================= FIX #1: Apontar para a nova função SQL robusta =======================
+    // ======================= FIX FINAL: Apontar TODAS as funções para as versões _v2 =======================
     const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes_v2';
-    // ==========================================================================================
-    const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v1';
-    const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v1';
-    const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v1';
+    const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v2';
+    const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v2';
+    const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v2';
+    // =====================================================================================================
     const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
 
     const DEST_INSERT_TABLE= 'stage_vendas_raw';
@@ -673,8 +673,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const mode = effectiveMode();
       try {
           setDiag('');
-          const paramsNow = buildParams(de, ate, analiticos);
-          const paramsPrev = buildParams(dePrev, atePrev, analiticos);
+          // ======================= FIX FINAL: Passar o KPI selecionado para TODAS as funções SQL =======================
+          const paramsNow = { ...buildParams(de, ate, analiticos), p_kpi_key: selectedKPI };
+          const paramsPrev = { ...buildParams(dePrev, atePrev, analiticos), p_kpi_key: selectedKPI };
+          // ========================================================================================================
 
           const [
               {data: dowData}, {data: dowDataPrev},
@@ -744,10 +746,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
 
-        // ======================= FIX #2: Passar o KPI selecionado para a função SQL =======================
         const paramsNow = { ...buildParams(last12Start, last12End, analiticos), p_kpi_key: selectedKPI };
         const paramsPrev = { ...buildParams(prev12Start, prev12EndAdj, analiticos), p_kpi_key: selectedKPI };
-        // =================================================================================================
 
         const [{data: nData, error: nErr}, {data: pData, error: pErr}] = await Promise.all([
             supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
@@ -922,9 +922,7 @@ document.addEventListener('DOMContentLoaded', () => {
             $('diag_title_dow').textContent = `${meta.label} por Dia da Semana`;
             $('diag_title_hour').textContent = `${meta.label} por Hora`;
 
-            // ======================= FIX #2 (Repetido): Passar o KPI selecionado para a função SQL =======================
             const paramsNow = { ...buildParams(de, ate, analiticos), p_kpi_key: selectedKpi };
-            // ========================================================================================================
 
             const [
                 { data: monthData, error: monthErr },
