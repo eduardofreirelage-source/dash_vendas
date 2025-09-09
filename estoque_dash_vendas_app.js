@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
 
     const DEST_INSERT_TABLE= 'vendas_xlsx';
-    const REFRESH_RPC     = 'refresh_sales_materialized';
     
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
     const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
@@ -45,7 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return g;
     }
     
-    /* ===================== HELPERS (BLOCOS COMPLETOS E CORRIGIDOS) ===================== */
+    /* ===================== HELPERS ===================== */
     const $ = id => document.getElementById(id);
     const setStatus=(t,k)=>{ const el=$('status'); if(el) {el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085');} };
     const setDiag=(msg)=>{ const el=$('diag'); if(el) el.textContent = msg || ''; };
@@ -619,7 +618,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ped:       { label:'Pedidos',             fmt:'count' },
       tkt:       { label:'Ticket Médio',        fmt:'money' },
       des:       { label:'Incentivos',          fmt:'money' },
-      desperc:   { label:'% de incentivos',     fmt:'percent' },
+      desperc:   { label:'% Incentivos',     fmt:'percent' },
       fre:       { label:'Frete',               fmt:'money' },
       fremed:    { label:'Frete Médio',         fmt:'money' },
       fatmed:    { label:'Faturamento Médio',   fmt:'money' },
@@ -1051,7 +1050,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
+    // ===================================================================================
+    // LÓGICA DE IMPORTAÇÃO (COM CORREÇÃO FINAL)
+    // ===================================================================================
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
+    
     $('fileExcel').addEventListener('change', async (ev)=>{
         const file = ev.target.files?.[0];
         if(!file){ info(''); return; }
@@ -1068,56 +1071,91 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             const headerMap = {
-                'dia': 'dia',
-                'hora': 'hora',
+                'data': 'data_completa',
                 'unidade': 'unidade',
-                'loja': 'Nome da loja',
-                'canal de venda': 'Canal de venda',
-                'pagamento_base': 'pagamento_base',
+                ' loja': 'loja',
+                'canal': 'canal_de_venda', // CORREÇÃO 1: Mapeamento para coluna sem espaços
+                'pagamento': 'pagamento_base',
                 'cancelado': 'cancelado',
-                'pedidos': 'pedidos',
-                'fat': 'fat',
-                'des': 'des',
-                'fre': 'fre',
-                'pedido_id': 'pedido_id'
+                'pedido': 'pedidos',
+                'total': 'fat',
+                'desconto': 'des',
+                'entrega': 'fre',
+                'número do pedido no parceiro': 'pedido_id'
             };
     
             const transformedJson = json.map((row, index) => {
                 const newRow = {};
                 let tempPedidoId = null;
 
+                const normalizedRow = {};
                 for (const originalKey in row) {
                     const normalizedKey = originalKey.trim().toLowerCase();
-                    const dbColumn = headerMap[normalizedKey];
-                    if (dbColumn) {
-                        newRow[dbColumn] = row[originalKey];
-                        if (normalizedKey === 'pedido_id') {
-                            tempPedidoId = row[originalKey];
-                        }
+                    normalizedRow[normalizedKey] = row[originalKey];
+                }
+
+                for (const fileHeader in headerMap) {
+                    if (normalizedRow[fileHeader] !== undefined) {
+                        const dbColumn = headerMap[fileHeader];
+                        newRow[dbColumn] = normalizedRow[fileHeader];
                     }
                 }
+
+                // *** INÍCIO DA CORREÇÃO 2: Validação de Dados ***
+                const pedidoValue = newRow.pedidos;
+                if (pedidoValue === null || pedidoValue === undefined || isNaN(parseInt(pedidoValue, 10))) {
+                    newRow.pedidos = null; // Envia nulo para o banco se for "Ficha" ou qualquer outro texto.
+                } else {
+                    newRow.pedidos = parseInt(pedidoValue, 10);
+                }
+                // *** FIM DA CORREÇÃO 2 ***
+
+                if (newRow.data_completa) {
+                    const [dataPart, timePart] = String(newRow.data_completa).split(' ');
+                    const [dia, mes, ano] = dataPart.split('/');
+                    
+                    if(dia && mes && ano && timePart) {
+                        newRow['dia'] = `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
+                        newRow['hora'] = `${timePart}:00`; 
+                    } else {
+                        console.warn(`[Importação] Linha ${index + 2}: Formato de data inválido. Valor: '${newRow.data_completa}'`);
+                        newRow['dia'] = null;
+                        newRow['hora'] = null;
+                    }
+                    delete newRow.data_completa;
+                }
+
+                tempPedidoId = newRow['pedido_id'];
                 
-                // Gera a row_key obrigatória que estava faltando
                 if (tempPedidoId) {
-                    newRow['row_key'] = `${tempPedidoId}-${new Date().getTime()}-${index}`;
+                    newRow['row_key'] = `${tempPedidoId}-${newRow.dia}-${index}`;
                 } else {
                     newRow['row_key'] = `import-${new Date().getTime()}-${index}`;
                 }
 
+                newRow.fat = parseFloat(String(newRow.fat || 0).replace(',', '.')) || 0;
+                newRow.des = parseFloat(String(newRow.des || 0).replace(',', '.')) || 0;
+                newRow.fre = parseFloat(String(newRow.fre || 0).replace(',', '.')) || 0;
+
                 return newRow;
             });
+
+            if(transformedJson.length === 0){
+                throw new Error("Nenhum registro válido foi processado. Verifique o arquivo.");
+            }
 
             setStatus(`Enviando ${transformedJson.length} registros...`, 'info');
             
             const { error } = await supa.from(DEST_INSERT_TABLE).insert(transformedJson);
 
             if (error) {
-                throw error;
+                console.error("Erro detalhado do Supabase:", error);
+                throw new Error(`O banco de dados retornou um erro: ${error.message}. Detalhes: ${error.details}`);
             }
             
             setStatus('Importação concluída! Atualizando...', 'ok');
-            fxDispatchApply();
-
+            document.dispatchEvent(new Event('filters:apply:internal'));
+            
         } catch(e) {
             console.error("Erro na importação:", e);
             let userMessage = e.message || 'Erro desconhecido.';
@@ -1127,6 +1165,10 @@ document.addEventListener('DOMContentLoaded', () => {
             $('fileExcel').value='';
         }
     });
+
+    // ===================================================================================
+    // LÓGICA DA INTERFACE DE FILTROS
+    // ===================================================================================
 
     function mergeRankedAll(rankedList, allList){
       const rset = new Set(rankedList);
@@ -1165,7 +1207,6 @@ document.addEventListener('DOMContentLoaded', () => {
       ms.turnos.setOptions(['Dia','Noite'], true);
     }
     
-    /* ===================== LOOP PRINCIPAL (CORRIGIDO) ===================== */
     async function applyAll(details){
       try{
         const de = details.start;
@@ -1202,10 +1243,6 @@ document.addEventListener('DOMContentLoaded', () => {
         setStatus('Erro: '+(e.message||e),'err');
       }
     }
-
-    // ===================================================================================
-    // LÓGICA DA INTERFACE DE FILTROS E ABAS
-    // ===================================================================================
 
     const tabsContainer = $('tabs');
     if (tabsContainer) {
