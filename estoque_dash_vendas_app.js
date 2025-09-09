@@ -4,33 +4,31 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===================================================================================
 
     /* ===================== CONFIG ===================== */
-    // PRINCIPAL ENGINEER NOTE: The Supabase Anon Key MUST be loaded from environment variables,
-    // NEVER hardcoded in the frontend. This is a critical security vulnerability.
-    // Example for a framework: const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON;
     const SUPABASE_URL = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U"; // <-- REPLACE WITH ENV VARIABLE
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U"; // <-- SUBSTITUA PELA SUA CHAVE (VIA ENV VAR)
 
-    if (SUPABASE_ANON === "YOUR_NEW_ROTATED_SUPABASE_ANON_KEY") {
+    if (SUPABASE_ANON.includes("YOUR_NEW")) {
         const statusEl = $('status');
         if(statusEl) {
             statusEl.textContent = 'ERRO CRÍTICO: Chave Supabase não configurada!';
             statusEl.style.color = '#ef4444';
         }
         console.error("CRITICAL SECURITY ALERT: The Supabase Anon key is not configured. Please set it as an environment variable and rebuild your application. The dashboard will not function without it.");
-        return; // Halt execution if key is not set.
+        return;
     }
 
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
     const RPC_FILTER_FUNC = 'filter_vendas';
     const RPC_KPI_FUNC = 'kpi_vendas_unificado';
-    const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes_v1';
+    // ======================= FIX #1: Apontar para a nova função SQL robusta =======================
+    const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes_v2';
+    // ==========================================================================================
     const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v1';
     const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v1';
     const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v1';
     const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
 
-    // ROBUSTNESS FIX: Pointing the insert operation to the resilient staging table.
     const DEST_INSERT_TABLE= 'stage_vendas_raw';
     const REFRESH_RPC     = 'refresh_sales_materialized';
 
@@ -746,8 +744,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
 
-        const paramsNow = buildParams(last12Start, last12End, analiticos);
-        const paramsPrev = buildParams(prev12Start, prev12EndAdj, analiticos);
+        // ======================= FIX #2: Passar o KPI selecionado para a função SQL =======================
+        const paramsNow = { ...buildParams(last12Start, last12End, analiticos), p_kpi_key: selectedKPI };
+        const paramsPrev = { ...buildParams(prev12Start, prev12EndAdj, analiticos), p_kpi_key: selectedKPI };
+        // =================================================================================================
 
         const [{data: nData, error: nErr}, {data: pData, error: pErr}] = await Promise.all([
             supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
@@ -922,7 +922,9 @@ document.addEventListener('DOMContentLoaded', () => {
             $('diag_title_dow').textContent = `${meta.label} por Dia da Semana`;
             $('diag_title_hour').textContent = `${meta.label} por Hora`;
 
-            const paramsNow = buildParams(de, ate, analiticos);
+            // ======================= FIX #2 (Repetido): Passar o KPI selecionado para a função SQL =======================
+            const paramsNow = { ...buildParams(de, ate, analiticos), p_kpi_key: selectedKpi };
+            // ========================================================================================================
 
             const [
                 { data: monthData, error: monthErr },
@@ -1078,22 +1080,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const wb = XLSX.read(buf, { type:'array' });
             const ws = wb.Sheets[wb.SheetNames[0]];
 
-            // ROBUSTNESS FIX: Convert sheet to JSON with raw values.
-            // All data transformation is now handled by the PostgreSQL function.
             const json = XLSX.utils.sheet_to_json(ws, { raw: false, defval: null });
 
             if (!json || json.length === 0) {
                 throw new Error("O arquivo está vazio ou em um formato inválido.");
             }
 
-            // ROBUSTNESS FIX: Wrap each row object into a `raw_data` field for the staging table.
             const payloadToInsert = json.map(row => ({
                 raw_data: row
             }));
 
             setStatus(`Enviando ${payloadToInsert.length} registros para a área de preparação...`, 'info');
 
-            // Set a higher timeout for large uploads
             const { error } = await supa.from(DEST_INSERT_TABLE).insert(payloadToInsert);
 
             if (error) {
@@ -1102,11 +1100,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             setStatus('Carga concluída! Processando no servidor...', 'ok');
 
-            // Give the backend trigger a moment to process before refreshing the view.
             setTimeout(() => {
                 setStatus('Atualizando visualização...', 'ok');
                 fxDispatchApply();
-            }, 3000); // 3-second delay, adjust as needed based on average processing time.
+            }, 3000);
 
 
         } catch(e) {
