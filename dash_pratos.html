@@ -438,8 +438,7 @@
 
   async function init() {
     try {
-      console.info('[Status] [info]: Inicializando aplicação (v10.3 ELT)...');
-      console.info('[Status] [info]: Buscando dados analytics (RPC)...');
+      console.info('[Status] [info]: Inicializando aplicação...');
       const { data, error } = await supa.from('vendas_pratos_daterange').select('max_data').limit(1);
       if (error) throw error;
       lastDay = (data?.length && data[0].max_data) ? data[0].max_data : getTodayISO();
@@ -544,7 +543,7 @@
     init();
   });
   
-  // ===================== LÓGICA DE UPLOAD FINAL E CORRIGIDA =====================
+  // ===================== LÓGICA DE UPLOAD FINAL E CORRIGIDA PARA DATAS BR =====================
   $('btnUpload').addEventListener('click', () => $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev) => {
     const file = ev.target.files[0];
@@ -588,15 +587,16 @@
             return date.toISOString().split('T')[0];
         }
         const s = String(dateValue);
-        const parts = s.split(/[\/\-\.]/);
+        const parts = s.split(/[\/\-\.]/); // Divide por / ou - ou .
         if (parts.length === 3) {
             let day = parts[0], month = parts[1], year = parts[2];
             if (year.length === 2) year = '20' + year;
+            // Valida e formata para AAAA-MM-DD
             if (parseInt(month,10) > 0 && parseInt(month,10) <= 12 && parseInt(day,10) > 0 && parseInt(day,10) <= 31) {
               return `${year.padStart(4, '20')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
             }
         }
-        return null;
+        return null; // Retorna null se não conseguir converter, para a linha ser filtrada
       };
 
       const dadosFormatados = json_data.map(linha => {
@@ -604,7 +604,7 @@
         if (dataValue === null || typeof dataValue === 'undefined') return null;
         
         const parsedDate = parseDate(dataValue);
-        if (!parsedDate) return null;
+        if (!parsedDate) return null; // Ignora linhas com data inválida
 
         return {
           data: parsedDate,
@@ -613,9 +613,9 @@
           categoria: categoryKey ? linha[categoryKey] : null,
           quantidade: parseInt(linha[quantityKey], 10) || 0
         };
-      }).filter(Boolean);
+      }).filter(Boolean); // Filtra linhas que retornaram null
 
-      if (dadosFormatados.length === 0) throw new Error("Nenhuma linha com dados de data válidos foi encontrada.");
+      if (dadosFormatados.length === 0) throw new Error("Nenhuma linha com dados de data válidos foi encontrada no arquivo.");
 
       const CHUNK_SIZE = 500;
       for (let i = 0; i < dadosFormatados.length; i += CHUNK_SIZE) {
