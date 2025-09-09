@@ -1074,7 +1074,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 'data': 'data_completa',
                 'unidade': 'unidade',
                 ' loja': 'loja',
-                'canal': 'canal_de_venda', // CORREÇÃO 1: Mapeamento para coluna sem espaços
+                'canal': 'Canal de venda', // Mantém o nome original com espaços, pois o DB não foi alterado
                 'pagamento': 'pagamento_base',
                 'cancelado': 'cancelado',
                 'pedido': 'pedidos',
@@ -1101,14 +1101,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
-                // *** INÍCIO DA CORREÇÃO 2: Validação de Dados ***
+                // *** INÍCIO DA CORREÇÃO DEFINITIVA ***
+                // Validação robusta para a coluna 'pedidos', que pode conter texto como "Ficha".
                 const pedidoValue = newRow.pedidos;
                 if (pedidoValue === null || pedidoValue === undefined || isNaN(parseInt(pedidoValue, 10))) {
-                    newRow.pedidos = null; // Envia nulo para o banco se for "Ficha" ou qualquer outro texto.
+                    newRow.pedidos = null; // Envia nulo para o banco se não for um número válido.
                 } else {
                     newRow.pedidos = parseInt(pedidoValue, 10);
                 }
-                // *** FIM DA CORREÇÃO 2 ***
+                // *** FIM DA CORREÇÃO DEFINITIVA ***
 
                 if (newRow.data_completa) {
                     const [dataPart, timePart] = String(newRow.data_completa).split(' ');
