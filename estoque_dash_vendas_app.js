@@ -1065,20 +1065,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const buf = await file.arrayBuffer();
             const wb = XLSX.read(buf, { type:'array' });
             const ws = wb.Sheets[wb.SheetNames[0]];
-            // raw:false garante que datas sejam lidas corretamente, se possível
             const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
 
             if (!json || json.length === 0) {
                 throw new Error("O arquivo está vazio ou em um formato inválido.");
             }
             
-            // MAPA DE CABEÇALHO CORRIGIDO E INTENCIONAL
-            // Mapeia a chave do arquivo (em minúsculas, após trim) para a coluna do DB
+            // MAPA DE CABEÇALHO FINAL E CORRIGIDO
+            // Mapeia o nome da coluna do arquivo para o nome padronizado da coluna no banco de dados.
             const headerMap = {
                 'data': 'data_completa', // Nome temporário para processamento
                 'unidade': 'unidade',
-                'loja': 'loja',
-                'canal': 'canal de venda', // <<< CORREÇÃO APLICADA AQUI
+                ' loja': 'loja', // Mapeia ' loja' do CSV para a coluna 'loja' do DB
+                'canal': 'canal_de_venda', // Mapeia 'Canal' do CSV para 'canal_de_venda' do DB
                 'pagamento': 'pagamento_base',
                 'cancelado': 'cancelado',
                 'pedido': 'pedidos',
@@ -1092,7 +1091,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const newRow = {};
                 let tempPedidoId = null;
 
-                // Transforma as chaves do objeto lido para um formato padronizado
+                // Transforma as chaves do objeto lido para um formato padronizado (minúsculo, sem espaços extras)
                 const normalizedRow = {};
                 for (const originalKey in row) {
                     const normalizedKey = originalKey.trim().toLowerCase();
@@ -1118,7 +1117,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Formato esperado pelo Supabase: HH:mm:ss
                         newRow['hora'] = `${timePart}:00`; 
                     } else {
-                        // Log de aviso para dados malformados, sem quebrar a importação
                         console.warn(`[Importação] Linha ${index + 2}: Formato de data inválido. Valor: '${newRow.data_completa}'`);
                         newRow['dia'] = null;
                         newRow['hora'] = null;
