@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const REFRESH_RPC     = 'refresh_sales_materialized';
     
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -152,11 +152,21 @@ document.addEventListener('DOMContentLoaded', () => {
           if(!deISO || !ateISO) return {dePrev:null, atePrev:null};
           const d1 = new Date(deISO + 'T12:00:00');
           const d2 = new Date(ateISO + 'T12:00:00');
-          if (this.isFullYear(d1, d2) || this.isFullMonthsAligned(d1, d2)) {
+          
+          if (this.isFullYear(d1, d2)) {
               const p1 = this.shiftYear(d1, -1);
               const p2 = this.shiftYear(d2, -1);
               return { dePrev: this.iso(p1), atePrev: this.iso(p2) };
           }
+
+          if (this.isFullMonthsAligned(d1, d2)) {
+              const numMonths = (d2.getFullYear() - d1.getFullYear()) * 12 + d2.getMonth() - d1.getMonth() + 1;
+              const atePrevDate = new Date(d1.getTime() - 86400000);
+              const dePrevDate = new Date(d1);
+              dePrevDate.setMonth(dePrevDate.getMonth() - numMonths);
+              return { dePrev: this.iso(dePrevDate), atePrev: this.iso(atePrevDate) };
+          }
+
           const len = this.daysLen(deISO, ateISO);
           const atePrev = new Date(d1.getTime() - 86400000);
           const dePrev = new Date(atePrev.getTime() - (len - 1) * 86400000);
