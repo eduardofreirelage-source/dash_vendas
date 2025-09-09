@@ -833,6 +833,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ensureDonutTop6([],[], 'Total: R$ 0,00','money');
       }
     }
+    
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
     $('fileExcel').addEventListener('change', async (ev)=>{
       const file = ev.target.files?.[0];
@@ -1001,6 +1002,7 @@ document.addEventListener('DOMContentLoaded', () => {
           updateMonth12x12(totalViewAnaliticos),
           getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos),
           updateCharts(de,ate,dePrev,atePrev, analiticos),
+          updateDiagnosticCharts(de, ate, analiticos),
           updateTop6(de,ate, analiticos),
           updateInsights(de, ate, analiticos, selectedKpiForDiag),
           updateProjections(de, ate, dePrev, atePrev, analiticos)
