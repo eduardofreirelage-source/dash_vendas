@@ -1051,7 +1051,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // ===================================================================================
-    // LÓGICA DE IMPORTAÇÃO E ATUALIZAÇÃO
+    // LÓGICA DE IMPORTAÇÃO
     // ===================================================================================
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
     
@@ -1101,6 +1101,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
+                // *** INÍCIO DA CORREÇÃO DEFINITIVA ***
+                // Validação robusta para a coluna 'pedidos'
+                const pedidoValue = newRow.pedidos;
+                if (pedidoValue === null || pedidoValue === undefined || isNaN(parseInt(pedidoValue, 10))) {
+                    newRow.pedidos = null; // Envia nulo se não for um número válido
+                } else {
+                    newRow.pedidos = parseInt(pedidoValue, 10);
+                }
+                // *** FIM DA CORREÇÃO DEFINITIVA ***
+
                 if (newRow.data_completa) {
                     const [dataPart, timePart] = String(newRow.data_completa).split(' ');
                     const [dia, mes, ano] = dataPart.split('/');
@@ -1144,7 +1154,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(`O banco de dados retornou um erro: ${error.message}. Detalhes: ${error.details}`);
             }
             
-            setStatus('Importação concluída! Pressione "Atualizar Dados".', 'ok');
+            setStatus('Importação concluída! Atualizando...', 'ok');
+            document.dispatchEvent(new Event('filters:apply:internal'));
             
         } catch(e) {
             console.error("Erro na importação:", e);
@@ -1156,18 +1167,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    $('btnRefresh').addEventListener('click', async () => {
-        setStatus('Atualizando dados...', 'info');
-        const { error } = await supa.rpc('refresh_vendas');
-        if (error) {
-            console.error("Erro ao atualizar dados:", error);
-            setStatus(`Erro: ${error.message}`, 'err');
-        } else {
-            setStatus('Dados atualizados! Recarregando dashboard...', 'ok');
-            document.dispatchEvent(new Event('filters:apply:internal'));
-        }
-    });
-    
     // ===================================================================================
     // LÓGICA DA INTERFACE DE FILTROS
     // ===================================================================================
