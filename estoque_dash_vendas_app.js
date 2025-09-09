@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const REFRESH_RPC     = 'refresh_sales_materialized';
     
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TPaZMgIseW7_qM1LDZzkO7U";
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -1053,23 +1053,41 @@ document.addEventListener('DOMContentLoaded', () => {
     
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
     $('fileExcel').addEventListener('change', async (ev)=>{
-      const file = ev.target.files?.[0];
-      if(!file){ info(''); return; }
-      info('Lendo arquivo…');
-      try{
-        const buf = await file.arrayBuffer();
-        const wb = XLSX.read(buf, { type:'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
-      }catch(e){
-        console.error(e);
-        setStatus('Erro ao ler/enviar Excel: '+(e.message||e),'err');
-        info('');
-      }finally{
-        $('fileExcel').value='';
-      }
-    }
-    );
+        const file = ev.target.files?.[0];
+        if(!file){ info(''); return; }
+        
+        setStatus('Processando arquivo...', 'info');
+        try{
+            const buf = await file.arrayBuffer();
+            const wb = XLSX.read(buf, { type:'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
+
+            if (!json || json.length === 0) {
+                throw new Error("O arquivo está vazio ou em um formato inválido.");
+            }
+
+            setStatus(`Enviando ${json.length} registros...`, 'info');
+            
+            const { error } = await supa.from(DEST_INSERT_TABLE).insert(json);
+
+            if (error) {
+                throw error;
+            }
+            
+            setStatus('Importação concluída! Atualizando...', 'ok');
+            fxDispatchApply();
+
+        } catch(e) {
+            console.error("Erro na importação:", e);
+            let userMessage = e.message || 'Erro desconhecido.';
+            if (e.details) userMessage += ` (${e.details})`;
+            setStatus(`Erro: ${userMessage}`, 'err');
+        } finally {
+            $('fileExcel').value='';
+        }
+    });
+
     function mergeRankedAll(rankedList, allList){
       const rset = new Set(rankedList);
       const rest = allList.filter(x=>!rset.has(x));
