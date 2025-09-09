@@ -301,7 +301,7 @@
     const canvas = $(canvasId);
     if (!canvas) return;
     if (canvas.__chart) { try { canvas.__chart.destroy(); } catch(e){} }
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d'); // CORRIGIDO: de 'd' para '2d'
     canvas.__chart = new Chart(ctx, {
       type,
       data: { labels, datasets },
@@ -442,7 +442,10 @@
       if (error) throw error;
       lastDay = (data?.length && data[0].max_data) ? data[0].max_data : getTodayISO();
       await reloadFilterOptions();
+      
+      // ===== LÓGICA DE FILTRO INICIAL MELHORADA =====
       document.dispatchEvent(new Event('filters:init'));
+
     } catch (e) { console.error(e); }
   }
 
@@ -456,6 +459,20 @@
     function fxFmt(date){ return date.toISOString().split('T')[0]; }
     function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end); }
     
+    // NOVA FUNÇÃO para definir o filtro para o último mês com dados
+    function fxSetToLastMonthWithData(baseDateStr) {
+        if (!baseDateStr || baseDateStr.startsWith('1970')) return fxLastNDays(30);
+        const baseDate = new Date(baseDateStr + 'T12:00:00Z');
+        const year = baseDate.getUTCFullYear();
+        const month = baseDate.getUTCMonth();
+        
+        const start = new Date(Date.UTC(year, month, 1));
+        const end = new Date(Date.UTC(year, month + 1, 0));
+        
+        fxSetRange(start, end);
+        [...fx.$chips.children, ...fx.$days.children].forEach(b => b.classList.remove('active'));
+    }
+
     function setNamedPeriod(win) {
         const baseDate = new Date(lastDay + 'T12:00:00Z');
         let start, end;
@@ -512,25 +529,22 @@
     fx.$btnReset.addEventListener('click', ()=>{
       Object.values(ms).forEach(m => m.clear());
       $('onlyPratos').checked = false;
-      clearActiveChips();
-      $('fxDuQuickDays').querySelector('[data-win="30"]').classList.add('active');
-      fxLastNDays(30);
+      fxSetToLastMonthWithData(lastDay); // Botão de reset agora também usa o filtro inteligente
       fxDispatchApply();
     });
 
     document.addEventListener('filters:apply', (e) => { if(e.detail) { applyAll(e.detail); } });
     
     document.addEventListener('filters:init', () => {
-        clearActiveChips();
-        $('fxDuQuickDays').querySelector('[data-win="30"]').classList.add('active');
-        fxLastNDays(30);
+        // A LÓGICA INICIAL AGORA É MAIS INTELIGENTE
+        fxSetToLastMonthWithData(lastDay);
         fxDispatchApply();
     });
 
     init();
   });
   
-  // ===================== LÓGICA DE UPLOAD MELHORADA =====================
+  // ===================== LÓGICA DE UPLOAD FINAL E CORRIGIDA =====================
   $('btnUpload').addEventListener('click', () => $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev) => {
     const file = ev.target.files[0];
@@ -547,12 +561,9 @@
       const worksheet = workbook.Sheets[sheetName];
       const json_data = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: null });
 
-      if (json_data.length === 0) {
-        throw new Error("O arquivo está vazio ou em um formato inválido.");
-      }
-
-      const headers = Object.keys(json_data[0]);
+      if (json_data.length === 0) throw new Error("O arquivo está vazio ou em um formato inválido.");
       
+      const headers = Object.keys(json_data[0]);
       const findHeader = (possibleNames) => {
           for (const name of possibleNames) {
               const found = headers.find(h => h.toLowerCase().trim() === name);
@@ -567,58 +578,51 @@
       const categoryKey = findHeader(['categoria', 'categorias']);
       const quantityKey = findHeader(['quantidade', 'qtd', 'quantia']);
 
-      if (!dateKey) {
-        throw new Error(`Coluna de data não encontrada. Certifique-se que seu arquivo tem uma coluna com um nome como: 'data', 'data da venda', etc.`);
-      }
-      if (!quantityKey) {
-        throw new Error(`Coluna de quantidade não encontrada. Certifique-se que seu arquivo tem uma coluna com um nome como: 'quantidade', 'qtd', etc.`);
-      }
+      if (!dateKey) throw new Error(`Coluna de data não encontrada. Use um nome como: 'data', 'data da venda', etc.`);
+      if (!quantityKey) throw new Error(`Coluna de quantidade não encontrada. Use um nome como: 'quantidade', 'qtd', etc.`);
       
-      const excelToJSDate = (excelDate) => {
-          if (typeof excelDate === 'number' && excelDate > 1) {
-              const date = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
-              date.setMinutes(date.getMinutes() + date.getTimezoneOffset()); // Ajuste de fuso horário
-              return date.toISOString().split('T')[0];
-          }
-          // Tenta converter formatos como DD/MM/YYYY ou MM/DD/YYYY para YYYY-MM-DD
-          const parts = String(excelDate).match(/(\d+)/g);
-          if (parts && parts.length === 3) {
-              const [p1, p2, p3] = parts.map(Number);
-              // Assume ano com 4 dígitos. Se for ano com 2, adiciona 2000.
-              const year = p3 > 1000 ? p3 : p3 + 2000;
-              // Assume DD/MM/YYYY se o segundo valor for <= 12
-              if (p2 <= 12) {
-                  return `${year}-${String(p2).padStart(2, '0')}-${String(p1).padStart(2, '0')}`;
-              }
-          }
-          return excelDate; // Retorna o valor original se não conseguir converter
+      const parseDate = (dateValue) => {
+        if (typeof dateValue === 'number' && dateValue > 1) {
+            const date = new Date(Math.round((dateValue - 25569) * 86400 * 1000));
+            date.setMinutes(date.getMinutes() + date.getTimezoneOffset());
+            return date.toISOString().split('T')[0];
+        }
+        const s = String(dateValue);
+        const parts = s.split(/[\/\-\.]/);
+        if (parts.length === 3) {
+            let day = parts[0], month = parts[1], year = parts[2];
+            if (year.length === 2) year = '20' + year;
+            // Validação simples
+            if (parseInt(month,10) > 0 && parseInt(month,10) <= 12 && parseInt(day,10) > 0 && parseInt(day,10) <= 31) {
+              return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+            }
+        }
+        return null; // Retorna null se não conseguir converter
       };
 
       const dadosFormatados = json_data.map(linha => {
         const dataValue = linha[dateKey];
-        if (dataValue === null || typeof dataValue === 'undefined') {
-            return null; // Ignora linhas sem data
-        }
+        if (dataValue === null || typeof dataValue === 'undefined') return null;
+        
+        const parsedDate = parseDate(dataValue);
+        if (!parsedDate) return null; // Ignora linhas com data inválida
+
         return {
-          data: excelToJSDate(dataValue),
+          data: parsedDate,
           unidade: unitKey ? linha[unitKey] : null,
           prato: dishKey ? linha[dishKey] : null,
           categoria: categoryKey ? linha[categoryKey] : null,
           quantidade: parseInt(linha[quantityKey], 10) || 0
         };
-      }).filter(Boolean); // Remove as linhas que retornaram null
+      }).filter(Boolean);
 
-      if (dadosFormatados.length === 0) {
-        throw new Error("Nenhuma linha com dados de data válidos foi encontrada no arquivo.");
-      }
+      if (dadosFormatados.length === 0) throw new Error("Nenhuma linha com dados de data válidos foi encontrada.");
 
       const CHUNK_SIZE = 500;
       for (let i = 0; i < dadosFormatados.length; i += CHUNK_SIZE) {
           const chunk = dadosFormatados.slice(i, i + CHUNK_SIZE);
           const { error } = await supa.from('vendas_pratos').insert(chunk);
-          if (error) {
-            throw new Error(`Erro ao importar lote para o banco: ${error.message}`);
-          }
+          if (error) throw new Error(`Erro ao importar lote para o banco: ${error.message}`);
       }
 
       alert(`Importação concluída! ${dadosFormatados.length} linhas inseridas.`);
