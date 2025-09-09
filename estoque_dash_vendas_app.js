@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
 
     const DEST_INSERT_TABLE= 'vendas_xlsx';
-    const REFRESH_RPC     = 'refresh_sales_materialized';
     
     const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
     const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
@@ -619,7 +618,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ped:       { label:'Pedidos',             fmt:'count' },
       tkt:       { label:'Ticket Médio',        fmt:'money' },
       des:       { label:'Incentivos',          fmt:'money' },
-      desperc:   { label:'% de incentivos',     fmt:'percent' },
+      desperc:   { label:'% Incentivos',     fmt:'percent' },
       fre:       { label:'Frete',               fmt:'money' },
       fremed:    { label:'Frete Médio',         fmt:'money' },
       fatmed:    { label:'Faturamento Médio',   fmt:'money' },
@@ -1052,7 +1051,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // ===================================================================================
-    // INÍCIO DO BLOCO DE CÓDIGO CORRIGIDO PARA IMPORTAÇÃO
+    // LÓGICA DE IMPORTAÇÃO E ATUALIZAÇÃO
     // ===================================================================================
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
     
@@ -1071,13 +1070,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error("O arquivo está vazio ou em um formato inválido.");
             }
             
-            // MAPA DE CABEÇALHO FINAL E CORRIGIDO
-            // Mapeia o nome da coluna do arquivo para o nome padronizado da coluna no banco de dados.
             const headerMap = {
-                'data': 'data_completa', // Nome temporário para processamento
+                'data': 'data_completa',
                 'unidade': 'unidade',
-                ' loja': 'loja', // Mapeia ' loja' do CSV para a coluna 'loja' do DB
-                'canal': 'canal_de_venda', // Mapeia 'Canal' do CSV para 'canal_de_venda' do DB
+                ' loja': 'loja',
+                'canal': 'canal_de_venda',
                 'pagamento': 'pagamento_base',
                 'cancelado': 'cancelado',
                 'pedido': 'pedidos',
@@ -1091,14 +1088,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const newRow = {};
                 let tempPedidoId = null;
 
-                // Transforma as chaves do objeto lido para um formato padronizado (minúsculo, sem espaços extras)
                 const normalizedRow = {};
                 for (const originalKey in row) {
                     const normalizedKey = originalKey.trim().toLowerCase();
                     normalizedRow[normalizedKey] = row[originalKey];
                 }
 
-                // Mapeia os dados normalizados para as colunas do banco de dados
                 for (const fileHeader in headerMap) {
                     if (normalizedRow[fileHeader] !== undefined) {
                         const dbColumn = headerMap[fileHeader];
@@ -1106,34 +1101,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
-                // Tratamento específico e robusto para data e hora
                 if (newRow.data_completa) {
                     const [dataPart, timePart] = String(newRow.data_completa).split(' ');
                     const [dia, mes, ano] = dataPart.split('/');
                     
                     if(dia && mes && ano && timePart) {
-                        // Formato esperado pelo Supabase: YYYY-MM-DD
                         newRow['dia'] = `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
-                        // Formato esperado pelo Supabase: HH:mm:ss
                         newRow['hora'] = `${timePart}:00`; 
                     } else {
                         console.warn(`[Importação] Linha ${index + 2}: Formato de data inválido. Valor: '${newRow.data_completa}'`);
                         newRow['dia'] = null;
                         newRow['hora'] = null;
                     }
-                    delete newRow.data_completa; // Remove a coluna temporária
+                    delete newRow.data_completa;
                 }
 
                 tempPedidoId = newRow['pedido_id'];
                 
-                // Geração da chave primária (row_key)
                 if (tempPedidoId) {
                     newRow['row_key'] = `${tempPedidoId}-${newRow.dia}-${index}`;
                 } else {
                     newRow['row_key'] = `import-${new Date().getTime()}-${index}`;
                 }
 
-                // Garante que todos os campos numéricos sejam números
                 newRow.fat = parseFloat(String(newRow.fat || 0).replace(',', '.')) || 0;
                 newRow.des = parseFloat(String(newRow.des || 0).replace(',', '.')) || 0;
                 newRow.fre = parseFloat(String(newRow.fre || 0).replace(',', '.')) || 0;
@@ -1154,9 +1144,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(`O banco de dados retornou um erro: ${error.message}. Detalhes: ${error.details}`);
             }
             
-            setStatus('Importação concluída! Atualizando...', 'ok');
-            document.dispatchEvent(new Event('filters:apply:internal'));
-
+            setStatus('Importação concluída! Pressione "Atualizar Dados".', 'ok');
+            
         } catch(e) {
             console.error("Erro na importação:", e);
             let userMessage = e.message || 'Erro desconhecido.';
@@ -1166,9 +1155,21 @@ document.addEventListener('DOMContentLoaded', () => {
             $('fileExcel').value='';
         }
     });
+
+    $('btnRefresh').addEventListener('click', async () => {
+        setStatus('Atualizando dados...', 'info');
+        const { error } = await supa.rpc('refresh_vendas');
+        if (error) {
+            console.error("Erro ao atualizar dados:", error);
+            setStatus(`Erro: ${error.message}`, 'err');
+        } else {
+            setStatus('Dados atualizados! Recarregando dashboard...', 'ok');
+            document.dispatchEvent(new Event('filters:apply:internal'));
+        }
+    });
     
     // ===================================================================================
-    // FIM DO BLOCO DE CÓDIGO CORRIGIDO
+    // LÓGICA DA INTERFACE DE FILTROS
     // ===================================================================================
 
     function mergeRankedAll(rankedList, allList){
@@ -1208,7 +1209,6 @@ document.addEventListener('DOMContentLoaded', () => {
       ms.turnos.setOptions(['Dia','Noite'], true);
     }
     
-    /* ===================== LOOP PRINCIPAL (CORRIGIDO) ===================== */
     async function applyAll(details){
       try{
         const de = details.start;
@@ -1245,10 +1245,6 @@ document.addEventListener('DOMContentLoaded', () => {
         setStatus('Erro: '+(e.message||e),'err');
       }
     }
-
-    // ===================================================================================
-    // LÓGICA DA INTERFACE DE FILTROS E ABAS
-    // ===================================================================================
 
     const tabsContainer = $('tabs');
     if (tabsContainer) {
