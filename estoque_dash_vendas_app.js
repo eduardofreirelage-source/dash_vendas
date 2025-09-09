@@ -1082,15 +1082,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 'pedido_id': 'pedido_id'
             };
     
-            const transformedJson = json.map(row => {
+            const transformedJson = json.map((row, index) => {
                 const newRow = {};
+                let tempPedidoId = null;
+
                 for (const originalKey in row) {
                     const normalizedKey = originalKey.trim().toLowerCase();
                     const dbColumn = headerMap[normalizedKey];
                     if (dbColumn) {
                         newRow[dbColumn] = row[originalKey];
+                        if (normalizedKey === 'pedido_id') {
+                            tempPedidoId = row[originalKey];
+                        }
                     }
                 }
+                
+                // Gera a row_key obrigatória que estava faltando
+                if (tempPedidoId) {
+                    newRow['row_key'] = `${tempPedidoId}-${new Date().getTime()}-${index}`;
+                } else {
+                    newRow['row_key'] = `import-${new Date().getTime()}-${index}`;
+                }
+
                 return newRow;
             });
 
