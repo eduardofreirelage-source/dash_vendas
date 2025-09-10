@@ -3,11 +3,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // ARQUITETURA FINAL E SIMPLIFICADA (LÓGICA NO CLIENT-SIDE)
     // ===================================================================================
 
+    // ======================= HELPERS MOVIDOS PARA O TOPO =======================
     const $ = id => document.getElementById(id);
     const setStatus=(t,k)=>{ const el=$('status'); if(el) {el.textContent=t; el.style.color=(k==='err'?'#ef4444':k==='ok'?'#10b981':'#667085');} };
     const money=v=>(v==null||!isFinite(+v))?'R$ 0,00':'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
     const num =v=>(v==null||!isFinite(+v))?'0':(+v).toLocaleString('pt-BR');
     const pctf=v=>(v==null||!isFinite(+v))?'0,0%':((+v)*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+    
+    // ======================= FUNÇÃO CORRIGIDA =======================
+    const formatValueBy = (fmt,v) => {
+      if(fmt==='count') return num(v);
+      if(fmt==='percent') return pctf(v);
+      return money(v);
+    };
+    // ================================================================
+
     const upSVG = () => '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4l5 6h-3v6H8v-6H5l5-6z"/></svg>';
     const downSVG = () => '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 16l-5-6h3V4h4v6h3l-5 6z"/></svg>';
     const deltaBadge = (el,curr,prev) => {
@@ -297,10 +307,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
         
         await Promise.all([
-          updateKPIs(de, ate, dePrev, atePrev, { ...analiticos, unidade: [], loja: [] }), // KPIs gerais
+          updateKPIs(de, ate, dePrev, atePrev, { ...analiticos, unidade: [], loja: [] }),
           updateMonth12x12(analiticos),
           updateCharts(de, ate, dePrev, atePrev, analiticos)
-          // Outras funções como projections, insights, top6 podem ser adicionadas aqui se necessário
         ]);
         
         setStatus('OK','ok');
