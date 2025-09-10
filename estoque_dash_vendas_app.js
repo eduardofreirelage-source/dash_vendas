@@ -57,7 +57,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /* ===================== CONFIG ===================== */
     const SUPABASE_URL = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    // Chave anon incluída conforme solicitado para testes
     const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
 
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -71,7 +70,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
 
     const DEST_INSERT_TABLE= 'stage_vendas_raw';
-    const REFRESH_RPC     = 'refresh_sales_materialized';
+    // RPC para atualizar a visão materializada.
+    const REFRESH_MV_RPC = 'refresh_vendas_analytics_mv';
 
     /* ===================== CHART.JS — tema vinho ===================== */
     Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol"';
@@ -317,6 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
       };
     }
 
+    // A função baseQuery agora não é mais usada para os gráficos, apenas para o Top 6.
     async function baseQuery(de, ate, analiticos){
       const PAGE_SIZE = 1000;
       let allRows = [];
@@ -325,10 +326,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const params = buildParams(de, ate, analiticos);
 
       while (keepFetching) {
-          const { data, error } = await supa.rpc(RPC_FILTER_FUNC, params)
+          // Esta chamada pode ser lenta, mas é apenas para um componente (Top 6)
+          const { data, error } = await supa.from('vendas_analytics_mv')
+                                          .select('*')
+                                          .gte('dia', de)
+                                          .lte('dia', ate)
+                                          // Adicionar outros filtros conforme necessário
                                           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
           if (error) {
-              console.error(`[RPC ${RPC_FILTER_FUNC}]`, error);
+              console.error(`[baseQuery]`, error);
               throw error;
           }
           if (data && data.length > 0) {
@@ -365,99 +371,35 @@ document.addEventListener('DOMContentLoaded', () => {
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
         let allKpiValues = {};
         try {
-            const pTotalNow = buildParams(de, ate, { ...analiticos, cancelado: 'ambos' });
-            const pTotalPrev = buildParams(dePrev, atePrev, { ...analiticos, cancelado: 'ambos' });
-
-            const buildCountQuery = (startDate, endDate, cancelFilter) => {
-                let query = supa.from('vendas_canon').select('*', { count: 'exact', head: true })
-                    .gte('dia', startDate)
-                    .lte('dia', endDate);
-
-                const isActive = (val) => val && val.length > 0;
-                if (isActive(analiticos.unidade)) query = query.in('unidade', analiticos.unidade);
-                if (isActive(analiticos.loja)) query = query.in('loja', analiticos.loja);
-                if (isActive(analiticos.turno)) query = query.in('turno', analiticos.turno);
-                if (isActive(analiticos.canal)) query = query.in('canal', analiticos.canal);
-                if (isActive(analiticos.pagamento)) query = query.in('pagamento_base', analiticos.pagamento);
-
-                if (cancelFilter === 'Sim') query = query.eq('cancelado', 'Sim');
-                if (cancelFilter === 'Não') query = query.eq('cancelado', 'Não');
-
-                return query;
-            };
+            const pTotalNow = { ...buildParams(de, ate, analiticos), p_kpi_key: 'all' };
+            const pTotalPrev = { ...buildParams(dePrev, atePrev, analiticos), p_kpi_key: 'all' };
 
             const [
-                totalFinNowResult, totalFinPrevResult,
-                { count: pedNowCount, error: errPedNow },
-                { count: pedPrevCount, error: errPedPrev },
-                { count: cnCount, error: errCn }, { count: vnCount, error: errVn },
-                { count: cpCount, error: errCp }, { count: vpCount, error: errVp }
+                {data: nowData, error: nowErr},
+                {data: prevData, error: prevErr}
             ] = await Promise.all([
                 supa.rpc(RPC_KPI_FUNC, pTotalNow),
-                supa.rpc(RPC_KPI_FUNC, pTotalPrev),
-                buildCountQuery(de, ate, null),
-                buildCountQuery(dePrev, atePrev, null),
-                buildCountQuery(de, ate, 'Sim'),
-                buildCountQuery(de, ate, 'Não'),
-                buildCountQuery(dePrev, atePrev, 'Sim'),
-                buildCountQuery(dePrev, atePrev, 'Não')
+                supa.rpc(RPC_KPI_FUNC, pTotalPrev)
             ]);
 
-            if(totalFinNowResult.error) throw totalFinNowResult.error;
-            if(errPedNow) throw errPedNow;
+            if(nowErr) throw nowErr;
+            if(prevErr) throw prevErr;
 
-            const {data: cancDataNow} = await supa.rpc(RPC_KPI_FUNC, { ...buildParams(de, ate, analiticos), p_cancelado: 'Sim' });
-            const {data: cancDataPrev} = await supa.rpc(RPC_KPI_FUNC, { ...buildParams(dePrev, atePrev, analiticos), p_cancelado: 'Sim' });
-
-            const pedTotalNow = analiticos.cancelado === 'sim' ? cnCount : analiticos.cancelado === 'nao' ? vnCount : pedNowCount;
-            const pedTotalPrev = analiticos.cancelado === 'sim' ? cpCount : analiticos.cancelado === 'nao' ? vpCount : pedPrevCount;
-
-            const totalNow = { fat: +(totalFinNowResult.data[0]?.fat || 0), des: +(totalFinNowResult.data[0]?.des || 0), fre: +(totalFinNowResult.data[0]?.fre || 0) };
-            const totalPrev = { fat: +(totalFinPrevResult.data[0]?.fat || 0), des: +(totalFinPrevResult.data[0]?.des || 0), fre: +(totalFinPrevResult.data[0]?.fre || 0) };
-            const cancNow = { fat: +(cancDataNow[0]?.fat || 0), des: +(cancDataNow[0]?.des || 0), fre: +(cancDataNow[0]?.fre || 0) };
-            const cancPrev = { fat: +(cancDataPrev[0]?.fat || 0), des: +(cancDataPrev[0]?.des || 0), fre: +(cancDataPrev[0]?.fre || 0) };
-
-            let N_financial, P_financial;
-            if (analiticos.cancelado === 'nao') {
-                N_financial = { fat: totalNow.fat - cancNow.fat, des: totalNow.des - cancNow.des, fre: totalNow.fre - cancNow.fre };
-                P_financial = { fat: totalPrev.fat - cancPrev.fat, des: totalPrev.des - cancPrev.des, fre: totalPrev.fre - cancPrev.fre };
-            } else if (analiticos.cancelado === 'sim') {
-                N_financial = cancNow;
-                P_financial = cancPrev;
-            } else {
-                N_financial = totalNow;
-                P_financial = totalPrev;
-            }
-
-            const N = { ped: pedTotalNow, ...N_financial };
-            const P = { ped: pedTotalPrev, ...P_financial };
-
-            const len = DateHelpers.daysLen(de, ate);
-            const prevLen = DateHelpers.daysLen(dePrev, atePrev);
-
-            const tktN = (N.ped > 0) ? (N.fat / N.ped) : 0;
-            const tktP = (P.ped > 0) ? (P.fat / P.ped) : 0;
-            const fatMedN = len > 0 ? (N.fat / len) : 0;
-            const fatMedP = prevLen > 0 ? (P.fat / prevLen) : 0;
-            const desPercN = N.fat > 0 ? (N.des / N.fat) : 0;
-            const desPercP = P.fat > 0 ? (P.des / P.fat) : 0;
-            const freMedN = N.ped > 0 ? (N.fre / N.ped) : 0;
-            const freMedP = P.ped > 0 ? (P.fre / P.ped) : 0;
-            const roiN = N.des > 0 ? (N.fat - N.des) / N.des : NaN;
-            const roiP = P.des > 0 ? (P.fat - P.des) / P.des : NaN;
+            const N = nowData[0];
+            const P = prevData[0];
 
             allKpiValues = {
                 fat: { current: N.fat, previous: P.fat },
                 ped: { current: N.ped, previous: P.ped },
-                tkt: { current: tktN, previous: tktP },
+                tkt: { current: N.tkt, previous: P.tkt },
                 des: { current: N.des, previous: P.des },
-                fatmed: { current: fatMedN, previous: fatMedP },
-                roi: { current: roiN, previous: roiP },
-                desperc: { current: desPercN, previous: desPercP },
-                canc_val: { current: cancNow.fat, previous: cancPrev.fat },
+                fatmed: { current: N.fatmed, previous: P.fatmed },
+                roi: { current: N.roi, previous: P.roi },
+                desperc: { current: N.desperc, previous: P.desperc },
+                canc_val: { current: N.canc_val, previous: P.canc_val },
                 fre: { current: N.fre, previous: P.fre },
-                fremed: { current: freMedN, previous: freMedP },
-                canc_ped: { current: cnCount, previous: cpCount },
+                fremed: { current: N.fremed, previous: P.fremed },
+                canc_ped: { current: N.canc_ped, previous: P.canc_ped },
             };
 
         } catch (e) {
@@ -1081,21 +1023,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 raw_data: row
             }));
 
-            setStatus(`Enviando ${payloadToInsert.length} registros para a área de preparação...`, 'info');
+            setStatus(`Enviando ${payloadToInsert.length} registros...`, 'info');
 
             const { error } = await supa.from(DEST_INSERT_TABLE).insert(payloadToInsert);
 
-            if (error) {
-                throw error;
-            }
+            if (error) throw error;
+            
+            setStatus('Carga concluída! Atualizando dados analíticos...', 'info');
+            // Chama o RPC para atualizar a visão materializada.
+            const { error: refreshError } = await supa.rpc(REFRESH_MV_RPC);
+            if (refreshError) throw refreshError;
 
-            setStatus('Carga concluída! Processando no servidor...', 'ok');
 
-            setTimeout(() => {
-                setStatus('Atualizando visualização...', 'ok');
-                fxDispatchApply();
-            }, 3000);
-
+            setStatus('Atualizando visualização...', 'ok');
+            fxDispatchApply();
 
         } catch(e) {
             console.error("Erro na importação:", e);
