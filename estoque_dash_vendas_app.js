@@ -1069,6 +1069,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const headerMap = {
+                // Mapeia o nome da coluna no CSV (normalizado) para o nome da coluna no banco de dados.
                 'dia': 'dia', 'data': 'dia',
                 'hora': 'hora',
                 'unidade': 'unidade',
@@ -1076,10 +1077,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 'canal': 'canal', 'canal de venda': 'canal',
                 'pagamento base': 'pagamento_base', 'pagamento': 'pagamento_base',
                 'cancelado': 'cancelado',
-                'faturamento bruto': 'fat', 'fat': 'fat', 'faturamento': 'fat',
+                'faturamento bruto': 'fat', 'fat': 'fat', 'faturamento': 'fat', 'total': 'fat',
                 'des': 'des', 'desconto': 'des', 'incentivos': 'des',
-                'frete': 'fre', 'fre': 'fre',
-                'pedido id': 'pedido_id', 'id do pedido': 'pedido_id', 'pedido_id': 'pedido_id'
+                'frete': 'fre', 'fre': 'fre', 'entrega': 'fre',
+                'pedido id': 'pedido_id', 'id do pedido': 'pedido_id', 'pedido_id': 'pedido_id', 'codigo': 'pedido_id'
             };
     
             const transformedJson = json.map((row, index) => {
@@ -1270,8 +1271,8 @@ document.addEventListener('DOMContentLoaded', () => {
             diagChartMode = btn.dataset.mode;
             segDiagCharts.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
             fxDispatchApply();
-        });
-    }
+        }
+    });
 
     function fxShowDrop(show){
       fx.$drop.classList.toggle('fx-show', show);
