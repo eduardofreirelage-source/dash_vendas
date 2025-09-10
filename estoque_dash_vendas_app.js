@@ -130,7 +130,6 @@ document.addEventListener('DOMContentLoaded', () => {
           return d.toISOString().slice(0, 10);
       },
       formatYM: (isoStr) => {
-          if (!isoStr) return '';
           const d = new Date(isoStr + 'T12:00:00');
           const m = d.getMonth();
           const y = String(d.getFullYear()).slice(-2);
@@ -309,8 +308,8 @@ document.addEventListener('DOMContentLoaded', () => {
         p_dini: de, p_dfim: ate,
         p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
         p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
-        p_canais: isActive(analiticos.canal) ? analiticos.canal : null,
         p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
+        p_canais: isActive(analiticos.canal) ? analiticos.canal : null,
         p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
         p_cancelado
       };
@@ -473,8 +472,8 @@ document.addEventListener('DOMContentLoaded', () => {
           const mainDeltaEl = mainKpiCard.querySelector('.delta');
           const mainSubEl = mainKpiCard.querySelector('.hero-sub-value');
           
-          // CORREÇÃO APLICADA AQUI: Usa 'analiticos' diretamente
-          const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
+          const totalAnaliticos = {...analiticos, unidade: [], loja: []};
+          const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, totalAnaliticos);
           
           if(totalKpis && totalKpis[kpi_key]) {
               const meta = KPI_META[kpi_key];
@@ -656,28 +655,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
+      const meta = KPI_META[selectedKPI] || KPI_META.fat;
+      const mode = effectiveMode();
       try {
           setDiag('');
-          const baseParams = buildParams(de, ate, analiticos);
-          const paramsNow = { ...baseParams, p_kpi_key: selectedKPI };
-          const paramsPrev = { ...baseParams, p_dini: dePrev, p_dfim: atePrev, p_kpi_key: selectedKPI };
+          const paramsNow = buildParams(de, ate, analiticos);
+          const paramsPrev = buildParams(dePrev, atePrev, analiticos);
 
           const [
-              {data: dowData, error: dowErr}, {data: dowDataPrev, error: dowErrPrev},
-              {data: hourData, error: hourErr}, {data: hourDataPrev, error: hourErrPrev},
-              {data: turnoData, error: turnoErr}, {data: turnoDataPrev, error: turnoErrPrev}
+              {data: dowData}, {data: dowDataPrev},
+              {data: hourData}, {data: hourDataPrev},
+              {data: turnoData}, {data: turnoDataPrev}
           ] = await Promise.all([
-              supa.rpc(RPC_CHART_DOW_FUNC, paramsNow), supa.rpc(RPC_CHART_DOW_FUNC, paramsPrev),
-              supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow), supa.rpc(RPC_CHART_HOUR_FUNC, paramsPrev),
-              supa.rpc(RPC_CHART_TURNO_FUNC, paramsNow), supa.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_DOW_FUNC, paramsNow),
+              supa.rpc(RPC_CHART_DOW_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow),
+              supa.rpc(RPC_CHART_HOUR_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_TURNO_FUNC, paramsNow),
+              supa.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
           ]);
           
-          if (dowErr || hourErr || turnoErr || dowErrPrev || hourErrPrev || turnoErrPrev) {
-            throw (dowErr || hourErr || turnoErr || dowErrPrev || hourErrPrev || turnoErrPrev);
-          }
-          
           const tip = `Período anterior: ${dePrev} → ${atePrev}`;
-          const valueKey = effectiveMode() === 'media' ? 'media' : 'total';
+          const valueKey = mode === 'media' ? 'media' : 'total';
           
           {
               const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -731,9 +730,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
         
-        const baseParams = buildParams(null, null, analiticos);
-        const paramsNow = { ...baseParams, p_dini: last12Start, p_dfim: last12End, p_kpi_key: selectedKPI };
-        const paramsPrev = { ...baseParams, p_dini: prev12Start, p_dfim: prev12EndAdj, p_kpi_key: selectedKPI };
+        const paramsNow = buildParams(last12Start, last12End, analiticos);
+        const paramsPrev = buildParams(prev12Start, prev12EndAdj, analiticos);
 
         const [{data: nData, error: nErr}, {data: pData, error: pErr}] = await Promise.all([
             supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
@@ -743,7 +741,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (nErr) throw nErr;
         if (pErr) throw pErr;
 
-        const valueKey = effectiveMode() === 'media' ? 'media' : 'total';
+        const mode = effectiveMode();
+        const valueKey = mode === 'media' ? 'media' : 'total';
         
         const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, +r[valueKey]||0]));
         const mNow = toMap(nData), mPrev = toMap(pData);
@@ -907,8 +906,7 @@ document.addEventListener('DOMContentLoaded', () => {
             $('diag_title_dow').textContent = `${meta.label} por Dia da Semana`;
             $('diag_title_hour').textContent = `${meta.label} por Hora`;
 
-            const baseParams = buildParams(de, ate, analiticos);
-            const paramsNow = { ...baseParams, p_kpi_key: selectedKpi };
+            const paramsNow = buildParams(de, ate, analiticos);
 
             const [
                 { data: monthData, error: monthErr },
@@ -922,7 +920,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (monthErr || dowErr || hourErr) throw (monthErr || dowErr || hourErr);
 
-            const valueKey = diagChartMode; 
+            const valueKey = diagChartMode;
 
             {
                 const labels = (monthData || []).map(r => DateHelpers.formatYM(r.ym + '-01T12:00:00'));
@@ -1068,33 +1066,38 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!json || json.length === 0) {
                 throw new Error("O arquivo está vazio ou em um formato inválido.");
             }
-
+            
             const headerMap = {
-                'dia': 'dia', 'data': 'dia',
+                'dia': 'dia',
                 'hora': 'hora',
                 'unidade': 'unidade',
-                'loja': 'loja', 'nome da loja': 'loja',
-                'canal': 'canal', 'canal de venda': 'canal',
-                'pagamento base': 'pagamento_base', 'pagamento': 'pagamento_base',
+                'loja': 'Nome da loja',
+                'canal de venda': 'Canal de venda',
+                'pagamento_base': 'pagamento_base',
                 'cancelado': 'cancelado',
-                'faturamento bruto': 'fat', 'fat': 'fat', 'faturamento': 'fat', 'total': 'fat',
-                'des': 'des', 'desconto': 'des', 'incentivos': 'des',
-                'frete': 'fre', 'fre': 'fre', 'entrega': 'fre',
-                'pedido id': 'pedido_id', 'id do pedido': 'pedido_id', 'pedido_id': 'pedido_id', 'codigo': 'pedido_id'
+                'pedidos': 'pedidos',
+                'fat': 'fat',
+                'des': 'des',
+                'fre': 'fre',
+                'pedido_id': 'pedido_id'
             };
     
             const transformedJson = json.map((row, index) => {
                 const newRow = {};
+                let tempPedidoId = null;
+
                 for (const originalKey in row) {
-                    const normalizedKey = normHeader(originalKey);
+                    const normalizedKey = originalKey.trim().toLowerCase();
                     const dbColumn = headerMap[normalizedKey];
                     if (dbColumn) {
                         newRow[dbColumn] = row[originalKey];
+                        if (normalizedKey === 'pedido_id') {
+                            tempPedidoId = row[originalKey];
+                        }
                     }
                 }
                 
-                const tempPedidoId = newRow['pedido_id'] || null;
-                
+                // Gera a row_key obrigatória que estava faltando
                 if (tempPedidoId) {
                     newRow['row_key'] = `${tempPedidoId}-${new Date().getTime()}-${index}`;
                 } else {
@@ -1104,24 +1107,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 return newRow;
             });
 
-            const CHUNK_SIZE = 500;
-            for (let i = 0; i < transformedJson.length; i += CHUNK_SIZE) {
-                const chunk = transformedJson.slice(i, i + CHUNK_SIZE);
-                const startRange = i + 1;
-                const endRange = Math.min(i + CHUNK_SIZE, transformedJson.length);
-                
-                setStatus(`Enviando registros ${startRange}-${endRange} de ${transformedJson.length}...`, 'info');
-                
-                const { error } = await supa.from(DEST_INSERT_TABLE).insert(chunk);
-                if (error) throw error;
+            setStatus(`Enviando ${transformedJson.length} registros...`, 'info');
+            
+            const { error } = await supa.from(DEST_INSERT_TABLE).insert(transformedJson);
+
+            if (error) {
+                throw error;
             }
             
-            setStatus('Dados enviados. Processando no servidor...', 'info');
-            const { error: refreshError } = await supa.rpc(REFRESH_RPC);
-            if (refreshError) throw refreshError;
-
-            setStatus('Importação concluída! Atualizando dashboard...', 'ok');
-            await reloadStaticOptions();
+            setStatus('Importação concluída! Atualizando...', 'ok');
             fxDispatchApply();
 
         } catch(e) {
@@ -1185,13 +1179,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
         setStatus('Consultando…');
         
-        // CORREÇÃO APLICADA AQUI: Usa 'analiticos' diretamente
-        const kpiData = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
+        const totalViewAnaliticos = { ...analiticos, unidade: [], loja: [] };
+        
+        const kpiData = await updateKPIs(de, ate, dePrev, atePrev, totalViewAnaliticos);
         renderVendasKPIs(kpiData);
 
         const selectedKpiForDiag = $('kpi-select').value;
         await Promise.all([
-          updateMonth12x12(analiticos),
+          updateMonth12x12(totalViewAnaliticos),
           getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos),
           updateCharts(de,ate,dePrev,atePrev, analiticos),
           updateDiagnosticCharts(de, ate, analiticos),
@@ -1223,7 +1218,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function fxLocalMidday(d){ const x=new Date(d); x.setHours(12,0,0,0); return x }
     function fxFmt(date){ return date.toISOString().slice(0,10); }
-    function fxSetRange(start,end){ $('fxDuStart').value = fxFmt(start); $('fxDuEnd').value = fxFmt(end) }
+    function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
     function fxLastNDays(n){
       const baseDate = lastDay ? fxLocalMidday(lastDay) : new Date();
       const end = new Date(baseDate);
@@ -1270,8 +1265,8 @@ document.addEventListener('DOMContentLoaded', () => {
             diagChartMode = btn.dataset.mode;
             segDiagCharts.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
             fxDispatchApply();
-        }
-    });
+        });
+    }
 
     function fxShowDrop(show){
       fx.$drop.classList.toggle('fx-show', show);
@@ -1288,8 +1283,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function fxDispatchApply(){
       const payload = {
-        start: $('fxDuStart').value, 
-        end: $('fxDuEnd').value,
+        start: fx.$start.value, 
+        end: fx.$end.value,
         analiticos: {
           unidade: ms.unids.get(),
           loja: ms.lojas.get(),
@@ -1372,4 +1367,5 @@ document.addEventListener('DOMContentLoaded', () => {
         setStatus('Erro ao iniciar: '+(e.message||e),'err');
       }
     })();
+
 });
