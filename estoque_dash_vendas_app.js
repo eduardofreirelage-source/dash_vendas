@@ -61,12 +61,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-    const RPC_KPI_FUNC = 'kpi_vendas_unificado';
-    const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes_v2';
-    const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v2';
-    const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v2';
-    const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v2';
-    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
+    const RPC_KPI_FUNC = 'kpi_vendas_unificado_v3';
+    const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes_v3';
+    const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v3';
+    const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v3';
+    const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v3';
+    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral_v3';
 
     const DEST_INSERT_TABLE= 'stage_vendas_raw';
     const REFRESH_MV_RPC = 'refresh_vendas_analytics_mv';
@@ -1253,7 +1253,6 @@ document.addEventListener('DOMContentLoaded', () => {
     (async function init(){
       try{
         setStatus('Carregando…');
-        // Não consultamos mais 'vw_vendas_daterange', usamos a view materializada
         const dr = await supa.from('vendas_analytics_mv').select('dia').order('dia', { ascending: false }).limit(1);
         const dr_min = await supa.from('vendas_analytics_mv').select('dia').order('dia', { ascending: true }).limit(1);
 
