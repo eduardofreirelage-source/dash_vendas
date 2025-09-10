@@ -354,11 +354,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const valEl = $(`k_${key}`);
             const prevEl = $(`p_${key}`);
             const deltaEl = $(`d_${key}`);
-            const formatValueBy = (fmt,v) => {
-                if(fmt==='count') return num(v);
-                if(fmt==='percent') return pctf(v);
-                return money(v);
-              };
             if (valEl) valEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.current);
             if (prevEl) prevEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.previous);
             if (deltaEl) deltaBadge(deltaEl, kpi.current, kpi.previous);
@@ -1074,17 +1069,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const headerMap = {
+                // Mapeia o nome da coluna no CSV (normalizado) para o nome da coluna no banco de dados.
                 'dia': 'dia', 'data': 'dia',
                 'hora': 'hora',
                 'unidade': 'unidade',
                 'loja': 'loja', 'nome da loja': 'loja',
                 'canal': 'canal', 'canal de venda': 'canal',
-                'pagamento_base': 'pagamento_base', 'pagamento': 'pagamento_base',
+                'pagamento base': 'pagamento_base', 'pagamento': 'pagamento_base',
                 'cancelado': 'cancelado',
-                'fat': 'fat', 'faturamento': 'fat', 'faturamento bruto': 'fat',
+                'faturamento bruto': 'fat', 'fat': 'fat', 'faturamento': 'fat',
                 'des': 'des', 'desconto': 'des', 'incentivos': 'des',
-                'fre': 'fre', 'frete': 'fre',
-                'pedido_id': 'pedido_id', 'id do pedido': 'pedido_id', 'n pedido': 'pedido_id'
+                'frete': 'fre', 'fre': 'fre',
+                'pedido id': 'pedido_id', 'id do pedido': 'pedido_id'
             };
     
             const transformedJson = json.map((row, index) => {
@@ -1125,6 +1121,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (refreshError) throw refreshError;
 
             setStatus('Importação concluída! Atualizando dashboard...', 'ok');
+            await reloadStaticOptions();
             fxDispatchApply();
 
         } catch(e) {
