@@ -6,7 +6,6 @@ document.addEventListener('DOMContentLoaded', () => {
     /* ===================== CONFIG ===================== */
     const RPC_FILTER_FUNC = 'filter_vendas';
     const RPC_KPI_FUNC = 'kpi_vendas_unificado';
-    // REVERSÃO E CORREÇÃO 1: Adicionado o sufixo '_v1' de volta, conforme a dica do Supabase.
     const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes_v1';
     const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v1';
     const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v1';
@@ -655,17 +654,29 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
     
+    // Função auxiliar para construir os parâmetros dos gráficos
+    function buildChartParams(analiticos) {
+        const isActive = (val) => val && val.length > 0;
+        let p_cancelado = null;
+        if (analiticos.cancelado === 'sim') p_cancelado = 'Sim';
+        if (analiticos.cancelado === 'nao') p_cancelado = 'Não';
+        
+        return {
+            p_kpi_key: selectedKPI,
+            // CORREÇÃO FINAL: Removido p_unids das chamadas de gráfico
+            // p_unids: isActive(analiticos.unidade) ? analiticos.unidade : null, 
+            p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
+            p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
+            p_canais: isActive(analiticos.canal) ? analiticos.canal : null,
+            p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
+            p_cancelado
+        };
+    }
+
     async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
       try {
           setDiag('');
-          // CORREÇÃO 2: Criar o objeto de parâmetros base com os filtros e o p_kpi_key.
-          const baseParams = {
-            ...buildParams(null, null, analiticos), // Reutiliza a lógica de filtros
-            p_kpi_key: selectedKPI
-          };
-          delete baseParams.p_dini; // Remove datas que serão setadas a seguir
-          delete baseParams.p_dfim;
-
+          const baseParams = buildChartParams(analiticos);
           const paramsNow = { ...baseParams, p_dini: de, p_dfim: ate };
           const paramsPrev = { ...baseParams, p_dini: dePrev, p_dfim: atePrev };
 
@@ -679,10 +690,11 @@ document.addEventListener('DOMContentLoaded', () => {
               supa.rpc(RPC_CHART_TURNO_FUNC, paramsNow), supa.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
           ]);
           
-          if (dowErr || hourErr || turnoErr) throw (dowErr || hourErr || turnoErr || dowErrPrev || hourErrPrev || turnoErrPrev);
+          if (dowErr || hourErr || turnoErr || dowErrPrev || hourErrPrev || turnoErrPrev) {
+            throw (dowErr || hourErr || turnoErr || dowErrPrev || hourErrPrev || turnoErrPrev);
+          }
           
           const tip = `Período anterior: ${dePrev} → ${atePrev}`;
-          // CORREÇÃO 3: Restaurar a lógica original que seleciona entre 'total' e 'media'.
           const valueKey = effectiveMode() === 'media' ? 'media' : 'total';
           
           {
@@ -737,14 +749,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
         
-        // CORREÇÃO 2: Aplicar a mesma lógica de parâmetros para o gráfico mensal.
-        const baseParams = {
-            ...buildParams(null, null, analiticos),
-            p_kpi_key: selectedKPI
-        };
-        delete baseParams.p_dini;
-        delete baseParams.p_dfim;
-
+        const baseParams = buildChartParams(analiticos);
         const paramsNow = { ...baseParams, p_dini: last12Start, p_dfim: last12End };
         const paramsPrev = { ...baseParams, p_dini: prev12Start, p_dfim: prev12EndAdj };
 
@@ -756,7 +761,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (nErr) throw nErr;
         if (pErr) throw pErr;
 
-        // CORREÇÃO 3: Restaurar a lógica original de valueKey.
         const valueKey = effectiveMode() === 'media' ? 'media' : 'total';
         
         const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, +r[valueKey]||0]));
@@ -921,14 +925,7 @@ document.addEventListener('DOMContentLoaded', () => {
             $('diag_title_dow').textContent = `${meta.label} por Dia da Semana`;
             $('diag_title_hour').textContent = `${meta.label} por Hora`;
 
-            // CORREÇÃO 2: Aplicar a mesma lógica de parâmetros para os gráficos de diagnóstico.
-            const baseParams = {
-                ...buildParams(null, null, analiticos),
-                p_kpi_key: selectedKpi
-            };
-            delete baseParams.p_dini;
-            delete baseParams.p_dfim;
-
+            const baseParams = buildChartParams(analiticos);
             const paramsNow = { ...baseParams, p_dini: de, p_dfim: ate };
 
             const [
@@ -943,7 +940,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (monthErr || dowErr || hourErr) throw (monthErr || dowErr || hourErr);
 
-            // CORREÇÃO 3: Usar o modo específico da aba de diagnóstico ('total' ou 'media').
             const valueKey = diagChartMode; 
 
             {
