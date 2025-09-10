@@ -129,10 +129,10 @@ document.addEventListener('DOMContentLoaded', () => {
           d.setDate(Math.min(day, last));
           return d.toISOString().slice(0, 10);
       },
-      formatYM: (isoStr) => {
-          const d = new Date(isoStr + 'T12:00:00Z');
-          const m = d.getMonth();
-          const y = String(d.getFullYear()).slice(-2);
+      formatYM: (ymdString) => { // A função espera uma string como '2025-01-01'
+          const d = new Date(ymdString + 'T12:00:00Z');
+          const m = d.getUTCMonth(); // Usar getUTCMonth para consistência com o 'Z'
+          const y = String(d.getUTCFullYear()).slice(-2);
           const n = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
           return `${n[m]}/${y}`;
       },
@@ -929,7 +929,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const valueKey = diagChartMode;
 
             {
-                const labels = (monthData || []).map(r => DateHelpers.formatYM(r.ym + '-01T12:00:00Z'));
+                // ### LINHA CORRIGIDA ###
+                // Corrigido para passar o formato 'YYYY-MM-DD' que a função DateHelpers.formatYM espera.
+                const labels = (monthData || []).map(r => DateHelpers.formatYM(r.ym + '-01'));
                 const dataArr = (monthData || []).map(r => +r[valueKey] || 0);
                 ensureSingleSeriesChart('diag_ch_month', labels, dataArr, meta, 'line');
             }
@@ -1204,15 +1206,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function fxLocalMidday(d_str){ 
-      // Robust date parsing for YYYY-MM-DD format
       return new Date(d_str + 'T12:00:00');
     }
     function fxFmt(date){ return date.toISOString().slice(0,10); }
     function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
     
     function fxLastNDays(n){
-      // ### REGRA DE DATA APLICADA AQUI ###
-      // Usa 'lastDay' do banco, ou a data atual se o banco estiver vazio.
       const baseDate = lastDay ? fxLocalMidday(lastDay) : new Date();
       const end = new Date(baseDate);
       const start = new Date(baseDate);
@@ -1220,8 +1219,6 @@ document.addEventListener('DOMContentLoaded', () => {
       fxSetRange(start,end);
     }
     function fxNamed(win){
-      // ### REGRA DE DATA APLICADA AQUI ###
-      // Usa 'lastDay' do banco, ou a data atual se o banco estiver vazio.
       const baseDate = lastDay ? fxLocalMidday(lastDay) : new Date();
       if(win==='today'){ fxSetRange(baseDate,baseDate) }
       else if(win==='yesterday'){ const y=new Date(baseDate); y.setDate(baseDate.getDate()-1); fxSetRange(y,y) }
@@ -1349,7 +1346,6 @@ document.addEventListener('DOMContentLoaded', () => {
           lastDay = null; // Garante que, se o banco estiver vazio, a data base seja a de hoje.
         }
         
-        // Só recarrega os filtros na primeira carga, não após um upload.
         if (!isReload) {
             await reloadStaticOptions();
             bindKPIClick();
