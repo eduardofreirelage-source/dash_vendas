@@ -323,16 +323,24 @@ document.addEventListener('DOMContentLoaded', () => {
       let allRows = [];
       let page = 0;
       let keepFetching = true;
-      const params = buildParams(de, ate, analiticos);
+      
+      let query = supa.from('vendas_analytics_mv')
+          .select('*')
+          .gte('dia', de)
+          .lte('dia', ate);
+
+      const isActive = (val) => val && val.length > 0;
+      if (isActive(analiticos.unidade)) query = query.in('unidade', analiticos.unidade);
+      if (isActive(analiticos.loja)) query = query.in('loja', analiticos.loja);
+      if (isActive(analiticos.turno)) query = query.in('turno', analiticos.turno);
+      if (isActive(analiticos.canal)) query = query.in('canal', analiticos.canal);
+      if (isActive(analiticos.pagamento)) query = query.in('pagamento_base', analiticos.pagamento);
+      if (analiticos.cancelado === 'sim') query = query.eq('cancelado', 'Sim');
+      if (analiticos.cancelado === 'nao') query = query.eq('cancelado', 'Não');
+
 
       while (keepFetching) {
-          // Esta chamada pode ser lenta, mas é apenas para um componente (Top 6)
-          const { data, error } = await supa.from('vendas_analytics_mv')
-                                          .select('*')
-                                          .gte('dia', de)
-                                          .lte('dia', ate)
-                                          // Adicionar outros filtros conforme necessário
-                                          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+          const { data, error } = await query.range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
           if (error) {
               console.error(`[baseQuery]`, error);
               throw error;
@@ -371,8 +379,8 @@ document.addEventListener('DOMContentLoaded', () => {
     async function updateKPIs(de, ate, dePrev, atePrev, analiticos){
         let allKpiValues = {};
         try {
-            const pTotalNow = { ...buildParams(de, ate, analiticos), p_kpi_key: 'all' };
-            const pTotalPrev = { ...buildParams(dePrev, atePrev, analiticos), p_kpi_key: 'all' };
+            const pTotalNow = buildParams(de, ate, analiticos);
+            const pTotalPrev = buildParams(dePrev, atePrev, analiticos);
 
             const [
                 {data: nowData, error: nowErr},
