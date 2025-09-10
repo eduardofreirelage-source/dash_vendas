@@ -995,62 +995,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error("O arquivo está vazio ou em um formato inválido.");
             }
             
-            const headerMap = {
-                'data': 'dia',
-                'unidade': 'unidade',
-                'loja': 'loja',
-                'canal': 'canal',
-                'pagamento': 'pagamento_base',
-                'cancelado': 'cancelado',
-                'total': 'fat',
-                'desconto': 'des',
-                'entrega': 'fre',
-                'pedido': 'pedido_id',
-                'turno': 'turno',
-                'itens': 'itens_valor'
-            };
-    
-            const transformedJson = json.map((row, index) => { // 'index' aqui é a chave da solução
+            const headerMap = { 'data': 'dia', 'unidade': 'unidade', 'loja': 'loja', 'canal': 'canal', 'pagamento': 'pagamento_base', 'cancelado': 'cancelado', 'total': 'fat', 'desconto': 'des', 'entrega': 'fre', 'pedido': 'pedido_id', 'turno': 'turno', 'itens': 'itens_valor' };
+            
+            const transformedJson = json.map((row, index) => {
                 const newRow = {};
                 const originalRowKeys = {};
-                for (const key in row) {
-                    originalRowKeys[normHeader(key)] = row[key];
-                }
+                for (const key in row) { originalRowKeys[normHeader(key)] = row[key]; }
                 for (const spreadsheetHeader in headerMap) {
                     const dbColumn = headerMap[spreadsheetHeader];
-                    if (originalRowKeys.hasOwnProperty(spreadsheetHeader)) {
-                       newRow[dbColumn] = originalRowKeys[spreadsheetHeader];
-                    }
+                    if (originalRowKeys.hasOwnProperty(spreadsheetHeader)) { newRow[dbColumn] = originalRowKeys[spreadsheetHeader]; }
                 }
-                
                 const dataHoraStr = originalRowKeys['data'];
                 if (dataHoraStr && String(dataHoraStr).includes('/')) {
                     const [dataPart, horaPart] = dataHoraStr.split(' ');
                     const [dia, mes, ano] = dataPart.split('/');
-                    if(dia && mes && ano) {
-                        newRow['dia'] = `${ano}-${mes.padStart(2,'0')}-${dia.padStart(2,'0')}`;
-                    }
-                    if (horaPart) {
-                        newRow['hora'] = horaPart.substring(0, 2);
-                    }
+                    if(dia && mes && ano) { newRow['dia'] = `${ano}-${mes.padStart(2,'0')}-${dia.padStart(2,'0')}`; }
+                    if (horaPart) { newRow['hora'] = horaPart.substring(0, 2); }
                 }
-
                 newRow['fat'] = parseFloat(String(newRow['fat'] || '0').replace(',', '.')) || 0;
                 newRow['des'] = parseFloat(String(newRow['des'] || '0').replace(',', '.')) || 0;
                 newRow['fre'] = parseFloat(String(newRow['fre'] || '0').replace(',', '.')) || 0;
                 newRow['itens_valor'] = parseFloat(String(newRow['itens_valor'] || '0').replace(',', '.')) || 0;
-
                 const canceladoVal = String(newRow['cancelado'] || 'N').toUpperCase();
                 newRow['cancelado'] = canceladoVal === 'S' ? 'Sim' : 'Não';
-                
                 const pedidoId = newRow['pedido_id'] || originalRowKeys['codigo'] || `import-${Date.now()}`;
                 
-                // ### CORREÇÃO FINAL ###
-                // Adicionamos o 'index' da linha para garantir uma chave 100% única.
                 newRow['row_key'] = `${pedidoId}-${newRow.dia}-${index}`;
-
                 newRow.pedidos = 1;
-
                 return newRow;
             }).filter(row => row.dia);
 
@@ -1067,7 +1038,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             setStatus('Importação concluída! Atualizando...', 'ok');
-            fxDispatchApply();
+            await init(true); // Força reinicialização para pegar nova data
 
         } catch(e) {
             console.error("Erro na importação:", e);
@@ -1096,10 +1067,10 @@ document.addEventListener('DOMContentLoaded', () => {
       };
 
       const [topUnids, topLojas, topPags, topCanais] = await Promise.allSettled([
-        supa.rpc('opt_unidades_ranked',  baseParams),
-        supa.rpc('opt_lojas_ranked',     baseParams),
-        supa.rpc('opt_pagamentos_ranked',baseParams),
-        supa.rpc('opt_canais_ranked',    baseParams),
+        supa.rpc('opt_unidades_ranked',  {...baseParams, p_unids: ms.unids.get()}),
+        supa.rpc('opt_lojas_ranked',     {...baseParams, p_lojas: ms.lojas.get()}),
+        supa.rpc('opt_pagamentos_ranked',{...baseParams, p_pags: ms.pags.get()}),
+        supa.rpc('opt_canais_ranked',    {...baseParams, p_canais: ms.canais.get()}),
       ]);
       const tUnids = (topUnids.status==='fulfilled' && !topUnids.value.error) ? (topUnids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
       const tLojas = (topLojas.status==='fulfilled'  && !topLojas.value.error)  ? (topLojas.value.data||[]).map(r=>r.loja).filter(Boolean)       : [];
@@ -1176,18 +1147,26 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    function fxLocalMidday(d){ const x=new Date(d); x.setHours(12,0,0,0); return x }
+    function fxLocalMidday(d_str){ 
+      // Robust date parsing for YYYY-MM-DD format
+      return new Date(d_str + 'T12:00:00');
+    }
     function fxFmt(date){ return date.toISOString().slice(0,10); }
     function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
+    
     function fxLastNDays(n){
-      const baseDate = lastDay ? fxLocalMidday(lastDay+'T12:00:00Z') : new Date();
+      // ### REGRA DE DATA APLICADA AQUI ###
+      // Usa 'lastDay' do banco, ou a data atual se o banco estiver vazio.
+      const baseDate = lastDay ? fxLocalMidday(lastDay) : new Date();
       const end = new Date(baseDate);
       const start = new Date(baseDate);
       start.setDate(baseDate.getDate()-(n-1));
       fxSetRange(start,end);
     }
     function fxNamed(win){
-      const baseDate = lastDay ? fxLocalMidday(lastDay+'T12:00:00Z') : new Date();
+      // ### REGRA DE DATA APLICADA AQUI ###
+      // Usa 'lastDay' do banco, ou a data atual se o banco estiver vazio.
+      const baseDate = lastDay ? fxLocalMidday(lastDay) : new Date();
       if(win==='today'){ fxSetRange(baseDate,baseDate) }
       else if(win==='yesterday'){ const y=new Date(baseDate); y.setDate(baseDate.getDate()-1); fxSetRange(y,y) }
       else if(win==='lastMonth'){ const y=baseDate.getFullYear(), m=baseDate.getMonth(); fxSetRange(new Date(y,m-1,1), new Date(y,m,0)) }
@@ -1302,22 +1281,25 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     /* ===================== INICIALIZAÇÃO ===================== */
-    (async function init(){
+    async function init(isReload = false){
       try{
         setStatus('Carregando…');
         const dr = await supa.from('vw_vendas_daterange').select('min_dia, max_dia').limit(1);
         if(dr.error) throw dr.error;
-        if(dr.data?.length){ 
+        if(dr.data?.length && dr.data[0].max_dia){ 
           firstDay=dr.data[0].min_dia; 
           lastDay=dr.data[0].max_dia; 
+        } else {
+          lastDay = null; // Garante que, se o banco estiver vazio, a data base seja a de hoje.
         }
         
-        await reloadStaticOptions();
-        
-        bindKPIClick();
-        updateChartTitles();
-
-        window.addEventListener('resize', debounce(matchPanelHeights, 150));
+        // Só recarrega os filtros na primeira carga, não após um upload.
+        if (!isReload) {
+            await reloadStaticOptions();
+            bindKPIClick();
+            updateChartTitles();
+            window.addEventListener('resize', debounce(matchPanelHeights, 150));
+        }
 
         fxLastNDays(30);
         fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
@@ -1326,6 +1308,8 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('Erro na inicialização:', e);
         setStatus('Erro ao iniciar: '+(e.message||e),'err');
       }
-    })();
+    }
+
+    init(); // Primeira carga da página
 
 });
