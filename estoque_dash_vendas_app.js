@@ -1,12 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // ### AJUSTE FINAL: Ocultar o slot livre ###
-    // Troque 'ID_DO_SLOT_A_OCULTAR' pelo ID real do elemento que você quer esconder.
-    const slotLivre = document.getElementById('ID_DO_SLOT_A_OCULTAR');
-    if (slotLivre) {
-        slotLivre.parentElement.style.display = 'none'; // Esconde o 'card' inteiro
-    }
-    // ===================================================================================
-    
     // ===================================================================================
     // Bloco Único de JavaScript: Lógica Principal, UI, e Inicialização
     // ===================================================================================
@@ -137,9 +129,9 @@ document.addEventListener('DOMContentLoaded', () => {
           d.setDate(Math.min(day, last));
           return d.toISOString().slice(0, 10);
       },
-      formatYM: (ymdString) => {
+      formatYM: (ymdString) => { // A função espera uma string como '2025-01-01'
           const d = new Date(ymdString + 'T12:00:00Z');
-          const m = d.getUTCMonth();
+          const m = d.getUTCMonth(); // Usar getUTCMonth para consistência com o 'Z'
           const y = String(d.getUTCFullYear()).slice(-2);
           const n = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
           return `${n[m]}/${y}`;
@@ -569,4 +561,807 @@ document.addEventListener('DOMContentLoaded', () => {
             const [totalData, rajaData, savassiData] = await Promise.all([
                 updateKPIs(de, ate, dePrev, atePrev, analiticos),
                 updateKPIs(de, ate, dePrev, atePrev, { ...analiticos, unidade: ['Uni.Raja'] }),
-                updateKPIs(de, ate, de
+                updateKPIs(de, ate, dePrev, atePrev, { ...analiticos, unidade: ['Uni.Savassi'] })
+            ]);
+
+            if (totalData && totalData[kpiKey]) {
+                const projTotal = calculateTrendProjection(totalData[kpiKey].current, totalData[kpiKey].previous);
+                $('proj_total_val').textContent = projTotal.value !== null ? formatValueBy(meta.fmt, projTotal.value * projectionMultiplier) : '—';
+                deltaBadge($('proj_total_delta'), projTotal.value, totalData[kpiKey].current);
+            }
+
+            if (rajaData && rajaData[kpiKey]) {
+                const projRaja = calculateTrendProjection(rajaData[kpiKey].current, rajaData[kpiKey].previous);
+                $('proj_raja_val').textContent = projRaja.value !== null ? formatValueBy(meta.fmt, projRaja.value * projectionMultiplier) : '—';
+                deltaBadge($('proj_raja_delta'), projRaja.value, rajaData[kpiKey].current);
+            }
+            
+            if (savassiData && savassiData[kpiKey]) {
+                const projSavassi = calculateTrendProjection(savassiData[kpiKey].current, savassiData[kpiKey].previous);
+                $('proj_savassi_val').textContent = projSavassi.value !== null ? formatValueBy(meta.fmt, projSavassi.value * projectionMultiplier) : '—';
+                deltaBadge($('proj_savassi_delta'), projSavassi.value, savassiData[kpiKey].current);
+            }
+
+        } catch (error) {
+            console.error("Erro ao calcular projeções:", error);
+            resetUI('all');
+        }
+    }
+
+    let chartModeGlobal = 'total';
+    const segGlobal = $('segGlobal');
+    segGlobal.addEventListener('click',(e)=>{
+      const btn=e.target.closest('button'); if(!btn) return;
+      chartModeGlobal = btn.dataset.mode;
+      segGlobal.querySelectorAll('button').forEach(b=> b.classList.toggle('active', b===btn));
+      document.dispatchEvent(new Event('filters:apply:internal'));
+    });
+    function ensureChart(canvasId, labels, nowArr, prevArr, tooltipExtra='', fmt='money'){
+      const canvas=$(canvasId); if(!canvas) return;
+      if(canvas.__chart){ try{canvas.__chart.destroy();}catch(e){} canvas.__chart=null; }
+      const ctx=canvas.getContext('2d');
+      const chart=new Chart(ctx,{
+        type:'bar',
+        data:{ labels, datasets:[
+          {label:'Atual', data:nowArr.map(v=>+v||0), backgroundColor:gradNow(ctx)},
+          {label:'Anterior', data:prevArr.map(v=>+v||0), backgroundColor:gradPrev(ctx)}
+        ]},
+        options:{
+          responsive:true, maintainAspectRatio:false, animation:false,
+          scales:{ x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(0,0,0,0.05)'}, ticks:{callback:(v)=>formatTickBy(fmt,v)}}},
+          plugins:{ legend:{position:'top'},
+            tooltip:{mode:'index',intersect:false,callbacks:{
+              label:(ctx)=>`${ctx.dataset.label}: ${formatValueBy(fmt, ctx.parsed.y||0)}`,
+              footer:()=> tooltipExtra
+            }}
+          }
+        }
+      });
+      canvas.__chart=chart;
+    }
+    let selectedKPI = 'fat';
+    const KPI_META = {
+      fat:       { label:'Faturamento',         fmt:'money' },
+      ped:       { label:'Pedidos',             fmt:'count' },
+      tkt:       { label:'Ticket Médio',        fmt:'money' },
+      des:       { label:'Incentivos',          fmt:'money' },
+      desperc:   { label:'% de incentivos',     fmt:'percent' },
+      fre:       { label:'Frete',               fmt:'money' },
+      fremed:    { label:'Frete Médio',         fmt:'money' },
+      fatmed:    { label:'Faturamento Médio',   fmt:'money' },
+      canc_ped:  { label:'Pedidos cancelados',  fmt:'count' },
+      canc_val:  { label:'Valor de cancelados', fmt:'money' },
+      roi:       { label:'ROI',                 fmt:'percent' },
+    };
+    function wantedCancelFilterForKPI(){
+      const m=KPI_META[selectedKPI];
+      return m?.needsCancel||null;
+    }
+    function effectiveMode(){
+      const m=KPI_META[selectedKPI];
+      return m?.forceMode || chartModeGlobal;
+    }
+    function updateChartTitles(){
+      const m=KPI_META[selectedKPI]||KPI_META.fat;
+      const mode = effectiveMode()==='media' ? ' (média)' : '';
+      $('title_month').textContent = `${m.label}${mode} por mês — últimos 12M vs. 12M anteriores`;
+      $('title_dow').textContent   = `${m.label}${mode} por dia da semana`;
+      $('title_hour').textContent  = `${m.label}${mode} por hora`;
+      $('title_turno').textContent = `${m.label}${mode} por turno`;
+      $('title_top6').textContent  = `Participação por loja — Top 6 (${m.label}${mode})`;
+    }
+    function bindKPIClick(){
+      document.querySelectorAll('.kpi[data-kpi]').forEach(card=>{
+        card.addEventListener('click', ()=>{
+          selectedKPI = card.dataset.kpi;
+          document.querySelectorAll('.kpi[data-kpi]').forEach(k=>k.classList.toggle('active', k===card));
+          document.dispatchEvent(new Event('filters:apply:internal'));
+        });
+      });
+    }
+    
+    async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
+      const meta = KPI_META[selectedKPI] || KPI_META.fat;
+      const mode = effectiveMode();
+      try {
+          setDiag('');
+          const paramsNow = buildChartParams(de, ate, analiticos);
+          const paramsPrev = buildChartParams(dePrev, atePrev, analiticos);
+
+          const [
+              {data: dowData}, {data: dowDataPrev},
+              {data: hourData}, {data: hourDataPrev},
+              {data: turnoData}, {data: turnoDataPrev}
+          ] = await Promise.all([
+              supa.rpc(RPC_CHART_DOW_FUNC, paramsNow),
+              supa.rpc(RPC_CHART_DOW_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow),
+              supa.rpc(RPC_CHART_HOUR_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_TURNO_FUNC, paramsNow),
+              supa.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
+          ]);
+          
+          const tip = `Período anterior: ${dePrev} → ${atePrev}`;
+          const valueKey = mode === 'media' ? 'media' : 'total';
+          
+          {
+              const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+              const nArr = Array(7).fill(0), pArr = Array(7).fill(0);
+              (dowData || []).forEach(r => nArr[r.dow] = r[valueKey]);
+              (dowDataPrev || []).forEach(r => pArr[r.dow] = r[valueKey]);
+              ensureChart('ch_dow', labels, nArr, pArr, tip, KPI_META[selectedKPI].fmt);
+          }
+          {
+              const nArr = Array(24).fill(0), pArr = Array(24).fill(0);
+              (hourData || []).forEach(r => nArr[r.h] = r[valueKey]);
+              (hourDataPrev || []).forEach(r => pArr[r.h] = r[valueKey]);
+              let minHour = 24, maxHour = -1;
+              for (let i = 0; i < 24; i++) {
+                  if (nArr[i] > 0 || pArr[i] > 0) {
+                      if (i < minHour) minHour = i;
+                      if (i > maxHour) maxHour = i;
+                  }
+              }
+              if (minHour > maxHour) {
+                  ensureChart('ch_hour', [], [], [], tip, KPI_META[selectedKPI].fmt);
+              } else {
+                  const range = Array.from({length: maxHour - minHour + 1}, (_, i) => i + minHour);
+                  const labels = range.map(h => String(h).padStart(2, '0') + 'h');
+                  const nowData = range.map(h => nArr[h]);
+                  const prevData = range.map(h => pArr[h]);
+                  ensureChart('ch_hour', labels, nowData, prevData, tip, KPI_META[selectedKPI].fmt);
+              }
+          }
+          {
+              const labels = ['Dia', 'Noite'];
+              const nMap = new Map(), pMap = new Map();
+              (turnoData || []).forEach(r => nMap.set(r.turno, r[valueKey]));
+              (turnoDataPrev || []).forEach(r => pMap.set(r.turno, r[valueKey]));
+              const nArr = labels.map(l => nMap.get(l) || 0);
+              const pArr = labels.map(l => pMap.get(l) || 0);
+              ensureChart('ch_turno', labels, nArr, pArr, tip, KPI_META[selectedKPI].fmt);
+          }
+      } catch (e) {
+          console.error("Erro ao atualizar gráficos analíticos:", e); 
+          setDiag('Erro ao atualizar gráficos');
+      }
+    }
+    async function updateMonth12x12(analiticos){
+      try{
+        const end = lastDay || DateHelpers.iso(new Date());
+        const endMonthStart = DateHelpers.monthStartISO(end);
+        const last12Start = DateHelpers.addMonthsISO(endMonthStart, -11);
+        const prev12Start = DateHelpers.addMonthsISO(endMonthStart, -23);
+        const last12End   = DateHelpers.monthEndISO(end);
+        const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
+        const meta = KPI_META[selectedKPI]||KPI_META.fat;
+        
+        const paramsNow = buildChartParams(last12Start, last12End, analiticos);
+        const paramsPrev = buildChartParams(prev12Start, prev12EndAdj, analiticos);
+
+        const [{data: nData, error: nErr}, {data: pData, error: pErr}] = await Promise.all([
+            supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
+            supa.rpc(RPC_CHART_MONTH_FUNC, paramsPrev)
+        ]);
+
+        if (nErr) throw nErr;
+        if (pErr) throw pErr;
+
+        const mode = effectiveMode();
+        const valueKey = mode === 'media' ? 'media' : 'total';
+        
+        const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, +r[valueKey]||0]));
+        const mNow = toMap(nData), mPrev = toMap(pData);
+        
+        let labels = [];
+        const ymsNow = []; 
+        let cur = last12Start;
+        for(let i=0;i<12;i++){ 
+            labels.push(DateHelpers.formatYM(cur)); 
+            const d=new Date(cur+'T12:00:00Z'); 
+            const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; 
+            ymsNow.push(ym); 
+            cur=DateHelpers.addMonthsISO(cur,1); 
+        }
+
+        const ymsPrev = ymsNow.map(ym=>{ const [yy,mm]=ym.split('-').map(Number); const p=new Date(yy,mm-1-12,1); return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}`; });
+        
+        const nowArr  = ymsNow.map(ym => mNow.get(ym)||0);
+        const prevArr = ymsPrev.map(ym => mPrev.get(ym)||0);
+        const tip = `Comparação fixa: Últimos 12M vs 12M anteriores`;
+        ensureChart('ch_month', labels, nowArr, prevArr, tip, meta.fmt);
+      }catch(e){
+        console.error("Erro detalhado em updateMonth12x12:", e); 
+        setDiag('Erro ao atualizar gráfico mensal');
+      }
+    }
+    const wine = ["#7b1e3a","#8c2947","#9c3554","#ad4061","#bd4c6e","#ce577b", "#e5e7eb"];
+    function ensureDonutTop6(labels, values, centerText, fmt='money'){
+      const cvs = $('ch_top6'); if(!cvs) return;
+      if(cvs.__chart){ try{cvs.__chart.destroy();}catch(e){} cvs.__chart=null; }
+      const ctx = cvs.getContext('2d');
+      const total = (values||[]).reduce((a,b)=>a+(+b||0),0);
+      $('top6Center').textContent = (centerText!=null ? centerText : 'Total: '+(fmt==='money'?money(total): fmt==='count'? num(total) : formatValueBy(fmt, total)));
+      const chart = new Chart(ctx,{
+        type:'doughnut',
+        data:{ labels, datasets:[{ data: values, backgroundColor: wine, hoverBackgroundColor: wine, borderColor:'#fff', borderWidth:1 }]},
+        options:{
+          responsive:true, maintainAspectRatio:false, cutout:'60%',
+          plugins:{
+            legend:{ position:'right', labels:{ usePointStyle:true, pointStyle:'circle', boxWidth:10, padding:16, color:'#334155' } },
+            tooltip:{ callbacks:{ label:(ctx)=>{ const label = ctx.label||''; const val = ctx.parsed||0; const ds = ctx.chart.data.datasets[0]; const tt = (ds.data||[]).reduce((a,b)=>a+(+b||0),0); const perc = tt ? ((val/tt)*100).toFixed(1) : 0; return `${label}: ${formatValueBy(KPI_META[selectedKPI]?.fmt||'money', val)} (${perc}%)`; } },
+              backgroundColor:'rgba(15,23,42,.95)', titleColor:'#e2e8f0', bodyColor:'#e2e8f0', borderColor:'rgba(148,163,184,.25)', borderWidth:1 }
+          }
+        }
+      });
+      cvs.__chart = chart;
+    }
+    async function updateTop6(de, ate, analiticos){
+      try{
+        const meta = KPI_META[selectedKPI]||KPI_META.fat;
+        const data = await baseQuery(de, ate, analiticos);
+        const m = new Map();
+        (data||[]).forEach(r=>{
+          const loja = r.loja || '—';
+          if(!m.has(loja)) m.set(loja, {fat:0, des:0, fre:0, ped:0, dias: new Set()});
+          const acc = m.get(loja);
+          acc.fat += +r.fat||0;
+          acc.des += +r.des||0;
+          acc.fre += +r.fre||0;
+          acc.ped += 1;
+          acc.dias.add(r.dia);
+        });
+
+        function metricVal(aggData){
+          const mode = effectiveMode();
+          const isRatio = ['tkt','desperc','fremed','roi'].includes(selectedKPI);
+          if (isRatio) {
+            switch(selectedKPI){
+                case 'tkt': return (aggData.ped>0) ? aggData.fat/aggData.ped : 0;
+                case 'desperc': return (aggData.fat>0) ? aggData.des/aggData.fat : 0;
+                case 'fremed': return (aggData.ped>0) ? aggData.fre/aggData.ped : 0;
+                case 'roi': return (aggData.des>0) ? (aggData.fat - aggData.des)/aggData.des : 0;
+            }
+          } else {
+            const numDays = aggData.dias.size || 1;
+            switch(selectedKPI){
+                case 'fat': return mode==='media' ? aggData.fat / numDays : aggData.fat;
+                case 'ped': return mode==='media' ? aggData.ped / numDays : aggData.ped;
+                case 'des': return mode==='media' ? aggData.des / numDays : aggData.des;
+                case 'fre': return mode==='media' ? aggData.fre / numDays : aggData.fre;
+                case 'fatmed': return aggData.fat / numDays;
+                case 'canc_ped': return mode==='media' ? aggData.ped / numDays : aggData.ped;
+                case 'canc_val': return mode==='media' ? aggData.fat / numDays : aggData.fat;
+            }
+          }
+          return 0;
+        }
+
+        const allStoresData = Array.from(m.entries()).map(([loja, aggData]) => ({ loja, valor: metricVal(aggData) }));
+        allStoresData.sort((a,b)=> b.valor - a.valor);
+        
+        let finalData = allStoresData;
+        if (allStoresData.length > 6) {
+            const top5 = allStoresData.slice(0, 5);
+            const othersValue = allStoresData.slice(5).reduce((acc, curr) => acc + curr.valor, 0);
+            if (othersValue > 0.01) { 
+              finalData = [...top5, { loja: 'Outros', valor: othersValue }];
+            } else {
+              finalData = top5;
+            }
+        }
+        
+        const labels = finalData.map(d => d.loja);
+        const values = finalData.map(d => d.valor);
+        const total = allStoresData.reduce((sum, item) => sum + item.valor, 0);
+        ensureDonutTop6(labels, values, `Total: ${formatValueBy(meta.fmt, total)}`, meta.fmt);
+
+      }catch(e){
+        console.warn('top6 erro:', e.message||e);
+        ensureDonutTop6([],[], 'Total: R$ 0,00','money');
+      }
+    }
+    
+    function ensureSingleSeriesChart(canvasId, labels, dataArr, meta, type = 'bar') {
+        const canvas = $(canvasId); if (!canvas) return;
+        if (canvas.__chart) { try { canvas.__chart.destroy(); } catch (e) {} canvas.__chart = null; }
+        const ctx = canvas.getContext('2d');
+        
+        const chart = new Chart(ctx, {
+            type: type,
+            data: {
+                labels,
+                datasets: [{
+                    label: meta.label,
+                    data: dataArr.map(v => +v || 0),
+                    backgroundColor: type === 'bar' ? gradNow(ctx) : 'rgba(123, 30, 58, 0.1)',
+                    borderColor: '#7b1e3a',
+                    borderWidth: 2,
+                    pointBackgroundColor: '#7b1e3a',
+                    tension: 0.1,
+                    fill: type === 'line'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                scales: {
+                    x: { grid: { display: false } },
+                    y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: (v) => formatTickBy(meta.fmt, v) } }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.dataset.label}: ${formatValueBy(meta.fmt, ctx.parsed.y || 0)}`
+                        }
+                    }
+                }
+            }
+        });
+        canvas.__chart = chart;
+    }
+
+    async function updateDiagnosticCharts(de, ate, analiticos) {
+        try {
+            const selectedKpi = $('kpi-select').value;
+            const meta = KPI_META[selectedKpi] || KPI_META.fat;
+            
+            $('diag_title_month').textContent = `${meta.label} por Mês`;
+            $('diag_title_dow').textContent = `${meta.label} por Dia da Semana`;
+            $('diag_title_hour').textContent = `${meta.label} por Hora`;
+
+            const paramsNow = buildChartParams(de, ate, analiticos);
+
+            const [
+                { data: monthData, error: monthErr },
+                { data: dowData, error: dowErr },
+                { data: hourData, error: hourErr }
+            ] = await Promise.all([
+                supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
+                supa.rpc(RPC_CHART_DOW_FUNC, paramsNow),
+                supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow)
+            ]);
+
+            if (monthErr || dowErr || hourErr) throw (monthErr || dowErr || hourErr);
+
+            const valueKey = diagChartMode;
+
+            {
+                // ### LINHA CORRIGIDA ###
+                // Corrigido para passar o formato 'YYYY-MM-DD' que a função DateHelpers.formatYM espera.
+                const labels = (monthData || []).map(r => DateHelpers.formatYM(r.ym + '-01'));
+                const dataArr = (monthData || []).map(r => +r[valueKey] || 0);
+                ensureSingleSeriesChart('diag_ch_month', labels, dataArr, meta, 'line');
+            }
+
+            {
+                const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+                const dataArr = Array(7).fill(0);
+                (dowData || []).forEach(r => dataArr[r.dow] = r[valueKey]);
+                ensureSingleSeriesChart('diag_ch_dow', labels, dataArr, meta, 'bar');
+            }
+
+            {
+                const dataArr = Array(24).fill(0);
+                (hourData || []).forEach(r => dataArr[r.h] = r[valueKey]);
+                let minHour = 24, maxHour = -1;
+                for (let i = 0; i < 24; i++) {
+                    if (dataArr[i] > 0) {
+                        if (i < minHour) minHour = i;
+                        if (i > maxHour) maxHour = i;
+                    }
+                }
+
+                if (minHour > maxHour) {
+                    ensureSingleSeriesChart('diag_ch_hour', [], [], meta, 'bar');
+                } else {
+                    const range = Array.from({ length: maxHour - minHour + 1 }, (_, i) => i + minHour);
+                    const labels = range.map(h => String(h).padStart(2, '0') + 'h');
+                    const slicedData = range.map(h => dataArr[h]);
+                    ensureSingleSeriesChart('diag_ch_hour', labels, slicedData, meta, 'bar');
+                }
+            }
+        } catch (e) {
+            console.error("Erro ao atualizar gráficos de diagnóstico:", e);
+            ensureSingleSeriesChart('diag_ch_month', [], [], {}, 'line');
+            ensureSingleSeriesChart('diag_ch_dow', [], [], {}, 'bar');
+            ensureSingleSeriesChart('diag_ch_hour', [], [], {}, 'bar');
+        }
+    }
+    
+    async function updateInsights(de, ate, analiticos, kpi_key) {
+        const insightsContainer = document.querySelector('#tab-diagnostico .ins-list');
+        const contextContainer = document.querySelector('#tab-diagnostico .hero-context');
+        if (!insightsContainer || !contextContainer) return;
+
+        insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px;">Gerando insights...</p>`;
+        contextContainer.innerHTML = '<strong>Destaques:</strong> Carregando...';
+
+        try {
+            const isActive = (val) => val && val.length > 0;
+            const params = {
+                p_dini: de,
+                p_dfim: ate,
+                p_kpi_key: kpi_key,
+                p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
+                p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
+                p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
+                p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null
+            };
+
+            const { data, error } = await supa.rpc(RPC_DIAGNOSTIC_FUNC, params);
+
+            if (error) throw error;
+            if (!data) throw new Error("A resposta da função de diagnóstico está vazia.");
+            
+            if(data.context && data.context.top_stores) {
+                const { top_stores, top_hours, top_channels } = data.context;
+                let contextHTML = '<strong>Destaques:</strong> ';
+                if(top_stores && top_stores.length > 0) contextHTML += `Lojas: ${top_stores.join(' • ')} • `;
+                if(top_hours && top_hours.length > 0) contextHTML += `Horário: ${top_hours.join(' • ')} • `;
+                if(top_channels && top_channels.length > 0) contextHTML += `Canal: ${top_channels.join(' • ')}`;
+                contextContainer.innerHTML = contextHTML;
+            } else {
+                 contextContainer.innerHTML = '<strong>Destaques:</strong> Nenhum dado de contexto retornado.';
+            }
+
+            const insightsArray = data.insights || [];
+
+            if (insightsArray.length === 0) {
+                insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px;">Nenhum insight de texto gerado para este período.</p>';
+                return;
+            }
+
+            let allInsightsHTML = '';
+            insightsArray.forEach(insight => {
+                const insightHTML = `
+                    <div class="ins-card ${insight.type || ''}">
+                        <div class="dot"></div>
+                        <div>
+                            <div class="ins-title">${insight.title || ''}</div>
+                            <div class="ins-sub">${insight.subtitle || ''}</div>
+                            <div class="ins-action">${insight.action || ''}</div>
+                        </div>
+                    </div>
+                `;
+                allInsightsHTML += insightHTML;
+            });
+            insightsContainer.innerHTML = allInsightsHTML;
+
+        } catch (e) {
+            console.error("Erro ao carregar insights de IA:", e);
+            insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px; color: var(--down);">Erro ao carregar insights.</p>`;
+            contextContainer.innerHTML = '<strong>Destaques:</strong> Erro ao carregar.';
+        }
+    }
+    
+    $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
+    $('fileExcel').addEventListener('change', async (ev)=>{
+        const file = ev.target.files?.[0];
+        if(!file){ info(''); return; }
+        
+        setStatus('Processando arquivo...', 'info');
+        try{
+            const buf = await file.arrayBuffer();
+            const wb = XLSX.read(buf, { type:'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const json = XLSX.utils.sheet_to_json(ws, { raw:false, defval:null });
+
+            if (!json || json.length === 0) {
+                throw new Error("O arquivo está vazio ou em um formato inválido.");
+            }
+            
+            const headerMap = { 'data': 'dia', 'unidade': 'unidade', 'loja': 'loja', 'canal': 'canal', 'pagamento': 'pagamento_base', 'cancelado': 'cancelado', 'total': 'fat', 'desconto': 'des', 'entrega': 'fre', 'pedido': 'pedido_id', 'turno': 'turno', 'itens': 'itens_valor' };
+            
+            const transformedJson = json.map((row, index) => {
+                const newRow = {};
+                const originalRowKeys = {};
+                for (const key in row) { originalRowKeys[normHeader(key)] = row[key]; }
+                for (const spreadsheetHeader in headerMap) {
+                    const dbColumn = headerMap[spreadsheetHeader];
+                    if (originalRowKeys.hasOwnProperty(spreadsheetHeader)) { newRow[dbColumn] = originalRowKeys[spreadsheetHeader]; }
+                }
+                const dataHoraStr = originalRowKeys['data'];
+                if (dataHoraStr && String(dataHoraStr).includes('/')) {
+                    const [dataPart, horaPart] = dataHoraStr.split(' ');
+                    const [dia, mes, ano] = dataPart.split('/');
+                    if(dia && mes && ano) { newRow['dia'] = `${ano}-${mes.padStart(2,'0')}-${dia.padStart(2,'0')}`; }
+                    if (horaPart) { newRow['hora'] = horaPart.substring(0, 2); }
+                }
+                newRow['fat'] = parseFloat(String(newRow['fat'] || '0').replace(',', '.')) || 0;
+                newRow['des'] = parseFloat(String(newRow['des'] || '0').replace(',', '.')) || 0;
+                newRow['fre'] = parseFloat(String(newRow['fre'] || '0').replace(',', '.')) || 0;
+                newRow['itens_valor'] = parseFloat(String(newRow['itens_valor'] || '0').replace(',', '.')) || 0;
+                const canceladoVal = String(newRow['cancelado'] || 'N').toUpperCase();
+                newRow['cancelado'] = canceladoVal === 'S' ? 'Sim' : 'Não';
+                const pedidoId = newRow['pedido_id'] || originalRowKeys['codigo'] || `import-${Date.now()}`;
+                
+                newRow['row_key'] = `${pedidoId}-${newRow.dia}-${index}`;
+                newRow.pedidos = 1;
+                return newRow;
+            }).filter(row => row.dia);
+
+            if(transformedJson.length === 0) {
+                throw new Error("Nenhuma linha válida encontrada na planilha. Verifique o formato da coluna 'Data'.");
+            }
+
+            setStatus(`Enviando ${transformedJson.length} registros...`, 'info');
+            
+            const { error } = await supa.from(DEST_INSERT_TABLE).upsert(transformedJson, { onConflict: 'row_key' });
+
+            if (error) {
+                throw error;
+            }
+            
+            setStatus('Importação concluída! Atualizando...', 'ok');
+            await init(true); // Força reinicialização para pegar nova data
+
+        } catch(e) {
+            console.error("Erro na importação:", e);
+            let userMessage = e.message || 'Erro desconhecido.';
+            if (e.details) userMessage += ` (${e.details})`;
+            setStatus(`Erro: ${userMessage}`, 'err');
+        } finally {
+            $('fileExcel').value='';
+        }
+    });
+
+    function mergeRankedAll(rankedList, allList){
+      const rset = new Set(rankedList);
+      const rest = allList.filter(x=>!rset.has(x));
+      return [...rankedList, ...rest];
+    }
+    async function reloadStaticOptions(){
+      const de = firstDay || '1900-01-01';
+      const ate= lastDay  || DateHelpers.iso(new Date());
+      const TOPN = 50;
+      
+      const baseParams = { 
+        p_dini: de, p_dfim: ate, 
+        p_unids: null, p_lojas: null, p_turnos: null, p_canais: null, p_pags: null, p_cancelado: null,
+        p_limit: TOPN 
+      };
+
+      const [topUnids, topLojas, topPags, topCanais] = await Promise.allSettled([
+        supa.rpc('opt_unidades_ranked',  {...baseParams, p_unids: ms.unids.get()}),
+        supa.rpc('opt_lojas_ranked',     {...baseParams, p_lojas: ms.lojas.get()}),
+        supa.rpc('opt_pagamentos_ranked',{...baseParams, p_pags: ms.pags.get()}),
+        supa.rpc('opt_canais_ranked',    {...baseParams, p_canais: ms.canais.get()}),
+      ]);
+      const tUnids = (topUnids.status==='fulfilled' && !topUnids.value.error) ? (topUnids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
+      const tLojas = (topLojas.status==='fulfilled'  && !topLojas.value.error)  ? (topLojas.value.data||[]).map(r=>r.loja).filter(Boolean)       : [];
+      const tPags  = (topPags.status==='fulfilled'   && !topPags.value.error)   ? (topPags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean): [];
+      const tCanais= (topCanais.status==='fulfilled' && !topCanais.value.error) ? (topCanais.value.data||[]).map(r=>r.canal).filter(Boolean)      : [];
+      const [unids,lojas,canais,pags] = await Promise.allSettled([
+        supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
+        supa.from('vw_vendas_lojas').select('loja').order('loja'),
+        supa.from('vw_vendas_canais').select('canal').order('canal'),
+        supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
+      ]);
+      const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
+      const allUnids = ok(unids) ? (unids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
+      const allLojas = ok(lojas) ? (lojas.value.data||[]).map(r=>r.loja).filter(Boolean) : [];
+      const allCanais= ok(canais)? (canais.value.data||[]).map(r=>r.canal).filter(Boolean): [];
+      const allPags  = ok(pags)  ? (pags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean) : [];
+      ms.unids.setOptions( mergeRankedAll(tUnids, allUnids), true );
+      ms.lojas.setOptions( mergeRankedAll(tLojas, allLojas), true );
+      ms.canais.setOptions(mergeRankedAll(tCanais, allCanais), true );
+      ms.pags.setOptions(  mergeRankedAll(tPags, allPags), true );
+      ms.turnos.setOptions(['Dia','Noite'], true);
+    }
+    
+    /* ===================== LOOP PRINCIPAL (CORRIGIDO) ===================== */
+    async function applyAll(details){
+      try{
+        const de = details.start;
+        const ate = details.end;
+        const analiticos = details.analiticos;
+        if (!de || !ate) {
+            setStatus('Selecione um período', 'err');
+            return;
+        }
+        
+        const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
+        setStatus('Consultando…');
+        
+        const totalViewAnaliticos = { ...analiticos, unidade: [], loja: [] };
+        
+        const kpiDataPromise = updateKPIs(de, ate, dePrev, atePrev, totalViewAnaliticos);
+        const projectionsPromise = updateProjections(de, ate, dePrev, atePrev, analiticos);
+
+        const [kpiData] = await Promise.all([kpiDataPromise, projectionsPromise]);
+        renderVendasKPIs(kpiData);
+
+        const selectedKpiForDiag = $('kpi-select').value;
+        await Promise.all([
+          updateMonth12x12(totalViewAnaliticos),
+          getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos),
+          updateCharts(de,ate,dePrev,atePrev, analiticos),
+          updateDiagnosticCharts(de, ate, analiticos),
+          updateTop6(de,ate, analiticos),
+          updateInsights(de, ate, analiticos, selectedKpiForDiag),
+        ]);
+        
+        setStatus('OK','ok');
+        matchPanelHeights();
+      }catch(e){
+        console.error('Erro em applyAll:', e);
+        setStatus('Erro: '+(e.message||e),'err');
+      }
+    }
+
+    // ===================================================================================
+    // LÓGICA DA INTERFACE DE FILTROS E ABAS
+    // ===================================================================================
+
+    const tabsContainer = $('tabs');
+    if (tabsContainer) {
+      tabsContainer.addEventListener('click', (e)=>{
+        const btn=e.target.closest('button'); if(!btn) return;
+        document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('active', b===btn));
+        document.querySelectorAll('.tab').forEach(t=> t.style.display = (t.id==='tab-'+btn.dataset.tab)?'block':'none');
+      });
+    }
+
+    function fxLocalMidday(d_str){ 
+      return new Date(d_str + 'T12:00:00');
+    }
+    function fxFmt(date){ return date.toISOString().slice(0,10); }
+    function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
+    
+    function fxLastNDays(n){
+      const baseDate = lastDay ? fxLocalMidday(lastDay) : new Date();
+      const end = new Date(baseDate);
+      const start = new Date(baseDate);
+      start.setDate(baseDate.getDate()-(n-1));
+      fxSetRange(start,end);
+    }
+    function fxNamed(win){
+      const baseDate = lastDay ? fxLocalMidday(lastDay) : new Date();
+      if(win==='today'){ fxSetRange(baseDate,baseDate) }
+      else if(win==='yesterday'){ const y=new Date(baseDate); y.setDate(baseDate.getDate()-1); fxSetRange(y,y) }
+      else if(win==='lastMonth'){ const y=baseDate.getFullYear(), m=baseDate.getMonth(); fxSetRange(new Date(y,m-1,1), new Date(y,m,0)) }
+      else if(win==='lastYear'){ const yy=baseDate.getFullYear()-1; fxSetRange(new Date(yy,0,1), new Date(yy,11,31)) }
+    }
+
+    const fx = {
+      $drop: $('fxDropup'),
+      $btnMore: $('fxBtnMore'),
+      $btnReset: $('fxBtnReset'),
+      $duClose: $('fxDuClose'),
+      $start: $('fxDuStart'),
+      $end: $('fxDuEnd'),
+      $days: $('fxDuQuickDays'),
+      $chips: $('fxQuickChips'),
+      $segProj: $('segProj'),
+    };
+
+    fx.$segProj.addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        const days = parseInt(btn.dataset.days, 10);
+        if (!isNaN(days)) {
+            projectionDays = days;
+            fx.$segProj.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+            fxDispatchApply();
+        }
+    });
+
+    const segDiagCharts = $('segDiagCharts');
+    if (segDiagCharts) {
+        segDiagCharts.addEventListener('click', (e) => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+            diagChartMode = btn.dataset.mode;
+            segDiagCharts.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+            fxDispatchApply();
+        });
+    }
+
+    function fxShowDrop(show){
+      fx.$drop.classList.toggle('fx-show', show);
+      fx.$btnMore.setAttribute('aria-expanded', show?'true':'false');
+      if(show) fx.$start?.focus();
+    }
+    fx.$btnMore.addEventListener('click', ()=> fxShowDrop(!fx.$drop.classList.contains('fx-show')));
+    fx.$duClose.addEventListener('click', ()=> fxShowDrop(false));
+    document.addEventListener('click', (e)=>{
+      if(!fx.$drop.classList.contains('fx-show')) return;
+      if(!(fx.$drop.contains(e.target) || fx.$btnMore.contains(e.target))) fxShowDrop(false);
+    });
+    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && fx.$drop.classList.contains('fx-show')) fxShowDrop(false) });
+
+    function fxDispatchApply(){
+      const payload = {
+        start: fx.$start.value, 
+        end: fx.$end.value,
+        analiticos: {
+          unidade: ms.unids.get(),
+          loja: ms.lojas.get(),
+          turno: ms.turnos.get(),
+          canal: ms.canais.get(),
+          pagamento: ms.pags.get(),
+          cancelado: fxCanceled.value
+        }
+      };
+      document.dispatchEvent(new CustomEvent('filters:apply', { detail: payload }));
+    }
+
+    fx.$chips.addEventListener('click', (e)=>{
+      const b=e.target.closest('.fx-chip'); if(!b) return;
+      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.toggle('active', x===b));
+      fx.$days.querySelectorAll('button').forEach(x=> x.classList.remove('fx-active'));
+      fxNamed(b.dataset.win);
+      fxDispatchApply();
+    });
+
+    fx.$days.addEventListener('click', (e)=>{
+      const b=e.target.closest('button'); if(!b) return;
+      fx.$days.querySelectorAll('button').forEach(x=> x.classList.toggle('fx-active', x===b));
+      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('active'));
+      const n=parseInt(b.dataset.win,10); if(!isNaN(n)) fxLastNDays(n);
+      fxDispatchApply();
+    });
+
+    fx.$btnReset.addEventListener('click', ()=>{
+      fx.$chips.querySelectorAll('.fx-chip').forEach(x=> x.classList.remove('active'));
+      fx.$days.querySelectorAll('button').forEach(x=> x.classList.remove('fx-active'));
+      
+      Object.values(ms).forEach(m => m.clear());
+      fxCanceled.value = 'nao';
+      
+      fxLastNDays(30);
+      fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
+      fxDispatchApply();
+    });
+
+    fx.$start.addEventListener('change', fxDispatchApplyDebounced);
+    fx.$end.addEventListener('change', fxDispatchApplyDebounced);
+    fxCanceled.addEventListener('change', fxDispatchApplyDebounced);
+    $('kpi-select').addEventListener('change', fxDispatchApplyDebounced);
+
+    document.addEventListener('filters:apply', (e) => {
+        if(e.detail) {
+            applyAll(e.detail);
+        }
+    });
+
+    document.addEventListener('filters:apply:internal', () => {
+        updateChartTitles();
+        fxDispatchApply();
+    });
+    
+    /* ===================== INICIALIZAÇÃO ===================== */
+    async function init(isReload = false){
+      try{
+        setStatus('Carregando…');
+        const dr = await supa.from('vw_vendas_daterange').select('min_dia, max_dia').limit(1);
+        if(dr.error) throw dr.error;
+        if(dr.data?.length && dr.data[0].max_dia){ 
+          firstDay=dr.data[0].min_dia; 
+          lastDay=dr.data[0].max_dia; 
+        } else {
+          lastDay = null; // Garante que, se o banco estiver vazio, a data base seja a de hoje.
+        }
+        
+        if (!isReload) {
+            await reloadStaticOptions();
+            bindKPIClick();
+            updateChartTitles();
+            window.addEventListener('resize', debounce(matchPanelHeights, 150));
+        }
+
+        fxLastNDays(30);
+        fx.$days.querySelector('button[data-win="30"]').classList.add('fx-active');
+        fxDispatchApply();
+      }catch(e){
+        console.error('Erro na inicialização:', e);
+        setStatus('Erro ao iniciar: '+(e.message||e),'err');
+      }
+    }
+
+    init(); // Primeira carga da página
+
+});
