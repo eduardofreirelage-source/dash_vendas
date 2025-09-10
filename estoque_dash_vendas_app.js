@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v1';
     const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v1';
     const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v1';
-    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral'; // ATENÇÃO: Esta função não foi encontrada. A chamada está desativada.
+    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
 
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
@@ -315,10 +315,9 @@ document.addEventListener('DOMContentLoaded', () => {
       };
     }
 
-    // CORREÇÃO: Nova função de parâmetros para os gráficos, que não aceitam p_unids
     function buildChartParams(de, ate, analiticos) {
       const params = buildParams(de, ate, analiticos);
-      delete params.p_unids; // Remove o parâmetro que não é aceito pelas funções de gráfico
+      delete params.p_unids;
       return params;
     }
 
@@ -666,7 +665,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const mode = effectiveMode();
       try {
           setDiag('');
-          // CORREÇÃO: Usando a nova função de parâmetros para os gráficos
           const paramsNow = buildChartParams(de, ate, analiticos);
           const paramsPrev = buildChartParams(dePrev, atePrev, analiticos);
 
@@ -738,7 +736,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
         
-        // CORREÇÃO: Usando a nova função de parâmetros para os gráficos
         const paramsNow = buildChartParams(last12Start, last12End, analiticos);
         const paramsPrev = buildChartParams(prev12Start, prev12EndAdj, analiticos);
 
@@ -915,7 +912,6 @@ document.addEventListener('DOMContentLoaded', () => {
             $('diag_title_dow').textContent = `${meta.label} por Dia da Semana`;
             $('diag_title_hour').textContent = `${meta.label} por Hora`;
 
-            // CORREÇÃO: Usando a nova função de parâmetros para os gráficos
             const paramsNow = buildChartParams(de, ate, analiticos);
 
             const [
@@ -978,98 +974,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const contextContainer = document.querySelector('#tab-diagnostico .hero-context');
         if (!insightsContainer || !contextContainer) return;
 
-        // CORREÇÃO: Desativado temporariamente pois a função RPC_DIAGNOSTIC_FUNC não foi encontrada.
         insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px;">Geração de insights desativada (função '${RPC_DIAGNOSTIC_FUNC}' não encontrada no banco de dados).</p>`;
         contextContainer.innerHTML = '<strong>Destaques:</strong> —';
         return;
-        
-        /*
-        // CÓDIGO ORIGINAL (mantido para referência caso a função seja criada)
-        insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px;">Gerando insights...</p>`;
-        contextContainer.innerHTML = '<strong>Destaques:</strong> Carregando...';
-
-        try {
-            const isActive = (val) => val && val.length > 0;
-            const params = {
-                p_dini: de,
-                p_dfim: ate,
-                p_kpi_key: kpi_key,
-                p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
-                p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
-                p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
-                p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null
-            };
-
-            const { data, error } = await supa.rpc(RPC_DIAGNOSTIC_FUNC, params);
-
-            if (error) throw error;
-            if (!data) throw new Error("A resposta da função de diagnóstico está vazia.");
-            
-            if(data.context) {
-                const { top_stores, top_hours, top_channels } = data.context;
-                let contextHTML = '<strong>Destaques:</strong> ';
-                if(top_stores && top_stores.length > 0) contextHTML += `Lojas: ${top_stores.join(' • ')} • `;
-                if(top_hours && top_hours.length > 0) contextHTML += `Horário: ${top_hours.join(' • ')} • `;
-                if(top_channels && top_channels.length > 0) contextHTML += `Canal: ${top_channels.join(' • ')}`;
-                contextContainer.innerHTML = contextHTML;
-            } else {
-                 contextContainer.innerHTML = '<strong>Destaques:</strong> Nenhum dado de contexto retornado.';
-            }
-
-            let insightsArray = [];
-            if (data.context) {
-                const { top_stores, top_hours } = data.context;
-                const kpiLabel = KPI_META[kpi_key]?.label || 'o indicador';
-                const isPositive = data.hero.delta >= 0;
-
-                if(top_stores && top_stores.length > 0) {
-                    insightsArray.push({
-                        type: isPositive ? 'up' : 'down',
-                        title: `Performance por Loja (${kpiLabel})`,
-                        subtitle: `As lojas ${top_stores.join(', ')} apresentaram maior impacto no período.`,
-                        action: 'Ação: Analisar as práticas destas lojas para replicar os sucessos ou corrigir as falhas.'
-                    });
-                }
-                if(top_hours && top_hours.length > 0) {
-                    insightsArray.push({
-                        type: 'up',
-                        title: 'Oportunidade de Horário de Pico',
-                        subtitle: `O período de ${top_hours.join(', ')} concentra a maior parte da performance.`,
-                        action: 'Ação: Reforçar marketing e promoções focadas neste horário para maximizar o resultado.'
-                    });
-                }
-            }
-
-            if (insightsArray.length === 0) {
-                insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px;">Nenhum insight de texto gerado para este período.</p>';
-                return;
-            }
-
-            let allInsightsHTML = '';
-            insightsArray.forEach(insight => {
-                const insightHTML = `
-                    <div class="ins-card ${insight.type || ''}">
-                        <div class="dot"></div>
-                        <div>
-                            <div class="ins-title">${insight.title || ''}</div>
-                            <div class="ins-sub">${insight.subtitle || ''}</div>
-                            <div class="ins-action">${insight.action || ''}</div>
-                        </div>
-                    </div>
-                `;
-                allInsightsHTML += insightHTML;
-            });
-            insightsContainer.innerHTML = allInsightsHTML;
-
-        } catch (e) {
-            console.error("Erro ao carregar insights de IA:", e);
-            insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px; color: var(--down);">Erro ao carregar insights.</p>`;
-            contextContainer.innerHTML = '<strong>Destaques:</strong> Erro ao carregar.';
-        }
-        */
     }
     
-    // CORREÇÃO: Lógica de upload de planilha completamente reescrita
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
     $('fileExcel').addEventListener('change', async (ev)=>{
         const file = ev.target.files?.[0];
@@ -1098,18 +1007,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 'entrega': 'fre',
                 'pedido': 'pedido_id',
                 'turno': 'turno',
-                'itens': 'itens_valor' // Supondo que 'Itens' é o valor, não a contagem
+                'itens': 'itens_valor'
             };
     
-            const transformedJson = json.map((row, index) => {
+            const transformedJson = json.map((row, index) => { // 'index' aqui é a chave da solução
                 const newRow = {};
                 const originalRowKeys = {};
-                // Primeiro, normaliza as chaves do objeto 'row' (ex: " loja" -> "loja")
                 for (const key in row) {
                     originalRowKeys[normHeader(key)] = row[key];
                 }
-
-                // Mapeia os dados da planilha para as colunas do banco
                 for (const spreadsheetHeader in headerMap) {
                     const dbColumn = headerMap[spreadsheetHeader];
                     if (originalRowKeys.hasOwnProperty(spreadsheetHeader)) {
@@ -1117,40 +1023,36 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
                 
-                // --- Transformações de Dados ---
-                // 1. Separar data e hora
-                const dataHoraStr = originalRowKeys['data']; // ex: "01/09/2025 10:38"
+                const dataHoraStr = originalRowKeys['data'];
                 if (dataHoraStr && String(dataHoraStr).includes('/')) {
                     const [dataPart, horaPart] = dataHoraStr.split(' ');
                     const [dia, mes, ano] = dataPart.split('/');
                     if(dia && mes && ano) {
-                        newRow['dia'] = `${ano}-${mes.padStart(2,'0')}-${dia.padStart(2,'0')}`; // Formato YYYY-MM-DD
+                        newRow['dia'] = `${ano}-${mes.padStart(2,'0')}-${dia.padStart(2,'0')}`;
                     }
                     if (horaPart) {
-                        newRow['hora'] = horaPart.substring(0, 2); // Apenas a hora
+                        newRow['hora'] = horaPart.substring(0, 2);
                     }
                 }
 
-                // 2. Converter valores monetários para números (aceita '.' e ',' como decimal)
                 newRow['fat'] = parseFloat(String(newRow['fat'] || '0').replace(',', '.')) || 0;
                 newRow['des'] = parseFloat(String(newRow['des'] || '0').replace(',', '.')) || 0;
                 newRow['fre'] = parseFloat(String(newRow['fre'] || '0').replace(',', '.')) || 0;
                 newRow['itens_valor'] = parseFloat(String(newRow['itens_valor'] || '0').replace(',', '.')) || 0;
 
-
-                // 3. Normalizar 'Cancelado' (N/S -> Não/Sim)
                 const canceladoVal = String(newRow['cancelado'] || 'N').toUpperCase();
                 newRow['cancelado'] = canceladoVal === 'S' ? 'Sim' : 'Não';
                 
-                // 4. Gerar row_key obrigatória a partir do código ou pedido
-                const pedidoId = newRow['pedido_id'] || originalRowKeys['codigo'] || `import-${Date.now()}-${index}`;
-                newRow['row_key'] = `${pedidoId}-${newRow.dia}`;
+                const pedidoId = newRow['pedido_id'] || originalRowKeys['codigo'] || `import-${Date.now()}`;
+                
+                // ### CORREÇÃO FINAL ###
+                // Adicionamos o 'index' da linha para garantir uma chave 100% única.
+                newRow['row_key'] = `${pedidoId}-${newRow.dia}-${index}`;
 
-                // 5. Garantir que temos um pedido
                 newRow.pedidos = 1;
 
                 return newRow;
-            }).filter(row => row.dia); // Garante que apenas linhas com data válida sejam importadas
+            }).filter(row => row.dia);
 
             if(transformedJson.length === 0) {
                 throw new Error("Nenhuma linha válida encontrada na planilha. Verifique o formato da coluna 'Data'.");
@@ -1187,7 +1089,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const ate= lastDay  || DateHelpers.iso(new Date());
       const TOPN = 50;
       
-      // CORREÇÃO: Objeto de parâmetros base para garantir que todas as chaves sejam enviadas
       const baseParams = { 
         p_dini: de, p_dfim: ate, 
         p_unids: null, p_lojas: null, p_turnos: null, p_canais: null, p_pags: null, p_cancelado: null,
@@ -1238,7 +1139,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const totalViewAnaliticos = { ...analiticos, unidade: [], loja: [] };
         
-        // As projeções precisam dos dados de KPIs, então vamos calculá-los primeiro.
         const kpiDataPromise = updateKPIs(de, ate, dePrev, atePrev, totalViewAnaliticos);
         const projectionsPromise = updateProjections(de, ate, dePrev, atePrev, analiticos);
 
