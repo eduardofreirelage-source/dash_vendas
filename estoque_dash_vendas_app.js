@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v1';
     const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v1';
     const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v1';
-    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
+    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral'; // ATENÇÃO: Esta função não foi encontrada na sua lista. A chamada está desativada.
 
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
@@ -313,6 +313,13 @@ document.addEventListener('DOMContentLoaded', () => {
         p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
         p_cancelado
       };
+    }
+
+    // CORREÇÃO: Nova função de parâmetros para os gráficos, que não aceitam p_unids
+    function buildChartParams(de, ate, analiticos) {
+      const params = buildParams(de, ate, analiticos);
+      delete params.p_unids; // Remove o parâmetro que não é aceito pelas funções de gráfico
+      return params;
     }
 
     async function baseQuery(de, ate, analiticos){
@@ -659,8 +666,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const mode = effectiveMode();
       try {
           setDiag('');
-          const paramsNow = buildParams(de, ate, analiticos);
-          const paramsPrev = buildParams(dePrev, atePrev, analiticos);
+          // CORREÇÃO: Usando a nova função de parâmetros para os gráficos
+          const paramsNow = buildChartParams(de, ate, analiticos);
+          const paramsPrev = buildChartParams(dePrev, atePrev, analiticos);
 
           const [
               {data: dowData}, {data: dowDataPrev},
@@ -730,8 +738,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
         
-        const paramsNow = buildParams(last12Start, last12End, analiticos);
-        const paramsPrev = buildParams(prev12Start, prev12EndAdj, analiticos);
+        // CORREÇÃO: Usando a nova função de parâmetros para os gráficos
+        const paramsNow = buildChartParams(last12Start, last12End, analiticos);
+        const paramsPrev = buildChartParams(prev12Start, prev12EndAdj, analiticos);
 
         const [{data: nData, error: nErr}, {data: pData, error: pErr}] = await Promise.all([
             supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
@@ -906,7 +915,8 @@ document.addEventListener('DOMContentLoaded', () => {
             $('diag_title_dow').textContent = `${meta.label} por Dia da Semana`;
             $('diag_title_hour').textContent = `${meta.label} por Hora`;
 
-            const paramsNow = buildParams(de, ate, analiticos);
+            // CORREÇÃO: Usando a nova função de parâmetros para os gráficos
+            const paramsNow = buildChartParams(de, ate, analiticos);
 
             const [
                 { data: monthData, error: monthErr },
@@ -968,6 +978,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const contextContainer = document.querySelector('#tab-diagnostico .hero-context');
         if (!insightsContainer || !contextContainer) return;
 
+        // CORREÇÃO: Desativado temporariamente pois a função RPC_DIAGNOSTIC_FUNC não existe na lista.
+        insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px;">Geração de insights desativada (função 'diagnostico_geral' não encontrada).</p>`;
+        contextContainer.innerHTML = '<strong>Destaques:</strong> —';
+        return;
+
+        /*
+        // CÓDIGO ORIGINAL (mantido para referência)
         insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px;">Gerando insights...</p>`;
         contextContainer.innerHTML = '<strong>Destaques:</strong> Carregando...';
 
@@ -1049,6 +1066,7 @@ document.addEventListener('DOMContentLoaded', () => {
             insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px; color: var(--down);">Erro ao carregar insights.</p>`;
             contextContainer.innerHTML = '<strong>Destaques:</strong> Erro ao carregar.';
         }
+        */
     }
     
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
@@ -1067,55 +1085,79 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error("O arquivo está vazio ou em um formato inválido.");
             }
             
+            // CORREÇÃO: Mapeamento correto das colunas da planilha para as colunas do banco de dados
             const headerMap = {
-                'dia': 'dia',
-                'hora': 'hora',
+                'data': 'dia',
                 'unidade': 'unidade',
-                'loja': 'Nome da loja',
-                'canal de venda': 'Canal de venda',
-                'pagamento_base': 'pagamento_base',
+                'loja': 'loja',
+                'canal': 'canal',
+                'pagamento': 'pagamento_base',
                 'cancelado': 'cancelado',
-                'pedidos': 'pedidos',
-                'fat': 'fat',
-                'des': 'des',
-                'fre': 'fre',
-                'pedido_id': 'pedido_id'
+                'total': 'fat',
+                'desconto': 'des',
+                'entrega': 'fre',
+                'pedido': 'pedido_id',
+                'turno': 'turno'
             };
     
             const transformedJson = json.map((row, index) => {
                 const newRow = {};
-                let tempPedidoId = null;
+                const originalRowKeys = {};
+                // Primeiro, normaliza as chaves do objeto 'row' (ex: " loja" -> "loja")
+                for (const key in row) {
+                    originalRowKeys[normHeader(key)] = row[key];
+                }
 
-                for (const originalKey in row) {
-                    const normalizedKey = originalKey.trim().toLowerCase();
-                    const dbColumn = headerMap[normalizedKey];
-                    if (dbColumn) {
-                        newRow[dbColumn] = row[originalKey];
-                        if (normalizedKey === 'pedido_id') {
-                            tempPedidoId = row[originalKey];
-                        }
+                // Mapeia os dados da planilha para as colunas do banco
+                for (const spreadsheetHeader in headerMap) {
+                    const dbColumn = headerMap[spreadsheetHeader];
+                    if (originalRowKeys.hasOwnProperty(spreadsheetHeader)) {
+                       newRow[dbColumn] = originalRowKeys[spreadsheetHeader];
                     }
                 }
                 
-                // Gera a row_key obrigatória que estava faltando
-                if (tempPedidoId) {
-                    newRow['row_key'] = `${tempPedidoId}-${new Date().getTime()}-${index}`;
-                } else {
-                    newRow['row_key'] = `import-${new Date().getTime()}-${index}`;
+                // --- Transformações de Dados ---
+                // 1. Separar data e hora
+                const dataHoraStr = originalRowKeys['data']; // ex: "01/09/2025 10:38"
+                if (dataHoraStr) {
+                    const [dataPart, horaPart] = dataHoraStr.split(' ');
+                    const [dia, mes, ano] = dataPart.split('/');
+                    newRow['dia'] = `${ano}-${mes}-${dia}`; // Formato YYYY-MM-DD
+                    if (horaPart) {
+                        newRow['hora'] = horaPart.substring(0, 2); // Apenas a hora
+                    }
                 }
+
+                // 2. Converter valores monetários para números
+                newRow['fat'] = parseFloat(String(newRow['fat'] || '0').replace(',', '.')) || 0;
+                newRow['des'] = parseFloat(String(newRow['des'] || '0').replace(',', '.')) || 0;
+                newRow['fre'] = parseFloat(String(newRow['fre'] || '0').replace(',', '.')) || 0;
+
+                // 3. Normalizar 'Cancelado' (N/S -> Não/Sim)
+                if (newRow['cancelado'] === 'N') newRow['cancelado'] = 'Não';
+                if (newRow['cancelado'] === 'S') newRow['cancelado'] = 'Sim';
+                
+                // 4. Gerar row_key obrigatória
+                const pedidoId = newRow['pedido_id'] || originalRowKeys['codigo'] || `import-${index}`;
+                newRow['row_key'] = `${pedidoId}-${new Date().getTime()}-${index}`;
+
+                // 5. Garantir que todos os campos numéricos são números
+                newRow.pedidos = 1; // Cada linha é um pedido
 
                 return newRow;
             });
 
             setStatus(`Enviando ${transformedJson.length} registros...`, 'info');
             
-            const { error } = await supa.from(DEST_INSERT_TABLE).insert(transformedJson);
+            const { error } = await supa.from(DEST_INSERT_TABLE).insert(transformedJson, { returning: 'minimal' });
 
             if (error) {
                 throw error;
             }
             
             setStatus('Importação concluída! Atualizando...', 'ok');
+            // Opcional: chamar a função para atualizar a view materializada
+            // await supa.rpc(REFRESH_RPC);
             fxDispatchApply();
 
         } catch(e) {
@@ -1137,11 +1179,19 @@ document.addEventListener('DOMContentLoaded', () => {
       const de = firstDay || '1900-01-01';
       const ate= lastDay  || DateHelpers.iso(new Date());
       const TOPN = 50;
+      
+      // CORREÇÃO: Objeto de parâmetros base para garantir que todas as chaves sejam enviadas
+      const baseParams = { 
+        p_dini: de, p_dfim: ate, 
+        p_unids: null, p_lojas: null, p_turnos: null, p_canais: null, p_pags: null, p_cancelado: null,
+        p_limit: TOPN 
+      };
+
       const [topUnids, topLojas, topPags, topCanais] = await Promise.allSettled([
-        supa.rpc('opt_unidades_ranked',  { p_dini: de, p_dfim: ate, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
-        supa.rpc('opt_lojas_ranked',     { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
-        supa.rpc('opt_pagamentos_ranked',{ p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_lojas:null, p_cancelado:null, p_limit: TOPN }),
-        supa.rpc('opt_canais_ranked',    { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_lojas:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
+        supa.rpc('opt_unidades_ranked',  baseParams),
+        supa.rpc('opt_lojas_ranked',     baseParams),
+        supa.rpc('opt_pagamentos_ranked',baseParams),
+        supa.rpc('opt_canais_ranked',    baseParams),
       ]);
       const tUnids = (topUnids.status==='fulfilled' && !topUnids.value.error) ? (topUnids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
       const tLojas = (topLojas.status==='fulfilled'  && !topLojas.value.error)  ? (topLojas.value.data||[]).map(r=>r.loja).filter(Boolean)       : [];
