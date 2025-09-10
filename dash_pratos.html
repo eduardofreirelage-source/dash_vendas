@@ -297,20 +297,35 @@
     el.className='delta '+(p>=0?'up':'down');
   }
 
+  // >>> Ajuste: renderChart com suggestedMax dinâmico (evita "gráfico infinito")
   function renderChart(canvasId, type, labels, datasets, options = {}) {
     const canvas = $(canvasId);
     if (!canvas) return;
     if (canvas.__chart) { try { canvas.__chart.destroy(); } catch(e){} }
     const ctx = canvas.getContext('2d');
+
+    // calcula máximo global dos datasets
+    const allVals = (datasets||[]).flatMap(ds => Array.isArray(ds?.data) ? ds.data : []).map(v => +v || 0);
+    const suggestedMax = Math.max(1, ...allVals);
+
+    // escalas padrão por tipo, com y protegido
+    const baseY = { beginAtZero: true, suggestedMin: 0, suggestedMax };
+    const defaultScales = (type === 'bar')
+      ? { y: baseY, x: { grid: { display: false } } }
+      : { y: baseY };
+
+    // mescla opções sem alterar chamadas existentes
+    const mergedOptions = {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: (datasets||[]).length > 1 } },
+      scales: { ...defaultScales, ...(options.scales || {}) },
+      ...options
+    };
+
     canvas.__chart = new Chart(ctx, {
       type,
       data: { labels, datasets },
-      options: {
-        responsive: true, maintainAspectRatio: false, animation: false,
-        scales: type === 'bar' ? { y: { beginAtZero: true }, x: { grid: { display: false } } } : {},
-        plugins: { legend: { display: datasets.length > 1 } },
-        ...options
-      }
+      options: mergedOptions
     });
   }
   
@@ -543,7 +558,7 @@
     init();
   });
   
-  // ===================== LÓGICA DE UPLOAD FINAL E CORRIGIDA PARA SEUS DADOS =====================
+  // ===================== UPLOAD (com parsing de data robusto e limpeza de prato) =====================
   $('btnUpload').addEventListener('click', () => $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev) => {
     const file = ev.target.files[0];
@@ -559,74 +574,93 @@
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       
-      // ===== LINHA CRÍTICA ALTERADA =====
-      // Força a biblioteca a formatar as datas como texto no formato DD/MM/YY
-      const json_data = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: null, dateNF: 'dd/mm/yy' });
+      // Mantém o comportamento original, mas garantimos strings nas células de data
+      const rows = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: null, dateNF: 'dd/mm/yy' });
+      if (!rows.length) throw new Error("O arquivo está vazio ou inválido.");
 
-      if (json_data.length === 0) throw new Error("O arquivo está vazio ou em um formato inválido.");
-      
-      const headers = Object.keys(json_data[0]);
-      const findHeader = (possibleNames) => {
-          for (const name of possibleNames) {
-              const found = headers.find(h => h.toLowerCase().trim() === name);
-              if (found) return found;
-          }
-          return null;
-      };
-
-      const dateKey = findHeader(['data', 'data da venda']);
-      const unitKey = findHeader(['unidade']);
-      const dishKey = findHeader(['prato']);
-      const categoryKey = findHeader(['categoria']);
-      const quantityKey = findHeader(['quantidade_vendida', 'quantidade', 'qtd']);
-
-      if (!dateKey) throw new Error(`Coluna de data não encontrada. Verifique se seu arquivo possui a coluna 'data' ou 'data da venda'.`);
-      if (!quantityKey) throw new Error(`Coluna de quantidade não encontrada. Verifique se seu arquivo possui a coluna 'quantidade' ou 'quantidade_vendida'.`);
-      
-      const parseDate = (dateValue) => {
-        const s = String(dateValue);
-        const parts = s.split(/[\/\-\.]/);
-        if (parts.length === 3) {
-            let day = parts[0], month = parts[1], year = parts[2];
-            if (year.length === 2) year = '20' + year;
-            if (parseInt(month,10) > 0 && parseInt(month,10) <= 12 && parseInt(day,10) > 0 && parseInt(day,10) <= 31) {
-              return `${year.padStart(4, '20')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-            }
+      const headers = Object.keys(rows[0]);
+      const findHeader = (names) => {
+        for (const n of names){
+          const h = headers.find(hh => hh.toLowerCase().trim() === n);
+          if (h) return h;
         }
         return null;
       };
 
-      const dadosFormatados = json_data.map(linha => {
-        const dataValue = linha[dateKey];
-        if (dataValue === null || typeof dataValue === 'undefined') return null;
-        
-        const parsedDate = parseDate(dataValue);
-        if (!parsedDate) return null;
+      const dateKey = findHeader(['data','data da venda','dia','dt','dt_venda']);
+      const unitKey = findHeader(['unidade','loja','filial']);
+      const dishKey = findHeader(['prato','produto','item','itens e opcoes','itens e opções']);
+      const categoryKey = findHeader(['categoria','grupo','departamento','secao','seção']);
+      const quantityKey = findHeader(['quantidade_vendida','quantidade','qtd','qtde','qde','qtd_vendida']);
+
+      if (!dateKey) throw new Error("Coluna de data não encontrada.");
+      if (!quantityKey) throw new Error("Coluna de quantidade não encontrada.");
+
+      // helpers de data
+      const fromExcelSerialToISO = (n)=>{
+        const ms = Math.round((Number(n) - 25569) * 86400) * 1000;
+        const d  = new Date(ms);
+        return isNaN(d) ? null : d.toISOString().slice(0,10);
+      };
+      const parseDate = (val)=>{
+        if (val==null || val==='') return null;
+        if (typeof val === 'number') return fromExcelSerialToISO(val);
+        const s = String(val).trim();
+
+        // ISO
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+        // DD/MM/YYYY, DD-MM-YYYY, DD/MM/YY, DD-MM-YY
+        let m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2}|\d{4})$/);
+        if (m){
+          let [_, d, mo, y] = m;
+          if (y.length===2) y = '20'+y;
+          const dd = String(d).padStart(2,'0');
+          const mm = String(mo).padStart(2,'0');
+          const yyyy = String(y).padStart(4,'0');
+          return `${yyyy}-${mm}-${dd}`;
+        }
+
+        // fallback Date()
+        const d2 = new Date(s);
+        return isNaN(d2) ? null : d2.toISOString().slice(0,10);
+      };
+
+      // normalização de prato
+      const normStr = (v)=> v==null ? null : String(v).trim();
+
+      const payload = rows.map(r=>{
+        const iso = parseDate(r[dateKey]); if(!iso) return null;
+        const q = parseInt(r[quantityKey],10) || 0;
+
+        const pratoRaw = dishKey ? r[dishKey] : null;
+        const pratoNorm = normStr(pratoRaw);
+        const pratoFinal = (!pratoNorm || pratoNorm === '0') ? null : pratoNorm;
 
         return {
-          data: parsedDate,
-          unidade: unitKey ? linha[unitKey] : null,
-          prato: dishKey ? linha[dishKey] : null,
-          categoria: categoryKey ? linha[categoryKey] : null,
-          quantidade: parseInt(linha[quantityKey], 10) || 0
+          data: iso,
+          unidade: unitKey ? (r[unitKey] ?? null) : null,
+          prato: pratoFinal,
+          categoria: categoryKey ? (r[categoryKey] ?? null) : null,
+          quantidade: q
         };
       }).filter(Boolean);
 
-      if (dadosFormatados.length === 0) throw new Error("Nenhuma linha com dados de data válidos foi encontrada no arquivo.");
+      if (!payload.length) throw new Error("Nenhuma linha com data/quantidade válidas.");
 
-      const CHUNK_SIZE = 500;
-      for (let i = 0; i < dadosFormatados.length; i += CHUNK_SIZE) {
-          const chunk = dadosFormatados.slice(i, i + CHUNK_SIZE);
-          const { error } = await supa.from('vendas_pratos').insert(chunk);
-          if (error) throw new Error(`Erro ao importar lote para o banco: ${error.message}`);
+      const CHUNK = 500;
+      for (let i=0;i<payload.length;i+=CHUNK){
+        const chunk = payload.slice(i,i+CHUNK);
+        const { error } = await supa.from('vendas_pratos').insert(chunk);
+        if (error) throw new Error(error.message);
       }
 
-      alert(`Importação concluída! ${dadosFormatados.length} linhas inseridas.`);
+      alert(`Importação concluída! ${payload.length} linhas inseridas.`);
       window.location.reload();
 
     } catch (e) {
       console.error(e);
-      alert(`Falha na importação: ${e.message}`);
+      alert(`Falha na importação: ${e.message||e}`);
     } finally {
       btn.textContent = 'Importar';
       btn.disabled = false;
