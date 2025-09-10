@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v1';
     const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v1';
     const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v1';
-    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral'; // ATENÇÃO: Esta função não foi encontrada. A chamada está desativada.
+    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
 
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
@@ -100,28 +100,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const DateHelpers = {
       iso: (d) => d.toISOString().slice(0, 10),
       addDaysISO: (isoStr, n) => {
-          const d = new Date(isoStr + 'T12:00:00Z');
+          const d = new Date(isoStr + 'T12:00:00');
           d.setDate(d.getDate() + n);
           return d.toISOString().slice(0, 10);
       },
       daysLen: (de, ate) => {
           if (!de || !ate) return 0;
-          const d1 = new Date(de + 'T12:00:00Z');
-          const d2 = new Date(ate + 'T12:00:00Z');
+          const d1 = new Date(de + 'T12:00:00');
+          const d2 = new Date(ate + 'T12:00:00');
           return Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
       },
       monthStartISO: (isoStr) => {
-          const d = new Date(isoStr + 'T12:00:00Z');
+          const d = new Date(isoStr + 'T12:00:00');
           d.setDate(1);
           return d.toISOString().slice(0, 10);
       },
       monthEndISO: (isoStr) => {
-          const d = new Date(isoStr + 'T12:00:00Z');
+          const d = new Date(isoStr + 'T12:00:00');
           d.setMonth(d.getMonth() + 1, 0);
           return d.toISOString().slice(0, 10);
       },
       addMonthsISO: (isoStr, delta) => {
-          const d = new Date(isoStr + 'T12:00:00Z');
+          const d = new Date(isoStr + 'T12:00:00');
           const day = d.getDate();
           d.setDate(1);
           d.setMonth(d.getMonth() + delta);
@@ -130,7 +130,8 @@ document.addEventListener('DOMContentLoaded', () => {
           return d.toISOString().slice(0, 10);
       },
       formatYM: (isoStr) => {
-          const d = new Date(isoStr + 'T12:00:00Z');
+          if (!isoStr) return '';
+          const d = new Date(isoStr + 'T12:00:00');
           const m = d.getMonth();
           const y = String(d.getFullYear()).slice(-2);
           const n = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -150,8 +151,8 @@ document.addEventListener('DOMContentLoaded', () => {
       },
       computePrevRangeISO: function(deISO, ateISO) {
           if(!deISO || !ateISO) return {dePrev:null, atePrev:null};
-          const d1 = new Date(deISO + 'T12:00:00Z');
-          const d2 = new Date(ateISO + 'T12:00:00Z');
+          const d1 = new Date(deISO + 'T12:00:00');
+          const d2 = new Date(ateISO + 'T12:00:00');
           
           if (this.isFullYear(d1, d2)) {
               const p1 = this.shiftYear(d1, -1);
@@ -308,18 +309,11 @@ document.addEventListener('DOMContentLoaded', () => {
         p_dini: de, p_dfim: ate,
         p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
         p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
-        p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
         p_canais: isActive(analiticos.canal) ? analiticos.canal : null,
+        p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
         p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
         p_cancelado
       };
-    }
-
-    // CORREÇÃO: Nova função de parâmetros para os gráficos, que não aceitam p_unids
-    function buildChartParams(de, ate, analiticos) {
-      const params = buildParams(de, ate, analiticos);
-      delete params.p_unids; // Remove o parâmetro que não é aceito pelas funções de gráfico
-      return params;
     }
 
     async function baseQuery(de, ate, analiticos){
@@ -662,29 +656,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
-      const meta = KPI_META[selectedKPI] || KPI_META.fat;
-      const mode = effectiveMode();
       try {
           setDiag('');
-          // CORREÇÃO: Usando a nova função de parâmetros para os gráficos
-          const paramsNow = buildChartParams(de, ate, analiticos);
-          const paramsPrev = buildChartParams(dePrev, atePrev, analiticos);
+          const baseParams = buildParams(de, ate, analiticos);
+          const paramsNow = { ...baseParams, p_kpi_key: selectedKPI };
+          const paramsPrev = { ...baseParams, p_dini: dePrev, p_dfim: atePrev, p_kpi_key: selectedKPI };
 
           const [
-              {data: dowData}, {data: dowDataPrev},
-              {data: hourData}, {data: hourDataPrev},
-              {data: turnoData}, {data: turnoDataPrev}
+              {data: dowData, error: dowErr}, {data: dowDataPrev, error: dowErrPrev},
+              {data: hourData, error: hourErr}, {data: hourDataPrev, error: hourErrPrev},
+              {data: turnoData, error: turnoErr}, {data: turnoDataPrev, error: turnoErrPrev}
           ] = await Promise.all([
-              supa.rpc(RPC_CHART_DOW_FUNC, paramsNow),
-              supa.rpc(RPC_CHART_DOW_FUNC, paramsPrev),
-              supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow),
-              supa.rpc(RPC_CHART_HOUR_FUNC, paramsPrev),
-              supa.rpc(RPC_CHART_TURNO_FUNC, paramsNow),
-              supa.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_DOW_FUNC, paramsNow), supa.rpc(RPC_CHART_DOW_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow), supa.rpc(RPC_CHART_HOUR_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_TURNO_FUNC, paramsNow), supa.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
           ]);
           
+          if (dowErr || hourErr || turnoErr || dowErrPrev || hourErrPrev || turnoErrPrev) {
+            throw (dowErr || hourErr || turnoErr || dowErrPrev || hourErrPrev || turnoErrPrev);
+          }
+          
           const tip = `Período anterior: ${dePrev} → ${atePrev}`;
-          const valueKey = mode === 'media' ? 'media' : 'total';
+          const valueKey = effectiveMode() === 'media' ? 'media' : 'total';
           
           {
               const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -738,9 +731,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
         
-        // CORREÇÃO: Usando a nova função de parâmetros para os gráficos
-        const paramsNow = buildChartParams(last12Start, last12End, analiticos);
-        const paramsPrev = buildChartParams(prev12Start, prev12EndAdj, analiticos);
+        const baseParams = buildParams(null, null, analiticos);
+        const paramsNow = { ...baseParams, p_dini: last12Start, p_dfim: last12End, p_kpi_key: selectedKPI };
+        const paramsPrev = { ...baseParams, p_dini: prev12Start, p_dfim: prev12EndAdj, p_kpi_key: selectedKPI };
 
         const [{data: nData, error: nErr}, {data: pData, error: pErr}] = await Promise.all([
             supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
@@ -750,8 +743,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (nErr) throw nErr;
         if (pErr) throw pErr;
 
-        const mode = effectiveMode();
-        const valueKey = mode === 'media' ? 'media' : 'total';
+        const valueKey = effectiveMode() === 'media' ? 'media' : 'total';
         
         const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, +r[valueKey]||0]));
         const mNow = toMap(nData), mPrev = toMap(pData);
@@ -761,7 +753,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let cur = last12Start;
         for(let i=0;i<12;i++){ 
             labels.push(DateHelpers.formatYM(cur)); 
-            const d=new Date(cur+'T12:00:00Z'); 
+            const d=new Date(cur+'T12:00:00'); 
             const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; 
             ymsNow.push(ym); 
             cur=DateHelpers.addMonthsISO(cur,1); 
@@ -915,8 +907,8 @@ document.addEventListener('DOMContentLoaded', () => {
             $('diag_title_dow').textContent = `${meta.label} por Dia da Semana`;
             $('diag_title_hour').textContent = `${meta.label} por Hora`;
 
-            // CORREÇÃO: Usando a nova função de parâmetros para os gráficos
-            const paramsNow = buildChartParams(de, ate, analiticos);
+            const baseParams = buildParams(de, ate, analiticos);
+            const paramsNow = { ...baseParams, p_kpi_key: selectedKpi };
 
             const [
                 { data: monthData, error: monthErr },
@@ -930,10 +922,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (monthErr || dowErr || hourErr) throw (monthErr || dowErr || hourErr);
 
-            const valueKey = diagChartMode;
+            const valueKey = diagChartMode; 
 
             {
-                const labels = (monthData || []).map(r => DateHelpers.formatYM(r.ym + '-01T12:00:00Z'));
+                const labels = (monthData || []).map(r => DateHelpers.formatYM(r.ym + '-01T12:00:00'));
                 const dataArr = (monthData || []).map(r => +r[valueKey] || 0);
                 ensureSingleSeriesChart('diag_ch_month', labels, dataArr, meta, 'line');
             }
@@ -978,13 +970,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const contextContainer = document.querySelector('#tab-diagnostico .hero-context');
         if (!insightsContainer || !contextContainer) return;
 
-        // CORREÇÃO: Desativado temporariamente pois a função RPC_DIAGNOSTIC_FUNC não foi encontrada.
-        insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px;">Geração de insights desativada (função '${RPC_DIAGNOSTIC_FUNC}' não encontrada no banco de dados).</p>`;
-        contextContainer.innerHTML = '<strong>Destaques:</strong> —';
-        return;
-        
-        /*
-        // CÓDIGO ORIGINAL (mantido para referência caso a função seja criada)
         insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px;">Gerando insights...</p>`;
         contextContainer.innerHTML = '<strong>Destaques:</strong> Carregando...';
 
@@ -1066,10 +1051,8 @@ document.addEventListener('DOMContentLoaded', () => {
             insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px; color: var(--down);">Erro ao carregar insights.</p>`;
             contextContainer.innerHTML = '<strong>Destaques:</strong> Erro ao carregar.';
         }
-        */
     }
     
-    // CORREÇÃO: Lógica de upload de planilha completamente reescrita
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
     $('fileExcel').addEventListener('change', async (ev)=>{
         const file = ev.target.files?.[0];
@@ -1085,86 +1068,60 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!json || json.length === 0) {
                 throw new Error("O arquivo está vazio ou em um formato inválido.");
             }
-            
+
             const headerMap = {
-                'data': 'dia',
+                'dia': 'dia', 'data': 'dia',
+                'hora': 'hora',
                 'unidade': 'unidade',
-                'loja': 'loja',
-                'canal': 'canal',
-                'pagamento': 'pagamento_base',
+                'loja': 'loja', 'nome da loja': 'loja',
+                'canal': 'canal', 'canal de venda': 'canal',
+                'pagamento base': 'pagamento_base', 'pagamento': 'pagamento_base',
                 'cancelado': 'cancelado',
-                'total': 'fat',
-                'desconto': 'des',
-                'entrega': 'fre',
-                'pedido': 'pedido_id',
-                'turno': 'turno',
-                'itens': 'itens_valor' // Supondo que 'Itens' é o valor, não a contagem
+                'faturamento bruto': 'fat', 'fat': 'fat', 'faturamento': 'fat', 'total': 'fat',
+                'des': 'des', 'desconto': 'des', 'incentivos': 'des',
+                'frete': 'fre', 'fre': 'fre', 'entrega': 'fre',
+                'pedido id': 'pedido_id', 'id do pedido': 'pedido_id', 'pedido_id': 'pedido_id', 'codigo': 'pedido_id'
             };
     
             const transformedJson = json.map((row, index) => {
                 const newRow = {};
-                const originalRowKeys = {};
-                // Primeiro, normaliza as chaves do objeto 'row' (ex: " loja" -> "loja")
-                for (const key in row) {
-                    originalRowKeys[normHeader(key)] = row[key];
-                }
-
-                // Mapeia os dados da planilha para as colunas do banco
-                for (const spreadsheetHeader in headerMap) {
-                    const dbColumn = headerMap[spreadsheetHeader];
-                    if (originalRowKeys.hasOwnProperty(spreadsheetHeader)) {
-                       newRow[dbColumn] = originalRowKeys[spreadsheetHeader];
+                for (const originalKey in row) {
+                    const normalizedKey = normHeader(originalKey);
+                    const dbColumn = headerMap[normalizedKey];
+                    if (dbColumn) {
+                        newRow[dbColumn] = row[originalKey];
                     }
                 }
                 
-                // --- Transformações de Dados ---
-                // 1. Separar data e hora
-                const dataHoraStr = originalRowKeys['data']; // ex: "01/09/2025 10:38"
-                if (dataHoraStr && String(dataHoraStr).includes('/')) {
-                    const [dataPart, horaPart] = dataHoraStr.split(' ');
-                    const [dia, mes, ano] = dataPart.split('/');
-                    if(dia && mes && ano) {
-                        newRow['dia'] = `${ano}-${mes.padStart(2,'0')}-${dia.padStart(2,'0')}`; // Formato YYYY-MM-DD
-                    }
-                    if (horaPart) {
-                        newRow['hora'] = horaPart.substring(0, 2); // Apenas a hora
-                    }
-                }
-
-                // 2. Converter valores monetários para números (aceita '.' e ',' como decimal)
-                newRow['fat'] = parseFloat(String(newRow['fat'] || '0').replace(',', '.')) || 0;
-                newRow['des'] = parseFloat(String(newRow['des'] || '0').replace(',', '.')) || 0;
-                newRow['fre'] = parseFloat(String(newRow['fre'] || '0').replace(',', '.')) || 0;
-                newRow['itens_valor'] = parseFloat(String(newRow['itens_valor'] || '0').replace(',', '.')) || 0;
-
-
-                // 3. Normalizar 'Cancelado' (N/S -> Não/Sim)
-                const canceladoVal = String(newRow['cancelado'] || 'N').toUpperCase();
-                newRow['cancelado'] = canceladoVal === 'S' ? 'Sim' : 'Não';
+                const tempPedidoId = newRow['pedido_id'] || null;
                 
-                // 4. Gerar row_key obrigatória a partir do código ou pedido
-                const pedidoId = newRow['pedido_id'] || originalRowKeys['codigo'] || `import-${Date.now()}-${index}`;
-                newRow['row_key'] = `${pedidoId}-${newRow.dia}`;
-
-                // 5. Garantir que temos um pedido
-                newRow.pedidos = 1;
+                if (tempPedidoId) {
+                    newRow['row_key'] = `${tempPedidoId}-${new Date().getTime()}-${index}`;
+                } else {
+                    newRow['row_key'] = `import-${new Date().getTime()}-${index}`;
+                }
 
                 return newRow;
-            }).filter(row => row.dia); // Garante que apenas linhas com data válida sejam importadas
+            });
 
-            if(transformedJson.length === 0) {
-                throw new Error("Nenhuma linha válida encontrada na planilha. Verifique o formato da coluna 'Data'.");
+            const CHUNK_SIZE = 500;
+            for (let i = 0; i < transformedJson.length; i += CHUNK_SIZE) {
+                const chunk = transformedJson.slice(i, i + CHUNK_SIZE);
+                const startRange = i + 1;
+                const endRange = Math.min(i + CHUNK_SIZE, transformedJson.length);
+                
+                setStatus(`Enviando registros ${startRange}-${endRange} de ${transformedJson.length}...`, 'info');
+                
+                const { error } = await supa.from(DEST_INSERT_TABLE).insert(chunk);
+                if (error) throw error;
             }
-
-            setStatus(`Enviando ${transformedJson.length} registros...`, 'info');
             
-            const { error } = await supa.from(DEST_INSERT_TABLE).upsert(transformedJson, { onConflict: 'row_key' });
+            setStatus('Dados enviados. Processando no servidor...', 'info');
+            const { error: refreshError } = await supa.rpc(REFRESH_RPC);
+            if (refreshError) throw refreshError;
 
-            if (error) {
-                throw error;
-            }
-            
-            setStatus('Importação concluída! Atualizando...', 'ok');
+            setStatus('Importação concluída! Atualizando dashboard...', 'ok');
+            await reloadStaticOptions();
             fxDispatchApply();
 
         } catch(e) {
@@ -1186,19 +1143,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const de = firstDay || '1900-01-01';
       const ate= lastDay  || DateHelpers.iso(new Date());
       const TOPN = 50;
-      
-      // CORREÇÃO: Objeto de parâmetros base para garantir que todas as chaves sejam enviadas
-      const baseParams = { 
-        p_dini: de, p_dfim: ate, 
-        p_unids: null, p_lojas: null, p_turnos: null, p_canais: null, p_pags: null, p_cancelado: null,
-        p_limit: TOPN 
-      };
-
       const [topUnids, topLojas, topPags, topCanais] = await Promise.allSettled([
-        supa.rpc('opt_unidades_ranked',  baseParams),
-        supa.rpc('opt_lojas_ranked',     baseParams),
-        supa.rpc('opt_pagamentos_ranked',baseParams),
-        supa.rpc('opt_canais_ranked',    baseParams),
+        supa.rpc('opt_unidades_ranked',  { p_dini: de, p_dfim: ate, p_lojas:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
+        supa.rpc('opt_lojas_ranked',     { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
+        supa.rpc('opt_pagamentos_ranked',{ p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_canais:null, p_lojas:null, p_cancelado:null, p_limit: TOPN }),
+        supa.rpc('opt_canais_ranked',    { p_dini: de, p_dfim: ate, p_unids:null, p_turnos:null, p_lojas:null, p_pags:null, p_cancelado:null, p_limit: TOPN }),
       ]);
       const tUnids = (topUnids.status==='fulfilled' && !topUnids.value.error) ? (topUnids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
       const tLojas = (topLojas.status==='fulfilled'  && !topLojas.value.error)  ? (topLojas.value.data||[]).map(r=>r.loja).filter(Boolean)       : [];
@@ -1238,21 +1187,18 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const totalViewAnaliticos = { ...analiticos, unidade: [], loja: [] };
         
-        // As projeções precisam dos dados de KPIs, então vamos calculá-los primeiro.
-        const kpiDataPromise = updateKPIs(de, ate, dePrev, atePrev, totalViewAnaliticos);
-        const projectionsPromise = updateProjections(de, ate, dePrev, atePrev, analiticos);
-
-        const [kpiData] = await Promise.all([kpiDataPromise, projectionsPromise]);
+        const kpiData = await updateKPIs(de, ate, dePrev, atePrev, totalViewAnaliticos);
         renderVendasKPIs(kpiData);
 
         const selectedKpiForDiag = $('kpi-select').value;
         await Promise.all([
-          updateMonth12x12(totalViewAnaliticos),
+          updateMonth12x12(analiticos),
           getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos),
           updateCharts(de,ate,dePrev,atePrev, analiticos),
           updateDiagnosticCharts(de, ate, analiticos),
           updateTop6(de,ate, analiticos),
           updateInsights(de, ate, analiticos, selectedKpiForDiag),
+          updateProjections(de, ate, dePrev, atePrev, analiticos)
         ]);
         
         setStatus('OK','ok');
@@ -1278,16 +1224,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function fxLocalMidday(d){ const x=new Date(d); x.setHours(12,0,0,0); return x }
     function fxFmt(date){ return date.toISOString().slice(0,10); }
-    function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
+    function fxSetRange(start,end){ $('fxDuStart').value = fxFmt(start); $('fxDuEnd').value = fxFmt(end) }
     function fxLastNDays(n){
-      const baseDate = lastDay ? fxLocalMidday(lastDay+'T12:00:00Z') : new Date();
+      const baseDate = lastDay ? fxLocalMidday(lastDay) : new Date();
       const end = new Date(baseDate);
       const start = new Date(baseDate);
       start.setDate(baseDate.getDate()-(n-1));
       fxSetRange(start,end);
     }
     function fxNamed(win){
-      const baseDate = lastDay ? fxLocalMidday(lastDay+'T12:00:00Z') : new Date();
+      const baseDate = lastDay ? fxLocalMidday(lastDay) : new Date();
       if(win==='today'){ fxSetRange(baseDate,baseDate) }
       else if(win==='yesterday'){ const y=new Date(baseDate); y.setDate(baseDate.getDate()-1); fxSetRange(y,y) }
       else if(win==='lastMonth'){ const y=baseDate.getFullYear(), m=baseDate.getMonth(); fxSetRange(new Date(y,m-1,1), new Date(y,m,0)) }
@@ -1325,8 +1271,8 @@ document.addEventListener('DOMContentLoaded', () => {
             diagChartMode = btn.dataset.mode;
             segDiagCharts.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
             fxDispatchApply();
-        });
-    }
+        }
+    });
 
     function fxShowDrop(show){
       fx.$drop.classList.toggle('fx-show', show);
@@ -1343,8 +1289,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function fxDispatchApply(){
       const payload = {
-        start: fx.$start.value, 
-        end: fx.$end.value,
+        start: $('fxDuStart').value, 
+        end: $('fxDuEnd').value,
         analiticos: {
           unidade: ms.unids.get(),
           loja: ms.lojas.get(),
