@@ -6,11 +6,11 @@ document.addEventListener('DOMContentLoaded', () => {
     /* ===================== CONFIG ===================== */
     const RPC_FILTER_FUNC = 'filter_vendas';
     const RPC_KPI_FUNC = 'kpi_vendas_unificado';
-    // CORREÇÃO 1: Removido o sufixo '_v1' dos nomes das funções de gráfico.
-    const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes';
-    const RPC_CHART_DOW_FUNC = 'chart_vendas_dow';
-    const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora';
-    const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno';
+    // REVERSÃO E CORREÇÃO 1: Adicionado o sufixo '_v1' de volta, conforme a dica do Supabase.
+    const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes_v1';
+    const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v1';
+    const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v1';
+    const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v1';
     const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
 
     const DEST_INSERT_TABLE= 'vendas_xlsx';
@@ -656,46 +656,34 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
-      const meta = KPI_META[selectedKPI] || KPI_META.fat;
-      const mode = effectiveMode();
       try {
           setDiag('');
-          // CORREÇÃO 2: Construir parâmetros específicos para os gráficos, incluindo KPI e modo.
-          const isActive = (val) => val && val.length > 0;
-          let p_cancelado = null;
-          if (analiticos.cancelado === 'sim') p_cancelado = 'Sim';
-          if (analiticos.cancelado === 'nao') p_cancelado = 'Não';
-          
-          const chartParams = {
-            p_kpi_key: selectedKPI,
-            p_mode: mode,
-            p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
-            p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
-            p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
-            p_canais: isActive(analiticos.canal) ? analiticos.canal : null,
-            p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
-            p_cancelado
+          // CORREÇÃO 2: Criar o objeto de parâmetros base com os filtros e o p_kpi_key.
+          const baseParams = {
+            ...buildParams(null, null, analiticos), // Reutiliza a lógica de filtros
+            p_kpi_key: selectedKPI
           };
+          delete baseParams.p_dini; // Remove datas que serão setadas a seguir
+          delete baseParams.p_dfim;
 
-          const paramsNow = { ...chartParams, p_dini: de, p_dfim: ate };
-          const paramsPrev = { ...chartParams, p_dini: dePrev, p_dfim: atePrev };
+          const paramsNow = { ...baseParams, p_dini: de, p_dfim: ate };
+          const paramsPrev = { ...baseParams, p_dini: dePrev, p_dfim: atePrev };
 
           const [
-              {data: dowData}, {data: dowDataPrev},
-              {data: hourData}, {data: hourDataPrev},
-              {data: turnoData}, {data: turnoDataPrev}
+              {data: dowData, error: dowErr}, {data: dowDataPrev, error: dowErrPrev},
+              {data: hourData, error: hourErr}, {data: hourDataPrev, error: hourErrPrev},
+              {data: turnoData, error: turnoErr}, {data: turnoDataPrev, error: turnoErrPrev}
           ] = await Promise.all([
-              supa.rpc(RPC_CHART_DOW_FUNC, paramsNow),
-              supa.rpc(RPC_CHART_DOW_FUNC, paramsPrev),
-              supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow),
-              supa.rpc(RPC_CHART_HOUR_FUNC, paramsPrev),
-              supa.rpc(RPC_CHART_TURNO_FUNC, paramsNow),
-              supa.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_DOW_FUNC, paramsNow), supa.rpc(RPC_CHART_DOW_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow), supa.rpc(RPC_CHART_HOUR_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_TURNO_FUNC, paramsNow), supa.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
           ]);
           
+          if (dowErr || hourErr || turnoErr) throw (dowErr || hourErr || turnoErr || dowErrPrev || hourErrPrev || turnoErrPrev);
+          
           const tip = `Período anterior: ${dePrev} → ${atePrev}`;
-          // O backend agora retorna uma única coluna 'valor' com base no KPI e modo.
-          const valueKey = 'valor';
+          // CORREÇÃO 3: Restaurar a lógica original que seleciona entre 'total' e 'media'.
+          const valueKey = effectiveMode() === 'media' ? 'media' : 'total';
           
           {
               const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -749,25 +737,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
         
-        // CORREÇÃO 2: Mesma lógica de parâmetros específicos para o gráfico mensal.
-        const isActive = (val) => val && val.length > 0;
-        let p_cancelado = null;
-        if (analiticos.cancelado === 'sim') p_cancelado = 'Sim';
-        if (analiticos.cancelado === 'nao') p_cancelado = 'Não';
-
-        const chartParams = {
-            p_kpi_key: selectedKPI,
-            p_mode: effectiveMode(),
-            p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
-            p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
-            p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
-            p_canais: isActive(analiticos.canal) ? analiticos.canal : null,
-            p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
-            p_cancelado
+        // CORREÇÃO 2: Aplicar a mesma lógica de parâmetros para o gráfico mensal.
+        const baseParams = {
+            ...buildParams(null, null, analiticos),
+            p_kpi_key: selectedKPI
         };
-        
-        const paramsNow = { ...chartParams, p_dini: last12Start, p_dfim: last12End };
-        const paramsPrev = { ...chartParams, p_dini: prev12Start, p_dfim: prev12EndAdj };
+        delete baseParams.p_dini;
+        delete baseParams.p_dfim;
+
+        const paramsNow = { ...baseParams, p_dini: last12Start, p_dfim: last12End };
+        const paramsPrev = { ...baseParams, p_dini: prev12Start, p_dfim: prev12EndAdj };
 
         const [{data: nData, error: nErr}, {data: pData, error: pErr}] = await Promise.all([
             supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
@@ -777,7 +756,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (nErr) throw nErr;
         if (pErr) throw pErr;
 
-        const valueKey = 'valor';
+        // CORREÇÃO 3: Restaurar a lógica original de valueKey.
+        const valueKey = effectiveMode() === 'media' ? 'media' : 'total';
         
         const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, +r[valueKey]||0]));
         const mNow = toMap(nData), mPrev = toMap(pData);
@@ -941,23 +921,15 @@ document.addEventListener('DOMContentLoaded', () => {
             $('diag_title_dow').textContent = `${meta.label} por Dia da Semana`;
             $('diag_title_hour').textContent = `${meta.label} por Hora`;
 
-            // CORREÇÃO 2: Usar parâmetros específicos também para os gráficos de diagnóstico.
-            const isActive = (val) => val && val.length > 0;
-            let p_cancelado = null;
-            if (analiticos.cancelado === 'sim') p_cancelado = 'Sim';
-            if (analiticos.cancelado === 'nao') p_cancelado = 'Não';
-
-            const paramsNow = {
-                p_dini: de, p_dfim: ate,
-                p_kpi_key: selectedKpi,
-                p_mode: diagChartMode, // Usa o modo específico da aba de diagnóstico
-                p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
-                p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
-                p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
-                p_canais: isActive(analiticos.canal) ? analiticos.canal : null,
-                p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
-                p_cancelado
+            // CORREÇÃO 2: Aplicar a mesma lógica de parâmetros para os gráficos de diagnóstico.
+            const baseParams = {
+                ...buildParams(null, null, analiticos),
+                p_kpi_key: selectedKpi
             };
+            delete baseParams.p_dini;
+            delete baseParams.p_dfim;
+
+            const paramsNow = { ...baseParams, p_dini: de, p_dfim: ate };
 
             const [
                 { data: monthData, error: monthErr },
@@ -971,7 +943,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (monthErr || dowErr || hourErr) throw (monthErr || dowErr || hourErr);
 
-            const valueKey = 'valor';
+            // CORREÇÃO 3: Usar o modo específico da aba de diagnóstico ('total' ou 'media').
+            const valueKey = diagChartMode; 
 
             {
                 const labels = (monthData || []).map(r => DateHelpers.formatYM(r.ym + '-01T12:00:00'));
