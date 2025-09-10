@@ -6,10 +6,11 @@ document.addEventListener('DOMContentLoaded', () => {
     /* ===================== CONFIG ===================== */
     const RPC_FILTER_FUNC = 'filter_vendas';
     const RPC_KPI_FUNC = 'kpi_vendas_unificado';
-    const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes_v1';
-    const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v1';
-    const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v1';
-    const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v1';
+    // CORREÇÃO FINAL 1: Removido o sufixo '_v1' dos nomes.
+    const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes';
+    const RPC_CHART_DOW_FUNC = 'chart_vendas_dow';
+    const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora';
+    const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno';
     const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
 
     const DEST_INSERT_TABLE= 'vendas_xlsx';
@@ -315,8 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
       };
     }
 
-    // CORREÇÃO FINAL: Nova função para construir parâmetros APENAS para os gráficos.
-    // Ela envia somente os parâmetros que a função no Supabase aceita.
+    // CORREÇÃO FINAL 2: A função agora envia EXATAMENTE os parâmetros que a RPC aceita.
     function buildChartParams(analiticos) {
         const isActive = (val) => val && val.length > 0;
         let p_cancelado = null;
@@ -325,10 +325,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         return {
             p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
-            p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
             p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
+            p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
             p_cancelado
-            // Parâmetros removidos: p_unids, p_canais, p_kpi_key
         };
     }
 
