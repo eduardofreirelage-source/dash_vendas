@@ -473,8 +473,8 @@ document.addEventListener('DOMContentLoaded', () => {
           const mainDeltaEl = mainKpiCard.querySelector('.delta');
           const mainSubEl = mainKpiCard.querySelector('.hero-sub-value');
           
-          const totalAnaliticos = {...analiticos, unidade: [], loja: []};
-          const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, totalAnaliticos);
+          // CORREÇÃO APLICADA AQUI: Usa 'analiticos' diretamente
+          const totalKpis = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
           
           if(totalKpis && totalKpis[kpi_key]) {
               const meta = KPI_META[kpi_key];
@@ -1185,9 +1185,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const {dePrev, atePrev} = DateHelpers.computePrevRangeISO(de,ate);
         setStatus('Consultando…');
         
-        const totalViewAnaliticos = { ...analiticos, unidade: [], loja: [] };
-        
-        const kpiData = await updateKPIs(de, ate, dePrev, atePrev, totalViewAnaliticos);
+        // CORREÇÃO APLICADA AQUI: Usa 'analiticos' diretamente
+        const kpiData = await updateKPIs(de, ate, dePrev, atePrev, analiticos);
         renderVendasKPIs(kpiData);
 
         const selectedKpiForDiag = $('kpi-select').value;
@@ -1373,5 +1372,4 @@ document.addEventListener('DOMContentLoaded', () => {
         setStatus('Erro ao iniciar: '+(e.message||e),'err');
       }
     })();
-
 });
