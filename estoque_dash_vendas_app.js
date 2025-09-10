@@ -354,6 +354,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const valEl = $(`k_${key}`);
             const prevEl = $(`p_${key}`);
             const deltaEl = $(`d_${key}`);
+            const formatValueBy = (fmt,v) => {
+                if(fmt==='count') return num(v);
+                if(fmt==='percent') return pctf(v);
+                return money(v);
+              };
             if (valEl) valEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.current);
             if (prevEl) prevEl.textContent = formatValueBy(KPI_META[key].fmt, kpi.previous);
             if (deltaEl) deltaBadge(deltaEl, kpi.current, kpi.previous);
@@ -1033,7 +1038,7 @@ document.addEventListener('DOMContentLoaded', () => {
             insightsArray.forEach(insight => {
                 const insightHTML = `
                     <div class="ins-card ${insight.type || ''}">
-                        <div class.="dot"></div>
+                        <div class="dot"></div>
                         <div>
                             <div class="ins-title">${insight.title || ''}</div>
                             <div class="ins-sub">${insight.subtitle || ''}</div>
@@ -1076,15 +1081,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 'canal': 'canal', 'canal de venda': 'canal',
                 'pagamento_base': 'pagamento_base', 'pagamento': 'pagamento_base',
                 'cancelado': 'cancelado',
-                'fat': 'fat', 'faturamento': 'fat',
+                'fat': 'fat', 'faturamento': 'fat', 'faturamento bruto': 'fat',
                 'des': 'des', 'desconto': 'des', 'incentivos': 'des',
                 'fre': 'fre', 'frete': 'fre',
-                'pedido_id': 'pedido_id', 'id do pedido': 'pedido_id'
+                'pedido_id': 'pedido_id', 'id do pedido': 'pedido_id', 'n pedido': 'pedido_id'
             };
     
             const transformedJson = json.map((row, index) => {
                 const newRow = {};
-                
                 for (const originalKey in row) {
                     const normalizedKey = normHeader(originalKey);
                     const dbColumn = headerMap[normalizedKey];
@@ -1223,7 +1227,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function fxLocalMidday(d){ const x=new Date(d); x.setHours(12,0,0,0); return x }
     function fxFmt(date){ return date.toISOString().slice(0,10); }
-    function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
+    function fxSetRange(start,end){ $('fxDuStart').value = fxFmt(start); $('fxDuEnd').value = fxFmt(end) }
     function fxLastNDays(n){
       const baseDate = lastDay ? fxLocalMidday(lastDay) : new Date();
       const end = new Date(baseDate);
@@ -1288,8 +1292,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function fxDispatchApply(){
       const payload = {
-        start: fx.$start.value, 
-        end: fx.$end.value,
+        start: $('fxDuStart').value, 
+        end: $('fxDuEnd').value,
         analiticos: {
           unidade: ms.unids.get(),
           loja: ms.lojas.get(),
