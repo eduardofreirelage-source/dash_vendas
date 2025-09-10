@@ -657,6 +657,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
       try {
           setDiag('');
+          // Esta chamada agora é compatível com as novas funções SQL
           const baseParams = buildParams(de, ate, analiticos);
           const paramsNow = { ...baseParams, p_kpi_key: selectedKPI };
           const paramsPrev = { ...baseParams, p_dini: dePrev, p_dfim: atePrev, p_kpi_key: selectedKPI };
@@ -730,7 +731,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
         
-        const baseParams = buildParams(null, null, analiticos); // Use the full param builder
+        const baseParams = buildParams(null, null, analiticos);
         const paramsNow = { ...baseParams, p_dini: last12Start, p_dfim: last12End, p_kpi_key: selectedKPI };
         const paramsPrev = { ...baseParams, p_dini: prev12Start, p_dfim: prev12EndAdj, p_kpi_key: selectedKPI };
 
@@ -908,7 +909,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const baseParams = buildParams(de, ate, analiticos);
             const paramsNow = { ...baseParams, p_kpi_key: selectedKpi };
-
 
             const [
                 { data: monthData, error: monthErr },
@@ -1099,7 +1099,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
                 
-                // Gera a row_key obrigatória que estava faltando
                 if (tempPedidoId) {
                     newRow['row_key'] = `${tempPedidoId}-${new Date().getTime()}-${index}`;
                 } else {
@@ -1109,21 +1108,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 return newRow;
             });
 
-            setStatus(`Enviando ${transformedJson.length} registros...`, 'info');
-            
-            const { error } = await supa.from(DEST_INSERT_TABLE).insert(transformedJson);
+            const CHUNK_SIZE = 500;
+            for (let i = 0; i < transformedJson.length; i += CHUNK_SIZE) {
+                const chunk = transformedJson.slice(i, i + CHUNK_SIZE);
+                const startRange = i + 1;
+                const endRange = Math.min(i + CHUNK_SIZE, transformedJson.length);
+                
+                setStatus(`Enviando registros ${startRange}-${endRange} de ${transformedJson.length}...`, 'info');
+                
+                const { error } = await supa.from(DEST_INSERT_TABLE).insert(chunk);
 
-            if (error) {
-                throw error;
+                if (error) {
+                    throw error;
+                }
             }
             
-            setStatus('Importação concluída! Atualizando...', 'ok');
+            setStatus('Importação concluída! Atualizando dashboard...', 'ok');
             fxDispatchApply();
 
         } catch(e) {
             console.error("Erro na importação:", e);
             let userMessage = e.message || 'Erro desconhecido.';
             if (e.details) userMessage += ` (${e.details})`;
+            if (e.code === '57014') userMessage = "Timeout na importação. Tente um arquivo menor.";
             setStatus(`Erro: ${userMessage}`, 'err');
         } finally {
             $('fileExcel').value='';
@@ -1188,7 +1195,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const selectedKpiForDiag = $('kpi-select').value;
         await Promise.all([
-          updateMonth12x12(analiticos), // Passa os filtros completos
+          updateMonth12x12(analiticos),
           getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos),
           updateCharts(de,ate,dePrev,atePrev, analiticos),
           updateDiagnosticCharts(de, ate, analiticos),
