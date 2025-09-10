@@ -974,9 +974,65 @@ document.addEventListener('DOMContentLoaded', () => {
         const contextContainer = document.querySelector('#tab-diagnostico .hero-context');
         if (!insightsContainer || !contextContainer) return;
 
-        insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px;">Geração de insights desativada (função '${RPC_DIAGNOSTIC_FUNC}' não encontrada no banco de dados).</p>`;
-        contextContainer.innerHTML = '<strong>Destaques:</strong> —';
-        return;
+        insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px;">Gerando insights...</p>`;
+        contextContainer.innerHTML = '<strong>Destaques:</strong> Carregando...';
+
+        try {
+            const isActive = (val) => val && val.length > 0;
+            const params = {
+                p_dini: de,
+                p_dfim: ate,
+                p_kpi_key: kpi_key,
+                p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
+                p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
+                p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
+                p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null
+            };
+
+            const { data, error } = await supa.rpc(RPC_DIAGNOSTIC_FUNC, params);
+
+            if (error) throw error;
+            if (!data) throw new Error("A resposta da função de diagnóstico está vazia.");
+            
+            if(data.context && data.context.top_stores) {
+                const { top_stores, top_hours, top_channels } = data.context;
+                let contextHTML = '<strong>Destaques:</strong> ';
+                if(top_stores && top_stores.length > 0) contextHTML += `Lojas: ${top_stores.join(' • ')} • `;
+                if(top_hours && top_hours.length > 0) contextHTML += `Horário: ${top_hours.join(' • ')} • `;
+                if(top_channels && top_channels.length > 0) contextHTML += `Canal: ${top_channels.join(' • ')}`;
+                contextContainer.innerHTML = contextHTML;
+            } else {
+                 contextContainer.innerHTML = '<strong>Destaques:</strong> Nenhum dado de contexto retornado.';
+            }
+
+            const insightsArray = data.insights || [];
+
+            if (insightsArray.length === 0) {
+                insightsContainer.innerHTML = '<p class="muted" style="text-align:center; padding: 20px;">Nenhum insight de texto gerado para este período.</p>';
+                return;
+            }
+
+            let allInsightsHTML = '';
+            insightsArray.forEach(insight => {
+                const insightHTML = `
+                    <div class="ins-card ${insight.type || ''}">
+                        <div class="dot"></div>
+                        <div>
+                            <div class="ins-title">${insight.title || ''}</div>
+                            <div class="ins-sub">${insight.subtitle || ''}</div>
+                            <div class="ins-action">${insight.action || ''}</div>
+                        </div>
+                    </div>
+                `;
+                allInsightsHTML += insightHTML;
+            });
+            insightsContainer.innerHTML = allInsightsHTML;
+
+        } catch (e) {
+            console.error("Erro ao carregar insights de IA:", e);
+            insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px; color: var(--down);">Erro ao carregar insights.</p>`;
+            contextContainer.innerHTML = '<strong>Destaques:</strong> Erro ao carregar.';
+        }
     }
     
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
