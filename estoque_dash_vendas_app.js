@@ -308,11 +308,28 @@ document.addEventListener('DOMContentLoaded', () => {
         p_dini: de, p_dfim: ate,
         p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
         p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
-        p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
         p_canais: isActive(analiticos.canal) ? analiticos.canal : null,
+        p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
         p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
         p_cancelado
       };
+    }
+
+    // CORREÇÃO FINAL: Nova função para construir parâmetros APENAS para os gráficos.
+    // Ela envia somente os parâmetros que a função no Supabase aceita.
+    function buildChartParams(analiticos) {
+        const isActive = (val) => val && val.length > 0;
+        let p_cancelado = null;
+        if (analiticos.cancelado === 'sim') p_cancelado = 'Sim';
+        if (analiticos.cancelado === 'nao') p_cancelado = 'Não';
+        
+        return {
+            p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
+            p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
+            p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
+            p_cancelado
+            // Parâmetros removidos: p_unids, p_canais, p_kpi_key
+        };
     }
 
     async function baseQuery(de, ate, analiticos){
@@ -654,25 +671,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
     
-    // Função auxiliar para construir os parâmetros dos gráficos
-    function buildChartParams(analiticos) {
-        const isActive = (val) => val && val.length > 0;
-        let p_cancelado = null;
-        if (analiticos.cancelado === 'sim') p_cancelado = 'Sim';
-        if (analiticos.cancelado === 'nao') p_cancelado = 'Não';
-        
-        return {
-            p_kpi_key: selectedKPI,
-            // CORREÇÃO FINAL: Removido p_unids das chamadas de gráfico
-            // p_unids: isActive(analiticos.unidade) ? analiticos.unidade : null, 
-            p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
-            p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
-            p_canais: isActive(analiticos.canal) ? analiticos.canal : null,
-            p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
-            p_cancelado
-        };
-    }
-
     async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
       try {
           setDiag('');
