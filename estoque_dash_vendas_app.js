@@ -130,6 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return d.toISOString().slice(0, 10);
       },
       formatYM: (isoStr) => {
+          if (!isoStr) return '';
           const d = new Date(isoStr + 'T12:00:00');
           const m = d.getMonth();
           const y = String(d.getFullYear()).slice(-2);
