@@ -657,7 +657,6 @@ document.addEventListener('DOMContentLoaded', () => {
     async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
       try {
           setDiag('');
-          // Esta chamada agora é compatível com as novas funções SQL
           const baseParams = buildParams(de, ate, analiticos);
           const paramsNow = { ...baseParams, p_kpi_key: selectedKPI };
           const paramsPrev = { ...baseParams, p_dini: dePrev, p_dfim: atePrev, p_kpi_key: selectedKPI };
@@ -1123,6 +1122,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             
+            setStatus('Dados enviados. Processando no servidor...', 'info');
+            // ETAPA FINAL: Chamar a função para processar os dados no servidor
+            const { error: refreshError } = await supa.rpc(REFRESH_RPC);
+            if (refreshError) {
+                throw refreshError;
+            }
+
             setStatus('Importação concluída! Atualizando dashboard...', 'ok');
             fxDispatchApply();
 
