@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v1';
     const RPC_CHART_HOUR_FUNC = 'chart_vendas_hora_v1';
     const RPC_CHART_TURNO_FUNC = 'chart_vendas_turno_v1';
-    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral'; // ATENÇÃO: Esta função não foi encontrada na sua lista. A chamada está desativada.
+    const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral'; // ATENÇÃO: Esta função não foi encontrada. A chamada está desativada.
 
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
@@ -100,28 +100,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const DateHelpers = {
       iso: (d) => d.toISOString().slice(0, 10),
       addDaysISO: (isoStr, n) => {
-          const d = new Date(isoStr + 'T12:00:00');
+          const d = new Date(isoStr + 'T12:00:00Z');
           d.setDate(d.getDate() + n);
           return d.toISOString().slice(0, 10);
       },
       daysLen: (de, ate) => {
           if (!de || !ate) return 0;
-          const d1 = new Date(de + 'T12:00:00');
-          const d2 = new Date(ate + 'T12:00:00');
+          const d1 = new Date(de + 'T12:00:00Z');
+          const d2 = new Date(ate + 'T12:00:00Z');
           return Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
       },
       monthStartISO: (isoStr) => {
-          const d = new Date(isoStr + 'T12:00:00');
+          const d = new Date(isoStr + 'T12:00:00Z');
           d.setDate(1);
           return d.toISOString().slice(0, 10);
       },
       monthEndISO: (isoStr) => {
-          const d = new Date(isoStr + 'T12:00:00');
+          const d = new Date(isoStr + 'T12:00:00Z');
           d.setMonth(d.getMonth() + 1, 0);
           return d.toISOString().slice(0, 10);
       },
       addMonthsISO: (isoStr, delta) => {
-          const d = new Date(isoStr + 'T12:00:00');
+          const d = new Date(isoStr + 'T12:00:00Z');
           const day = d.getDate();
           d.setDate(1);
           d.setMonth(d.getMonth() + delta);
@@ -130,7 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return d.toISOString().slice(0, 10);
       },
       formatYM: (isoStr) => {
-          const d = new Date(isoStr + 'T12:00:00');
+          const d = new Date(isoStr + 'T12:00:00Z');
           const m = d.getMonth();
           const y = String(d.getFullYear()).slice(-2);
           const n = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -150,8 +150,8 @@ document.addEventListener('DOMContentLoaded', () => {
       },
       computePrevRangeISO: function(deISO, ateISO) {
           if(!deISO || !ateISO) return {dePrev:null, atePrev:null};
-          const d1 = new Date(deISO + 'T12:00:00');
-          const d2 = new Date(ateISO + 'T12:00:00');
+          const d1 = new Date(deISO + 'T12:00:00Z');
+          const d2 = new Date(ateISO + 'T12:00:00Z');
           
           if (this.isFullYear(d1, d2)) {
               const p1 = this.shiftYear(d1, -1);
@@ -761,7 +761,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let cur = last12Start;
         for(let i=0;i<12;i++){ 
             labels.push(DateHelpers.formatYM(cur)); 
-            const d=new Date(cur+'T12:00:00'); 
+            const d=new Date(cur+'T12:00:00Z'); 
             const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; 
             ymsNow.push(ym); 
             cur=DateHelpers.addMonthsISO(cur,1); 
@@ -933,7 +933,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const valueKey = diagChartMode;
 
             {
-                const labels = (monthData || []).map(r => DateHelpers.formatYM(r.ym + '-01T12:00:00'));
+                const labels = (monthData || []).map(r => DateHelpers.formatYM(r.ym + '-01T12:00:00Z'));
                 const dataArr = (monthData || []).map(r => +r[valueKey] || 0);
                 ensureSingleSeriesChart('diag_ch_month', labels, dataArr, meta, 'line');
             }
@@ -978,13 +978,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const contextContainer = document.querySelector('#tab-diagnostico .hero-context');
         if (!insightsContainer || !contextContainer) return;
 
-        // CORREÇÃO: Desativado temporariamente pois a função RPC_DIAGNOSTIC_FUNC não existe na lista.
-        insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px;">Geração de insights desativada (função 'diagnostico_geral' não encontrada).</p>`;
+        // CORREÇÃO: Desativado temporariamente pois a função RPC_DIAGNOSTIC_FUNC não foi encontrada.
+        insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px;">Geração de insights desativada (função '${RPC_DIAGNOSTIC_FUNC}' não encontrada no banco de dados).</p>`;
         contextContainer.innerHTML = '<strong>Destaques:</strong> —';
         return;
-
+        
         /*
-        // CÓDIGO ORIGINAL (mantido para referência)
+        // CÓDIGO ORIGINAL (mantido para referência caso a função seja criada)
         insightsContainer.innerHTML = `<p class="muted" style="text-align:center; padding: 20px;">Gerando insights...</p>`;
         contextContainer.innerHTML = '<strong>Destaques:</strong> Carregando...';
 
@@ -1069,6 +1069,7 @@ document.addEventListener('DOMContentLoaded', () => {
         */
     }
     
+    // CORREÇÃO: Lógica de upload de planilha completamente reescrita
     $('btnUpload').addEventListener('click', ()=> $('fileExcel').click());
     $('fileExcel').addEventListener('change', async (ev)=>{
         const file = ev.target.files?.[0];
@@ -1085,7 +1086,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error("O arquivo está vazio ou em um formato inválido.");
             }
             
-            // CORREÇÃO: Mapeamento correto das colunas da planilha para as colunas do banco de dados
             const headerMap = {
                 'data': 'dia',
                 'unidade': 'unidade',
@@ -1097,7 +1097,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 'desconto': 'des',
                 'entrega': 'fre',
                 'pedido': 'pedido_id',
-                'turno': 'turno'
+                'turno': 'turno',
+                'itens': 'itens_valor' // Supondo que 'Itens' é o valor, não a contagem
             };
     
             const transformedJson = json.map((row, index) => {
@@ -1119,45 +1120,51 @@ document.addEventListener('DOMContentLoaded', () => {
                 // --- Transformações de Dados ---
                 // 1. Separar data e hora
                 const dataHoraStr = originalRowKeys['data']; // ex: "01/09/2025 10:38"
-                if (dataHoraStr) {
+                if (dataHoraStr && String(dataHoraStr).includes('/')) {
                     const [dataPart, horaPart] = dataHoraStr.split(' ');
                     const [dia, mes, ano] = dataPart.split('/');
-                    newRow['dia'] = `${ano}-${mes}-${dia}`; // Formato YYYY-MM-DD
+                    if(dia && mes && ano) {
+                        newRow['dia'] = `${ano}-${mes.padStart(2,'0')}-${dia.padStart(2,'0')}`; // Formato YYYY-MM-DD
+                    }
                     if (horaPart) {
                         newRow['hora'] = horaPart.substring(0, 2); // Apenas a hora
                     }
                 }
 
-                // 2. Converter valores monetários para números
+                // 2. Converter valores monetários para números (aceita '.' e ',' como decimal)
                 newRow['fat'] = parseFloat(String(newRow['fat'] || '0').replace(',', '.')) || 0;
                 newRow['des'] = parseFloat(String(newRow['des'] || '0').replace(',', '.')) || 0;
                 newRow['fre'] = parseFloat(String(newRow['fre'] || '0').replace(',', '.')) || 0;
+                newRow['itens_valor'] = parseFloat(String(newRow['itens_valor'] || '0').replace(',', '.')) || 0;
+
 
                 // 3. Normalizar 'Cancelado' (N/S -> Não/Sim)
-                if (newRow['cancelado'] === 'N') newRow['cancelado'] = 'Não';
-                if (newRow['cancelado'] === 'S') newRow['cancelado'] = 'Sim';
+                const canceladoVal = String(newRow['cancelado'] || 'N').toUpperCase();
+                newRow['cancelado'] = canceladoVal === 'S' ? 'Sim' : 'Não';
                 
-                // 4. Gerar row_key obrigatória
-                const pedidoId = newRow['pedido_id'] || originalRowKeys['codigo'] || `import-${index}`;
-                newRow['row_key'] = `${pedidoId}-${new Date().getTime()}-${index}`;
+                // 4. Gerar row_key obrigatória a partir do código ou pedido
+                const pedidoId = newRow['pedido_id'] || originalRowKeys['codigo'] || `import-${Date.now()}-${index}`;
+                newRow['row_key'] = `${pedidoId}-${newRow.dia}`;
 
-                // 5. Garantir que todos os campos numéricos são números
-                newRow.pedidos = 1; // Cada linha é um pedido
+                // 5. Garantir que temos um pedido
+                newRow.pedidos = 1;
 
                 return newRow;
-            });
+            }).filter(row => row.dia); // Garante que apenas linhas com data válida sejam importadas
+
+            if(transformedJson.length === 0) {
+                throw new Error("Nenhuma linha válida encontrada na planilha. Verifique o formato da coluna 'Data'.");
+            }
 
             setStatus(`Enviando ${transformedJson.length} registros...`, 'info');
             
-            const { error } = await supa.from(DEST_INSERT_TABLE).insert(transformedJson, { returning: 'minimal' });
+            const { error } = await supa.from(DEST_INSERT_TABLE).upsert(transformedJson, { onConflict: 'row_key' });
 
             if (error) {
                 throw error;
             }
             
             setStatus('Importação concluída! Atualizando...', 'ok');
-            // Opcional: chamar a função para atualizar a view materializada
-            // await supa.rpc(REFRESH_RPC);
             fxDispatchApply();
 
         } catch(e) {
@@ -1231,7 +1238,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const totalViewAnaliticos = { ...analiticos, unidade: [], loja: [] };
         
-        const kpiData = await updateKPIs(de, ate, dePrev, atePrev, totalViewAnaliticos);
+        // As projeções precisam dos dados de KPIs, então vamos calculá-los primeiro.
+        const kpiDataPromise = updateKPIs(de, ate, dePrev, atePrev, totalViewAnaliticos);
+        const projectionsPromise = updateProjections(de, ate, dePrev, atePrev, analiticos);
+
+        const [kpiData] = await Promise.all([kpiDataPromise, projectionsPromise]);
         renderVendasKPIs(kpiData);
 
         const selectedKpiForDiag = $('kpi-select').value;
@@ -1242,7 +1253,6 @@ document.addEventListener('DOMContentLoaded', () => {
           updateDiagnosticCharts(de, ate, analiticos),
           updateTop6(de,ate, analiticos),
           updateInsights(de, ate, analiticos, selectedKpiForDiag),
-          updateProjections(de, ate, dePrev, atePrev, analiticos)
         ]);
         
         setStatus('OK','ok');
@@ -1270,14 +1280,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function fxFmt(date){ return date.toISOString().slice(0,10); }
     function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end) }
     function fxLastNDays(n){
-      const baseDate = lastDay ? fxLocalMidday(lastDay) : new Date();
+      const baseDate = lastDay ? fxLocalMidday(lastDay+'T12:00:00Z') : new Date();
       const end = new Date(baseDate);
       const start = new Date(baseDate);
       start.setDate(baseDate.getDate()-(n-1));
       fxSetRange(start,end);
     }
     function fxNamed(win){
-      const baseDate = lastDay ? fxLocalMidday(lastDay) : new Date();
+      const baseDate = lastDay ? fxLocalMidday(lastDay+'T12:00:00Z') : new Date();
       if(win==='today'){ fxSetRange(baseDate,baseDate) }
       else if(win==='yesterday'){ const y=new Date(baseDate); y.setDate(baseDate.getDate()-1); fxSetRange(y,y) }
       else if(win==='lastMonth'){ const y=baseDate.getFullYear(), m=baseDate.getMonth(); fxSetRange(new Date(y,m-1,1), new Date(y,m,0)) }
