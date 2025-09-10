@@ -1069,7 +1069,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const headerMap = {
-                // Mapeia o nome da coluna no CSV (normalizado) para o nome da coluna no banco de dados.
                 'dia': 'dia', 'data': 'dia',
                 'hora': 'hora',
                 'unidade': 'unidade',
