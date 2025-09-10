@@ -61,7 +61,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-    const RPC_FILTER_FUNC = 'filter_vendas';
     const RPC_KPI_FUNC = 'kpi_vendas_unificado';
     const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes_v2';
     const RPC_CHART_DOW_FUNC = 'chart_vendas_dow_v2';
@@ -70,7 +69,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const RPC_DIAGNOSTIC_FUNC = 'diagnostico_geral';
 
     const DEST_INSERT_TABLE= 'stage_vendas_raw';
-    // RPC para atualizar a visão materializada.
     const REFRESH_MV_RPC = 'refresh_vendas_analytics_mv';
 
     /* ===================== CHART.JS — tema vinho ===================== */
@@ -317,13 +315,7 @@ document.addEventListener('DOMContentLoaded', () => {
       };
     }
 
-    // A função baseQuery agora não é mais usada para os gráficos, apenas para o Top 6.
     async function baseQuery(de, ate, analiticos){
-      const PAGE_SIZE = 1000;
-      let allRows = [];
-      let page = 0;
-      let keepFetching = true;
-      
       let query = supa.from('vendas_analytics_mv')
           .select('*')
           .gte('dia', de)
@@ -338,24 +330,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (analiticos.cancelado === 'sim') query = query.eq('cancelado', 'Sim');
       if (analiticos.cancelado === 'nao') query = query.eq('cancelado', 'Não');
 
-
-      while (keepFetching) {
-          const { data, error } = await query.range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-          if (error) {
-              console.error(`[baseQuery]`, error);
-              throw error;
-          }
-          if (data && data.length > 0) {
-              allRows.push(...data);
-              page++;
-              if (data.length < PAGE_SIZE) {
-                  keepFetching = false;
-              }
-          } else {
-              keepFetching = false;
-          }
+      const { data, error } = await query;
+      if (error) {
+          console.error(`[baseQuery]`, error);
+          throw error;
       }
-      return allRows;
+      return data;
     }
 
     function renderVendasKPIs(allKpiValues) {
@@ -393,8 +373,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if(nowErr) throw nowErr;
             if(prevErr) throw prevErr;
 
-            const N = nowData[0];
-            const P = prevData[0];
+            const N = nowData[0] || {};
+            const P = prevData[0] || {};
 
             allKpiValues = {
                 fat: { current: N.fat, previous: P.fat },
@@ -1273,11 +1253,16 @@ document.addEventListener('DOMContentLoaded', () => {
     (async function init(){
       try{
         setStatus('Carregando…');
-        const dr = await supa.from('vw_vendas_daterange').select('min_dia, max_dia').limit(1);
+        // Não consultamos mais 'vw_vendas_daterange', usamos a view materializada
+        const dr = await supa.from('vendas_analytics_mv').select('dia').order('dia', { ascending: false }).limit(1);
+        const dr_min = await supa.from('vendas_analytics_mv').select('dia').order('dia', { ascending: true }).limit(1);
+
         if(dr.error) throw dr.error;
-        if(dr.data?.length){
-          firstDay=dr.data[0].min_dia;
-          lastDay=dr.data[0].max_dia;
+        if(dr_min.error) throw dr_min.error;
+
+        if(dr.data?.length){ 
+          firstDay=dr_min.data[0].dia; 
+          lastDay=dr.data[0].dia; 
         }
 
         await reloadStaticOptions();
@@ -1295,5 +1280,4 @@ document.addEventListener('DOMContentLoaded', () => {
         setStatus('Erro ao iniciar: '+(e.message||e),'err');
       }
     })();
-
 });
