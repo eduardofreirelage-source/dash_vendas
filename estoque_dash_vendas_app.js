@@ -1080,7 +1080,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 'faturamento bruto': 'fat', 'fat': 'fat', 'faturamento': 'fat',
                 'des': 'des', 'desconto': 'des', 'incentivos': 'des',
                 'frete': 'fre', 'fre': 'fre',
-                'pedido id': 'pedido_id', 'id do pedido': 'pedido_id'
+                'pedido id': 'pedido_id', 'id do pedido': 'pedido_id', 'pedido_id': 'pedido_id'
             };
     
             const transformedJson = json.map((row, index) => {
