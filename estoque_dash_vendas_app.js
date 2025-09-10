@@ -308,8 +308,8 @@ document.addEventListener('DOMContentLoaded', () => {
         p_dini: de, p_dfim: ate,
         p_unids:  isActive(analiticos.unidade) ? analiticos.unidade : null,
         p_lojas:  isActive(analiticos.loja) ? analiticos.loja : null,
-        p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
         p_canais: isActive(analiticos.canal) ? analiticos.canal : null,
+        p_turnos: isActive(analiticos.turno) ? analiticos.turno : null,
         p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null,
         p_cancelado
       };
@@ -655,28 +655,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     async function updateCharts(de, ate, dePrev, atePrev, analiticos) {
-      const meta = KPI_META[selectedKPI] || KPI_META.fat;
-      const mode = effectiveMode();
       try {
           setDiag('');
-          const paramsNow = buildParams(de, ate, analiticos);
-          const paramsPrev = buildParams(dePrev, atePrev, analiticos);
+          const baseParams = buildParams(de, ate, analiticos);
+          const paramsNow = { ...baseParams, p_kpi_key: selectedKPI };
+          const paramsPrev = { ...baseParams, p_dini: dePrev, p_dfim: atePrev, p_kpi_key: selectedKPI };
 
           const [
-              {data: dowData}, {data: dowDataPrev},
-              {data: hourData}, {data: hourDataPrev},
-              {data: turnoData}, {data: turnoDataPrev}
+              {data: dowData, error: dowErr}, {data: dowDataPrev, error: dowErrPrev},
+              {data: hourData, error: hourErr}, {data: hourDataPrev, error: hourErrPrev},
+              {data: turnoData, error: turnoErr}, {data: turnoDataPrev, error: turnoErrPrev}
           ] = await Promise.all([
-              supa.rpc(RPC_CHART_DOW_FUNC, paramsNow),
-              supa.rpc(RPC_CHART_DOW_FUNC, paramsPrev),
-              supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow),
-              supa.rpc(RPC_CHART_HOUR_FUNC, paramsPrev),
-              supa.rpc(RPC_CHART_TURNO_FUNC, paramsNow),
-              supa.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_DOW_FUNC, paramsNow), supa.rpc(RPC_CHART_DOW_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow), supa.rpc(RPC_CHART_HOUR_FUNC, paramsPrev),
+              supa.rpc(RPC_CHART_TURNO_FUNC, paramsNow), supa.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
           ]);
           
+          if (dowErr || hourErr || turnoErr || dowErrPrev || hourErrPrev || turnoErrPrev) {
+            throw (dowErr || hourErr || turnoErr || dowErrPrev || hourErrPrev || turnoErrPrev);
+          }
+          
           const tip = `Período anterior: ${dePrev} → ${atePrev}`;
-          const valueKey = mode === 'media' ? 'media' : 'total';
+          const valueKey = effectiveMode() === 'media' ? 'media' : 'total';
           
           {
               const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -730,8 +730,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const prev12EndAdj= DateHelpers.monthEndISO(DateHelpers.addMonthsISO(endMonthStart, -12));
         const meta = KPI_META[selectedKPI]||KPI_META.fat;
         
-        const paramsNow = buildParams(last12Start, last12End, analiticos);
-        const paramsPrev = buildParams(prev12Start, prev12EndAdj, analiticos);
+        const baseParams = buildParams(null, null, analiticos);
+        const paramsNow = { ...baseParams, p_dini: last12Start, p_dfim: last12End, p_kpi_key: selectedKPI };
+        const paramsPrev = { ...baseParams, p_dini: prev12Start, p_dfim: prev12EndAdj, p_kpi_key: selectedKPI };
 
         const [{data: nData, error: nErr}, {data: pData, error: pErr}] = await Promise.all([
             supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
@@ -741,8 +742,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (nErr) throw nErr;
         if (pErr) throw pErr;
 
-        const mode = effectiveMode();
-        const valueKey = mode === 'media' ? 'media' : 'total';
+        const valueKey = effectiveMode() === 'media' ? 'media' : 'total';
         
         const toMap = (arr)=> new Map((arr||[]).map(r=>[r.ym, +r[valueKey]||0]));
         const mNow = toMap(nData), mPrev = toMap(pData);
@@ -906,7 +906,8 @@ document.addEventListener('DOMContentLoaded', () => {
             $('diag_title_dow').textContent = `${meta.label} por Dia da Semana`;
             $('diag_title_hour').textContent = `${meta.label} por Hora`;
 
-            const paramsNow = buildParams(de, ate, analiticos);
+            const baseParams = buildParams(de, ate, analiticos);
+            const paramsNow = { ...baseParams, p_kpi_key: selectedKpi };
 
             const [
                 { data: monthData, error: monthErr },
@@ -920,7 +921,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (monthErr || dowErr || hourErr) throw (monthErr || dowErr || hourErr);
 
-            const valueKey = diagChartMode;
+            const valueKey = diagChartMode; 
 
             {
                 const labels = (monthData || []).map(r => DateHelpers.formatYM(r.ym + '-01T12:00:00'));
@@ -1032,7 +1033,7 @@ document.addEventListener('DOMContentLoaded', () => {
             insightsArray.forEach(insight => {
                 const insightHTML = `
                     <div class="ins-card ${insight.type || ''}">
-                        <div class="dot"></div>
+                        <div class.="dot"></div>
                         <div>
                             <div class="ins-title">${insight.title || ''}</div>
                             <div class="ins-sub">${insight.subtitle || ''}</div>
@@ -1066,38 +1067,34 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!json || json.length === 0) {
                 throw new Error("O arquivo está vazio ou em um formato inválido.");
             }
-            
+
             const headerMap = {
-                'dia': 'dia',
+                'dia': 'dia', 'data': 'dia',
                 'hora': 'hora',
                 'unidade': 'unidade',
-                'loja': 'Nome da loja',
-                'canal de venda': 'Canal de venda',
-                'pagamento_base': 'pagamento_base',
+                'loja': 'loja', 'nome da loja': 'loja',
+                'canal': 'canal', 'canal de venda': 'canal',
+                'pagamento_base': 'pagamento_base', 'pagamento': 'pagamento_base',
                 'cancelado': 'cancelado',
-                'pedidos': 'pedidos',
-                'fat': 'fat',
-                'des': 'des',
-                'fre': 'fre',
-                'pedido_id': 'pedido_id'
+                'fat': 'fat', 'faturamento': 'fat',
+                'des': 'des', 'desconto': 'des', 'incentivos': 'des',
+                'fre': 'fre', 'frete': 'fre',
+                'pedido_id': 'pedido_id', 'id do pedido': 'pedido_id'
             };
     
             const transformedJson = json.map((row, index) => {
                 const newRow = {};
-                let tempPedidoId = null;
-
+                
                 for (const originalKey in row) {
-                    const normalizedKey = originalKey.trim().toLowerCase();
+                    const normalizedKey = normHeader(originalKey);
                     const dbColumn = headerMap[normalizedKey];
                     if (dbColumn) {
                         newRow[dbColumn] = row[originalKey];
-                        if (normalizedKey === 'pedido_id') {
-                            tempPedidoId = row[originalKey];
-                        }
                     }
                 }
                 
-                // Gera a row_key obrigatória que estava faltando
+                const tempPedidoId = newRow['pedido_id'] || null;
+                
                 if (tempPedidoId) {
                     newRow['row_key'] = `${tempPedidoId}-${new Date().getTime()}-${index}`;
                 } else {
@@ -1107,15 +1104,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 return newRow;
             });
 
-            setStatus(`Enviando ${transformedJson.length} registros...`, 'info');
-            
-            const { error } = await supa.from(DEST_INSERT_TABLE).insert(transformedJson);
-
-            if (error) {
-                throw error;
+            const CHUNK_SIZE = 500;
+            for (let i = 0; i < transformedJson.length; i += CHUNK_SIZE) {
+                const chunk = transformedJson.slice(i, i + CHUNK_SIZE);
+                const startRange = i + 1;
+                const endRange = Math.min(i + CHUNK_SIZE, transformedJson.length);
+                
+                setStatus(`Enviando registros ${startRange}-${endRange} de ${transformedJson.length}...`, 'info');
+                
+                const { error } = await supa.from(DEST_INSERT_TABLE).insert(chunk);
+                if (error) throw error;
             }
             
-            setStatus('Importação concluída! Atualizando...', 'ok');
+            setStatus('Dados enviados. Processando no servidor...', 'info');
+            const { error: refreshError } = await supa.rpc(REFRESH_RPC);
+            if (refreshError) throw refreshError;
+
+            setStatus('Importação concluída! Atualizando dashboard...', 'ok');
             fxDispatchApply();
 
         } catch(e) {
@@ -1186,7 +1191,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const selectedKpiForDiag = $('kpi-select').value;
         await Promise.all([
-          updateMonth12x12(totalViewAnaliticos),
+          updateMonth12x12(analiticos),
           getAndRenderUnitKPIs(selectedKpiForDiag, de, ate, dePrev, atePrev, analiticos),
           updateCharts(de,ate,dePrev,atePrev, analiticos),
           updateDiagnosticCharts(de, ate, analiticos),
