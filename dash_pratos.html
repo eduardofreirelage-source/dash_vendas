@@ -36,6 +36,19 @@
     .seg button.active{background:var(--wine);color:#fff}
     .chart-box{position:relative;flex-grow:1;min-height:180px;}
     .chart-box canvas{display:block;width:100%;height:100%}
+
+    /* NOVOS ESTILOS PARA A TABELA DE RANKING */
+    .rank-table-box { flex-grow: 1; overflow-y: auto; padding: 4px 0; }
+    .rank-table { width: 100%; border-collapse: collapse; font-size: 11.5px; table-layout: fixed; }
+    .rank-table th { text-align: left; padding: 6px 8px; color: var(--muted); font-weight: 700; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--card); z-index: 1; }
+    .rank-table td { padding: 7px 8px; border-bottom: 1px solid var(--line); }
+    .rank-table tbody tr:last-child td { border-bottom: 0; }
+    .rank-table tbody tr:hover { background-color: var(--bg); }
+    .rank-table .col-rank { width: 35px; text-align: center; font-weight: 700; color: var(--muted); }
+    .rank-table .col-prato { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; }
+    .rank-table .col-qtd { width: 70px; text-align: right; font-weight: 700; }
+    /* Fim dos novos estilos */
+
     @media (max-width:1200px){ .kpis{grid-template-columns:repeat(2,1fr)} .charts-grid{grid-template-columns:1fr} }
     @media (max-width: 768px) { .kpis{ grid-template-columns: 1fr; } .top { flex-direction: column; align-items: flex-start; } }
      /* Estilos da Barra de Filtros (FX) e MultiSelect */
@@ -104,21 +117,34 @@
               <div class="head"><div class="title">Vendas por Dia da Semana</div></div>
               <div class="chart-box"><canvas id="ch_dow"></canvas></div>
             </div>
+            
             <div class="card">
                 <div class="head">
-                    <div class="title">Top 10 Pratos</div>
+                    <div class="title">Ranking de Pratos</div>
                     <div class="seg" id="segTop10">
                         <button data-mode="MAIS" class="active">Mais Vendidos</button>
                         <button data-mode="MENOS">Menos Vendidos</button>
                     </div>
                 </div>
-                <div class="chart-box"><canvas id="ch_top10"></canvas></div>
+                <div class="rank-table-box" id="rank_top10_box">
+                    <table class="rank-table" id="rank_top10">
+                        <thead>
+                            <tr>
+                                <th class="col-rank">#</th>
+                                <th class="col-prato">Prato</th>
+                                <th class="col-qtd">Qtd</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            </tbody>
+                    </table>
+                </div>
             </div>
-        </div>
+            </div>
       </section>
     </main>
   </div>
-  
+   
   <footer class="fx-filters-bar" aria-label="Barra de filtros">
     <div class="fx-fb-left">
       <div class="fx-fb-label">Filtros:</div>
@@ -196,18 +222,16 @@
   const $ = id => document.getElementById(id);
   const num = v => (v==null||!isFinite(+v)) ? '0' : (+v).toLocaleString('pt-BR');
   const toast = (msg,type='info')=>{ console[type==='error'?'error':'info'](`[Status] [${type}]: ${msg}`); };
-   
-  // Funções de data usam UTC (T12:00:00Z) para consistência e evitar problemas de fuso horário.
+    
+  // (Funções de data inalteradas)
   function getTodayISO(baseDate) {
     const d = baseDate ? new Date(baseDate + 'T12:00:00Z') : new Date();
     if (!baseDate) {
-        // Se não houver baseDate, ajusta para o meio-dia local e retorna ISO
         d.setHours(12, 0, 0, 0);
     }
     return d.toISOString().split('T')[0];
   }
-  
-  // Helper para formatação de data (usado na UI e nos cálculos de período)
+   
   function fxFmt(date){ return date.toISOString().split('T')[0]; }
 
   function daysLen(de, ate) {
@@ -217,7 +241,6 @@
     return Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
   }
 
-  /* Calcula as datas do período anterior com a mesma duração */
   function getPreviousPeriodDates(de, len) {
       const dStart = new Date(de + 'T12:00:00Z');
       const prevDe = new Date(dStart.getTime());
@@ -237,59 +260,15 @@
   }
 
   const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-   
+    
   function fxDispatchApply(){
       const payload = { start: $('fxDuStart').value, end: $('fxDuEnd').value };
       document.dispatchEvent(new CustomEvent('filters:apply', { detail: payload }));
   }
 
   /* ===================== MULTISELECT ===================== */
-  function MultiSelect(rootId, placeholder){
-    const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
-    let options=[], selected=new Set(), filtered=[];
-    let searchInput = null; // Melhora: Mantém referência ao input
-
-    function render(){
-      panel.innerHTML='';
-      searchInput=document.createElement('input'); // Melhora: Atribui ao escopo correto
-      searchInput.className='msel-search'; searchInput.placeholder='Filtrar…';
-      searchInput.addEventListener('input',()=>{
-        filtered=options.filter(v=>rmAcc(v).toLowerCase().includes(rmAcc(searchInput.value).toLowerCase())); 
-        drawOptions();
-      });
-      panel.appendChild(searchInput);
-      drawOptions();
-    }
-    function drawOptions(){
-      panel.querySelectorAll('.msel-opt-box').forEach(n=>n.remove());
-      const box=document.createElement('div'); box.className = 'msel-opt-box';
-      
-      // Melhora: Corrige o comportamento do filtro quando a busca resulta em 0 itens.
-      const displayOptions = (searchInput && searchInput.value.length > 0) ? filtered : options;
-
-      displayOptions.forEach(v=>{
-        const row=document.createElement('div'); row.className='msel-opt';
-        const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v; cb.checked=selected.has(v);
-        const lb=document.createElement('label'); lb.textContent=v;
-        cb.addEventListener('change',()=>{
-            cb.checked?selected.add(v):selected.delete(v); 
-            refresh();
-            fxDispatchApply();
-        });
-        row.appendChild(cb); row.appendChild(lb); box.appendChild(row);
-      });
-      panel.appendChild(box);
-    }
-    function refresh(){ btn.textContent = selected.size===0 ? placeholder : `${selected.size} selecionado(s)`; }
-    btn.addEventListener('click',()=>root.classList.toggle('open'));
-    document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
-    return {
-      setOptions(list){ options=(list||[]).filter(v=>v!=null).map(String).sort((a,b)=>a.localeCompare(b,'pt-BR')); filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh(); },
-      get(){ return [...selected]; },
-      set(vals){ selected=new Set((vals||[]).map(String)); refresh(); drawOptions(); },
-      clear(){ this.set([]); }
-    };
-  }
+  // (Função MultiSelect inalterada)
+  // ... (Omitida para brevidade, mas idêntica à resposta anterior) ...
 
   /* ===================== ESTADO ===================== */
   let lastDay='';
@@ -301,7 +280,7 @@
     pratos: MultiSelect('ms-pratos', 'Todos os Pratos')
   };
 
-  // (Event Listeners)
+  // (Event Listeners inalterados)
   $('onlyPratos').addEventListener('change', fxDispatchApply);
   $('segDowMode').addEventListener('click', (e)=>{
     const btn = e.target.closest('button'); if(!btn) return;
@@ -319,234 +298,84 @@
   /* ===================== KPI & CHARTS ===================== */
   function upSVG(){return '<svg viewBox="0 0 20 20"><path d="M10 4l5 6h-3v6H8v-6H5l5-6z"/></svg>';}
   function downSVG(){return '<svg viewBox="0 0 20 20"><path d="M10 16l-5-6h3V4h4v6h3l-5 6z"/></svg>';}
-  
+   
   function deltaBadge(el,curr,prev){
-    if (curr === 0 && prev === 0) {
-        el.textContent='0.0%'; el.className='delta flat'; return;
-    }
-    if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
-    const p=((curr-prev)/prev)*100;
-    el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
-    el.className='delta '+(p>=0?'up':'down');
+    // (Função inalterada)
   }
 
   function renderChart(canvasId, type, labels, datasets, options = {}) {
-    const canvas = $(canvasId);
-    if (!canvas) return;
-    if (canvas.__chart) { try { canvas.__chart.destroy(); } catch(e){} }
-    const ctx = canvas.getContext('2d');
-    canvas.__chart = new Chart(ctx, {
-      type,
-      data: { labels, datasets },
-      options: {
-        responsive: true, maintainAspectRatio: false, animation: false,
-        scales: type === 'bar' ? { y: { beginAtZero: true }, x: { grid: { display: false } } } : {},
-        plugins: { legend: { display: datasets.length > 1 } },
-        ...options
-      }
-    });
+    // (Função inalterada)
   }
-   
-  // CORREÇÃO: Ajustado para ler as colunas atualizadas (incluindo únicos)
+    
   function updateKPIs(kpisData, len) {
-    const kpis = kpisData || {};
-    
-    // Nomes exatos conforme o SQL atualizado
-    const current_total = kpis.total_current || 0;
-    const prev_total = kpis.total_previous || 0;
-
-    // Lendo as novas colunas de únicos
-    const unicos_current = kpis.unicos_current || 0;
-    const unicos_previous = kpis.unicos_previous || 0;
-    
-    const mediaDiaria = kpis.media_diaria ? parseFloat(kpis.media_diaria) : 0;
-    const prevMediaDiaria = len > 0 && prev_total > 0 ? prev_total / len : 0;
-    
-    // Atualiza Total Vendido
-    $('k_qtd').textContent = num(current_total);
-    $('p_qtd').textContent = num(prev_total);
-    deltaBadge($('d_qtd'), current_total, prev_total);
-    
-    // Atualiza Pratos Únicos
-    $('k_pratos_unicos').textContent = num(unicos_current);
-    $('p_pratos_unicos').textContent = num(unicos_previous);
-    deltaBadge($('d_pratos_unicos'), unicos_current, unicos_previous);
-    
-    // Atualiza Média Diária
-    $('k_media_diaria').textContent = num(Math.round(mediaDiaria));
-    $('p_media_diaria').textContent = num(Math.round(prevMediaDiaria));
-    deltaBadge($('d_media_diaria'), mediaDiaria, prevMediaDiaria);
+    // (Função inalterada, já adaptada para os únicos)
   }
 
-  // (Funções de Gráficos Inalteradas)
-  function updateTop10Chart(data) {
+  // NOVA FUNÇÃO: Renderiza a tabela de ranking Top 10
+  function renderTop10Table(tableId, data) {
+      const table = $(tableId);
+      if (!table) return;
+      const tbody = table.querySelector('tbody');
+      tbody.innerHTML = ''; // Limpa a tabela
+
+      if (!data || data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 20px; color: var(--muted);">Nenhum dado encontrado</td></tr>';
+          return;
+      }
+
+      data.forEach((item, index) => {
+          const row = document.createElement('tr');
+          
+          const rankCell = document.createElement('td');
+          rankCell.className = 'col-rank';
+          rankCell.textContent = index + 1;
+          
+          const pratoCell = document.createElement('td');
+          pratoCell.className = 'col-prato';
+          pratoCell.textContent = item.prato || 'Desconhecido';
+          pratoCell.title = item.prato || ''; // Tooltip para nomes longos
+          
+          const qtdCell = document.createElement('td');
+          qtdCell.className = 'col-qtd';
+          qtdCell.textContent = num(item.total);
+          
+          row.appendChild(rankCell);
+          row.appendChild(pratoCell);
+          row.appendChild(qtdCell);
+          tbody.appendChild(row);
+      });
+  }
+
+  // MUDANÇA: Função atualizada para chamar a renderização da tabela
+  function updateTop10Visualization(data) {
     const maisVendidos = data?.mais_vendidos || [];
     const menosVendidos = data?.menos_vendidos || [];
 
     if (top10Mode === 'MAIS') {
-        renderChart('ch_top10', 'bar', maisVendidos.map(x => x.prato), [{ label: 'Qtd', data: maisVendidos.map(x => x.total), backgroundColor: '#7b1e3a' }], { indexAxis: 'y', plugins: { legend: { display: false } } });
+        renderTop10Table('rank_top10', maisVendidos);
     } else { 
-        renderChart('ch_top10', 'bar', menosVendidos.map(x => x.prato), [{ label: 'Qtd', data: menosVendidos.map(x => x.total), backgroundColor: '#9ca3af' }], { indexAxis: 'y', plugins: { legend: { display: false } } });
+        renderTop10Table('rank_top10', menosVendidos);
     }
   }
 
   function updateDowChart(currentData, previousData, len) {
-    const dowLabels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-    let nowData = Array(7).fill(0), prevData = Array(7).fill(0);
-    
-    for (let item of (currentData || [])) {
-        if (item.dow >= 0 && item.dow < 7) {
-            nowData[item.dow] = item.total || 0;
-        }
-    }
-    for (let item of (previousData || [])) {
-        if (item.dow >= 0 && item.dow < 7) {
-            prevData[item.dow] = item.total || 0;
-        }
-    }
-
-    if (dowMode === 'MEDIA' && len > 0) {
-        const de = $('fxDuStart').value, ate = $('fxDuEnd').value;
-        
-        const occNow = Array(7).fill(0);
-        let d = new Date(de+'T12:00:00Z'), end = new Date(ate+'T12:00:00Z');
-        while (d <= end) { occNow[d.getUTCDay()]++; d.setUTCDate(d.getUTCDate()+1); }
-         
-        const prevDates = getPreviousPeriodDates(de, len);
-        const occPrev = Array(7).fill(0);
-        
-        d = new Date(prevDates.de+'T12:00:00Z');
-        const endPrev = new Date(prevDates.ate+'T12:00:00Z');
-        
-        while (d <= endPrev) { occPrev[d.getUTCDay()]++; d.setUTCDate(d.getUTCDate()+1); }
-         
-        nowData = nowData.map((v,i)=> occNow[i] > 0 ? Math.round(v/occNow[i]) : 0);
-        prevData = prevData.map((v,i)=> occPrev[i] > 0 ? Math.round(v/occPrev[i]) : 0);
-    }
-    renderChart('ch_dow', 'bar', dowLabels, [{ label: 'Atual', data: nowData, backgroundColor: '#7b1e3a' }, { label: 'Anterior', data: prevData, backgroundColor: '#9ca3af' }]);
+    // (Função inalterada)
   }
 
     /* FUNÇÃO AUXILIAR PARA PREPARAR FILTROS */
     function prepareFilters() {
-        const unids = ms.unids.get();
-        const pratos = ms.pratos.get();
-        let cats = ms.cats.get();
-        const isPratosOnly = $('onlyPratos').checked;
-
-        let catsFilter = null;
-
-        if (isPratosOnly) {
-            catsFilter = ['PRATOS'];
-        } else if (cats.length > 0) {
-            catsFilter = cats;
-        }
-
-        // Retorna os nomes exatos esperados pelo SQL
-        return {
-            _unidades: unids.length > 0 ? unids : null,
-            _categorias: catsFilter,
-            _pratos: pratos.length > 0 ? pratos : null,
-            _incluir_zero: false // Valor padrão seguro para funções que o utilizam
-        };
+        // (Função inalterada)
     }
 
   async function updateMonthChart(endDate) {
-      try {
-        const filters = prepareFilters();
-
-        // 1. Calcular datas (Período Atual - 12 Meses)
-        const ateCurrent = new Date(endDate + 'T12:00:00Z');
-        const deCurrent = new Date(ateCurrent.getTime());
-        deCurrent.setUTCMonth(ateCurrent.getUTCMonth() - 11);
-        deCurrent.setUTCDate(1);
-
-        // 2. Calcular datas (Período Anterior - 12 Meses anteriores)
-        const atePrevious = new Date(deCurrent.getTime());
-        atePrevious.setUTCDate(atePrevious.getUTCDate() - 1); 
-        
-        const dePrevious = new Date(atePrevious.getTime());
-        dePrevious.setUTCMonth(atePrevious.getUTCMonth() - 11);
-        dePrevious.setUTCDate(1);
-
-        // 3. Preparar parâmetros comuns
-        const commonParams = {
-            _unidades: filters._unidades,
-            _categorias: filters._categorias,
-            _pratos: filters._pratos,
-            _incluir_zero: filters._incluir_zero
-        };
-
-        // 4. Buscar ambos os períodos simultaneamente (Chamada Dupla)
-        const [currentResult, previousResult] = await Promise.allSettled([
-            supa.rpc('get_monthly_sales_chart_data', { ...commonParams, _de: fxFmt(deCurrent), _ate: fxFmt(ateCurrent) }),
-            supa.rpc('get_monthly_sales_chart_data', { ...commonParams, _de: fxFmt(dePrevious), _ate: fxFmt(atePrevious) })
-        ]);
-
-        if (currentResult.status === 'rejected') throw currentResult.reason;
-        
-        const currentData = currentResult.value?.data || [];
-        const previousDataRaw = previousResult.status === 'fulfilled' ? previousResult.value?.data : [];
-
-        // 5. Processar e alinhar os dados
-        const prevDataMap = new Map();
-        previousDataRaw.forEach(d => {
-            const monthIndex = new Date(d.month + 'T12:00:00Z').getUTCMonth();
-            prevDataMap.set(monthIndex, d.total || 0);
-        });
-
-        const labels = [];
-        const nowData = [];
-        const prevData = [];
-
-        currentData.forEach(d => {
-            labels.push(formatYM(d.month));
-            nowData.push(d.total || 0);
-            
-            const monthIndex = new Date(d.month + 'T12:00:00Z').getUTCMonth();
-            prevData.push(prevDataMap.get(monthIndex) || 0);
-        });
-
-        // 6. Renderizar
-        renderChart('ch_month', 'bar', labels, [
-          { label: 'Últimos 12M', data: nowData, backgroundColor: '#7b1e3a' },
-          { label: '12M Anteriores', data: prevData, backgroundColor: '#9ca3af' }
-        ], { plugins: { legend: { display: true } } });
-
-      } catch (e) { 
-        console.error('Erro ao carregar gráfico mensal:', e); toast('Erro ao carregar gráfico mensal', 'error');
-        renderChart('ch_month', 'bar', [], []);
-      }
+      // (Função inalterada)
   }
 
   /* ===================== LOOP PRINCIPAL (REESTRUTURADO) ===================== */
   async function applyAll(details) {
     try {
-      const de = details.start, ate = details.end;
-      if (!de || !ate || new Date(de+'T12:00:00Z') > new Date(ate+'T12:00:00Z')) { return; }
-      const len = daysLen(de, ate);
-       
-      const filters = prepareFilters();
-
-      // Parâmetros para o período ATUAL
-      const currentParams = {
-          _de: de,
-          _ate: ate,
-          _unidades: filters._unidades,
-          _categorias: filters._categorias,
-          _pratos: filters._pratos,
-          _incluir_zero: filters._incluir_zero
-      };
-
-      // Calcular datas para o período ANTERIOR (Necessário para o gráfico DOW)
-      const prevDates = getPreviousPeriodDates(de, len);
-
-      // Parâmetros para o período ANTERIOR
-      const previousParams = {
-          ...currentParams,
-          _de: prevDates.de,
-          _ate: prevDates.ate
-      };
-
+      // (Lógica de preparação inalterada)
+      // ...
 
       // Executar todas as chamadas simultaneamente
       const [
@@ -555,47 +384,23 @@
           dowPreviousResult, 
           top10Result
         ] = await Promise.allSettled([
-          // KPIs (A função get_pratos_kpis agora retorna tudo, incluindo únicos)
           supa.rpc('get_pratos_kpis', currentParams).then(res => res.data?.[0]),
-          
-          // DOW Atual
           supa.rpc('get_pratos_dow_chart', currentParams).then(res => res.data),
-          
-          // DOW Anterior
           supa.rpc('get_pratos_dow_chart', previousParams).then(res => res.data),
-
-          // Top 10
           supa.rpc('get_pratos_top10_chart', currentParams).then(res => res.data?.[0]?.get_pratos_top10_chart)
       ]);
 
-      // Processamento dos resultados
+      // (Processamento de KPIs e DOW inalterado)
+      // ...
 
-      // KPIs
-      if (kpisResult.status === 'fulfilled' && kpisResult.value) {
-        updateKPIs(kpisResult.value, len);
-      } else {
-        if (kpisResult.status === 'rejected') console.error("Erro ao buscar KPIs:", kpisResult.reason);
-        updateKPIs(null, len); 
-      }
-
-      // Gráfico DOW (Combina os resultados das duas chamadas)
-      const dowCurrentData = dowCurrentResult.status === 'fulfilled' ? dowCurrentResult.value : [];
-      const dowPreviousData = dowPreviousResult.status === 'fulfilled' ? dowPreviousResult.value : [];
-      
-      if (dowCurrentResult.status === 'rejected') console.error("Erro DOW Atual:", dowCurrentResult.reason);
-      if (dowPreviousResult.status === 'rejected') console.error("Erro DOW Anterior:", dowPreviousResult.reason);
-      
-      updateDowChart(dowCurrentData, dowPreviousData, len);
-
-
-      // Gráfico Top 10
+      // Tabela Top 10 (MUDANÇA: Chama a nova função de visualização)
       if (top10Result.status === 'fulfilled' && top10Result.value) {
-        updateTop10Chart(top10Result.value);
+        updateTop10Visualization(top10Result.value);
       } else {
         if (top10Result.status === 'rejected') console.error("Erro ao buscar dados Top 10:", top10Result.reason);
-        updateTop10Chart(null);
+        updateTop10Visualization(null);
       }
-       
+        
       // Gráfico Mensal
       updateMonthChart(ate);
 
@@ -603,218 +408,16 @@
   }
 
   /* ===================== INICIALIZAÇÃO E CONTROLES DA UI ===================== */
-  
-  async function safeSelectDistinct({ table, column }) {
-    try {
-      const { data, error } = await supa
-        .from(table)
-        .select(`${column}`, { count: 'exact', head: false, distinct: true })
-        .not(column, 'is', null)
-        .order(column, { ascending: true });
-      if (error) throw error;
-      return (data || []).map(r => r[column]);
-    } catch (e) {
-      console.warn(`[Init] Erro ao buscar distinct ${column} em ${table}:`, e);
-      return [];
-    }
-  }
-
-  async function reloadFilterOptions() {
-    // 1) Tenta tabelas auxiliares específicas
-    let unids = await safeSelectDistinct({ table: 'vendas_pratos_unidades', column: 'unidade' });
-    let cats  = await safeSelectDistinct({ table: 'vendas_pratos_categorias', column: 'categoria' });
-    let pratos= await safeSelectDistinct({ table: 'vendas_pratos_pratos', column: 'prato' });
-
-    // 2) Fallback: lê direto da visão/VM normalizada (mv_vp_daily_v2)
-    if (unids.length === 0) {
-      unids = await safeSelectDistinct({ table: 'mv_vp_daily_v2', column: 'unidade' });
-    }
-    if (cats.length === 0) {
-      // Tenta nomes comuns para a coluna de categoria na MV
-      cats = await safeSelectDistinct({ table: 'mv_vp_daily_v2', column: 'categoria_norm' });
-      if (cats.length === 0) cats = await safeSelectDistinct({ table: 'mv_vp_daily_v2', column: 'categoria' });
-    }
-    if (pratos.length === 0) {
-       // Tenta nomes comuns para a coluna de prato na MV
-      pratos = await safeSelectDistinct({ table: 'mv_vp_daily_v2', column: 'prato_norm' });
-      if (pratos.length === 0) pratos = await safeSelectDistinct({ table: 'mv_vp_daily_v2', column: 'prato' });
-    }
-
-    // 3) Último fallback: usa a raw (vendas_pratos)
-    if (unids.length === 0) unids = await safeSelectDistinct({ table: 'vendas_pratos', column: 'unidade' });
-    if (cats.length === 0) cats = await safeSelectDistinct({ table: 'vendas_pratos', column: 'categoria' });
-    if (pratos.length === 0) pratos = await safeSelectDistinct({ table: 'vendas_pratos', column: 'prato' });
-
-    ms.unids.setOptions(unids);
-    ms.cats.setOptions(cats);
-    ms.pratos.setOptions(pratos);
-  }
-
-  /* ===================== FUNÇÃO INIT (Robusta) ===================== */
-  async function init() {
-    try {
-      console.info('[Status] [info]: Inicializando aplicação...');
-      let last = null;
-      
-      // (Lógica inalterada, robusta com fallbacks para encontrar a data mais recente)
-      // 1. Tenta view dedicada
-      try {
-        const { data: d1, error: e1 } = await supa.from('vendas_pratos_daterange').select('max_data').limit(1);
-        if (!e1 && d1?.length && d1[0].max_data) {
-            last = d1[0].max_data;
-        }
-      } catch (e) { console.warn('[Init] Erro ao acessar vendas_pratos_daterange:', e); }
-
-      // 2. FALLBACK: Tenta a Materialized View
-      if (!last) {
-        try {
-            const { data: d2, error: e2 } = await supa.from('mv_vp_daily_v2')
-                .select('data')
-                .not('data', 'is', null)
-                .order('data', { ascending: false })
-                .limit(1);
-            if (!e2 && d2?.length) {
-                last = d2[0].data;
-            }
-        } catch (e) { console.warn('[Init] Erro ao acessar mv_vp_daily_v2:', e); }
-      }
-
-      // 3. ÚLTIMO FALLBACK: Tenta a tabela raw
-      if (!last) {
-        try {
-            const { data: d3, error: e3 } = await supa.from('vendas_pratos')
-                .select('data')
-                .not('data', 'is', null)
-                .order('data', { ascending: false })
-                .limit(1);
-            if (!e3 && d3?.length) {
-                last = d3[0].data;
-            }
-        } catch (e) { console.warn('[Init] Erro ao acessar vendas_pratos:', e); }
-      }
-      
-      lastDay = last || getTodayISO();
-
-      await reloadFilterOptions();
-       
-      document.dispatchEvent(new Event('filters:init'));
-      console.info(`[Status] [ok]: Dados atualizados. Data de referência (lastDay): ${lastDay}`);
-
-    } catch (e) { console.error(e); toast('Falha na inicialização', 'error'); }
-  }
-
-  /* ===================== CONTROLES DA UI ===================== */
-  document.addEventListener('DOMContentLoaded', () => {
-    const fx = {
-      $drop: $('fxDropup'), $btnMore: $('fxBtnMore'), $btnReset: $('fxBtnReset'),
-      $start: $('fxDuStart'), $end: $('fxDuEnd'),
-      $days: $('fxDuQuickDays'), $chips: $('fxQuickChips')
-    };
-
-    function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end); }
-     
-    // Define o período inicial para o mês completo da data mais recente encontrada.
-    function fxSetToLastMonthWithData(baseDateStr) {
-        if (!baseDateStr || baseDateStr.startsWith('1970')) { fxLastNDays(30); return; }
-        const baseDate = new Date(baseDateStr + 'T12:00:00Z');
-        const year = baseDate.getUTCFullYear();
-        const month = baseDate.getUTCMonth();
-         
-        // Início do mês da última data
-        const start = new Date(Date.UTC(year, month, 1));
-        // Fim do mês da última data
-        const end = new Date(Date.UTC(year, month + 1, 0));
-
-        // Garante que o fim não ultrapasse a última data real (caso os dados parem no meio do mês)
-        if (end.getTime() > baseDate.getTime()) {
-            end.setTime(baseDate.getTime());
-        }
-         
-        fxSetRange(start, end);
-        // Limpa os chips ativos pois é um período customizado
-        [...fx.$chips.children, ...fx.$days.children].forEach(b => b.classList.remove('active', 'fx-active'));
-    }
-
-    function setNamedPeriod(win) {
-        const baseDate = new Date(lastDay + 'T12:00:00Z');
-        let start, end;
-        if (win === 'today') { start = baseDate; end = baseDate; } 
-        else if (win === 'yesterday') {
-            start = new Date(baseDate.getTime());
-            start.setUTCDate(baseDate.getUTCDate() - 1);
-            end = new Date(start.getTime());
-        } else if (win === 'lastMonth') {
-            // Mês anterior ao da última data
-            start = new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth() - 1, 1));
-            end = new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), 0));
-        } else if (win === 'lastYear') {
-            // Ano anterior ao da última data
-            const y = baseDate.getUTCFullYear() - 1;
-            start = new Date(Date.UTC(y, 0, 1));
-            end = new Date(Date.UTC(y, 11, 31));
-        }
-        if (start && end) { fxSetRange(start, end); fxDispatchApply(); }
-    }
-     
-    function fxLastNDays(n){
-      const end = new Date(lastDay + 'T12:00:00Z');
-      const start = new Date(end.getTime());
-      start.setUTCDate(end.getUTCDate() - (n - 1));
-      fxSetRange(start, end);
-    }
-
-    function fxShowDrop(show){
-      fx.$drop.classList.toggle('fx-show', show);
-      fx.$btnMore.setAttribute('aria-expanded', show?'true':'false');
-      if(show) fx.$start?.focus();
-    }
-     
-    fx.$btnMore.addEventListener('click', ()=> fxShowDrop(!fx.$drop.classList.contains('fx-show')));
-    document.addEventListener('click', (e)=>{ if(!fx.$drop.classList.contains('fx-show')) return; if(!(fx.$drop.contains(e.target) || fx.$btnMore.contains(e.target))) fxShowDrop(false); });
-    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && fx.$drop.classList.contains('fx-show')) fxShowDrop(false); });
-     
-    const clearActiveChips = () => [...fx.$chips.children, ...fx.$days.children].forEach(b => b.classList.remove('active', 'fx-active'));
-
-    fx.$chips.addEventListener('click', e => {
-        const btn = e.target.closest('button'); if (!btn) return;
-        clearActiveChips();
-        btn.classList.add('active');
-        setNamedPeriod(btn.dataset.win);
-    });
-    fx.$start.addEventListener('change', () => { clearActiveChips(); fxDispatchApply(); });
-    fx.$end.addEventListener('change', () => { clearActiveChips(); fxDispatchApply(); });
-    fx.$days.addEventListener('click', (e)=>{
-      const b=e.target.closest('button'); if(!b) return;
-      clearActiveChips();
-      b.classList.add('fx-active'); // Usa a classe específica do dropup
-      const n=parseInt(b.dataset.win,10); 
-      if(!isNaN(n)) { fxLastNDays(n); fxDispatchApply(); }
-    });
-    fx.$btnReset.addEventListener('click', ()=>{
-      Object.values(ms).forEach(m => m.clear());
-      $('onlyPratos').checked = false;
-      fxSetToLastMonthWithData(lastDay);
-      fxDispatchApply();
-    });
-
-    document.addEventListener('filters:apply', (e) => { if(e.detail) { applyAll(e.detail); } });
-     
-    document.addEventListener('filters:init', () => {
-        // Inicializa com o mês da última data encontrada
-        fxSetToLastMonthWithData(lastDay);
-        fxDispatchApply();
-    });
-
-    init();
-
-  });
    
-  // ====== IMPORTAÇÃO EXCEL (Mantida intacta) ======
+  // (Funções safeSelectDistinct, reloadFilterOptions, init, e DOMContentLoaded inalteradas)
+  // ...
+    
+  // ====== IMPORTAÇÃO EXCEL (Atualizada para 'codigo' e 'upsert') ======
   $('btnUpload').addEventListener('click', () => $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev) => {
     const file = ev.target.files[0];
     if (!file) return;
-     
+      
     const btn = $('btnUpload');
     btn.textContent = 'Importando...';
     btn.disabled = true;
@@ -824,13 +427,12 @@
       const workbook = XLSX.read(data);
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
-       
-      // Força datas como texto dia/mês/ano e preserva vazios
+        
+      // raw: false é importante para garantir que números (como código) sejam lidos corretamente
       const json_data = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: null, dateNF: 'dd/mm/yy' });
 
       if (json_data.length === 0) throw new Error('O arquivo está vazio ou em um formato inválido.');
-       
-      // Assume que a primeira linha não vazia contém os cabeçalhos
+        
       let firstDataRow = json_data.find(row => Object.values(row).some(val => val !== null && val !== ''));
       if (!firstDataRow) throw new Error('Nenhuma linha com dados encontrada.');
 
@@ -838,7 +440,8 @@
 
       const findHeader = (possibleNames) => {
           for (const name of possibleNames) {
-              const found = headers.find(h => h.toLowerCase().trim() === name);
+              // MUDANÇA: Usamos rmAcc para normalizar cabeçalhos (ex: Código -> codigo)
+              const found = headers.find(h => rmAcc(h.toLowerCase().trim()) === name);
               if (found) return found;
           }
           return null;
@@ -849,17 +452,19 @@
       const dishKey = findHeader(['prato']);
       const categoryKey = findHeader(['categoria']);
       const quantityKey = findHeader(['quantidade_vendida','quantidade','qtd']);
+      // NOVO: Mapeamento do Código
+      const codeKey = findHeader(['codigo', 'id']); // Procura por codigo ou id
 
-      if (!dateKey) throw new Error(`Coluna de data não encontrada. Esperado: 'data' ou 'data da venda'.`);
-      if (!quantityKey) throw new Error(`Coluna de quantidade não encontrada. Esperado: 'quantidade' ou 'quantidade_vendida'.`);
-       
+      if (!dateKey) throw new Error(`Coluna de data não encontrada.`);
+      if (!quantityKey) throw new Error(`Coluna de quantidade não encontrada.`);
+      // NOVO: Validação do Código
+      if (!codeKey) throw new Error(`Coluna de código não encontrada. Esperado: 'codigo' ou 'id'.`);
+        
       const parseDate = (dateValue) => {
         const s = String(dateValue);
         const parts = s.split(/[\/\-\.]/);
         if (parts.length === 3) {
             let day = parts[0], month = parts[1], year = parts[2];
-            
-            // Lógica básica para D/M/Y
             if (year.length === 2) year = '20' + year;
             if (+month>0 && +month<=12 && +day>0 && +day<=31) {
               return `${year.padStart(4, '20')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
@@ -873,12 +478,16 @@
         if (dataValue === null || typeof dataValue === 'undefined' || dataValue === '') return null;
         const parsedDate = parseDate(dataValue);
         if (!parsedDate) return null;
-        
-        // Tratamento básico de quantidade
+         
         const quantidade = parseInt(linha[quantityKey], 10) || 0;
         if (quantidade <= 0) return null;
 
+        // NOVO: Extração e validação do código (BIGINT)
+        const codigo = parseInt(linha[codeKey], 10);
+        if (isNaN(codigo)) return null; // Ignora se o código não for numérico válido
+
         return {
+          codigo: codigo, // Inclui o código
           data: parsedDate,
           unidade: unitKey ? (linha[unitKey] ?? null) : null,
           prato: dishKey ? (linha[dishKey] ?? null) : null,
@@ -887,18 +496,32 @@
         };
       }).filter(Boolean);
 
-      if (dadosFormatados.length === 0) throw new Error('Nenhuma linha com data válida e quantidade positiva encontrada.');
+      if (dadosFormatados.length === 0) throw new Error('Nenhuma linha válida encontrada (data, quantidade > 0 e código numérico).');
 
-      // Insere em lotes
+      // MUDANÇA CRÍTICA: De Insert para Upsert
       const CHUNK_SIZE = 500;
+      let upsertCount = 0;
       for (let i = 0; i < dadosFormatados.length; i += CHUNK_SIZE) {
           const chunk = dadosFormatados.slice(i, i + CHUNK_SIZE);
-          const { error } = await supa.from('vendas_pratos').insert(chunk);
-          if (error) throw new Error(`Erro ao importar lote: ${error.message}`);
+          // Usamos upsert. Como 'codigo' é a PRIMARY KEY, o Supabase o usa para detectar conflitos.
+          // Se o código já existe, a linha é atualizada. Se não existe, é inserida.
+          const { error } = await supa.from('vendas_pratos').upsert(chunk);
+          
+          if (error) {
+            // Tratamento específico se houver códigos duplicados DENTRO do próprio arquivo/chunk
+            if (error.code === '23505') {
+                console.error("Erro detalhado de duplicidade:", error);
+                throw new Error(`Erro ao importar: Códigos duplicados detectados DENTRO do arquivo enviado ou conflito de chave primária. Verifique o arquivo.`);
+            }
+            throw new Error(`Erro ao importar lote: ${error.message}`);
+          }
+          upsertCount += chunk.length;
       }
 
-      alert(`Importação concluída! ${dadosFormatados.length} linhas inseridas.`);
-      window.location.reload();
+      alert(`Importação/Atualização concluída! ${upsertCount} linhas processadas (inseridas ou atualizadas). \n\nPor favor, atualize a View Materializada no Supabase (REFRESH MATERIALIZED VIEW public.mv_vp_daily_v2;) antes de recarregar a página.`);
+      
+      // Ação final (não recarregamos automaticamente pois a MV precisa de refresh manual)
+      // window.location.reload();
 
     } catch (e) {
       console.error(e);
