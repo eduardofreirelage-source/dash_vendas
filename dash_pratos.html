@@ -149,6 +149,7 @@
       <button class="fx-iconbtn" id="fxBtnMore" title="Mais filtros" aria-haspopup="dialog" aria-expanded="false">
         <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" height="16px" width="16px"><path d="M3 6h18M7 12h10M10 18h4"/></svg>
       </button>
+      <button class="fx-textbtn" id="btnExport">Exportar</button>
       <button class="fx-textbtn" id="btnUpload">Importar</button>
       <input id="fileExcel" type="file" accept=".xlsx,.xls,.csv" style="display:none">
       <button class="fx-textbtn" id="fxBtnReset">Limpar</button>
@@ -214,7 +215,7 @@
   "use strict";
   /* ===================== CONFIG ===================== */
   const SUPABASE_URL  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
-  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
+  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg_Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
   /* ===================== CHART DEFAULTS ===================== */
@@ -472,6 +473,43 @@
       console.warn("Nenhum dado de filtro foi retornado. Os menus de filtro ficarão vazios.");
     }
   }
+
+  // NOVA FUNÇÃO DE EXPORTAÇÃO
+  async function handleExport() {
+    const btn = $('btnExport');
+    btn.textContent = 'Exportando...';
+    btn.disabled = true;
+
+    try {
+        const filters = prepareFilters({ 
+            start: $('fxDuStart').value, 
+            end: $('fxDuEnd').value,
+            unidades: ms.unids.get(),
+            categorias: ms.cats.get(),
+            pratos: ms.pratos.get()
+        });
+
+        const { data, error } = await supa.rpc('export_all_data', filters);
+
+        if (error) throw error;
+        if (!data || data.length === 0) {
+            alert('Nenhum dado encontrado para exportar com os filtros atuais.');
+            return;
+        }
+
+        const worksheet = XLSX.utils.json_to_sheet(data);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Vendas");
+        XLSX.writeFile(workbook, "Relatorio_Vendas.xlsx");
+
+    } catch (e) {
+        console.error('Erro ao exportar:', e);
+        alert(`Falha na exportação: ${e.message}`);
+    } finally {
+        btn.textContent = 'Exportar';
+        btn.disabled = false;
+    }
+  }
     
   $('btnUpload').addEventListener('click', () => $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev) => {
@@ -688,7 +726,10 @@
     // 6. Listener global para os filtros
     document.addEventListener('filters:apply', (e) => applyAll(e.detail));
     
-    // 7. Carga inicial
+    // 7. NOVO: Ativa o botão de Exportar
+    $('btnExport').addEventListener('click', handleExport);
+    
+    // 8. Carga inicial
     await fetchMaxDate();
     reloadFilterOptions();
     
