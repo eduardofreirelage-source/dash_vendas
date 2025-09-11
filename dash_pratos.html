@@ -178,6 +178,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <script>
+  "use strict";
   /* ===================== CONFIG ===================== */
   const SUPABASE_URL  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
@@ -195,6 +196,8 @@
   /* ===================== HELPERS ===================== */
   const $ = id => document.getElementById(id);
   const num = v => (v==null||!isFinite(+v)) ? '0' : (+v).toLocaleString('pt-BR');
+  const toast = (msg,type='info')=>{ console[type==='error'?'error':'info'](`[Status] [${type}]: ${msg}`); };
+  const getField = (obj, keys) => { for (const k of keys) { if (obj && Object.prototype.hasOwnProperty.call(obj, k)) return obj[k]; } return undefined; };
   
   function getTodayISO(baseDate) {
     const d = baseDate ? new Date(baseDate + 'T12:00:00Z') : new Date();
@@ -257,8 +260,8 @@
     document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
     return {
       setOptions(list){ options=(list||[]).filter(v=>v!=null).map(String).sort((a,b)=>a.localeCompare(b,'pt-BR')); filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh(); },
-      get(){return [...selected];},
-      set(vals){selected=new Set((vals||[]).map(String)); refresh(); drawOptions();},
+      get(){ return [...selected]; },
+      set(vals){ selected=new Set((vals||[]).map(String)); refresh(); drawOptions(); },
       clear(){ this.set([]); }
     };
   }
@@ -377,15 +380,18 @@
         const { data, error } = await supa.rpc('get_monthly_sales_chart_data', params);
         if (error) throw error;
 
-        const labels = (data || []).map(d => formatYM(d.period));
-        const nowData = (data || []).map(d => d.current_total);
-        const prevData = (data || []).map(d => d.prev_total);
+        const labels = (data || []).map(d => formatYM(getField(d, ['period','month'])));
+        const nowData = (data || []).map(d => getField(d, ['current_total','total','current']) || 0);
+        const prevData = (data || []).map(d => getField(d, ['previous_total','prev_total','previous']) || 0);
 
         renderChart('ch_month', 'bar', labels, [
           { label: 'Últimos 12M', data: nowData, backgroundColor: '#7b1e3a' },
           { label: '12M Anteriores', data: prevData, backgroundColor: '#9ca3af' }
         ], { plugins: { legend: { display: false } } });
-      } catch (e) { console.error("Erro ao carregar gráfico mensal:", e); }
+      } catch (e) { console.error('Erro ao carregar gráfico mensal:', e); toast('Erro ao carregar gráfico mensal', 'error');
+        // Renderiza um gráfico vazio para não quebrar o layout
+        renderChart('ch_month', 'bar', [], []);
+      }
   }
 
   /* ===================== LOOP PRINCIPAL ===================== */
@@ -404,7 +410,7 @@
       };
 
       const [kpisResult, dowResult, top10Result] = await Promise.allSettled([
-          supa.rpc('get_pratos_kpis', commonParams).then(res => res.data[0]),
+          supa.rpc('get_pratos_kpis', commonParams).then(res => res.data?.[0]),
           supa.rpc('get_pratos_dow_chart', commonParams),
           supa.rpc('get_pratos_top10_chart', commonParams).then(res => res.data)
       ]);
@@ -412,7 +418,7 @@
       if (kpisResult.status === 'fulfilled' && kpisResult.value) {
         updateKPIs(kpisResult.value, len);
       }
-      if (dowResult.status === 'fulfilled' && dowResult.value.data) {
+      if (dowResult.status === 'fulfilled' && dowResult.value?.data) {
         updateDowChart(dowResult.value.data, len);
       }
       if (top10Result.status === 'fulfilled' && top10Result.value) {
@@ -421,33 +427,72 @@
       
       updateMonthChart(ate);
 
-    } catch (e) { console.error("Erro no applyAll:", e); }
+    } catch (e) { console.error('Erro no applyAll:', e); toast('Erro ao aplicar filtros', 'error'); }
   }
 
   /* ===================== INICIALIZAÇÃO E CONTROLES DA UI ===================== */
+  async function safeSelectDistinct({ table, column }) {
+    try {
+      const { data, error } = await supa
+        .from(table)
+        .select(`${column}`, { count: 'exact', head: false, distinct: true })
+        .not(column, 'is', null)
+        .order(column, { ascending: true });
+      if (error) throw error;
+      return (data || []).map(r => r[column]);
+    } catch (e) {
+      return [];
+    }
+  }
+
   async function reloadFilterOptions() {
-    const [unids, cats, pratos] = await Promise.all([
-      supa.from('vendas_pratos_unidades').select('unidade'),
-      supa.from('vendas_pratos_categorias').select('categoria'),
-      supa.from('vendas_pratos_pratos').select('prato')
-    ]);
-    ms.unids.setOptions((unids.data?.map(r => r.unidade) || []).filter(Boolean));
-    ms.cats.setOptions(cats.data?.map(r => r.categoria).filter(c => c !== null) || []);
-    ms.pratos.setOptions(pratos.data?.map(r => r.prato).filter(p => p !== null) || []);
+    // 1) Tenta tabelas auxiliares específicas
+    let unids = await safeSelectDistinct({ table: 'vendas_pratos_unidades', column: 'unidade' });
+    let cats  = await safeSelectDistinct({ table: 'vendas_pratos_categorias', column: 'categoria' });
+    let pratos= await safeSelectDistinct({ table: 'vendas_pratos_pratos', column: 'prato' });
+
+    // 2) Fallback: lê direto da visão/VM normalizada
+    if (unids.length === 0) {
+      unids = await safeSelectDistinct({ table: 'mv_vp_daily_v2', column: 'unidade' });
+    }
+    if (cats.length === 0) {
+      cats = await safeSelectDistinct({ table: 'mv_vp_daily_v2', column: 'categoria_norm' });
+    }
+    if (pratos.length === 0) {
+      pratos = await safeSelectDistinct({ table: 'mv_vp_daily_v2', column: 'prato_norm' });
+    }
+
+    // 3) Último fallback: usa a raw (pode existir em ambientes de teste)
+    if (unids.length === 0) unids = await safeSelectDistinct({ table: 'vendas_pratos', column: 'unidade' });
+    if (cats.length === 0) cats = await safeSelectDistinct({ table: 'vendas_pratos', column: 'categoria' });
+    if (pratos.length === 0) pratos = await safeSelectDistinct({ table: 'vendas_pratos', column: 'prato' });
+
+    ms.unids.setOptions(unids);
+    ms.cats.setOptions(cats);
+    ms.pratos.setOptions(pratos);
   }
 
   async function init() {
     try {
       console.info('[Status] [info]: Inicializando aplicação...');
-      const { data, error } = await supa.from('vendas_pratos_daterange').select('max_data').limit(1);
-      if (error) throw error;
-      lastDay = (data?.length && data[0].max_data) ? data[0].max_data : getTodayISO();
+      // Tenta pegar a última data disponível por view dedicada; se falhar, usa funções
+      let last = null;
+      try {
+        const { data: d1 } = await supa.from('vendas_pratos_daterange').select('max_data').limit(1);
+        last = (d1?.length && d1[0].max_data) ? d1[0].max_data : null;
+      } catch {}
+      if (!last) {
+        const { data: d2 } = await supa.rpc('get_monthly_sales_chart_data', { end_date_iso: getTodayISO() });
+        if (d2 && d2.length) last = d2[d2.length-1].period || d2[d2.length-1].month;
+      }
+      lastDay = last || getTodayISO();
+
       await reloadFilterOptions();
       
       document.dispatchEvent(new Event('filters:init'));
       console.info('[Status] [ok]: Dados atualizados.');
 
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); toast('Falha na inicialização', 'error'); }
   }
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -461,7 +506,7 @@
     function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end); }
     
     function fxSetToLastMonthWithData(baseDateStr) {
-        if (!baseDateStr || baseDateStr.startsWith('1970')) return fxLastNDays(30);
+        if (!baseDateStr || baseDateStr.startsWith('1970')) { fxLastNDays(30); return; }
         const baseDate = new Date(baseDateStr + 'T12:00:00Z');
         const year = baseDate.getUTCFullYear();
         const month = baseDate.getUTCMonth();
@@ -476,7 +521,7 @@
     function setNamedPeriod(win) {
         const baseDate = new Date(lastDay + 'T12:00:00Z');
         let start, end;
-        if (win === 'today') { start = end = baseDate; } 
+        if (win === 'today') { start = baseDate; end = baseDate; } 
         else if (win === 'yesterday') {
             start = new Date(baseDate);
             start.setUTCDate(baseDate.getUTCDate() - 1);
@@ -507,7 +552,7 @@
     
     fx.$btnMore.addEventListener('click', ()=> fxShowDrop(!fx.$drop.classList.contains('fx-show')));
     document.addEventListener('click', (e)=>{ if(!fx.$drop.classList.contains('fx-show')) return; if(!(fx.$drop.contains(e.target) || fx.$btnMore.contains(e.target))) fxShowDrop(false); });
-    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && fx.$drop.classList.contains('fx-show')) fxShowDrop(false) });
+    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && fx.$drop.classList.contains('fx-show')) fxShowDrop(false); });
     
     const clearActiveChips = () => [...fx.$chips.children, ...fx.$days.children].forEach(b => b.classList.remove('active'));
 
@@ -541,9 +586,36 @@
     });
 
     init();
+
+    // ===================== TESTES =====================
+    function runSmokeTests(){
+      try {
+        console.group('[Tests] Dash Pratos');
+        // MultiSelect básico
+        console.assert(ms && ms.unids && typeof ms.unids.get === 'function', 'MultiSelect expõe get()');
+        ms.unids.setOptions(['A','B','C']);
+        ms.unids.set(['A','C']);
+        const vals = ms.unids.get();
+        console.assert(Array.isArray(vals) && vals.length === 2 && vals.includes('A') && vals.includes('C'), 'get() retorna seleção correta');
+        // Mapper do gráfico mensal
+        const sampleRows = [
+          { period: '2025-01-01', current_total: 10, previous_total: 5 },
+          { month: '2025-02-01', total: 20, prev_total: 10 }
+        ];
+        const lbls = sampleRows.map(d => formatYM(getField(d,['period','month'])));
+        const cur  = sampleRows.map(d => getField(d,['current_total','total','current'])||0);
+        const prv  = sampleRows.map(d => getField(d,['previous_total','prev_total','previous'])||0);
+        console.assert(lbls.length===2 && cur[0]===10 && cur[1]===20 && prv[0]===5 && prv[1]===10, 'Mapper mensal robusto');
+        console.log('✔️ Smoke tests OK');
+        console.groupEnd();
+      } catch (err) {
+        console.error('[Tests] falhou:', err);
+      }
+    }
+    if (window.location.search.includes('test=1')) setTimeout(runSmokeTests, 800);
   });
   
-  // ===================== LÓGICA DE UPLOAD FINAL E CORRIGIDA PARA SEUS DADOS =====================
+  // ====== IMPORTAÇÃO EXCEL (idempotente) ======
   $('btnUpload').addEventListener('click', () => $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev) => {
     const file = ev.target.files[0];
@@ -559,11 +631,10 @@
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       
-      // ===== LINHA CRÍTICA ALTERADA =====
-      // Força a biblioteca a formatar as datas como texto no formato DD/MM/YY
+      // Força datas como texto dia/mês/ano e preserva vazios
       const json_data = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: null, dateNF: 'dd/mm/yy' });
 
-      if (json_data.length === 0) throw new Error("O arquivo está vazio ou em um formato inválido.");
+      if (json_data.length === 0) throw new Error('O arquivo está vazio ou em um formato inválido.');
       
       const headers = Object.keys(json_data[0]);
       const findHeader = (possibleNames) => {
@@ -574,14 +645,14 @@
           return null;
       };
 
-      const dateKey = findHeader(['data', 'data da venda']);
+      const dateKey = findHeader(['data','data da venda']);
       const unitKey = findHeader(['unidade']);
       const dishKey = findHeader(['prato']);
       const categoryKey = findHeader(['categoria']);
-      const quantityKey = findHeader(['quantidade_vendida', 'quantidade', 'qtd']);
+      const quantityKey = findHeader(['quantidade_vendida','quantidade','qtd']);
 
-      if (!dateKey) throw new Error(`Coluna de data não encontrada. Verifique se seu arquivo possui a coluna 'data' ou 'data da venda'.`);
-      if (!quantityKey) throw new Error(`Coluna de quantidade não encontrada. Verifique se seu arquivo possui a coluna 'quantidade' ou 'quantidade_vendida'.`);
+      if (!dateKey) throw new Error(`Coluna de data não encontrada. Esperado: 'data' ou 'data da venda'.`);
+      if (!quantityKey) throw new Error(`Coluna de quantidade não encontrada. Esperado: 'quantidade' ou 'quantidade_vendida'.`);
       
       const parseDate = (dateValue) => {
         const s = String(dateValue);
@@ -589,7 +660,7 @@
         if (parts.length === 3) {
             let day = parts[0], month = parts[1], year = parts[2];
             if (year.length === 2) year = '20' + year;
-            if (parseInt(month,10) > 0 && parseInt(month,10) <= 12 && parseInt(day,10) > 0 && parseInt(day,10) <= 31) {
+            if (+month>0 && +month<=12 && +day>0 && +day<=31) {
               return `${year.padStart(4, '20')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
             }
         }
@@ -599,26 +670,25 @@
       const dadosFormatados = json_data.map(linha => {
         const dataValue = linha[dateKey];
         if (dataValue === null || typeof dataValue === 'undefined') return null;
-        
         const parsedDate = parseDate(dataValue);
         if (!parsedDate) return null;
-
         return {
           data: parsedDate,
-          unidade: unitKey ? linha[unitKey] : null,
-          prato: dishKey ? linha[dishKey] : null,
-          categoria: categoryKey ? linha[categoryKey] : null,
+          unidade: unitKey ? (linha[unitKey] ?? null) : null,
+          prato: dishKey ? (linha[dishKey] ?? null) : null,
+          categoria: categoryKey ? (linha[categoryKey] ?? null) : null,
           quantidade: parseInt(linha[quantityKey], 10) || 0
         };
       }).filter(Boolean);
 
-      if (dadosFormatados.length === 0) throw new Error("Nenhuma linha com dados de data válidos foi encontrada no arquivo.");
+      if (dadosFormatados.length === 0) throw new Error('Nenhuma linha com data válida encontrada.');
 
+      // Insere em lotes; duplicatas são ACEITAS se todas as colunas são iguais
       const CHUNK_SIZE = 500;
       for (let i = 0; i < dadosFormatados.length; i += CHUNK_SIZE) {
           const chunk = dadosFormatados.slice(i, i + CHUNK_SIZE);
           const { error } = await supa.from('vendas_pratos').insert(chunk);
-          if (error) throw new Error(`Erro ao importar lote para o banco: ${error.message}`);
+          if (error) throw new Error(`Erro ao importar lote: ${error.message}`);
       }
 
       alert(`Importação concluída! ${dadosFormatados.length} linhas inseridas.`);
