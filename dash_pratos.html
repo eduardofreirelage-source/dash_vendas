@@ -435,7 +435,7 @@
       const kpisPromise = supa.rpc('get_kpis_v2', filters);
       const dowPromise = supa.rpc('get_dow_v2', filters);
       const top10Promise = supa.rpc('get_top10_v2', filters);
-      const monthPromise = supa.rpc('get_month_v2', { ...filters, de: filters.ate.substring(0,4) + '-01-01' }); // For 12M view, always start from Jan 1st of current year
+      const monthPromise = supa.rpc('get_month_v2', filters);
 
       const [kpisResult, dowResult, top10Result, monthResult] = await Promise.allSettled([kpisPromise, dowPromise, top10Promise, monthPromise]);
       
@@ -463,9 +463,14 @@
         console.error("Failed to load filter options", error);
         return;
     }
-    ms.unids.setOptions(data[0].distinct_unidades);
-    ms.cats.setOptions(data[0].distinct_categorias);
-    ms.pratos.setOptions(data[0].distinct_pratos);
+    // CORREÇÃO: Verifica se os dados existem antes de usá-los para evitar o erro.
+    if (data && data.length > 0 && data[0]) {
+      ms.unids.setOptions(data[0].distinct_unidades);
+      ms.cats.setOptions(data[0].distinct_categorias);
+      ms.pratos.setOptions(data[0].distinct_pratos);
+    } else {
+      console.warn("Nenhum dado de filtro foi retornado. Os menus de filtro ficarão vazios.");
+    }
   }
     
   $('btnUpload').addEventListener('click', () => $('fileExcel').click());
@@ -554,7 +559,7 @@
           if (error) throw error;
       }
 
-      alert(`${dadosFormatados.length} linhas processadas com sucesso. \n\nLembre-se de atualizar a visão materializada no Supabase para que os dados apareçam no dashboard.\n\nExecute: REFRESH MATERIALIZED VIEW public.mv_vp_daily_v2;`);
+      alert(`${dadosFormatados.length} linhas processadas com sucesso. \n\nLembre-se de ATUALIZAR A VISÃO MATERIALIZADA no Supabase para que os dados apareçam no dashboard.\n\nExecute: REFRESH MATERIALIZED VIEW public.mv_vp_daily_v2;`);
       reloadFilterOptions();
 
     } catch (e) {
@@ -568,8 +573,7 @@
   });
 
   // ================================================================
-  // INÍCIO DA CORREÇÃO: Bloco de Inicialização do Dashboard
-  // Este código "liga" a interatividade da página.
+  // Bloco de Inicialização do Dashboard
   // ================================================================
   function inicializarDashboard() {
 
@@ -588,9 +592,9 @@
         let start, end = new Date(now);
         const win = e.currentTarget.dataset.win;
 
-        if (win === 'today') start = now;
+        if (win === 'today') { start = now; end = now; }
         if (win === 'yesterday') {
-            start = new Date(now.setDate(now.getDate() - 1));
+            start = new Date(); start.setDate(now.getDate() - 1);
             end = start;
         }
         if (win === 'lastMonth') {
@@ -615,7 +619,7 @@
         $('segDowMode').querySelector('.active').classList.remove('active');
         e.target.classList.add('active');
         dowMode = e.target.dataset.mode;
-        applyAll({ start: $('fxDuStart').value, end: $('fxDuEnd').value });
+        fxDispatchApply();
     });
     
     // 3. Ativa os botões de ranking (MAIS/MENOS VENDIDOS)
@@ -624,7 +628,7 @@
         $('segTop10').querySelector('.active').classList.remove('active');
         e.target.classList.add('active');
         top10Mode = e.target.dataset.mode;
-        applyAll({ start: $('fxDuStart').value, end: $('fxDuEnd').value });
+        fxDispatchApply();
     });
 
     // 4. Ativa o painel de "Mais filtros"
@@ -655,14 +659,11 @@
     
     // 7. Carga inicial
     reloadFilterOptions();
-    $('fxQuickChips').querySelector('[data-win="lastYear"]').click(); // Clica em "Último Ano" por padrão
+    $('fxQuickChips').querySelector('[data-win="lastYear"]').click();
   }
 
   // Garante que o script de inicialização só rode após o HTML estar completamente carregado
   document.addEventListener('DOMContentLoaded', inicializarDashboard);
-  // ================================================================
-  // FIM DA CORREÇÃO
-  // ================================================================
   </script>
 </body>
 </html>
