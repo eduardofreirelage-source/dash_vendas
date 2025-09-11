@@ -39,7 +39,6 @@
     @media (max-width:1200px){ .kpis{grid-template-columns:repeat(2,1fr)} .charts-grid{grid-template-columns:1fr} }
     @media (max-width: 768px) { .kpis{ grid-template-columns: 1fr; } .top { flex-direction: column; align-items: flex-start; } }
   
-    /* ESTILOS DA NOVA TABELA */
     .table-container {
         flex-grow: 1;
         overflow-y: auto;
@@ -92,7 +91,12 @@
         </div>
         <div class="charts-grid">
             <div class="card">
-              <div class="head"><div class="title">Vendas por Dia da Semana</div></div>
+                <div class="head">
+                    <div class="title">Vendas por Dia da Semana</div>
+                    <button id="btnExportDow" class="fx-iconbtn" title="Exportar Média Semanal (CSV)" style="width: 28px; height: 28px;">
+                        <svg fill="currentColor" viewBox="0 0 20 20" height="14px" width="14px"><path d="M13 8V2H7v6H2l8 8 8-8h-5zM0 18h20v2H0v-2z"/></svg>
+                    </button>
+                </div>
               <div class="chart-box"><canvas id="ch_dow"></canvas></div>
             </div>
             <div class="card">
@@ -307,6 +311,7 @@
   let lastDay='';
   let dowMode = 'TOTAL';
   let top10Mode = 'MAIS';
+  let dowExportData = {}; // Guarda os dados para exportação
   const ms = {
     unids: MultiSelect('ms-unids', 'Todas as Unidades'),
     cats:  MultiSelect('ms-cats', 'Todas as Categorias'),
@@ -368,17 +373,11 @@
     deltaBadge($('d_media_diaria'), mediaDiaria, prevMediaDiaria);
   }
 
-  // ===== FUNÇÃO ATUALIZADA: AGORA CRIA UMA TABELA =====
   function updateTop10Chart(data) {
     const tbody = $('tbl_top10_body');
     if (!tbody) return;
-
-    tbody.innerHTML = ''; // Limpa a tabela antes de preencher
-
-    const dataToRender = top10Mode === 'MAIS'
-        ? (data?.mais_vendidos || [])
-        : (data?.menos_vendidos || []);
-
+    tbody.innerHTML = '';
+    const dataToRender = top10Mode === 'MAIS' ? (data?.mais_vendidos || []) : (data?.menos_vendidos || []);
     if (dataToRender.length === 0) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
@@ -389,16 +388,12 @@
         tbody.appendChild(tr);
         return;
     }
-    
     dataToRender.forEach(item => {
         const tr = document.createElement('tr');
-        
         const tdPrato = document.createElement('td');
         tdPrato.textContent = item.prato;
-        
         const tdTotal = document.createElement('td');
-        tdTotal.textContent = num(item.total); // Usa o helper 'num' para formatar
-        
+        tdTotal.textContent = num(item.total);
         tr.appendChild(tdPrato);
         tr.appendChild(tdTotal);
         tbody.appendChild(tr);
@@ -407,29 +402,36 @@
 
   function updateDowChart(data, len) {
     const dowLabels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-    let nowData = Array(7).fill(0), prevData = Array(7).fill(0);
+    let chartDataNow = Array(7).fill(0), chartDataPrev = Array(7).fill(0);
+    let avgDataNow = Array(7).fill(0), avgDataPrev = Array(7).fill(0);
     for (let item of (data || [])) {
-        nowData[item.dow] = item.current;
-        prevData[item.dow] = item.previous;
+        chartDataNow[item.dow] = item.current;
+        chartDataPrev[item.dow] = item.previous;
     }
+    
+    const de = $('fxDuStart').value, ate = $('fxDuEnd').value;
+    const occNow = Array(7).fill(0);
+    let d = new Date(de+'T12:00:00Z'), end = new Date(ate+'T12:00:00Z');
+    while (d <= end) { occNow[d.getUTCDay()]++; d.setUTCDate(d.getUTCDate()+1); }
+    
+    const occPrev = Array(7).fill(0);
+    d = new Date(de+'T12:00:00Z');
+    d.setUTCDate(d.getUTCDate() - len);
+    const endPrev = new Date(d);
+    endPrev.setUTCDate(d.getUTCDate() + len - 1);
+    while (d <= endPrev) { occPrev[d.getUTCDay()]++; d.setUTCDate(d.getUTCDate()+1); }
+    
+    avgDataNow = chartDataNow.map((v,i)=> occNow[i] > 0 ? Math.round(v/occNow[i]) : 0);
+    avgDataPrev = chartDataPrev.map((v,i)=> occPrev[i] > 0 ? Math.round(v/occPrev[i]) : 0);
 
-    if (dowMode === 'MEDIA') {
-        const de = $('fxDuStart').value, ate = $('fxDuEnd').value;
-        const occNow = Array(7).fill(0);
-        let d = new Date(de+'T12:00:00Z'), end = new Date(ate+'T12:00:00Z');
-        while (d <= end) { occNow[d.getUTCDay()]++; d.setUTCDate(d.getUTCDate()+1); }
-        
-        const occPrev = Array(7).fill(0);
-        d = new Date(de+'T12:00:00Z');
-        d.setUTCDate(d.getUTCDate() - len);
-        const endPrev = new Date(d);
-        endPrev.setUTCDate(d.getUTCDate() + len - 1);
-        while (d <= endPrev) { occPrev[d.getUTCDay()]++; d.setUTCDate(d.getUTCDate()+1); }
-        
-        nowData = nowData.map((v,i)=> occNow[i] > 0 ? Math.round(v/occNow[i]) : 0);
-        prevData = prevData.map((v,i)=> occPrev[i] > 0 ? Math.round(v/occPrev[i]) : 0);
-    }
-    renderChart('ch_dow', 'bar', dowLabels, [{ label: 'Atual', data: nowData, backgroundColor: '#7b1e3a' }, { label: 'Anterior', data: prevData, backgroundColor: '#9ca3af' }]);
+    dowExportData = { labels: dowLabels, current: avgDataNow, previous: avgDataPrev };
+    
+    const dataForChart = dowMode === 'MEDIA' ? [avgDataNow, avgDataPrev] : [chartDataNow, chartDataPrev];
+
+    renderChart('ch_dow', 'bar', dowLabels, [
+        { label: 'Atual', data: dataForChart[0], backgroundColor: '#7b1e3a' }, 
+        { label: 'Anterior', data: dataForChart[1], backgroundColor: '#9ca3af' }
+    ]);
   }
 
   async function updateMonthChart(endDate) {
@@ -443,11 +445,9 @@
         };
         const { data, error } = await supa.rpc('get_monthly_sales_chart_data', params);
         if (error) throw error;
-
         const labels = (data || []).map(d => formatYM(d.period));
         const nowData = (data || []).map(d => d.current_total);
         const prevData = (data || []).map(d => d.prev_total);
-
         renderChart('ch_month', 'bar', labels, [
           { label: 'Últimos 12M', data: nowData, backgroundColor: '#7b1e3a' },
           { label: '12M Anteriores', data: prevData, backgroundColor: '#9ca3af' }
@@ -515,6 +515,32 @@
       console.info('[Status] [ok]: Dados atualizados.');
 
     } catch (e) { console.error(e); }
+  }
+  
+  function exportDowDataToCSV() {
+    if (!dowExportData.labels || dowExportData.labels.length === 0) {
+        alert("Não há dados de média para exportar.");
+        return;
+    }
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Dia da Semana;Média Atual;Média Anterior\n";
+
+    dowExportData.labels.forEach((label, index) => {
+        const row = [
+            label,
+            dowExportData.current[index],
+            dowExportData.previous[index]
+        ].join(";");
+        csvContent += row + "\n";
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "media_semanal_vendas.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -606,6 +632,8 @@
         fxSetToLastMonthWithData(lastDay);
         fxDispatchApply();
     });
+
+    $('btnExportDow').addEventListener('click', exportDowDataToCSV);
 
     init();
   });
