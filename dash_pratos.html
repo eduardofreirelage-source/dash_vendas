@@ -305,7 +305,7 @@
   /* ===================== ESTADO ===================== */
   let dowMode = 'TOTAL';
   let top10Mode = 'MAIS';
-  let maxDate = new Date(); // NOVA VARIÁVEL: Armazena a última data de venda
+  let maxDate = new Date(); 
   const ms = {
     unids: MultiSelect('ms-unids', 'Todas as Unidades'),
     cats:  MultiSelect('ms-cats', 'Todas as Categorias'),
@@ -527,12 +527,22 @@
         return null;
       };
 
-      const dadosFormatados = json_data.map(linha => {
+      let parseErrorCount = 0;
+      const dadosFormatados = json_data.map((linha, index) => {
+        
+        if(index < 5) {
+            console.log(`Linha ${index + 2} do Excel | Valor original da data:`, linha[dateKey]);
+        }
+
         const dataValue = linha[dateKey];
         if (dataValue === null || typeof dataValue === 'undefined' || dataValue === '') return null;
         
         const parsedDate = parseDate(dataValue);
-        if (!parsedDate) return null;
+        if (!parsedDate) {
+            if(index < 5) console.warn(` -> Falha ao converter a data acima.`);
+            parseErrorCount++;
+            return null;
+        }
          
         const quantidade = parseInt(linha[quantityKey], 10) || 0;
         if (quantidade <= 0) return null;
@@ -550,6 +560,9 @@
         };
       }).filter(Boolean);
 
+      if (parseErrorCount > 0) {
+        alert(`${parseErrorCount} de ${json_data.length} linhas tiveram datas em formato inválido e foram ignoradas.`);
+      }
       if (dadosFormatados.length === 0) throw new Error('Nenhuma linha válida encontrada para importação.');
 
       const CHUNK_SIZE = 500;
@@ -561,7 +574,6 @@
 
       alert(`${dadosFormatados.length} linhas processadas com sucesso. \n\nLembre-se de ATUALIZAR A VISÃO MATERIALIZADA no Supabase para que os dados apareçam no dashboard.\n\nExecute: REFRESH MATERIALIZED VIEW public.mv_vp_daily_v2;`);
       
-      // Recarrega tudo para refletir os novos dados
       await fetchMaxDate();
       reloadFilterOptions();
       applyAll();
@@ -587,7 +599,6 @@
         console.error('Não foi possível buscar a data máxima. Usando a data de hoje como padrão.', error);
         maxDate = new Date();
     } else if (data) {
-        // Corrige o problema de fuso horário ao fazer o parse da data
         maxDate = new Date(data + 'T00:00:00');
     }
   }
@@ -604,7 +615,6 @@
         document.querySelectorAll('#fxQuickChips .fx-chip').forEach(c => c.classList.remove('active'));
         e.currentTarget.classList.add('active');
         
-        // LÓGICA DE FILTRO ATUALIZADA: Usa 'maxDate' como referência
         const referenceDate = new Date(maxDate);
         let start, end;
         const win = e.currentTarget.dataset.win;
@@ -671,23 +681,22 @@
         ms.cats.clear();
         ms.pratos.clear();
         document.querySelectorAll('#fxQuickChips .fx-chip').forEach(c => c.classList.remove('active'));
-        // Ao limpar, carrega o padrão (último ano relativo à data máxima)
-        $('fxQuickChips').querySelector('[data-win="lastYear"]').click();
+        const defaultChip = $('fxQuickChips').querySelector('[data-win="lastMonth"]');
+        if(defaultChip) defaultChip.click(); else applyAll();
     });
 
     // 6. Listener global para os filtros
     document.addEventListener('filters:apply', (e) => applyAll(e.detail));
     
     // 7. Carga inicial
-    await fetchMaxDate(); // Busca a data máxima ANTES de qualquer outra coisa
+    await fetchMaxDate();
     reloadFilterOptions();
     
-    // Define o filtro padrão para o "mês atual" relativo à data máxima
     const defaultChip = $('fxQuickChips').querySelector('[data-win="lastMonth"]');
     if(defaultChip) {
       defaultChip.click();
     } else {
-      applyAll(); // Carga de emergência se o botão não for encontrado
+      applyAll();
     }
   }
 
