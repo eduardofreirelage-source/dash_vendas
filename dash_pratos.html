@@ -474,7 +474,6 @@
     }
   }
 
-  // NOVA FUNÇÃO DE EXPORTAÇÃO
   async function handleExport() {
     const btn = $('btnExport');
     btn.textContent = 'Exportando...';
@@ -525,7 +524,7 @@
       const workbook = XLSX.read(data);
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
-      const json_data = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: null, dateNF: 'dd/mm/yy' });
+      const json_data = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: null });
 
       if (json_data.length === 0) throw new Error('O arquivo está vazio ou em um formato inválido.');
         
@@ -551,33 +550,38 @@
       if (!dateKey || !quantityKey || !codeKey) {
         throw new Error(`Colunas essenciais não encontradas. Verifique se 'data', 'quantidade' e 'codigo' existem no arquivo.`);
       }
-        
+      
+      // FUNÇÃO DE LEITURA DE DATA ATUALIZADA E ROBUSTA
       const parseDate = (dateValue) => {
-        const s = String(dateValue).trim();
-        const parts = s.split(/[\/\-\.]/);
-        if (parts.length === 3) {
-            let [day, month, year] = parts;
-            if (String(year).length === 2) year = '20' + year;
-            if (+month>0 && +month<=12 && +day>0 && +day<=31) {
-              return `${String(year).padStart(4, '20')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        // Se for um número (número de série do Excel)
+        if (typeof dateValue === 'number' && dateValue > 1) {
+            const parsed = XLSX.SSF.parse_date_code(dateValue);
+            if (parsed) {
+                return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
             }
         }
-        return null;
+        // Se for texto (formato DD/MM/YYYY)
+        if (typeof dateValue === 'string') {
+            const s = dateValue.trim();
+            const parts = s.split(/[\/\-\.]/);
+            if (parts.length === 3) {
+                let [day, month, year] = parts;
+                if (String(year).length === 2) year = '20' + year;
+                if (+month > 0 && +month <= 12 && +day > 0 && +day <= 31) {
+                    return `${String(year).padStart(4, '20')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                }
+            }
+        }
+        return null; // Retorna nulo se não conseguir converter
       };
 
       let parseErrorCount = 0;
       const dadosFormatados = json_data.map((linha, index) => {
-        
-        if(index < 5) {
-            console.log(`Linha ${index + 2} do Excel | Valor original da data:`, linha[dateKey]);
-        }
-
         const dataValue = linha[dateKey];
         if (dataValue === null || typeof dataValue === 'undefined' || dataValue === '') return null;
         
         const parsedDate = parseDate(dataValue);
         if (!parsedDate) {
-            if(index < 5) console.warn(` -> Falha ao converter a data acima.`);
             parseErrorCount++;
             return null;
         }
@@ -726,7 +730,7 @@
     // 6. Listener global para os filtros
     document.addEventListener('filters:apply', (e) => applyAll(e.detail));
     
-    // 7. NOVO: Ativa o botão de Exportar
+    // 7. Ativa o botão de Exportar
     $('btnExport').addEventListener('click', handleExport);
     
     // 8. Carga inicial
