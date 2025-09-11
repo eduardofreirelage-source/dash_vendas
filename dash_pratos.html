@@ -179,7 +179,7 @@
   <script>
   /* ===================== CONFIG ===================== */
   const SUPABASE_URL  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
-  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
+  const SUPABASE_ANON = 'eyJhbGciOiUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
   /* ===================== CHART DEFAULTS ===================== */
@@ -558,7 +558,8 @@
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       
-      const json_data = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: null });
+      // MUDANÇA CRÍTICA: raw: true para ler o número da data do Excel, não o texto.
+      const json_data = XLSX.utils.sheet_to_json(worksheet, { raw: true, defval: null });
 
       if (json_data.length === 0) throw new Error("O arquivo está vazio ou em um formato inválido.");
       
@@ -580,26 +581,38 @@
       if (!dateKey) throw new Error(`Coluna de data não encontrada. Verifique se seu arquivo possui a coluna 'data' ou 'data da venda'.`);
       if (!quantityKey) throw new Error(`Coluna de quantidade não encontrada. Verifique se seu arquivo possui a coluna 'quantidade' ou 'quantidade_vendida'.`);
       
-      // ===== FUNÇÃO DE DATA ATUALIZADA PARA FORMATO EM INGLÊS =====
+      // ===== FUNÇÃO DE DATA DEFINITIVA (converte número do Excel) =====
       const parseDate = (dateValue) => {
-        if (!dateValue) return null;
-        
-        // Adiciona ' UTC' para tratar a data como universal e evitar problemas de fuso horário
-        // que podem mudar o dia da data.
-        const d = new Date(dateValue + ' UTC');
+        // Verifica se o valor é um número (número de série da data do Excel)
+        if (typeof dateValue === 'number' && dateValue > 0) {
+            // O ponto de partida do Excel é 30/12/1899 por causa de um bug legado
+            const d = new Date(Date.UTC(1899, 11, 30 + dateValue));
 
-        // Verifica se a data criada é válida
-        if (isNaN(d.getTime())) {
-            console.warn('Formato de data inválido, não foi possível converter:', dateValue);
-            return null;
+            if (isNaN(d.getTime())) {
+                console.warn('Número de série de data do Excel inválido:', dateValue);
+                return null;
+            }
+
+            const year = d.getUTCFullYear();
+            const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(d.getUTCDate()).padStart(2, '0');
+
+            return `${year}-${month}-${day}`;
         }
-
-        // Formata a data para o padrão YYYY-MM-DD que o Supabase espera
-        const year = d.getUTCFullYear();
-        const month = String(d.getUTCMonth() + 1).padStart(2, '0'); // Mês é baseado em 0 (0=Janeiro)
-        const day = String(d.getUTCDate()).padStart(2, '0');
-
-        return `${year}-${month}-${day}`;
+        
+        // Se já for uma string (menos comum com raw:true, mas é uma segurança)
+        if (typeof dateValue === 'string') {
+            const d = new Date(dateValue + ' UTC');
+            if (!isNaN(d.getTime())) {
+                const year = d.getUTCFullYear();
+                const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+                const day = String(d.getUTCDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+        }
+        
+        console.warn('Formato de data desconhecido ou inválido:', dateValue);
+        return null;
       };
 
       const dadosFormatados = json_data.map(linha => {
