@@ -17,7 +17,6 @@
     .top{position:sticky;top:0;z-index:10;background:var(--card);padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px;margin-bottom:8px;justify-content:space-between}
     .brand{display:flex;align-items:center;gap:10px; font-size:16px; font-weight: 700; color: var(--ink);}
     .section{order:2;padding:0 16px 12px 16px}
-    /* Layout mantido em 3 colunas conforme solicitado */
     .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
     .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;transition:.2s;position:relative}
     .kpi h4{margin:0 0 4px 0;color:var(--muted);font-size:11px;display:flex;align-items:center;gap:6px;}
@@ -93,7 +92,7 @@
       <section class="section">
         <div class="kpis">
           <div class="kpi"><h4><span>Itens Vendidos</span><span class="spacer"></span><span id="d_qtd" class="delta flat">—</span></h4><div class="val" id="k_qtd">—</div><div class="sub">Anterior: <span id="p_qtd">—</span></div></div>
-          <div class="kpi"><h4><span>Pratos/Itens Únicos</span><span class="spacer"></span><span id="d_pratos_unicos" class="delta flat">—</span></h4><div class="val" id="k_pratos_unicos">N/D</div><div class="sub">Anterior: <span id="p_pratos_unicos">N/D</span></div></div>
+          <div class="kpi"><h4><span>Pratos/Itens Únicos</span><span class="spacer"></span><span id="d_pratos_unicos" class="delta flat">—</span></h4><div class="val" id="k_pratos_unicos">—</div><div class="sub">Anterior: <span id="p_pratos_unicos">—</span></div></div>
           <div class="kpi"><h4><span>Média Diária</span><span class="spacer"></span><span id="d_media_diaria" class="delta flat">—</span></h4><div class="val" id="k_media_diaria">—</div><div class="sub">Anterior: <span id="p_media_diaria">—</span></div></div>
         </div>
         <div class="card" style="margin-bottom: 10px;">
@@ -244,21 +243,31 @@
       document.dispatchEvent(new CustomEvent('filters:apply', { detail: payload }));
   }
 
-  /* ===================== MULTISELECT (Restaurado) ===================== */
+  /* ===================== MULTISELECT ===================== */
   function MultiSelect(rootId, placeholder){
     const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
     let options=[], selected=new Set(), filtered=[];
+    let searchInput = null; // Melhora: Mantém referência ao input
+
     function render(){
       panel.innerHTML='';
-      const q=document.createElement('input'); q.className='msel-search'; q.placeholder='Filtrar…';
-      q.addEventListener('input',()=>{filtered=options.filter(v=>rmAcc(v).toLowerCase().includes(rmAcc(q.value).toLowerCase())); drawOptions();});
-      panel.appendChild(q);
+      searchInput=document.createElement('input'); // Melhora: Atribui ao escopo correto
+      searchInput.className='msel-search'; searchInput.placeholder='Filtrar…';
+      searchInput.addEventListener('input',()=>{
+        filtered=options.filter(v=>rmAcc(v).toLowerCase().includes(rmAcc(searchInput.value).toLowerCase())); 
+        drawOptions();
+      });
+      panel.appendChild(searchInput);
       drawOptions();
     }
     function drawOptions(){
       panel.querySelectorAll('.msel-opt-box').forEach(n=>n.remove());
       const box=document.createElement('div'); box.className = 'msel-opt-box';
-      (filtered.length > 0 ? filtered : options).forEach(v=>{
+      
+      // Melhora: Corrige o comportamento do filtro quando a busca resulta em 0 itens.
+      const displayOptions = (searchInput && searchInput.value.length > 0) ? filtered : options;
+
+      displayOptions.forEach(v=>{
         const row=document.createElement('div'); row.className='msel-opt';
         const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v; cb.checked=selected.has(v);
         const lb=document.createElement('label'); lb.textContent=v;
@@ -338,34 +347,39 @@
     });
   }
    
-  // CORREÇÃO: Ajustado para ler as colunas exatas retornadas por get_pratos_kpis
+  // CORREÇÃO: Ajustado para ler as colunas atualizadas (incluindo únicos)
   function updateKPIs(kpisData, len) {
     const kpis = kpisData || {};
     
-    // Nomes exatos conforme o diagnóstico SQL
+    // Nomes exatos conforme o SQL atualizado
     const current_total = kpis.total_current || 0;
     const prev_total = kpis.total_previous || 0;
+
+    // Lendo as novas colunas de únicos
+    const unicos_current = kpis.unicos_current || 0;
+    const unicos_previous = kpis.unicos_previous || 0;
     
-    // A média diária agora é fornecida diretamente pelo SQL para o período atual.
     const mediaDiaria = kpis.media_diaria ? parseFloat(kpis.media_diaria) : 0;
-    
-    // Calculamos a média anterior manualmente, pois o período anterior tem a mesma duração 'len'.
     const prevMediaDiaria = len > 0 && prev_total > 0 ? prev_total / len : 0;
     
+    // Atualiza Total Vendido
     $('k_qtd').textContent = num(current_total);
     $('p_qtd').textContent = num(prev_total);
     deltaBadge($('d_qtd'), current_total, prev_total);
     
-    // KPIs de Pratos Únicos não são mais fornecidos pela nova API.
+    // Atualiza Pratos Únicos
+    $('k_pratos_unicos').textContent = num(unicos_current);
+    $('p_pratos_unicos').textContent = num(unicos_previous);
+    deltaBadge($('d_pratos_unicos'), unicos_current, unicos_previous);
     
+    // Atualiza Média Diária
     $('k_media_diaria').textContent = num(Math.round(mediaDiaria));
     $('p_media_diaria').textContent = num(Math.round(prevMediaDiaria));
     deltaBadge($('d_media_diaria'), mediaDiaria, prevMediaDiaria);
   }
 
-  // CORREÇÃO: A estrutura interna do JSONB é assumida como {mais_vendidos, menos_vendidos}.
+  // (Funções de Gráficos Inalteradas)
   function updateTop10Chart(data) {
-    // O 'data' aqui já é o JSON desembrulhado pelo applyAll.
     const maisVendidos = data?.mais_vendidos || [];
     const menosVendidos = data?.menos_vendidos || [];
 
@@ -376,12 +390,10 @@
     }
   }
 
-  // REESTRUTURAÇÃO: Adaptado para receber os dados do período atual e anterior separadamente.
   function updateDowChart(currentData, previousData, len) {
     const dowLabels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
     let nowData = Array(7).fill(0), prevData = Array(7).fill(0);
     
-    // Processa os dados recebidos usando as colunas exatas 'dow' e 'total'.
     for (let item of (currentData || [])) {
         if (item.dow >= 0 && item.dow < 7) {
             nowData[item.dow] = item.total || 0;
@@ -396,12 +408,10 @@
     if (dowMode === 'MEDIA' && len > 0) {
         const de = $('fxDuStart').value, ate = $('fxDuEnd').value;
         
-        // Calcula ocorrências no período atual
         const occNow = Array(7).fill(0);
         let d = new Date(de+'T12:00:00Z'), end = new Date(ate+'T12:00:00Z');
         while (d <= end) { occNow[d.getUTCDay()]++; d.setUTCDate(d.getUTCDate()+1); }
          
-        // Calcula ocorrências no período anterior
         const prevDates = getPreviousPeriodDates(de, len);
         const occPrev = Array(7).fill(0);
         
@@ -431,29 +441,28 @@
             catsFilter = cats;
         }
 
-        // Retorna os nomes exatos esperados pelo SQL, incluindo o novo parâmetro _incluir_zero
+        // Retorna os nomes exatos esperados pelo SQL
         return {
             _unidades: unids.length > 0 ? unids : null,
             _categorias: catsFilter,
             _pratos: pratos.length > 0 ? pratos : null,
-            _incluir_zero: false // Valor padrão seguro
+            _incluir_zero: false // Valor padrão seguro para funções que o utilizam
         };
     }
 
-  // REESTRUTURAÇÃO: Adaptado para buscar os dois períodos (12M atuais e 12M anteriores) separadamente.
   async function updateMonthChart(endDate) {
       try {
         const filters = prepareFilters();
 
-        // 1. Calcular datas para os últimos 12 meses (Período Atual)
+        // 1. Calcular datas (Período Atual - 12 Meses)
         const ateCurrent = new Date(endDate + 'T12:00:00Z');
         const deCurrent = new Date(ateCurrent.getTime());
         deCurrent.setUTCMonth(ateCurrent.getUTCMonth() - 11);
-        deCurrent.setUTCDate(1); // Início do mês de 11 meses atrás
+        deCurrent.setUTCDate(1);
 
-        // 2. Calcular datas para os 12 meses anteriores (Período Anterior)
+        // 2. Calcular datas (Período Anterior - 12 Meses anteriores)
         const atePrevious = new Date(deCurrent.getTime());
-        atePrevious.setUTCDate(atePrevious.getUTCDate() - 1); // Último dia antes do início do período atual
+        atePrevious.setUTCDate(atePrevious.getUTCDate() - 1); 
         
         const dePrevious = new Date(atePrevious.getTime());
         dePrevious.setUTCMonth(atePrevious.getUTCMonth() - 11);
@@ -479,9 +488,6 @@
         const previousDataRaw = previousResult.status === 'fulfilled' ? previousResult.value?.data : [];
 
         // 5. Processar e alinhar os dados
-        // Usamos o período atual como base. Nomes exatos: month, total.
-        
-        // Criamos um mapa dos dados anteriores indexado pelo mês (0-11) para alinhamento robusto.
         const prevDataMap = new Map();
         previousDataRaw.forEach(d => {
             const monthIndex = new Date(d.month + 'T12:00:00Z').getUTCMonth();
@@ -504,7 +510,7 @@
         renderChart('ch_month', 'bar', labels, [
           { label: 'Últimos 12M', data: nowData, backgroundColor: '#7b1e3a' },
           { label: '12M Anteriores', data: prevData, backgroundColor: '#9ca3af' }
-        ], { plugins: { legend: { display: true } } }); // Habilita a legenda
+        ], { plugins: { legend: { display: true } } });
 
       } catch (e) { 
         console.error('Erro ao carregar gráfico mensal:', e); toast('Erro ao carregar gráfico mensal', 'error');
@@ -541,9 +547,15 @@
           _ate: prevDates.ate
       };
 
-      // Executar todas as chamadas necessárias simultaneamente (Chamada Dupla para DOW)
-      const [kpisResult, dowCurrentResult, dowPreviousResult, top10Result] = await Promise.allSettled([
-          // KPIs (A função get_pratos_kpis já calcula ambos os períodos internamente)
+
+      // Executar todas as chamadas simultaneamente
+      const [
+          kpisResult, 
+          dowCurrentResult, 
+          dowPreviousResult, 
+          top10Result
+        ] = await Promise.allSettled([
+          // KPIs (A função get_pratos_kpis agora retorna tudo, incluindo únicos)
           supa.rpc('get_pratos_kpis', currentParams).then(res => res.data?.[0]),
           
           // DOW Atual
@@ -552,8 +564,7 @@
           // DOW Anterior
           supa.rpc('get_pratos_dow_chart', previousParams).then(res => res.data),
 
-          // Top 10 (A função retorna um JSONB na primeira linha e coluna específica)
-          // CORREÇÃO: Extração correta do JSONB (TABLE(get_pratos_top10_chart jsonb))
+          // Top 10
           supa.rpc('get_pratos_top10_chart', currentParams).then(res => res.data?.[0]?.get_pratos_top10_chart)
       ]);
 
@@ -585,7 +596,7 @@
         updateTop10Chart(null);
       }
        
-      // Gráfico Mensal (Tem sua própria lógica interna de busca dupla)
+      // Gráfico Mensal
       updateMonthChart(ate);
 
     } catch (e) { console.error('Erro crítico no applyAll:', e); toast('Erro ao aplicar filtros', 'error'); }
@@ -645,7 +656,8 @@
       console.info('[Status] [info]: Inicializando aplicação...');
       let last = null;
       
-      // 1. Tenta view dedicada (Ideal)
+      // (Lógica inalterada, robusta com fallbacks para encontrar a data mais recente)
+      // 1. Tenta view dedicada
       try {
         const { data: d1, error: e1 } = await supa.from('vendas_pratos_daterange').select('max_data').limit(1);
         if (!e1 && d1?.length && d1[0].max_data) {
@@ -681,7 +693,6 @@
         } catch (e) { console.warn('[Init] Erro ao acessar vendas_pratos:', e); }
       }
       
-      // Se tudo falhar (banco vazio), usa hoje.
       lastDay = last || getTodayISO();
 
       await reloadFilterOptions();
@@ -692,7 +703,7 @@
     } catch (e) { console.error(e); toast('Falha na inicialização', 'error'); }
   }
 
-  /* ===================== CONTROLES DA UI (Restaurado) ===================== */
+  /* ===================== CONTROLES DA UI ===================== */
   document.addEventListener('DOMContentLoaded', () => {
     const fx = {
       $drop: $('fxDropup'), $btnMore: $('fxBtnMore'), $btnReset: $('fxBtnReset'),
@@ -729,9 +740,9 @@
         let start, end;
         if (win === 'today') { start = baseDate; end = baseDate; } 
         else if (win === 'yesterday') {
-            start = new Date(baseDate);
+            start = new Date(baseDate.getTime());
             start.setUTCDate(baseDate.getUTCDate() - 1);
-            end = start;
+            end = new Date(start.getTime());
         } else if (win === 'lastMonth') {
             // Mês anterior ao da última data
             start = new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth() - 1, 1));
@@ -747,7 +758,7 @@
      
     function fxLastNDays(n){
       const end = new Date(lastDay + 'T12:00:00Z');
-      const start = new Date(end);
+      const start = new Date(end.getTime());
       start.setUTCDate(end.getUTCDate() - (n - 1));
       fxSetRange(start, end);
     }
@@ -798,7 +809,7 @@
 
   });
    
-  // ====== IMPORTAÇÃO EXCEL (Restaurada e mantida intacta) ======
+  // ====== IMPORTAÇÃO EXCEL (Mantida intacta) ======
   $('btnUpload').addEventListener('click', () => $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev) => {
     const file = ev.target.files[0];
@@ -819,7 +830,12 @@
 
       if (json_data.length === 0) throw new Error('O arquivo está vazio ou em um formato inválido.');
        
-      const headers = Object.keys(json_data[0]);
+      // Assume que a primeira linha não vazia contém os cabeçalhos
+      let firstDataRow = json_data.find(row => Object.values(row).some(val => val !== null && val !== ''));
+      if (!firstDataRow) throw new Error('Nenhuma linha com dados encontrada.');
+
+      const headers = Object.keys(firstDataRow);
+
       const findHeader = (possibleNames) => {
           for (const name of possibleNames) {
               const found = headers.find(h => h.toLowerCase().trim() === name);
@@ -842,6 +858,8 @@
         const parts = s.split(/[\/\-\.]/);
         if (parts.length === 3) {
             let day = parts[0], month = parts[1], year = parts[2];
+            
+            // Lógica básica para D/M/Y
             if (year.length === 2) year = '20' + year;
             if (+month>0 && +month<=12 && +day>0 && +day<=31) {
               return `${year.padStart(4, '20')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
@@ -852,21 +870,26 @@
 
       const dadosFormatados = json_data.map(linha => {
         const dataValue = linha[dateKey];
-        if (dataValue === null || typeof dataValue === 'undefined') return null;
+        if (dataValue === null || typeof dataValue === 'undefined' || dataValue === '') return null;
         const parsedDate = parseDate(dataValue);
         if (!parsedDate) return null;
+        
+        // Tratamento básico de quantidade
+        const quantidade = parseInt(linha[quantityKey], 10) || 0;
+        if (quantidade <= 0) return null;
+
         return {
           data: parsedDate,
           unidade: unitKey ? (linha[unitKey] ?? null) : null,
           prato: dishKey ? (linha[dishKey] ?? null) : null,
           categoria: categoryKey ? (linha[categoryKey] ?? null) : null,
-          quantidade: parseInt(linha[quantityKey], 10) || 0
+          quantidade: quantidade
         };
       }).filter(Boolean);
 
-      if (dadosFormatados.length === 0) throw new Error('Nenhuma linha com data válida encontrada.');
+      if (dadosFormatados.length === 0) throw new Error('Nenhuma linha com data válida e quantidade positiva encontrada.');
 
-      // Insere em lotes; duplicatas são ACEITAS se todas as colunas são iguais
+      // Insere em lotes
       const CHUNK_SIZE = 500;
       for (let i = 0; i < dadosFormatados.length; i += CHUNK_SIZE) {
           const chunk = dadosFormatados.slice(i, i + CHUNK_SIZE);
