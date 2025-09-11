@@ -38,6 +38,36 @@
     .chart-box canvas{display:block;width:100%;height:100%}
     @media (max-width:1200px){ .kpis{grid-template-columns:repeat(2,1fr)} .charts-grid{grid-template-columns:1fr} }
     @media (max-width: 768px) { .kpis{ grid-template-columns: 1fr; } .top { flex-direction: column; align-items: flex-start; } }
+  
+    /* ESTILOS DA NOVA TABELA */
+    .table-container {
+        flex-grow: 1;
+        overflow-y: auto;
+        min-height: 180px;
+    }
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px;
+    }
+    .data-table th, .data-table td {
+        padding: 6px 8px;
+        text-align: left;
+        border-bottom: 1px solid var(--line);
+    }
+    .data-table th {
+        font-weight: 700;
+        position: sticky;
+        top: 0;
+        background: var(--card);
+    }
+    .data-table td:last-child {
+        text-align: right;
+        font-weight: 500;
+    }
+    .data-table tbody tr:nth-child(even) {
+        background-color: #f9fafb;
+    }
   </style>
 </head>
 <body>
@@ -73,7 +103,18 @@
                         <button data-mode="MENOS">Menos Vendidos</button>
                     </div>
                 </div>
-                <div class="chart-box"><canvas id="ch_top10"></canvas></div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Prato</th>
+                                <th>Qtd.</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbl_top10_body">
+                            </tbody>
+                    </table>
+                </div>
             </div>
         </div>
       </section>
@@ -327,14 +368,41 @@
     deltaBadge($('d_media_diaria'), mediaDiaria, prevMediaDiaria);
   }
 
+  // ===== FUNÇÃO ATUALIZADA: AGORA CRIA UMA TABELA =====
   function updateTop10Chart(data) {
-    const maisVendidos = data?.mais_vendidos || [];
-    const menosVendidos = data?.menos_vendidos || [];
-    if (top10Mode === 'MAIS') {
-        renderChart('ch_top10', 'bar', maisVendidos.map(x => x.prato), [{ label: 'Qtd', data: maisVendidos.map(x => x.total), backgroundColor: '#7b1e3a' }], { indexAxis: 'y', plugins: { legend: { display: false } } });
-    } else { 
-        renderChart('ch_top10', 'bar', menosVendidos.map(x => x.prato), [{ label: 'Qtd', data: menosVendidos.map(x => x.total), backgroundColor: '#9ca3af' }], { indexAxis: 'y', plugins: { legend: { display: false } } });
+    const tbody = $('tbl_top10_body');
+    if (!tbody) return;
+
+    tbody.innerHTML = ''; // Limpa a tabela antes de preencher
+
+    const dataToRender = top10Mode === 'MAIS'
+        ? (data?.mais_vendidos || [])
+        : (data?.menos_vendidos || []);
+
+    if (dataToRender.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 2;
+        td.textContent = 'Nenhum dado disponível.';
+        td.style.textAlign = 'center';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
     }
+    
+    dataToRender.forEach(item => {
+        const tr = document.createElement('tr');
+        
+        const tdPrato = document.createElement('td');
+        tdPrato.textContent = item.prato;
+        
+        const tdTotal = document.createElement('td');
+        tdTotal.textContent = num(item.total); // Usa o helper 'num' para formatar
+        
+        tr.appendChild(tdPrato);
+        tr.appendChild(tdTotal);
+        tbody.appendChild(tr);
+    });
   }
 
   function updateDowChart(data, len) {
@@ -558,7 +626,6 @@
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       
-      // MUDANÇA CRÍTICA: raw: true para ler o número da data do Excel, não o texto.
       const json_data = XLSX.utils.sheet_to_json(worksheet, { raw: true, defval: null });
 
       if (json_data.length === 0) throw new Error("O arquivo está vazio ou em um formato inválido.");
@@ -581,26 +648,18 @@
       if (!dateKey) throw new Error(`Coluna de data não encontrada. Verifique se seu arquivo possui a coluna 'data' ou 'data da venda'.`);
       if (!quantityKey) throw new Error(`Coluna de quantidade não encontrada. Verifique se seu arquivo possui a coluna 'quantidade' ou 'quantidade_vendida'.`);
       
-      // ===== FUNÇÃO DE DATA DEFINITIVA (converte número do Excel) =====
       const parseDate = (dateValue) => {
-        // Verifica se o valor é um número (número de série da data do Excel)
         if (typeof dateValue === 'number' && dateValue > 0) {
-            // O ponto de partida do Excel é 30/12/1899 por causa de um bug legado
             const d = new Date(Date.UTC(1899, 11, 30 + dateValue));
-
             if (isNaN(d.getTime())) {
                 console.warn('Número de série de data do Excel inválido:', dateValue);
                 return null;
             }
-
             const year = d.getUTCFullYear();
             const month = String(d.getUTCMonth() + 1).padStart(2, '0');
             const day = String(d.getUTCDate()).padStart(2, '0');
-
             return `${year}-${month}-${day}`;
         }
-        
-        // Se já for uma string (menos comum com raw:true, mas é uma segurança)
         if (typeof dateValue === 'string') {
             const d = new Date(dateValue + ' UTC');
             if (!isNaN(d.getTime())) {
@@ -610,7 +669,6 @@
                 return `${year}-${month}-${day}`;
             }
         }
-        
         console.warn('Formato de data desconhecido ou inválido:', dateValue);
         return null;
       };
