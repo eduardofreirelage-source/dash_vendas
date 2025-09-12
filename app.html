@@ -1,84 +1,394 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ordens de Produção</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <meta charset="utf-8"/>
+    <meta content="width=device-width,initial-scale=1" name="viewport"/>
+    <title>Mapa de Produção — v3.5 Final</title>
+    <link href='data:image/svg+xml,&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"&gt;&lt;rect x="0" y="0" width="128" height="128" rx="22" fill="%237b1e3a"/&gt;&lt;text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white"&gt;MP&lt;/text&gt;&lt;/svg&gt;' rel="icon"/>
+    <link rel="stylesheet" href="estoque_styles.css">
     <style>
-        /* SEUS ESTILOS ORIGINAIS */
-        body { font-family: 'Inter', sans-serif; background-color: #f7f7fa; margin: 0; padding: 24px; color: #0f172a;}
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-        .header h1 { font-size: 28px; font-weight: 700; }
-        .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 8px; border: 1px solid transparent; font-weight: 500; cursor: pointer; transition: background-color 0.2s; }
-        .btn-primary { background-color: #7b1e3a; color: #fff; }
-        .btn-primary:hover { background-color: #6a1a31; }
-        .table-wrapper { background-color: #fff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
-        .production-table { width: 100%; border-collapse: collapse; }
-        .production-table th, .production-table td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #e5e7eb; }
-        .production-table thead { background-color: #f9fafb; }
-        .production-table th { font-weight: 600; color: #64748b; }
-        .status { padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; }
-        .status-pending { background-color: #fffbeb; color: #b45309; }
-        .status-in-progress { background-color: #eff6ff; color: #2563eb; }
-        .status-completed { background-color: #f0fdf4; color: #166534; }
-
-        /* ÚNICA ALTERAÇÃO REALIZADA */
-        body {
-            padding: 0; /* Remove o espaçamento lateral do seu estilo original */
+        /* Estilos mínimos de fallback caso o CSS principal não carregue */
+        :root {
+            --pri: #7b1e3a; --bg: #f7f7fa; --card: #fff; --line: #e5e7eb;
+            --ink: #0f172a; --muted: #64748b; --ok: #10b981; --down: #ef4444; --warn: #f59e0b;
         }
-        .header, .table-wrapper {
-            padding-left: 24px; /* Adiciona o espaçamento de volta aos elementos internos */
-            padding-right: 24px;
-        }
-        .header {
-             padding-top: 24px;
-        }
-
+        body { font-family: sans-serif; background: var(--bg); color: var(--ink); margin: 0; font-size: 14px; }
+        .main { display: flex; flex-direction: column; min-height: 100vh; }
+        .top { background: var(--card); padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+        .brand { display: flex; align-items: center; gap: 12px; }
+        .logo { background: var(--pri); color: white; padding: 8px; border-radius: 8px; font-weight: bold; }
+        .tabs button { background: none; border: none; padding: 8px 12px; cursor: pointer; color: var(--muted); font-size: 16px;}
+        .tabs button.active { color: var(--pri); font-weight: bold; border-bottom: 2px solid var(--pri); }
+        .content-wrap { flex: 1; padding: 16px; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .section { background: var(--card); padding: 16px; border-radius: 12px; border: 1px solid var(--line); }
+        .subtabs { margin-bottom: 16px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; }
+        .subtabs button { background: none; border: none; padding: 6px 10px; cursor: pointer; color: var(--muted); font-size: 14px; }
+        .subtabs button.active { color: var(--ink); font-weight: bold; border-bottom: 2px solid var(--pri); }
+        .subpage { display: none; }
+        .subpage.active { display: block; }
+        .editor-container { display: none; background: #f9fafb; padding: 16px; border-radius: 8px; margin-bottom: 16px; border: 1px solid var(--line); }
+        .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        .form-span-col-2 { grid-column: span 2; }
+        label { display: block; margin-bottom: 4px; color: var(--ink); }
+        input, select, textarea { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+        input:disabled { background-color: #f1f1f1; }
+        .btn { padding: 8px 16px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; background: white; color: var(--ink); font-weight: 500; }
+        .btn.pri { background: var(--pri); color: white; border-color: var(--pri); }
+        .btn.small { padding: 4px 8px; font-size: 12px; }
+        .right { display: flex; justify-content: flex-end; gap: 8px; }
+        .sep { border-top: 1px solid var(--line); margin: 16px 0; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 8px 12px; border-bottom: 1px solid var(--line); text-align: left; }
+        th { background: var(--bg); font-weight: bold; }
+        .table-container { overflow-x: auto; }
+        .pill { padding: 2px 8px; border-radius: 16px; font-size: 12px; background: var(--line); color: var(--ink); display: inline-block; }
+        .pill.ok { background: rgba(16, 185, 129, 0.1); color: var(--ok); }
+        .pill.bad { background: rgba(239, 68, 68, 0.1); color: var(--down); }
+        .pill.warn { background: rgba(245, 158, 11, 0.1); color: var(--warn); }
+        .grid { display: grid; gap: 12px; }
+        .cols-2 { grid-template-columns: repeat(2, 1fr); }
+        .cols-3 { grid-template-columns: repeat(3, 1fr); }
+        .cols-4 { grid-template-columns: repeat(4, 1fr); }
+        .cols-5 { grid-template-columns: repeat(5, 1fr); }
+        .dashboard-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        .card { background: var(--card); padding: 16px; border-radius: 12px; border: 1px solid var(--line); }
+        .card-header h3 { margin-top: 0; }
+        .span-col-2 { grid-column: span 2; }
+        .span-col-4 { grid-column: span 4; }
+        .kpi-card { background: var(--card); padding: 12px; border-radius: 12px; border: 1px solid var(--line); }
+        .kpi-title { font-size: 14px; color: var(--muted); margin: 0; }
+        .kpi-value { font-size: 24px; font-weight: bold; margin: 4px 0 0 0; }
+        .mov-actions { display: flex; gap: 12px; margin-bottom: 16px; }
+        #mov-form-container { display: none; }
+        .hint { color: var(--muted); font-size: 13px; }
     </style>
 </head>
 <body>
-    <header class="header">
-        <h1>Ordens de Produção</h1>
-        <button class="btn btn-primary">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            <span>Nova Ordem</span>
-        </button>
-    </header>
-
-    <div class="table-wrapper">
-        <table class="production-table">
-            <thead>
-                <tr>
-                    <th>Produto</th>
-                    <th>Quantidade</th>
-                    <th>Data de Entrega</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>Feijoada Magra</td>
-                    <td>50 un.</td>
-                    <td>15/09/2025</td>
-                    <td><span class="status status-pending">Pendente</span></td>
-                </tr>
-                <tr>
-                    <td>Strogonoff de Frango</td>
-                    <td>75 un.</td>
-                    <td>14/09/2025</td>
-                    <td><span class="status status-in-progress">Em Produção</span></td>
-                </tr>
-                <tr>
-                    <td>Bolo de Coco</td>
-                    <td>30 un.</td>
-                    <td>12/09/2025</td>
-                    <td><span class="status status-completed">Concluído</span></td>
-                </tr>
-            </tbody>
-        </table>
+<main class="main">
+    <div class="top">
+        <div class="brand">
+            <div class="logo">MP</div>
+            <div>
+                <h1 style="font-size:18px; margin:0; line-height:1.2">Mapa de Produção</h1>
+                <div class="hint" style="margin:0;">Ficha técnica, previsão e compras</div>
+            </div>
+        </div>
+        <nav class="tabs" id="main-tabs">
+            <button class="active" data-tab="cadastros">Cadastros</button>
+            <button data-tab="producao">Produção</button>
+            <button data-tab="compras">Compras</button>
+            <button data-tab="estoque">Estoque</button>
+        </nav>
+        <div class="status-bar">
+            <div id="status">Carregando…</div>
+        </div>
     </div>
+
+    <div class="content-wrap">
+    <section class="tab-content active" id="tab-cadastros">
+        <div class="section" id="section-cadastros">
+            <nav class="subtabs" id="cadastro-subtabs">
+                <button class="active" data-subtab="pratos">Pratos</button>
+                <button data-subtab="componentes">Componentes</button>
+                <button data-subtab="receitas">Receitas</button>
+                <button data-subtab="ingredientes">Ingredientes</button>
+                <button class="chip" data-subtab="um">Unidades de Medida</button>
+                <button class="chip" data-subtab="unidades">Locais/Unidades</button>
+                <button class="chip" data-subtab="categorias">Categorias</button>
+            </nav>
+
+            <div class="subpage active" id="sub-pratos">
+                <div class="right" style="margin-bottom: 16px;">
+                    <button class="btn pri" id="btnNovoPrato">+ Novo prato</button>
+                </div>
+                <div class="editor-container" id="prato-editor-container">
+                    <h3 id="prato-form-title" class="form-title">Novo Prato</h3>
+                    <form id="form-prato">
+                        <input type="hidden" id="prato-id" name="id">
+                        <div class="form-grid">
+                            <div><label>Nome do Prato</label><input id="prato-nome" name="nome" required placeholder="Ex.: Strogonoff de frango"/></div>
+                            <div><label>Categoria</label><select id="prato-cat" name="categoria_id" required></select></div>
+                            <div><label>Peso/Volume (Qtd)</label><input id="prato-peso" name="peso_volume" type="number" step="0.01" placeholder="Ex.: 500"/></div>
+                            <div><label>Unidade (g/ml/un)</label><select id="prato-peso-un" name="unidade_peso_volume"><option>g</option><option>ml</option><option>un</option></select></div>
+                            <div><label>Preço de Venda (R$)</label><input id="prato-preco" name="preco_venda" type="number" step="0.01" placeholder="Ex.: 34,90"/></div>
+                            <div><label>Custo Calculado</label><input disabled id="prato-custo" placeholder="R$ 0,00"/></div>
+                            <div class="form-span-col-2"><label>Descrição</label><textarea id="prato-descricao" name="descricao" placeholder="Descreva o prato..." rows="3"></textarea></div>
+                        </div>
+                        <div class="sep"></div>
+                        <div class="form-actions right">
+                            <button class="btn" type="button" id="btnCancelarPrato">Cancelar</button>
+                            <button class="btn pri" type="submit" id="btnSalvarPrato">Salvar Prato</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="table-container" style="max-height:420px;">
+                    <table id="tblPratos"><thead><tr><th>Nome</th><th>Categoria</th><th>Preço</th><th>Receitas</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table>
+                </div>
+            </div>
+
+            <div class="subpage" id="sub-componentes">
+                <h2>Componentes do Prato (Ficha Técnica)</h2>
+                <div class="grid cols-2">
+                    <div>
+                    <label>Selecione um prato para ver ou adicionar componentes (receitas)</label>
+                    <select id="cp-prato"><option value="">Selecione...</option></select>
+                    </div>
+                </div>
+                <div id="componentes-editor" style="display: none;">
+                    <div class="sep"></div>
+                    <h4>Adicionar Receita ao Prato</h4>
+                    <div class="grid cols-4" style="align-items: flex-end;">
+                        <div><label>Receita</label><select id="cp-receita"></select></div>
+                        <div><label>Qtd por prato</label><input id="cp-qtd" type="number" step="0.001" placeholder="Ex.: 220"/></div>
+                        <div><label>Unidade</label><select id="cp-und"><option>g</option><option>ml</option><option>porcao</option></select></div>
+                        <div class="right"><button class="btn pri" id="btnAddPrComp">Adicionar</button></div>
+                    </div>
+                    <div class="sep"></div>
+                    <h4>Receitas Atuais do Prato</h4>
+                    <div class="table-container" style="max-height:420px"><table id="tblPrComp"><thead><tr><th>Receita</th><th>Qtd</th><th>Un</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
+                </div>
+            </div>
+
+            <div class="subpage" id="sub-receitas">
+                <div class="right" style="margin-bottom: 16px;">
+                    <button class="btn pri" id="btnShowNewRecipeForm">+ Nova Receita</button>
+                </div>
+                <div class="editor-container" id="recipe-editor-container">
+                    <h3 id="recipe-form-title" class="form-title">Nova Receita</h3>
+                    <form id="form-receita">
+                        <input type="hidden" id="rec-id" name="id">
+                        <div class="form-grid">
+                            <div><label>Nome da Receita</label><input id="rec-nome" name="nome" required placeholder="Ex.: Arroz Branco pronto"/></div>
+                            <div><label>Perda Global (%)</label><input id="rec-perda" name="perda_global_percentual" type="number" step="0.1" value="0"/></div>
+                            <div><label>Rendimento (qtd)</label><input id="rec-rend-qtd" name="rendimento_qtd" required type="number" step="0.001" placeholder="Ex.: 1000"/></div>
+                            <div><label>Unidade de Rendimento</label><select id="rec-rend-und" name="rendimento_unidade" required><option value="g">g</option><option value="kg">kg</option><option value="ml">ml</option><option value="L">L</option><option value="porcao">porção</option></select></div>
+                            <div class="form-span-col-2"><label>Observações</label><input id="rec-obs" name="obs" placeholder="Opcional"/></div>
+                        </div>
+                        <div class="sep"></div>
+                        <h4>Itens da Receita</h4>
+                        <div class="grid cols-5" style="align-items: flex-end; margin-bottom: 16px;">
+                            <div><label>Tipo</label><select id="draft-tipo"><option value="INGREDIENTE">Ingrediente</option><option value="RECEITA">Receita</option></select></div>
+                            <div><label>Referência</label><select id="draft-ref"></select></div>
+                            <div><label>Qtd</label><input id="draft-qtd" type="number" step="0.001" placeholder="Ex.: 300"/></div>
+                            <div><label>Unidade</label><select id="draft-und"></select></div>
+                            <div class="right"><button class="btn" type="button" id="btnDraftAdd">Adicionar</button></div>
+                        </div>
+                        <div class="table-container" style="margin-bottom: 16px; max-height:200px"><table id="tblDraft"><thead><tr><th>Tipo</th><th>Nome</th><th>Qtd</th><th>Un</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
+
+                        <label>Modo de Preparo</label>
+                        <textarea id="rec-preparo" name="modo_preparo" placeholder="Descreva o passo-a-passo..." rows="6"></textarea>
+                        
+                        <div class="sep"></div>
+                        <div class="form-actions right">
+                            <button class="btn" type="button" id="btnCancelRecEdit">Cancelar</button>
+                            <button class="btn pri" type="submit" id="btnSaveRec">Salvar Receita</button>
+                        </div>
+                    </form>
+                </div>
+                <h3>Receitas Cadastradas</h3>
+                <div class="table-container">
+                    <table id="tblRec"><thead><tr><th>Nome</th><th>Rendimento</th><th>Itens</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table>
+                </div>
+            </div>
+
+            <div class="subpage" id="sub-ingredientes">
+                <div class="right" style="margin-bottom: 16px;">
+                    <button class="btn pri" id="btnShowNewIngredienteForm">+ Novo Ingrediente</button>
+                </div>
+                <div class="editor-container" id="ingrediente-editor-container">
+                    <h3 id="ingrediente-form-title" class="form-title">Novo Ingrediente</h3>
+                    <form id="form-ingrediente">
+                        <input type="hidden" id="ing-id" name="id">
+                        <div class="form-grid">
+                            <div><label>Nome do Ingrediente</label><input id="ing-nome" name="nome" required placeholder="Ex.: Arroz branco cru"/></div>
+                            <div><label>Categoria</label><select id="ing-categoria" name="categoria_id" required></select></div>
+                            <div><label>Custo Unitário (R$)</label><input id="ing-custo" name="custo_unitario" type="number" step="0.0001" placeholder="Ex.: 0.0123"/></div>
+                            <div><label>Unidade de Medida</label><select id="ing-unidade-medida" name="unidade_medida_id" required></select></div>
+                            <div><label>Estoque Mínimo</label><input id="ing-estoque-min" name="estoque_min" placeholder="0" type="number" step="0.001"/></div>
+                            <div><label>Estoque Máximo</label><input id="ing-estoque-max" name="estoque_max" placeholder="0" type="number" step="0.001"/></div>
+                            <div class="form-span-col-2"><label>Local de Armazenagem</label><select id="ing-local-armazenagem" name="local_armazenagem"></select></div>
+                            <div class="form-span-col-2"><label>Observações</label><input id="ing-obs" name="obs" placeholder="Opcional"/></div>
+                        </div>
+                        <div class="sep"></div>
+                        <div class="form-actions right">
+                            <button class="btn" type="button" id="btnCancelIngEdit">Cancelar</button>
+                            <button class="btn pri" type="submit" id="btnSaveIng">Salvar Ingrediente</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="table-container" style="margin-top:6px;">
+                    <table id="tblIng">
+                        <thead><tr><th>Nome</th><th>Categoria</th><th>Unidade</th><th>Custo</th><th>Ativo</th><th>Ações</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="subpage" id="sub-um">
+                </div>
+            <div class="subpage" id="sub-unidades">
+                 </div>
+            <div class="subpage" id="sub-categorias">
+                 </div>
+
+        </div>
+    </section>
+
+    <section class="tab-content" id="tab-producao">
+        <div class="dashboard-grid">
+            <div class="card span-col-4">
+                <div class="card-header">
+                    <h3>Filtros da Previsão de Produção</h3>
+                    <p class="card-subtitle">Ajuste os parâmetros para calcular a produção necessária com base nas vendas registradas.</p>
+                </div>
+                <div class="card-body">
+                    <div class="grid cols-4" style="align-items:flex-end;">
+                        <div><label>Analisar últimos (dias)</label><input id="win-dias" min="1" step="1" type="number" value="7"></div>
+                        <div><label>Projetar próximos (dias)</label><input id="proj-dias" min="1" step="1" type="number" value="7"></div>
+                        <div class="span-col-2"><label>Filtrar Categorias de Pratos</label><select id="cat-filter" multiple=""></select></div>
+                    </div>
+                    <div class="right" style="margin-top: 16px;">
+                        <button class="btn pri" id="btnCalcularPrev">Calcular Previsão</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <p class="kpi-title">Dias Analisados</p>
+                <p class="kpi-value" id="kpi-dias">—</p>
+            </div>
+            <div class="kpi-card">
+                <p class="kpi-title">Pratos Considerados</p>
+                <p class="kpi-value" id="kpi-pratos">—</p>
+            </div>
+            <div class="kpi-card span-col-2">
+                <p class="kpi-title">Receitas Consolidadas</p>
+                <p class="kpi-value" id="kpi-rec">—</p>
+            </div>
+
+            <div class="card span-col-2">
+                <div class="card-header">
+                    <h3>Média de Vendas por Prato</h3>
+                </div>
+                <div class="card-body">
+                    <div class="table-container" style="max-height:360px;">
+                        <table id="tblResumoPratos"><thead><tr><th>Prato</th><th>Categoria</th><th>Média/Dia</th><th id="th-proj-prato">Projeção</th></tr></thead><tbody></tbody></table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card span-col-2">
+                 <div class="card-header">
+                    <h3>Produção Consolidada por Receita</h3>
+                </div>
+                <div class="card-body">
+                    <div class="table-container" style="max-height:360px;">
+                        <table id="tblPrev"><thead><tr><th>Receita</th><th>Un</th><th>Qtd/Dia</th><th id="th-proj">Qtd/Projeção</th></tr></thead><tbody></tbody></table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="tab-content" id="tab-compras">
+       <div class="section">
+            <h3>Sugestões de Compra (Baseado em Estoque Mínimo)</h3>
+            <div class="hint">Calculado com base no estoque atual e estoque mínimo definido nos cadastros de ingredientes.</div>
+            <div class="right" style="margin: 16px 0;">
+                <button class="btn" id="btnRefreshSuggestions">Atualizar Sugestões</button>
+            </div>
+            <div class="table-container">
+                <table id="tblSugestoes"><thead><tr><th>Item (Ingrediente)</th><th>Status</th><th>Saldo Atual</th><th>Estoque Mínimo</th><th>Sugestão (Qtd)</th><th>Unidade</th></tr></thead><tbody></tbody></table>
+            </div>
+        </div>
+    </section>
+
+    <section class="tab-content" id="tab-estoque">
+        <div class="section" id="section-estoque">
+            <nav class="subtabs" id="estoque-subtabs">
+                <button class="active" data-subtab="estoque-visao">Visão Geral</button>
+                <button data-subtab="estoque-mov">Movimentar</button>
+                <button data-subtab="estoque-hist">Histórico</button>
+            </nav>
+            <div class="subpage active" id="sub-estoque-visao">
+                <h4>Saldo Atual por Item</h4>
+                <div class="table-container" style="max-height: 400px;">
+                    <table id="tblSaldo">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Tipo</th>
+                                <th>Local</th>
+                                <th>Saldo Atual</th>
+                                <th>Un.</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div class="sep"></div>
+                <h4>Saldo Detalhado por Lote</h4>
+                <div class="table-container" style="max-height: 250px;">
+                <table id="tblSaldoLotes"><thead><tr><th>Item</th><th>Local</th><th>Lote</th><th>Validade</th><th>Saldo</th><th>Custo Unit.</th></tr></thead><tbody></tbody></table>
+                </div>
+            </div>
+            <div class="subpage" id="sub-estoque-mov">
+                <h3>Operações de Estoque</h3>
+                <div class="mov-actions">
+                    <button class="btn" data-mov-type="ENTRADA"><span>📥</span> Entrada</button>
+                    <button class="btn" data-mov-type="SAIDA"><span>📤</span> Saída</button>
+                </div>
+                <div id="mov-form-container" class="editor-container">
+                    <h3 id="mov-form-title"></h3>
+                    <form id="frmMov">
+                        <div class="grid cols-2">
+                            <div id="mov-unidade-origem-group"><label>Unidade Origem</label><select id="mov-unidade-origem"></select></div>
+                            <div id="mov-unidade-destino-group"><label>Unidade Destino</label><select id="mov-unidade-destino"></select></div>
+                        </div>
+                        <div class="grid cols-2" style="margin-top:10px">
+                            <div><label>Tipo Item</label><select id="mov-item-tipo"><option value="INGREDIENTE">Ingrediente</option><option value="RECEITA">Receita (Produto Semi-Acabado)</option></select></div>
+                            <div><label>Item</label><select id="mov-item"></select></div>
+                        </div>
+                        <div class="grid cols-2" style="margin-top:10px">
+                            <div id="mov-lote-group"><label>Lote</label><input id="mov-lote" placeholder="Lote do produto (Ex: PADRAO)"/></div>
+                            <div id="mov-validade-group"><label>Validade</label><input id="mov-validade" type="date"/></div>
+                        </div>
+                        <div class="grid cols-3" style="margin-top:10px">
+                            <div><label>Quantidade</label><input id="mov-qtd" placeholder="0,00" type="number" step="0.001" required/></div>
+                            <div id="mov-custo-group"><label>Custo Unitário</label><input id="mov-custo" placeholder="0,00" type="number" step="0.0001"/></div>
+                        </div>
+                        <div style="margin-top:10px"><label>Documento/Observação</label><input id="mov-doc" placeholder="Nota Fiscal, Motivo da saída, etc."/></div>
+                        <div class="right" style="margin-top:16px;">
+                            <button class="btn" id="btnMovCancel" type="button">Cancelar</button>
+                            <button class="btn pri" id="btnMovSubmit" type="submit">Registrar</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="sep"></div>
+                <h4>Últimas 20 Movimentações</h4>
+                <div class="table-container" style="max-height: 300px;">
+                    <table id="tblMovRecentes"><thead><tr><th>Data/Hora</th><th>Tipo</th><th>Item</th><th>Qtd</th><th>Local</th></tr></thead><tbody></tbody></table>
+                </div>
+            </div>
+            
+            <div class="subpage" id="sub-estoque-hist">
+                <h3>Histórico Completo de Movimentações (Últimas 500)</h3>
+                <div class="table-container">
+                    <table id="tblEstoqueHist">
+                         <thead><tr><th>Data/Hora</th><th>Tipo</th><th>Item</th><th>Tipo Item</th><th>Qtd</th><th>Origem</th><th>Destino</th><th>Documento</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+             </div>
+    </section>
+    </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="estoque_app.js"></script>
 </body>
 </html>
