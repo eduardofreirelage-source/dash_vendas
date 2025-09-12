@@ -39,36 +39,23 @@
     @media (max-width:1200px){ .kpis{grid-template-columns:repeat(2,1fr)} .charts-grid{grid-template-columns:1fr} }
     @media (max-width: 768px) { .kpis{ grid-template-columns: 1fr; } .top { flex-direction: column; align-items: flex-start; } }
   
-    .table-container {
-        flex-grow: 1;
-        overflow-y: auto;
-        min-height: 180px;
-    }
-    .data-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 11px;
-    }
-    .data-table th, .data-table td {
-        padding: 6px 8px;
-        text-align: left;
-        border-bottom: 1px solid var(--line);
-    }
-    .data-table th {
-        font-weight: 700;
-        position: sticky;
-        top: 0;
-        background: var(--card);
-    }
-    .data-table td:last-child {
-        text-align: right;
-        font-weight: 500;
-    }
-    .data-table tbody tr:nth-child(even) {
-        background-color: #f9fafb;
-    }
+    .table-container { flex-grow: 1; overflow-y: auto; min-height: 180px; }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .data-table th, .data-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--line); }
+    .data-table th { font-weight: 700; position: sticky; top: 0; background: var(--card); }
+    .data-table td:last-child { text-align: right; font-weight: 500; }
+    .data-table tbody tr:nth-child(even) { background-color: #f9fafb; }
     .spinner { animation: spin 1s linear infinite; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    /* ESTILOS DA CAIXA DE DIÁLOGO (MODAL) */
+    .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 50; display: none; align-items: center; justify-content: center; }
+    .modal-backdrop.modal-show { display: flex; }
+    .modal-content { background: var(--card); padding: 16px 20px; border-radius: 12px; max-width: 400px; width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+    .modal-content h4 { margin: 0 0 8px 0; font-size: 14px; }
+    .modal-content p { margin: 0 0 16px 0; font-size: 11px; color: var(--muted); }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .fx-textbtn.secondary { background: #e5e7eb; }
   </style>
 </head>
 <body>
@@ -220,6 +207,18 @@
     </div>
   </div>
 
+  <div id="exportModal" class="modal-backdrop">
+    <div class="modal-content">
+        <h4>Escolha o Formato da Exportação</h4>
+        <p>Como você gostaria de exportar a média de vendas por dia da semana?</p>
+        <div class="modal-actions">
+            <button id="btnExportSeparated" class="fx-textbtn">Separado por Prato</button>
+            <button id="btnExportConsolidated" class="fx-textbtn">Consolidado</button>
+            <button id="btnExportCancel" class="fx-textbtn secondary">Cancelar</button>
+        </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -314,6 +313,7 @@
   let lastDay='';
   let dowMode = 'TOTAL';
   let top10Mode = 'MAIS';
+  let dowChartAverageData = {}; // Guarda a média consolidada para exportação
   const ms = {
     unids: MultiSelect('ms-unids', 'Todas as Unidades'),
     cats:  MultiSelect('ms-cats', 'Todas as Categorias'),
@@ -426,6 +426,8 @@
     avgDataNow = chartDataNow.map((v,i)=> occNow[i] > 0 ? Math.round(v/occNow[i]) : 0);
     avgDataPrev = chartDataPrev.map((v,i)=> occPrev[i] > 0 ? Math.round(v/occPrev[i]) : 0);
     
+    dowChartAverageData = { labels: dowLabels, current: avgDataNow, previous: avgDataPrev };
+    
     const dataForChart = dowMode === 'MEDIA' ? [avgDataNow, avgDataPrev] : [chartDataNow, chartDataPrev];
 
     renderChart('ch_dow', 'bar', dowLabels, [
@@ -517,11 +519,38 @@
     } catch (e) { console.error(e); }
   }
   
+  function exportDowDataConsolidated() {
+    if (!dowChartAverageData.labels || dowChartAverageData.labels.length === 0) {
+        alert("Não há dados de média para exportar.");
+        return;
+    }
+    let csvContent = "Dia da Semana;Média Atual;Média Anterior\n";
+    const dowLabels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+    dowChartAverageData.labels.forEach((label, index) => {
+        const row = [
+            dowLabels[index],
+            dowChartAverageData.current[index],
+            dowChartAverageData.previous[index]
+        ].join(";");
+        csvContent += row + "\n";
+    });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "media_semanal_consolidada.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    $('exportModal').classList.remove('modal-show');
+  }
+
   async function exportDowDataByPlate() {
     const btn = $('btnExportDow');
     const iconDownload = $('iconDownload');
     const iconSpinner = $('iconSpinner');
     
+    $('exportModal').classList.remove('modal-show');
     btn.disabled = true;
     iconDownload.style.display = 'none';
     iconSpinner.style.display = 'block';
@@ -543,7 +572,6 @@
             pratos_filter: ms.pratos.get().length > 0 ? ms.pratos.get() : null,
             is_pratos_only: $('onlyPratos').checked
         };
-
         const { data, error } = await supa.rpc('get_pratos_dow_export_data', commonParams);
         
         if (error) throw error;
@@ -555,20 +583,14 @@
         const occNow = Array(7).fill(0);
         let d = new Date(de + 'T12:00:00Z');
         const end = new Date(ate + 'T12:00:00Z');
-        while (d <= end) {
-            occNow[d.getUTCDay()]++;
-            d.setUTCDate(d.getUTCDate() + 1);
-        }
+        while (d <= end) { occNow[d.getUTCDay()]++; d.setUTCDate(d.getUTCDate() + 1); }
 
         const occPrev = Array(7).fill(0);
         d = new Date(de + 'T12:00:00Z');
         d.setUTCDate(d.getUTCDate() - len);
         const endPrev = new Date(d);
         endPrev.setUTCDate(d.getUTCDate() + len - 1);
-        while (d <= endPrev) {
-            occPrev[d.getUTCDay()]++;
-            d.setUTCDate(d.getUTCDate() + 1);
-        }
+        while (d <= endPrev) { occPrev[d.getUTCDay()]++; d.setUTCDate(d.getUTCDate() + 1); }
 
         const resultsByPlate = {};
         data.forEach(row => {
@@ -586,12 +608,7 @@
         const dowLabels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
         Object.keys(resultsByPlate).sort().forEach(plateName => {
             for (let i = 0; i < 7; i++) {
-                const row = [
-                    `"${plateName.replace(/"/g, '""')}"`, // Trata aspas no nome do prato
-                    dowLabels[i],
-                    resultsByPlate[plateName].currentAvg[i],
-                    resultsByPlate[plateName].previousAvg[i]
-                ].join(';');
+                const row = [ `"${plateName.replace(/"/g, '""')}"`, dowLabels[i], resultsByPlate[plateName].currentAvg[i], resultsByPlate[plateName].previousAvg[i] ].join(';');
                 csvContent += row + '\n';
             }
         });
@@ -624,7 +641,6 @@
         iconSpinner.style.display = 'none';
     }
 }
-
 
   document.addEventListener('DOMContentLoaded', () => {
     const fx = {
@@ -716,7 +732,11 @@
         fxDispatchApply();
     });
 
-    $('btnExportDow').addEventListener('click', exportDowDataByPlate);
+    $('btnExportDow').addEventListener('click', () => { $('exportModal').classList.add('modal-show'); });
+    $('btnExportCancel').addEventListener('click', () => { $('exportModal').classList.remove('modal-show'); });
+    $('exportModal').addEventListener('click', (e) => { if (e.target.id === 'exportModal') { $('exportModal').classList.remove('modal-show'); } });
+    $('btnExportSeparated').addEventListener('click', exportDowDataByPlate);
+    $('btnExportConsolidated').addEventListener('click', exportDowDataConsolidated);
 
     init();
   });
