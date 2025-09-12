@@ -67,6 +67,8 @@
     .data-table tbody tr:nth-child(even) {
         background-color: #f9fafb;
     }
+    .spinner { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -94,7 +96,8 @@
                 <div class="head">
                     <div class="title">Vendas por Dia da Semana</div>
                     <button id="btnExportDow" class="fx-iconbtn" title="Exportar Média Semanal (CSV)" style="width: 28px; height: 28px;">
-                        <svg fill="currentColor" viewBox="0 0 20 20" height="14px" width="14px"><path d="M13 8V2H7v6H2l8 8 8-8h-5zM0 18h20v2H0v-2z"/></svg>
+                        <svg id="iconDownload" fill="currentColor" viewBox="0 0 20 20" height="14px" width="14px"><path d="M13 8V2H7v6H2l8 8 8-8h-5zM0 18h20v2H0v-2z"/></svg>
+                        <svg id="iconSpinner" class="spinner" fill="none" viewBox="0 0 24 24" height="16px" width="16px" style="display:none;"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" opacity="0.25"></circle><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" opacity="0.75"></path></svg>
                     </button>
                 </div>
               <div class="chart-box"><canvas id="ch_dow"></canvas></div>
@@ -311,7 +314,6 @@
   let lastDay='';
   let dowMode = 'TOTAL';
   let top10Mode = 'MAIS';
-  let dowExportData = {}; // Guarda os dados para exportação
   const ms = {
     unids: MultiSelect('ms-unids', 'Todas as Unidades'),
     cats:  MultiSelect('ms-cats', 'Todas as Categorias'),
@@ -403,12 +405,12 @@
   function updateDowChart(data, len) {
     const dowLabels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
     let chartDataNow = Array(7).fill(0), chartDataPrev = Array(7).fill(0);
-    let avgDataNow = Array(7).fill(0), avgDataPrev = Array(7).fill(0);
     for (let item of (data || [])) {
         chartDataNow[item.dow] = item.current;
         chartDataPrev[item.dow] = item.previous;
     }
     
+    let avgDataNow = Array(7).fill(0), avgDataPrev = Array(7).fill(0);
     const de = $('fxDuStart').value, ate = $('fxDuEnd').value;
     const occNow = Array(7).fill(0);
     let d = new Date(de+'T12:00:00Z'), end = new Date(ate+'T12:00:00Z');
@@ -423,8 +425,6 @@
     
     avgDataNow = chartDataNow.map((v,i)=> occNow[i] > 0 ? Math.round(v/occNow[i]) : 0);
     avgDataPrev = chartDataPrev.map((v,i)=> occPrev[i] > 0 ? Math.round(v/occPrev[i]) : 0);
-
-    dowExportData = { labels: dowLabels, current: avgDataNow, previous: avgDataPrev };
     
     const dataForChart = dowMode === 'MEDIA' ? [avgDataNow, avgDataPrev] : [chartDataNow, chartDataPrev];
 
@@ -517,31 +517,114 @@
     } catch (e) { console.error(e); }
   }
   
-  function exportDowDataToCSV() {
-    if (!dowExportData.labels || dowExportData.labels.length === 0) {
-        alert("Não há dados de média para exportar.");
-        return;
+  async function exportDowDataByPlate() {
+    const btn = $('btnExportDow');
+    const iconDownload = $('iconDownload');
+    const iconSpinner = $('iconSpinner');
+    
+    btn.disabled = true;
+    iconDownload.style.display = 'none';
+    iconSpinner.style.display = 'block';
+
+    try {
+        const de = $('fxDuStart').value;
+        const ate = $('fxDuEnd').value;
+        if (!de || !ate) {
+            alert("Por favor, selecione um período de datas.");
+            return;
+        }
+        
+        const len = daysLen(de, ate);
+        const commonParams = {
+            de_iso: de,
+            ate_iso: ate,
+            unids_filter: ms.unids.get().length > 0 ? ms.unids.get() : null,
+            cats_filter: ms.cats.get().length > 0 ? ms.cats.get() : null,
+            pratos_filter: ms.pratos.get().length > 0 ? ms.pratos.get() : null,
+            is_pratos_only: $('onlyPratos').checked
+        };
+
+        const { data, error } = await supa.rpc('get_pratos_dow_export_data', commonParams);
+        
+        if (error) throw error;
+        if (!data || data.length === 0) {
+            alert("Nenhum dado encontrado para exportar com os filtros selecionados.");
+            return;
+        }
+
+        const occNow = Array(7).fill(0);
+        let d = new Date(de + 'T12:00:00Z');
+        const end = new Date(ate + 'T12:00:00Z');
+        while (d <= end) {
+            occNow[d.getUTCDay()]++;
+            d.setUTCDate(d.getUTCDate() + 1);
+        }
+
+        const occPrev = Array(7).fill(0);
+        d = new Date(de + 'T12:00:00Z');
+        d.setUTCDate(d.getUTCDate() - len);
+        const endPrev = new Date(d);
+        endPrev.setUTCDate(d.getUTCDate() + len - 1);
+        while (d <= endPrev) {
+            occPrev[d.getUTCDay()]++;
+            d.setUTCDate(d.getUTCDate() + 1);
+        }
+
+        const resultsByPlate = {};
+        data.forEach(row => {
+            if (!resultsByPlate[row.prato]) {
+                resultsByPlate[row.prato] = {
+                    currentAvg: Array(7).fill(0),
+                    previousAvg: Array(7).fill(0)
+                };
+            }
+            resultsByPlate[row.prato].currentAvg[row.dow] = occNow[row.dow] > 0 ? Math.round(row.current / occNow[row.dow]) : 0;
+            resultsByPlate[row.prato].previousAvg[row.dow] = occPrev[row.dow] > 0 ? Math.round(row.previous / occPrev[row.dow]) : 0;
+        });
+
+        let csvContent = "Prato;Dia da Semana;Média Atual;Média Anterior\n";
+        const dowLabels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+        Object.keys(resultsByPlate).sort().forEach(plateName => {
+            for (let i = 0; i < 7; i++) {
+                const row = [
+                    `"${plateName.replace(/"/g, '""')}"`, // Trata aspas no nome do prato
+                    dowLabels[i],
+                    resultsByPlate[plateName].currentAvg[i],
+                    resultsByPlate[plateName].previousAvg[i]
+                ].join(';');
+                csvContent += row + '\n';
+            }
+        });
+        
+        const selectedPlates = ms.pratos.get();
+        let filename = "media_semanal_";
+        if (selectedPlates.length === 0) {
+            filename += "Todos_Pratos.csv";
+        } else if (selectedPlates.length === 1) {
+            filename += selectedPlates[0].replace(/[^a-z0-9]/gi, '_') + ".csv";
+        } else {
+            filename += "Varios_Pratos.csv";
+        }
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+    } catch (err) {
+        console.error("Erro ao exportar dados:", err);
+        alert("Falha ao exportar os dados: " + err.message);
+    } finally {
+        btn.disabled = false;
+        iconDownload.style.display = 'block';
+        iconSpinner.style.display = 'none';
     }
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Dia da Semana;Média Atual;Média Anterior\n";
+}
 
-    dowExportData.labels.forEach((label, index) => {
-        const row = [
-            label,
-            dowExportData.current[index],
-            dowExportData.previous[index]
-        ].join(";");
-        csvContent += row + "\n";
-    });
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "media_semanal_vendas.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
 
   document.addEventListener('DOMContentLoaded', () => {
     const fx = {
@@ -633,7 +716,7 @@
         fxDispatchApply();
     });
 
-    $('btnExportDow').addEventListener('click', exportDowDataToCSV);
+    $('btnExportDow').addEventListener('click', exportDowDataByPlate);
 
     init();
   });
