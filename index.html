@@ -29,7 +29,7 @@
     .delta.down{background:rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.25); color: var(--down); }
     .charts-grid{display:grid; grid-template-columns: repeat(2, 1fr); gap: 10px; flex: 1;}
     .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;display:flex;flex-direction:column; min-height: 200px; }
-    .card .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+    .card .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px; flex-shrink: 0;}
     .title{font-weight:700; color: var(--ink)}
     .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
     .seg button{padding:4px 8px;border:0;background:#fff;font-weight:700;color:#475569;cursor:pointer; font-size: 10px;}
@@ -52,37 +52,33 @@
     .fx-textbtn.secondary { background: #e5e7eb; }
 
     /* =============================================================== */
-    /* INÍCIO: NOVO LAYOUT TOP 10 (APROVEITAMENTO TOTAL DE ALTURA) */
+    /* INÍCIO: LAYOUT FINAL DO TOP 10                                  */
     /* =============================================================== */
-    .top10-container {
-      display: flex;
-      flex-direction: column;
-      flex-grow: 1; /* Ocupa o espaço vertical disponível no card */
-      min-height: 180px;
-    }
-    .top10-header, .top10-row {
+    .top10-header-row, .top10-row {
       display: flex;
       align-items: center;
       padding: 0 8px;
+      flex-shrink: 0; /* Impede que as linhas encolham */
     }
-    .top10-header {
+    .top10-header-row {
       font-size: 10px;
       font-weight: 700;
       color: var(--muted);
       text-transform: uppercase;
       border-bottom: 1px solid var(--line);
-      flex-shrink: 0; /* Não encolhe */
-      padding-bottom: 4px;
-      margin-bottom: 4px;
+      padding-bottom: 6px;
+      margin-bottom: 2px;
     }
-    .top10-body {
+    .top10-list-body {
       display: flex;
       flex-direction: column;
-      flex-grow: 1; /* Faz o corpo da lista crescer para ocupar o espaço */
+      flex-grow: 1; /* Faz o corpo da lista crescer para ocupar o espaço vertical */
+      min-height: 0; /* Necessário para o flex-grow funcionar corretamente em alguns contextos */
     }
     .top10-row {
       flex-grow: 1; /* CADA LINHA CRESCE PARA DIVIDIR A ALTURA TOTAL */
       border-bottom: 1px solid #f0f2f5;
+      font-size: 11px;
     }
     .top10-row:last-child {
       border-bottom: none;
@@ -99,19 +95,19 @@
       overflow: hidden;
       text-overflow: ellipsis; /* Adiciona "..." se o nome for muito longo */
       font-weight: 500;
+      padding-right: 8px; /* Espaço antes da quantidade */
     }
     .top10-col-qty {
       flex: 0 0 50px; /* Largura fixa de 50px */
       text-align: right;
       font-weight: 700;
     }
-
     /* Estilos do Pódio */
     .top10-row[data-rank="1"] .top10-col-rank { color: #d4af37; font-size: 14px; }
     .top10-row[data-rank="2"] .top10-col-rank { color: #c0c0c0; font-size: 13px; }
     .top10-row[data-rank="3"] .top10-col-rank { color: #cd7f32; font-size: 12px; }
     /* =============================================================== */
-    /* FIM: NOVO LAYOUT TOP 10                                           */
+    /* FIM: LAYOUT FINAL DO TOP 10                                     */
     /* =============================================================== */
   </style>
 </head>
@@ -154,7 +150,12 @@
                         <button data-mode="MENOS">Menos Vendidos</button>
                     </div>
                 </div>
-                <div id="top10-list" class="top10-container">
+                <div class="top10-header-row">
+                  <span class="top10-col-rank">#</span>
+                  <span class="top10-col-prato">Prato</span>
+                  <span class="top10-col-qty">Qtd.</span>
+                </div>
+                <div id="top10-list-body" class="top10-list-body">
                     </div>
                 </div>
         </div>
@@ -423,43 +424,34 @@
   }
 
   // ===============================================================
-  // INÍCIO: NOVA FUNÇÃO JS PARA O LAYOUT FINAL DO TOP 10
+  // INÍCIO: FUNÇÃO JS FINAL PARA O NOVO LAYOUT DO TOP 10
   // ===============================================================
   function updateTop10Chart(data) {
-    const container = $('top10-list');
-    if (!container) return;
+    const bodyContainer = $('top10-list-body');
+    if (!bodyContainer) return;
 
     const dataToRender = top10Mode === 'MAIS' ? (data?.mais_vendidos || []) : (data?.menos_vendidos || []);
 
-    let headerHtml = `
-      <div class="top10-header">
-        <span class="top10-col-rank">#</span>
-        <span class="top10-col-prato">Prato</span>
-        <span class="top10-col-qty">Qtd.</span>
-      </div>
-    `;
-
-    let bodyHtml = '';
     if (dataToRender.length === 0) {
-        bodyHtml = `<div style="text-align: center; padding-top: 20px; color: var(--muted);">Nenhum dado disponível.</div>`;
-    } else {
-        const rows = dataToRender.map((item, index) => {
-            const rank = index + 1;
-            return `
-                <div class="top10-row" data-rank="${rank}">
-                    <span class="top10-col-rank">${rank}</span>
-                    <span class="top10-col-prato">${item.prato}</span>
-                    <span class="top10-col-qty">${num(item.total)}</span>
-                </div>
-            `;
-        }).join('');
-        bodyHtml = `<div class="top10-body">${rows}</div>`;
+        bodyContainer.innerHTML = `<div style="text-align: center; padding-top: 20px; color: var(--muted);">Nenhum dado disponível.</div>`;
+        return;
     }
+
+    const rowsHtml = dataToRender.map((item, index) => {
+        const rank = index + 1;
+        return `
+            <div class="top10-row" data-rank="${rank}">
+                <span class="top10-col-rank">${rank}</span>
+                <span class="top10-col-prato">${item.prato}</span>
+                <span class="top10-col-qty">${num(item.total)}</span>
+            </div>
+        `;
+    }).join('');
     
-    container.innerHTML = headerHtml + bodyHtml;
+    bodyContainer.innerHTML = rowsHtml;
   }
   // ===============================================================
-  // FIM: NOVA FUNÇÃO JS PARA O LAYOUT FINAL DO TOP 10
+  // FIM: FUNÇÃO JS FINAL PARA O NOVO LAYOUT DO TOP 10
   // ===============================================================
 
   function updateDowChart(data, len) {
