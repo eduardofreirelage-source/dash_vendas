@@ -1,5 +1,5 @@
 // =================================================================================
-// SCRIPT COMPLETO, UNIFICADO E REVISADO (v4.1 - Robustez getFormData e Validação Nativa)
+// SCRIPT COMPLETO E REVISADO (v5.0 - Iteração Direta em getFormData com Diagnóstico)
 // =================================================================================
 
 /* ===== Helpers com verificações de segurança ===== */
@@ -16,49 +16,56 @@ const fmtMoney=(n)=> new Intl.NumberFormat('pt-BR',{style: 'currency', currency:
 const showEditor = (id) => { const el = $(id); if(el) el.style.display = 'block'; };
 const hideEditor = (id) => { const el = $(id); if(el) el.style.display = 'none'; };
 
-// Função REFORMULADA (v4.1): Abordagem robusta usando FormData.entries() e pós-processamento de tipos.
+// Função REFORMULADA (v5.0): Iteração direta sobre form.elements. Substitui a abordagem anterior baseada em FormData.
 const getFormData = (formId) => {
     const form = $(formId);
     if (!form) return {};
-
-    // 1. Use FormData API para coletar todos os dados textuais (incluindo selects, hidden, etc.)
-    const formData = new FormData(form);
     const obj = {};
 
-    for (const [key, value] of formData.entries()) {
-        // Evita processar botões de submit que possam ter nome
-        if (form.elements[key] && form.elements[key].type !== 'submit') {
-             obj[key] = value;
-        }
-    }
+    // Adicionado para diagnóstico (v5.0)
+    console.log(`[DIAGNOSTICO v5.0] Coletando dados do formulário: ${formId}`);
 
-    // 2. Pós-processamento: Iterar os elementos para tratar tipos específicos (Numbers e Checkboxes)
+    // Itera diretamente sobre todos os elementos do formulário
     for (let element of form.elements) {
-        if (element.name) {
-            if (element.type === 'number' || element.dataset.type === 'number') {
-                // Handle numbers: convert empty string to null, or parse float
-                if (obj[element.name] === "" || obj[element.name] === undefined) {
-                    obj[element.name] = null;
-                } else {
-                    const numVal = parseFloat(obj[element.name]);
-                    obj[element.name] = isNaN(numVal) ? null : numVal;
-                }
-            } else if (element.type === 'checkbox') {
-                // Handle checkboxes: FormData só inclui se marcado, mas queremos true/false explícito.
-                obj[element.name] = element.checked;
+        // Ignora elementos sem nome, botões de submit/button, reset e fieldsets
+        // Elementos desabilitados também são tradicionalmente ignorados, mas vamos mantê-los por enquanto.
+        if (!element.name || ['submit', 'button', 'fieldset', 'reset'].includes(element.type)) {
+            continue;
+        }
+
+        // Adicionado para diagnóstico (v5.0)
+        console.log(`[DIAGNOSTICO] Processando: Name=${element.name}, Type=${element.type}, Value=${element.value}`);
+
+        if (element.type === 'checkbox') {
+            obj[element.name] = element.checked;
+        } else if (element.type === 'number' || element.dataset.type === 'number') {
+            // Tratamento de Números
+            if (element.value === "" || element.value === null) {
+                obj[element.name] = null;
+            } else {
+                const numVal = parseFloat(element.value);
+                obj[element.name] = isNaN(numVal) ? null : numVal;
             }
+        } else if (element.type === 'radio') {
+            // Tratamento de Radio Buttons (só inclui se estiver marcado)
+            if (element.checked) {
+                obj[element.name] = element.value;
+            }
+        } else {
+            // Tratamento padrão (text, select-one, textarea, date, hidden, etc.)
+            obj[element.name] = element.value;
         }
     }
 
-    // 3. Tratamento do ID
-    // Se um campo 'id' existe no objeto (geralmente de um input hidden)
+    // Tratamento do ID (Remove se estiver vazio para permitir INSERTs)
     if (obj.hasOwnProperty('id')) {
-         // Se o valor do ID estiver vazio, remova-o do objeto (crucial para INSERTs)
          if (obj.id === "" || obj.id === null) {
              delete obj.id;
          }
     }
 
+    // Adicionado para diagnóstico (v5.0)
+    console.log("[DIAGNOSTICO] Objeto Final Coletado:", obj);
     return obj;
 };
 
@@ -243,7 +250,7 @@ const GenericCRUD = {
         showEditor(editorId);
     },
 
-    // Função SAVE aprimorada (v4.1) - Utiliza validação nativa do navegador e getFormData robusto.
+    // Função SAVE aprimorada (Utiliza validação nativa do navegador e getFormData robusto)
     async save(e, table, editorId, refreshCallback) {
         e.preventDefault();
         const form = e.target;
@@ -280,16 +287,20 @@ const GenericCRUD = {
                 query = supa.from(table).update(data).eq('id', id);
             } else {
                 // INSERT path
-                // Redundância de segurança para 'ativo' (o DB também tem DEFAULT TRUE)
+                // Redundância de segurança para 'ativo'
                 if (!data.hasOwnProperty('ativo') && (table !== 'movimentacoes')) {
-                    data.ativo = true;
+                    // Verifica se o elemento 'ativo' realmente existe no formulário antes de definir padrão
+                    // Isso é importante porque o getFormData v5.0 só inclui o campo se ele existir no HTML.
+                    if (form.elements['ativo']) {
+                         data.ativo = true;
+                    }
                 }
                 query = supa.from(table).insert([data]);
             }
             const { error } = await query;
             if (error) throw error;
 
-            setStatus(`Registro salvo com sucesso! (v4.1)`, 'ok');
+            setStatus(`Registro salvo com sucesso! (v5.0)`, 'ok');
             hideEditor(editorId);
             if (refreshCallback) refreshCallback();
         } catch (err) {
@@ -340,7 +351,9 @@ const GenericCRUD = {
     }
 };
 
-/* ===== MÓDULO DE CADASTROS AUXILIARES (Unidades, Categorias, UM) ===== */
+/* ===== MÓDULOS RESTANTES (Auxiliares, Ingredientes, Receitas, Pratos, Estoque, Produção, Compras) ===== */
+// Os módulos abaixo permanecem inalterados funcionalmente, pois dependem apenas do GenericCRUD e das funções auxiliares que já foram atualizadas.
+
 const AuxiliaresModule = {
     init() {
         this.setupCRUD('um', 'unidades_medida', ['sigla', 'nome', 'base', 'fator', 'ativo']);
@@ -423,7 +436,6 @@ const AuxiliaresModule = {
     }
 };
 
-/* ===== MÓDULO DE INGREDIENTES ===== */
 const IngredientesModule = {
     init() {
         this.setupCRUD();
@@ -441,7 +453,7 @@ const IngredientesModule = {
             this.loadIngredientes();
             ReceitasModule.updateDraftRefOptions();
             EstoqueModule.updateMovItemDropdown();
-            ComprasModule.loadSugestoes();
+            // Evitar chamar loadSugestoes aqui para performance, melhor chamar após movimentação de estoque.
         };
 
         addSafeEventListener('btnShowNewIngredienteForm', 'click', () => GenericCRUD.showForm(editorId, formId, titleId, 'Novo Ingrediente'));
@@ -453,13 +465,11 @@ const IngredientesModule = {
     },
 
     loadIngredientes() {
-        // As colunas estão ajustadas para corresponder ao layout do app.html fornecido
         const columns = ['nome', 'categoria_nome', 'unidade_medida_sigla', 'custo_unitario', 'ativo'];
         GenericCRUD.loadTable('ingredientes', 'tblIng', columns, true, 'vw_ingredientes');
     }
 };
 
-/* ===== MÓDULO DE RECEITAS (FICHA TÉCNICA) ===== */
 const ReceitasModule = {
     draftItems: [],
 
@@ -472,30 +482,7 @@ const ReceitasModule = {
     setupEventListeners() {
         addSafeEventListener('btnShowNewRecipeForm', 'click', () => this.showRecipeForm());
         addSafeEventListener('btnCancelRecEdit', 'click', () => hideEditor('recipe-editor-container'));
-
-        // O botão de salvar receita no app.html usa o atributo 'form' para submeter
-        // Precisamos garantir que o listener de submit do formulário seja chamado corretamente.
-        const saveBtn = document.querySelector('button[form="form-receita"]');
-        if (saveBtn) {
-            // Remove o type="submit" do botão para evitar dupla submissão se o listener do form também estiver ativo
-            // saveBtn.removeAttribute('type');
-            saveBtn.addEventListener('click', (e) => {
-                // Não prevenimos o padrão aqui, pois o botão com type="submit" e atributo form deve disparar o submit naturalmente.
-                // Se houvesse problemas, usaríamos o dispatch manual:
-                /*
-                e.preventDefault();
-                const form = $('form-receita');
-                if (form) {
-                    const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-                    form.dispatchEvent(submitEvent);
-                }
-                */
-            });
-        }
-        // Adiciona o listener de submit ao formulário em si
         addSafeEventListener('form-receita', 'submit', (e) => this.saveRecipe(e));
-
-
         addSafeEventListener('draft-tipo', 'change', () => this.updateDraftRefOptions());
         addSafeEventListener('btnDraftAdd', 'click', () => this.addDraftItem());
 
@@ -636,6 +623,7 @@ const ReceitasModule = {
     // Função saveRecipe ajustada para usar a validação nativa e o getFormData robusto
     async saveRecipe(e) {
         e.preventDefault();
+        // Garante que estamos referenciando o formulário correto, mesmo se o evento vier de um botão externo (atributo form)
         const form = e.target.id === 'form-receita' ? e.target : $('form-receita');
 
          // 1. Validação Nativa
@@ -671,8 +659,8 @@ const ReceitasModule = {
                 // Deleta os itens antigos para depois inserir os novos (simula REPLACE)
                 await supa.from('receita_itens').delete().eq('receita_id', id);
             } else {
-                // Garante que 'ativo' seja definido se não estiver presente
-                 if (!recipeData.hasOwnProperty('ativo')) {
+                // Garante que 'ativo' seja definido se não estiver presente (e se o campo existir no HTML)
+                 if (!recipeData.hasOwnProperty('ativo') && form.elements['ativo']) {
                     recipeData.ativo = true;
                 }
                 const { data, error } = await supa.from('receitas').insert([recipeData]).select().single();
@@ -735,8 +723,6 @@ const ReceitasModule = {
     }
 };
 
-
-/* ===== MÓDULO DE PRATOS E COMPONENTES (MODIFICADO) ===== */
 const PratosModule = {
     init() {
         this.setupPratoCRUD();
@@ -1003,8 +989,6 @@ const PratosModule = {
     }
 };
 
-
-/* ===== MÓDULO DE ESTOQUE (Movimentação, Saldo, Histórico) ===== */
 const EstoqueModule = {
     init() {
         this.setupEventListeners();
@@ -1124,7 +1108,6 @@ const EstoqueModule = {
     }
 };
 
-/* ===== MÓDULO DE PRODUÇÃO (Previsão) ===== */
 const ProducaoModule = {
     init() {
         this.setupEventListeners();
@@ -1209,7 +1192,6 @@ const ProducaoModule = {
     }
 };
 
-/* ===== MÓDULO DE COMPRAS (Sugestões) ===== */
 const ComprasModule = {
     init() {
         this.setupEventListeners();
@@ -1225,10 +1207,15 @@ const ComprasModule = {
         const tb = $(tableId)?.querySelector('tbody');
         if (!tb) return;
 
+        // Só carrega se forçado, se estiver vazio, ou se não estiver carregando
         if (tb.rows.length > 0 && !force && !tb.dataset.loading) return;
 
         tb.dataset.loading = true;
-        tb.innerHTML = `<tr><td colspan="5">Carregando sugestões…</td></tr>`;
+         // Só mostra o spinner se estiver forçando ou se a tabela estiver vazia/carregando
+        if (force || tb.rows.length === 0 || (tb.rows.length === 1 && tb.rows[0].cells[0].textContent.includes('Carregando'))) {
+             tb.innerHTML = `<tr><td colspan="5">Carregando sugestões…</td></tr>`;
+        }
+
 
          try {
             const { data, error } = await supa.from('vw_sugestao_compras').select('*').order('sugestao_compra', { ascending: false });
@@ -1278,7 +1265,7 @@ document.addEventListener('DOMContentLoaded', () => {
         EstoqueModule.init();
         ProducaoModule.init();
         ComprasModule.init();
-        setStatus("Aplicação carregada e pronta. (v4.1)", 'ok');
+        setStatus("Aplicação carregada e pronta. (v5.0)", 'ok');
     } catch (e) {
         console.error("Erro durante a inicialização dos módulos:", e);
         setStatus("Erro na inicialização. Verifique o console.", 'err');
