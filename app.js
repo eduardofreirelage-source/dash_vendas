@@ -1,13 +1,13 @@
 // =================================================================================
-// SCRIPT COMPLETO, UNIFICADO E REVISADO (v3.6 com Importador)
+// SCRIPT COMPLETO, UNIFICADO E REVISADO (v3.7 - Correção getFormData e Validação)
 // =================================================================================
 
 /* ===== Helpers com verificações de segurança ===== */
 const $  = (id)=> document.getElementById(id);
 const $$ = (sel,root=document)=> Array.from(root.querySelectorAll(sel));
 const setStatus=(msg,cls)=>{
-    const el=$('status'); if(!el) return; 
-    el.textContent=msg; 
+    const el=$('status'); if(!el) return;
+    el.textContent=msg;
     const colorMap = { 'err': 'var(--down)', 'ok': 'var(--ok)', 'warn': 'var(--warn)' };
     el.style.color = colorMap[cls] || 'var(--muted)';
 };
@@ -16,6 +16,7 @@ const fmtMoney=(n)=> new Intl.NumberFormat('pt-BR',{style: 'currency', currency:
 const showEditor = (id) => { const el = $(id); if(el) el.style.display = 'block'; };
 const hideEditor = (id) => { const el = $(id); if(el) el.style.display = 'none'; };
 
+// Função CORRIGIDA: Não converte mais strings vazias em NULL para campos de texto.
 const getFormData = (formId) => {
     const form = $(formId);
     if (!form) return {};
@@ -25,12 +26,13 @@ const getFormData = (formId) => {
         if (element.name) {
             if (element.type === 'checkbox') {
                 obj[element.name] = element.checked;
-            } else if (element.type === 'number') {
+            } else if (element.type === 'number' || element.dataset.type === 'number') {
                 // Garante que números vazios sejam nulos para o banco de dados
                 obj[element.name] = element.value ? parseFloat(element.value) : null;
             } else if (data.has(element.name)) {
+                // Para texto, usamos o valor diretamente (pode ser string vazia, mas não NULL)
                 const value = data.get(element.name);
-                obj[element.name] = value ? value : null;
+                obj[element.name] = value;
             }
         }
     }
@@ -58,7 +60,7 @@ if (!window.supabase) {
         console.error("Falha ao inicializar o cliente Supabase:", e);
     }
 } else {
-    console.error("ERRO CRÍTICO: SUPABASE_URL inválida ou não configurada em estoque_app.js! Verifique se começa com https://.");
+    console.error("ERRO CRÍTICO: SUPABASE_URL inválida ou não configurada em app.js! Verifique se começa com https://.");
 }
 
 
@@ -76,13 +78,13 @@ function setupRouting() {
       console.error("Container de abas principais 'main-tabs' não encontrado. Roteamento falhou.");
       return;
   }
- 
+
   const mainContents = $$('.tab-content');
- 
+
   const setupSubTabs = (containerId, contentSelector) => {
       const container = $(containerId);
       if (!container) return;
-     
+
       const contents = $$(contentSelector);
       container.addEventListener('click', (e) => {
         const btn = e.target.closest('button');
@@ -94,7 +96,7 @@ function setupRouting() {
         contents.forEach(content => content.classList.toggle('active', content.id === 'sub-' + subTabId));
       });
   };
- 
+
   mainTabsContainer.addEventListener('click', (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
@@ -103,29 +105,29 @@ function setupRouting() {
     btn.classList.add('active');
     mainContents.forEach(content => content.classList.toggle('active', content.id === 'tab-' + tabId));
   });
- 
+
   setupSubTabs('cadastro-subtabs', '#tab-cadastros .subpage');
   setupSubTabs('estoque-subtabs', '#tab-estoque .subpage');
 }
 
 /* ===== FUNÇÕES DE CARREGAMENTO (LOADERS) ===== */
 async function fillOptionsFrom(table, selId, valKey, labelKey, whereEq, allowEmpty = true){
-  const sel=$(selId); 
+  const sel=$(selId);
   if(!sel) return;
 
   // Evita recarregar se já estiver populado e não estiver carregando
   if (sel.options.length > (allowEmpty ? 1 : 0) && !sel.dataset.loading) return;
- 
+
   sel.dataset.loading = true;
   const previousHTML = sel.innerHTML;
   if (sel.options.length === 0 || allowEmpty) sel.innerHTML='<option value="">Carregando…</option>';
- 
+
   try{
     let query=supa.from(table).select(`${valKey},${labelKey}`).order(labelKey,{ascending:true});
     if(whereEq) Object.entries(whereEq).forEach(([k,v])=> query=query.eq(k,v));
     const {data,error}=await query;
     if(error) throw error;
-   
+
     sel.innerHTML = allowEmpty ? '<option value="">Selecione</option>' : '';
     (data||[]).forEach(x=>{ const o=document.createElement('option'); o.value=x[valKey]; o.textContent=x[labelKey]; sel.appendChild(o); });
   }catch(e){
@@ -142,25 +144,29 @@ async function fillOptionsFrom(table, selId, valKey, labelKey, whereEq, allowEmp
 /* ===== MÓDULO GENÉRICO DE CRUD (Para tabelas simples) ===== */
 const GenericCRUD = {
     async loadTable(table, tableId, columns, actions = true, view = null) {
-        const tb = $(tableId)?.querySelector('tbody'); 
+        const tb = $(tableId)?.querySelector('tbody');
         if (!tb) return;
-       
+
         const source = view || table;
-       
+
         // Determina a coluna de ordenação padrão
         let orderCol = columns[0];
         if (columns.includes('nome')) orderCol = 'nome';
         else if (columns.includes('data_hora')) orderCol = 'data_hora';
 
         // Define a direção da ordenação
-        const ascending = !columns.includes('data_hora'); 
+        const ascending = !columns.includes('data_hora');
 
         tb.innerHTML = `<tr><td colspan="${columns.length + (actions ? 1 : 0)}">Carregando…</td></tr>`;
-       
+
         try {
             const { data, error } = await supa.from(source).select('*').order(orderCol, { ascending: ascending }).limit(500);
             if (error) throw error;
             tb.innerHTML = '';
+            if ((data || []).length === 0) {
+                tb.innerHTML = `<tr><td colspan="${columns.length + (actions ? 1 : 0)}" style="text-align:center; padding: 20px;">Nenhum registro encontrado.</td></tr>`;
+            }
+
             (data || []).forEach(item => {
                 const tr = document.createElement('tr');
                 columns.forEach(col => {
@@ -180,8 +186,10 @@ const GenericCRUD = {
                 if (actions) {
                     const tdActions = document.createElement('td');
                     tdActions.className = 'row-actions';
+                    // Botão de Ativar/Desativar só aparece se a coluna 'ativo' existir na tabela/view
+                    const toggleBtn = item.hasOwnProperty('ativo') ? `<button class="btn small" data-act="toggle" data-id="${item.id}">${item.ativo ? 'Desativar' : 'Ativar'}</button>` : '';
                     tdActions.innerHTML = `<button class="btn small" data-act="edit" data-id="${item.id}">Editar</button>
-                                           <button class="btn small" data-act="toggle" data-id="${item.id}">${item.ativo ? 'Desativar' : 'Ativar'}</button>`;
+                                           ${toggleBtn}`;
                     tr.appendChild(tdActions);
                 }
                 tb.appendChild(tr);
@@ -198,7 +206,7 @@ const GenericCRUD = {
 
         form.reset();
         if ($(titleId)) $(titleId).textContent = titleText;
-       
+
         if (data) {
             Object.keys(data).forEach(key => {
                 const input = form.elements[key];
@@ -210,15 +218,35 @@ const GenericCRUD = {
                     }
                 }
             });
+        } else {
+            // Ao criar novo, garante que o checkbox 'ativo' esteja marcado se existir no form
+            if (form.elements['ativo'] && form.elements['ativo'].type === 'checkbox') {
+                form.elements['ativo'].checked = true;
+            }
         }
         showEditor(editorId);
     },
 
+    // Função SAVE aprimorada com validação
     async save(e, table, editorId, refreshCallback) {
         e.preventDefault();
         const data = getFormData(e.target.id);
         const id = data.id;
         delete data.id;
+
+        // Validação básica no front-end antes de enviar
+        if (['categorias', 'unidades', 'ingredientes', 'pratos', 'receitas', 'unidades_medida'].includes(table)) {
+            if (data.hasOwnProperty('nome') && (!data.nome || data.nome.trim() === '')) {
+                setStatus('O campo Nome é obrigatório.', 'err');
+                return;
+            }
+            // Validação específica para Unidade de Medida (Sigla)
+            if (table === 'unidades_medida' && (!data.sigla || data.sigla.trim() === '')) {
+                setStatus('O campo Sigla é obrigatório.', 'err');
+                return;
+            }
+        }
+
 
         setStatus(`Salvando...`);
         try {
@@ -226,6 +254,11 @@ const GenericCRUD = {
             if (id) {
                 query = supa.from(table).update(data).eq('id', id);
             } else {
+                // Adiciona o status ativo por padrão na criação se não vier do form (e não for movimentação)
+                // Nota: O banco de dados também tem DEFAULT TRUE, isso é uma redundância.
+                if (!data.hasOwnProperty('ativo') && (table !== 'movimentacoes')) {
+                    data.ativo = true;
+                }
                 query = supa.from(table).insert([data]);
             }
             const { error } = await query;
@@ -236,7 +269,11 @@ const GenericCRUD = {
             if (refreshCallback) refreshCallback();
         } catch (err) {
             console.error(`Erro ao salvar ${table}:`, err);
-            setStatus(`Erro: ${err.message}`, 'err');
+            if (err.code === '23505') {
+                setStatus(`Erro: Registro duplicado (violação de unicidade).`, 'err');
+            } else {
+                setStatus(`Erro: ${err.message}`, 'err');
+            }
         }
     },
 
@@ -245,7 +282,7 @@ const GenericCRUD = {
         try {
             const { data, error: selectError } = await supa.from(table).select('ativo').eq('id', id).single();
             if (selectError || !data) throw new Error(selectError?.message || "Registro não encontrado.");
-           
+
             const { error } = await supa.from(table).update({ ativo: !data.ativo }).eq('id', id);
             if (error) throw error;
 
@@ -283,7 +320,7 @@ const AuxiliaresModule = {
         this.setupCRUD('um', 'unidades_medida', ['sigla', 'nome', 'base', 'fator', 'ativo']);
         this.setupCRUD('unidades', 'unidades', ['nome', 'ativo']);
         this.setupCRUD('categorias', 'categorias', ['nome', 'tipo', 'ativo']);
-       
+
         this.refreshAll();
     },
 
@@ -292,7 +329,7 @@ const AuxiliaresModule = {
         const formId = `form-${prefix}`;
         const titleId = `${prefix}-form-title`;
         const tableId = `tbl-${prefix}`;
-       
+
         const capitalizedPrefix = prefix.charAt(0).toUpperCase() + prefix.slice(1);
         const btnNewName = `btnShowNew${capitalizedPrefix}Form`;
         const btnCancelName = `btnCancel${capitalizedPrefix}Edit`;
@@ -309,7 +346,7 @@ const AuxiliaresModule = {
         });
         addSafeEventListener(btnCancelName, 'click', () => hideEditor(editorId));
         addSafeEventListener(formId, 'submit', (e) => GenericCRUD.save(e, table, editorId, refresh));
-       
+
         const tableEl = $(tableId);
         if (tableEl) {
              tableEl.addEventListener('click', (e) => GenericCRUD.handleTableClick(e, table, editorId, formId, titleId, refresh));
@@ -324,28 +361,30 @@ const AuxiliaresModule = {
         this.refreshUnidadesDropdowns();
         this.refreshCategoriasDropdowns();
     },
-   
+
     refreshUMDropdowns() {
         fillOptionsFrom('unidades_medida', 'ing-unidade-medida', 'id', 'sigla', {ativo: true}, false);
         fillOptionsFrom('unidades_medida', 'draft-und', 'sigla', 'sigla', {ativo: true}, false);
     },
-   
+
     refreshUnidadesDropdowns() {
         fillOptionsFrom('unidades', 'ing-local-armazenagem', 'id', 'nome', {ativo: true});
         fillOptionsFrom('unidades', 'mov-unidade-origem', 'id', 'nome', {ativo: true});
         fillOptionsFrom('unidades', 'mov-unidade-destino', 'id', 'nome', {ativo: true});
     },
-   
+
     // Atualizado para permitir forçar o recarregamento dos dropdowns
     refreshCategoriasDropdowns(forceReload = false) {
         fillOptionsFrom('categorias', 'ing-categoria', 'id', 'nome', {tipo: 'INGREDIENTE', ativo: true});
         fillOptionsFrom('categorias', 'prato-cat', 'id', 'nome', {tipo: 'PRATO', ativo: true});
-       
+
         const catFilter = $('cat-filter');
         // Recarrega o filtro de produção se estiver vazio ou se forçado
         if (catFilter && (catFilter.options.length <= 1 || forceReload)) {
             if (typeof supa !== 'undefined' && supa.from) {
-                catFilter.innerHTML = '<option value="">Todas</option>'; // Limpa e adiciona a opção padrão
+                // Ajuste no texto padrão para consistência com o app.html fornecido
+                const defaultOptionText = catFilter.options[0]?.text || 'Todas as Categorias';
+                catFilter.innerHTML = `<option value="">${defaultOptionText}</option>`;
                 supa.from('categorias').select('id, nome').eq('tipo', 'PRATO').eq('ativo', true).order('nome').then(({data, error}) => {
                     if (!error && data) {
                         data.forEach(cat => {
@@ -374,18 +413,19 @@ const IngredientesModule = {
         const formId = 'form-ingrediente';
         const titleId = 'ingrediente-form-title';
         const tableId = 'tblIng';
-       
+
         const refresh = () => {
             this.loadIngredientes();
             // Atualiza dropdowns dependentes
             ReceitasModule.updateDraftRefOptions();
             EstoqueModule.updateMovItemDropdown();
+            // ComprasModule.loadSugestoes(); // Descomente se o módulo de compras estiver ativo e dependente
         };
 
         addSafeEventListener('btnShowNewIngredienteForm', 'click', () => GenericCRUD.showForm(editorId, formId, titleId, 'Novo Ingrediente'));
         addSafeEventListener('btnCancelIngEdit', 'click', () => hideEditor(editorId));
         addSafeEventListener(formId, 'submit', (e) => GenericCRUD.save(e, table, editorId, refresh));
-       
+
         const tableEl = $(tableId);
         if (tableEl) tableEl.addEventListener('click', (e) => GenericCRUD.handleTableClick(e, table, editorId, formId, titleId, refresh));
     },
@@ -400,7 +440,7 @@ const IngredientesModule = {
 /* ===== MÓDULO DE RECEITAS (FICHA TÉCNICA) ===== */
 const ReceitasModule = {
     draftItems: [], // Armazena temporariamente os itens da receita sendo editada
-   
+
     init() {
         this.setupEventListeners();
         this.loadReceitas();
@@ -413,7 +453,7 @@ const ReceitasModule = {
         addSafeEventListener('form-receita', 'submit', (e) => this.saveRecipe(e));
         addSafeEventListener('draft-tipo', 'change', () => this.updateDraftRefOptions());
         addSafeEventListener('btnDraftAdd', 'click', () => this.addDraftItem());
-       
+
         const tblRec = $('tblRec');
         if (tblRec) tblRec.addEventListener('click', (e) => this.handleRecipeTableClick(e));
 
@@ -443,8 +483,8 @@ const ReceitasModule = {
         if (!form) return;
         form.reset();
         this.draftItems = [];
-        $('rec-id').value = '';
-        $('recipe-form-title').textContent = id ? 'Editar Receita' : 'Nova Receita';
+        if ($('rec-id')) $('rec-id').value = '';
+        if ($('recipe-form-title')) $('recipe-form-title').textContent = id ? 'Editar Receita' : 'Nova Receita';
 
         if (id) {
             // Lógica de carregamento para edição
@@ -456,9 +496,15 @@ const ReceitasModule = {
                 // Preenche o formulário principal
                 Object.keys(recData).forEach(key => {
                     const input = form.elements[key];
-                    if(input) input.value = recData[key];
+                    if(input) {
+                         if (input.type === 'checkbox') {
+                            input.checked = recData[key];
+                        } else {
+                            input.value = recData[key];
+                        }
+                    }
                 });
-                $('rec-id').value = id;
+                if ($('rec-id')) $('rec-id').value = id;
 
                 // Carrega os itens da receita
                 const { data: itemsData, error: itemsError } = await supa.from('vw_receita_itens_detalhes').select('*').eq('receita_id', id);
@@ -477,20 +523,31 @@ const ReceitasModule = {
                 setStatus(`Erro: ${e.message}`, 'err');
                 return; // Aborta se não conseguir carregar
             }
+        } else {
+             // Garante que o checkbox 'ativo' esteja marcado ao criar novo, se existir
+            if (form.elements['ativo'] && form.elements['ativo'].type === 'checkbox') {
+                form.elements['ativo'].checked = true;
+            }
         }
-       
+
         this.renderDraftTable();
         this.updateDraftRefOptions(); // Garante que os dropdowns estejam prontos
         showEditor('recipe-editor-container');
     },
-   
+
     async addDraftItem() {
-        const tipo = $('draft-tipo').value;
-        const refId = $('draft-ref').value;
-        const qtd = parseFloat($('draft-qtd').value);
-        const unidade = $('draft-und').value;
-        const refSelect = $('draft-ref');
-        const refName = refSelect.options[refSelect.selectedIndex]?.text;
+        const tipoEl = $('draft-tipo');
+        const refEl = $('draft-ref');
+        const qtdEl = $('draft-qtd');
+        const undEl = $('draft-und');
+
+        if (!tipoEl || !refEl || !qtdEl || !undEl) return;
+
+        const tipo = tipoEl.value;
+        const refId = refEl.value;
+        const qtd = parseFloat(qtdEl.value);
+        const unidade = undEl.value;
+        const refName = refEl.options[refEl.selectedIndex]?.text;
 
         if (!refId || !qtd || qtd <= 0 || !unidade) {
             setStatus('Preencha todos os campos do item corretamente.', 'err');
@@ -514,8 +571,8 @@ const ReceitasModule = {
 
         this.renderDraftTable();
         // Limpa os campos de adição
-        $('draft-qtd').value = '';
-        $('draft-ref').value = '';
+        qtdEl.value = '';
+        refEl.value = '';
     },
 
     renderDraftTable() {
@@ -541,6 +598,11 @@ const ReceitasModule = {
         const id = recipeData.id;
         delete recipeData.id;
 
+        if (!recipeData.nome || recipeData.nome.trim() === '') {
+            setStatus('O nome da receita é obrigatório.', 'err');
+            return;
+        }
+
         if (this.draftItems.length === 0) {
             setStatus('Adicione pelo menos um item à receita antes de salvar.', 'err');
             return;
@@ -548,23 +610,24 @@ const ReceitasModule = {
 
         setStatus('Salvando receita...');
         try {
-            // Idealmente, usar uma função RPC para transação.
-            // Aqui, faremos em múltiplas etapas.
-
             // 1. Salvar/Atualizar o cabeçalho da receita
             let savedRecipe;
             if (id) {
                 const { data, error } = await supa.from('receitas').update(recipeData).eq('id', id).select().single();
                 if (error) throw error;
                 savedRecipe = data;
-                // Deleta os itens antigos para depois inserir os novos
+                // Deleta os itens antigos para depois inserir os novos (simula REPLACE)
                 await supa.from('receita_itens').delete().eq('receita_id', id);
             } else {
+                // Garante que 'ativo' seja definido se não estiver presente (redundante se o form tiver o checkbox)
+                 if (!recipeData.hasOwnProperty('ativo')) {
+                    recipeData.ativo = true;
+                }
                 const { data, error } = await supa.from('receitas').insert([recipeData]).select().single();
                 if (error) throw error;
                 savedRecipe = data;
             }
-           
+
             // 2. Preparar e salvar os novos itens da receita
             const itemsToInsert = this.draftItems.map(item => ({
                 receita_id: savedRecipe.id,
@@ -576,7 +639,7 @@ const ReceitasModule = {
 
             const { error: itemsError } = await supa.from('receita_itens').insert(itemsToInsert);
             if (itemsError) {
-                // Se falhar ao inserir itens, tenta reverter (não é uma transação real)
+                // Se falhar ao inserir itens, tenta reverter (rollback manual pois não estamos em transação real aqui)
                 if (!id) await supa.from('receitas').delete().eq('id', savedRecipe.id);
                 throw itemsError;
             }
@@ -611,7 +674,7 @@ const ReceitasModule = {
         this.draftItems.splice(index, 1);
         this.renderDraftTable();
     },
-   
+
     refreshAll() {
         this.loadReceitas();
         this.updateDraftRefOptions();
@@ -628,7 +691,7 @@ const PratosModule = {
         this.setupComponentesEventListeners();
         this.loadPratos();
         this.updatePratoComponentDropdowns();
-       
+
         // --- NOVOS LISTENERS PARA IMPORTAÇÃO ---
         this.setupImportEventListeners();
     },
@@ -639,7 +702,7 @@ const PratosModule = {
         const formId = 'form-prato';
         const titleId = 'prato-form-title';
         const tableId = 'tblPratos';
-       
+
         const refresh = () => {
             this.loadPratos();
             this.updatePratoComponentDropdowns();
@@ -651,7 +714,7 @@ const PratosModule = {
         });
         addSafeEventListener('btnCancelarPrato', 'click', () => hideEditor(editorId));
         addSafeEventListener(formId, 'submit', (e) => GenericCRUD.save(e, table, editorId, refresh));
-       
+
         const tableEl = $(tableId);
         if (tableEl) {
              tableEl.addEventListener('click', (e) => {
@@ -668,7 +731,7 @@ const PratosModule = {
     setupComponentesEventListeners() {
         addSafeEventListener('cp-prato', 'change', (e) => this.loadComponentes(e.target.value));
         addSafeEventListener('btnAddPrComp', 'click', () => this.addComponente());
-       
+
         const tblPrComp = $('tblPrComp');
         if (tblPrComp) tblPrComp.addEventListener('click', (e) => this.handleComponenteTableClick(e));
     },
@@ -684,7 +747,6 @@ const PratosModule = {
         fillOptionsFrom('receitas', 'cp-receita', 'id', 'nome', {ativo: true});
     },
 
-    // <<< INÍCIO DO CÓDIGO RESTAURADO >>>
     async loadComponentes(pratoId) {
         const tbody = $('tblPrComp')?.querySelector('tbody');
         if (!tbody) return;
@@ -719,9 +781,10 @@ const PratosModule = {
     },
 
     async addComponente() {
-        const pratoId = $('cp-prato').value;
-        const receitaId = $('cp-receita').value;
-        const quantidade = parseFloat($('cp-qtd').value);
+        const pratoId = $('cp-prato')?.value;
+        const receitaId = $('cp-receita')?.value;
+        const quantidadeInput = $('cp-qtd');
+        const quantidade = parseFloat(quantidadeInput?.value);
 
         if (!pratoId || !receitaId || !quantidade || quantidade <= 0) {
             setStatus("Preencha todos os campos para adicionar o componente.", 'err');
@@ -738,6 +801,7 @@ const PratosModule = {
             setStatus("Componente adicionado!", 'ok');
             this.loadComponentes(pratoId); // Recarrega a lista
             this.loadPratos(); // Recarrega a tabela de pratos para atualizar contagem
+            if (quantidadeInput) quantidadeInput.value = 1; // Reseta a quantidade para o padrão se existir
         } catch (e) {
             console.error("Erro ao adicionar componente:", e);
             if (e.code === '23505') { // Unique constraint violation
@@ -752,7 +816,7 @@ const PratosModule = {
         const btn = e.target.closest('button');
         if (!btn || btn.dataset.act !== 'remove-comp') return;
         const id = btn.dataset.id;
-        const pratoId = $('cp-prato').value;
+        const pratoId = $('cp-prato')?.value;
 
         if (confirm("Tem certeza que deseja remover este componente?")) {
             setStatus("Removendo...");
@@ -768,10 +832,9 @@ const PratosModule = {
             }
         }
     },
-    // <<< FIM DO CÓDIGO RESTAURADO >>>
-   
-    // --- NOVAS FUNÇÕES DE IMPORTAÇÃO ---
-   
+
+    // --- FUNÇÕES DE IMPORTAÇÃO ---
+
     setupImportEventListeners() {
         addSafeEventListener('btnImportarPratos', 'click', () => this.showImportUI());
         addSafeEventListener('btnCancelImport', 'click', () => hideEditor('prato-import-container'));
@@ -787,7 +850,7 @@ const PratosModule = {
         // Esconde o editor de cadastro manual e mostra o container de importação
         hideEditor('prato-editor-container');
         showEditor('prato-import-container');
-       
+
         const loader = $('import-loader');
         const tbody = $('#tblImportPratos tbody');
         if (!tbody) return;
@@ -799,12 +862,12 @@ const PratosModule = {
             // Chama a função RPC criada no banco de dados (get_unregistered_dishes)
             const { data, error } = await supa.rpc('get_unregistered_dishes');
             if (error) throw error;
-           
+
             if (!data || data.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="3">Tudo certo! Todos os pratos vendidos já estão cadastrados no estoque.</td></tr>';
-                $('btnConfirmImport').disabled = true;
+                if ($('btnConfirmImport')) $('btnConfirmImport').disabled = true;
             } else {
-                $('btnConfirmImport').disabled = false;
+                if ($('btnConfirmImport')) $('btnConfirmImport').disabled = false;
                 // Renderiza a lista de pratos disponíveis para importação
                 data.forEach(item => {
                     const tr = document.createElement('tr');
@@ -839,35 +902,35 @@ const PratosModule = {
             alert("Selecione pelo menos um prato para importar.");
             return;
         }
-       
+
         setStatus('Iniciando importação...');
-       
+
         // Coleta e decodifica as categorias únicas dos itens selecionados
         const uniqueCategories = [...new Set(selectedItems.map(item => decodeURIComponent(item.dataset.cat)))].filter(Boolean);
-       
+
         try {
             // 1. Buscar categorias existentes no sistema (Tipo PRATO)
             const { data: existingCats, error: catError } = await supa.from('categorias').select('id, nome').eq('tipo', 'PRATO');
             if (catError) throw catError;
-           
+
             // Mapeamento Nome (lowercase) -> ID para busca rápida
             const catMap = new Map(existingCats.map(c => [c.nome.toLowerCase(), c.id]));
-           
+
             // 2. Identificar categorias que precisam ser criadas
             const catsToCreate = uniqueCategories
                 .filter(name => !catMap.has(name.toLowerCase()))
                 .map(name => ({ nome: name, tipo: 'PRATO', ativo: true }));
-           
+
             // 3. Criar categorias faltantes, se necessário
             if (catsToCreate.length > 0) {
                 setStatus(`Importando ${catsToCreate.length} novas categorias...`);
                 const { data: insertedCats, error: newCatError } = await supa.from('categorias').insert(catsToCreate).select('id, nome');
                 if (newCatError) throw newCatError;
-               
+
                 // Atualiza o mapa de categorias com as recém-inseridas
                 insertedCats.forEach(c => catMap.set(c.nome.toLowerCase(), c.id));
                 // Atualiza os dropdowns globalmente, forçando o recarregamento
-                AuxiliaresModule.refreshCategoriasDropdowns(true); 
+                AuxiliaresModule.refreshCategoriasDropdowns(true);
             }
 
             // 4. Preparar Pratos para inserção usando os IDs corretos
@@ -896,7 +959,7 @@ const PratosModule = {
                 if (pratoError) throw pratoError;
                 setStatus(`Importação concluída! ${newPratosToInsert.length} pratos adicionados.`, 'ok');
             }
-           
+
             // 6. Atualizar a interface
             hideEditor('prato-import-container');
             this.loadPratos();
@@ -914,40 +977,188 @@ const PratosModule = {
 };
 
 
-/* ===== MÓDULO DE PRODUÇÃO (Previsão) ===== */
-const ProducaoModule = {
+/* ===== MÓDULO DE ESTOQUE (Movimentação, Saldo, Histórico) ===== */
+// Adaptado para a estrutura de abas do app.html fornecido.
+
+const EstoqueModule = {
     init() {
-        addSafeEventListener('btnCalcularPrev', 'click', () => this.calcularPrevisao());
+        this.setupEventListeners();
+        this.loadAllStockData();
+        this.updateMovItemDropdown();
     },
 
-    // <<< INÍCIO DO CÓDIGO RESTAURADO >>>
-    async calcularPrevisao() {
-        const dataInicio = $('prev-data-inicio').value;
-        const dataFim = $('prev-data-fim').value;
-        const categoriaId = $('cat-filter').value;
-        const tbody = $('tbl-previsao')?.querySelector('tbody');
+    setupEventListeners() {
+        addSafeEventListener('form-movimentacao', 'submit', (e) => this.registrarMovimentacao(e));
+        // O app.html não parece usar o controle dinâmico de campos (handleMovTypeChange) como o estoque_app.js original.
+        // Se necessário, ele pode ser reintroduzido aqui.
+        addSafeEventListener('btnMovCancel', 'click', () => {
+            const form = $('form-movimentacao');
+            if (form) form.reset();
+        });
+    },
 
-        if (!tbody) return;
-        if (!dataInicio || !dataFim) {
-            setStatus("Por favor, selecione as datas de início e fim.", 'err');
+    loadAllStockData() {
+        // Usa as views criadas no banco de dados
+        GenericCRUD.loadTable('vw_estoque_geral', 'tblEstoqueGeral', ['nome_item', 'quantidade_total', 'unidade_medida', 'custo_medio_formatado'], false);
+        GenericCRUD.loadTable('vw_estoque_lotes', 'tblEstoqueLotes', ['nome_item', 'quantidade', 'unidade_medida', 'custo_unitario_formatado', 'data_validade', 'unidade_nome'], false);
+        GenericCRUD.loadTable('vw_movimentacoes_historico', 'tblHistorico', ['data_hora', 'tipo', 'nome_item', 'quantidade_formatada', 'origem_destino', 'usuario', 'obs'], false);
+    },
+
+    async updateMovItemDropdown() {
+        const sel = $('mov-item');
+        if (!sel) return;
+
+        // Evita recarregar se já estiver populado
+        if (sel.options.length > 1) return;
+
+        sel.innerHTML = '<option value="">Carregando itens...</option>';
+
+        // Carrega ingredientes e receitas em paralelo
+        try {
+            const [{ data: ingData, error: ingError }, { data: recData, error: recError }] = await Promise.all([
+                supa.from('ingredientes').select('id, nome').eq('ativo', true).order('nome'),
+                supa.from('receitas').select('id, nome').eq('ativo', true).order('nome')
+            ]);
+
+            if (ingError) throw ingError;
+            if (recError) throw recError;
+
+            sel.innerHTML = '<option value="">Selecione o Item</option>';
+
+            // Combina e ordena alfabeticamente
+            const ingredientes = ingData.map(i => ({ id: `ING:${i.id}`, name: i.nome, type: 'Ingrediente' }));
+            const receitas = recData.map(r => ({ id: `REC:${r.id}`, name: r.nome, type: 'Receita' }));
+            const allItems = [...ingredientes, ...receitas].sort((a, b) => a.name.localeCompare(b.name));
+
+             allItems.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.id;
+                // Exibe o tipo para diferenciar itens com o mesmo nome
+                opt.textContent = `${item.name} (${item.type})`;
+                sel.appendChild(opt);
+            });
+
+        } catch (e) {
+            console.error("Erro ao carregar itens para movimentação:", e);
+            sel.innerHTML = '<option value="">(Erro ao carregar)</option>';
+        }
+    },
+
+    async registrarMovimentacao(e) {
+        e.preventDefault();
+        const formData = getFormData('form-movimentacao');
+        const itemValue = formData.item_id; // Ex: "ING:uuid" ou "REC:uuid"
+
+        if (!itemValue || !itemValue.includes(':')) {
+            setStatus("Selecione um item válido.", 'err');
             return;
         }
 
+        const [itemType, itemId] = itemValue.split(':');
+
+        // Prepara o objeto de inserção
+        const movData = {
+            tipo: formData.tipo,
+            quantidade: formData.quantidade,
+            custo_unitario: formData.custo_unitario,
+            unidade_origem_id: formData.unidade_origem_id || null,
+            unidade_destino_id: formData.unidade_destino_id || null,
+            data_validade: formData.data_validade || null,
+            obs: formData.obs,
+            usuario: 'Sistema' // Placeholder, idealmente usar Auth do Supabase
+        };
+
+        if (itemType === 'ING') {
+            movData.ingrediente_id = itemId;
+        } else if (itemType === 'REC') {
+            movData.receita_id = itemId;
+        }
+
+        // Validações adicionais específicas
+        if (movData.tipo === 'TRANSFERENCIA' && movData.unidade_origem_id === movData.unidade_destino_id) {
+            setStatus("A unidade de origem e destino não podem ser iguais em uma transferência.", 'err');
+            return;
+        }
+
+        setStatus("Registrando movimentação...");
+        try {
+            const { error } = await supa.from('movimentacoes').insert([movData]);
+            if (error) throw error;
+
+            setStatus("Movimentação registrada com sucesso!", 'ok');
+            const form = $('form-movimentacao');
+            if (form) form.reset();
+            // this.handleMovTypeChange(''); // Chame se a lógica dinâmica de campos for reintroduzida
+            this.loadAllStockData(); // Atualiza as tabelas de estoque
+            // ComprasModule.loadSugestoes(); // Descomente se o módulo de compras estiver ativo
+        } catch (err) {
+            console.error("Erro ao registrar movimentação:", err);
+            setStatus(`Erro: ${err.message}`, 'err');
+        }
+    }
+};
+
+/* ===== MÓDULO DE PRODUÇÃO (Previsão) ===== */
+const ProducaoModule = {
+    init() {
+        this.setupEventListeners();
+        this.setDefaultDates();
+    },
+
+    setupEventListeners() {
+        addSafeEventListener('btnCalcularPrev', 'click', () => this.calcularPrevisao());
+    },
+
+    setDefaultDates() {
+        // Define o período padrão (ex: últimos 7 dias) se os campos existirem
+        const inicio = $('prev-data-inicio');
+        const fim = $('prev-data-fim');
+
+        if (inicio && fim && !inicio.value && !fim.value) {
+            const hoje = new Date();
+            const seteDiasAtras = new Date(hoje);
+            seteDiasAtras.setDate(hoje.getDate() - 7);
+
+            // Formata para YYYY-MM-DD
+            fim.value = hoje.toISOString().split('T')[0];
+            inicio.value = seteDiasAtras.toISOString().split('T')[0];
+        }
+    },
+
+    async calcularPrevisao() {
+        const dataInicio = $('prev-data-inicio')?.value;
+        const dataFim = $('prev-data-fim')?.value;
+        const categoriaId = $('cat-filter')?.value || null;
+
+        if (!dataInicio || !dataFim) {
+            setStatus("Selecione as datas de início e fim.", 'err');
+            return;
+        }
+
+        if (new Date(dataInicio) > new Date(dataFim)) {
+            setStatus("A data de início não pode ser posterior à data de fim.", 'err');
+            return;
+        }
+
+        const tbody = $('tbl-previsao')?.querySelector('tbody');
+        if (!tbody) return;
+        tbody.innerHTML = '<tr><td colspan="3">Calculando previsão...</td></tr>';
         setStatus("Calculando previsão...");
-        tbody.innerHTML = '<tr><td colspan="3">Calculando...</td></tr>';
 
         try {
-            // Chama a RPC para obter a previsão de vendas
+            // Chama a função RPC 'calcular_previsao_venda'
             const { data, error } = await supa.rpc('calcular_previsao_venda', {
                 p_data_inicio: dataInicio,
                 p_data_fim: dataFim,
-                p_categoria_id: categoriaId || null
+                p_categoria_id: categoriaId
             });
 
             if (error) throw error;
+
             tbody.innerHTML = '';
-            if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="3">Nenhum dado de venda encontrado para o período e filtro selecionados.</td></tr>';
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3">Nenhum dado de venda encontrado no período ou a tabela de vendas não existe.</td></tr>';
+                setStatus("Previsão calculada (sem dados).", 'warn');
             } else {
                 data.forEach(item => {
                     const tr = document.createElement('tr');
@@ -958,196 +1169,100 @@ const ProducaoModule = {
                     `;
                     tbody.appendChild(tr);
                 });
+                setStatus("Previsão calculada.", 'ok');
             }
-            setStatus("Previsão calculada.", 'ok');
+
         } catch (e) {
             console.error("Erro ao calcular previsão:", e);
-             let errorMessage = e.message;
-            if (e.code === '42883' || (e.message && e.message.includes('function calcular_previsao_venda'))) {
-                 errorMessage = "Função 'calcular_previsao_venda' não encontrada. Execute o script SQL no Supabase.";
-            }
+            let errorMessage = e.message;
+             if (e.code === 'P0001') { // Código para RAISE NOTICE/EXCEPTION em PLpgSQL
+                 errorMessage = "Tabela de vendas não encontrada. Importe dados no Dashboard de Pratos primeiro.";
+             } else if (e.code === '42883') {
+                 errorMessage = "Função de cálculo não encontrada no banco de dados.";
+             }
             setStatus(`Erro: ${errorMessage}`, 'err');
-            tbody.innerHTML = '<tr><td colspan="3">Erro ao calcular.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="3">Erro ao calcular. Verifique o status.</td></tr>';
         }
     }
-    // <<< FIM DO CÓDIGO RESTAURADO >>>
 };
 
-/* ===== MÓDULO DE ESTOQUE ===== */
-const EstoqueModule = {
-    init() {
-        this.setupEventListeners();
-        this.refreshAll();
-    },
-    // <<< INÍCIO DO CÓDIGO RESTAURADO >>>
-    setupEventListeners() {
-        addSafeEventListener('form-movimentacao', 'submit', (e) => this.submitMov(e));
-        addSafeEventListener('mov-tipo', 'change', (e) => this.updateMovItemDropdown(e.target.value));
-    },
-
-    refreshAll() {
-        this.loadSaldoGeral();
-        this.loadSaldoLotes();
-        this.loadHistorico();
-        this.updateMovItemDropdown();
-    },
-   
-    updateMovItemDropdown(tipo = null) {
-        const sel = $('mov-item');
-        if (!sel) return;
-        sel.innerHTML = '<option value="">Selecione...</option>';
-        const tipoMov = tipo || $('mov-tipo')?.value;
-
-        if (tipoMov === 'ENTRADA' || tipoMov === 'SAIDA' || tipoMov === 'AJUSTE') {
-            fillOptionsFrom('ingredientes', 'mov-item', 'id', 'nome', { ativo: true });
-        } else if (tipoMov === 'PRODUCAO') {
-            fillOptionsFrom('receitas', 'mov-item', 'id', 'nome', { ativo: true });
-        }
-    },
-   
-    loadSaldoGeral() {
-        GenericCRUD.loadTable('vw_estoque_geral', 'tblEstoqueGeral', ['nome_item', 'quantidade_total', 'unidade_medida', 'custo_medio_formatado'], false);
-    },
-
-    loadSaldoLotes() {
-        GenericCRUD.loadTable('vw_estoque_lotes', 'tblEstoqueLotes', ['nome_item', 'quantidade', 'unidade_medida', 'custo_unitario_formatado', 'data_validade', 'unidade_nome'], false);
-    },
-
-    loadHistorico() {
-        GenericCRUD.loadTable('vw_movimentacoes_historico', 'tblHistorico', ['data_hora', 'tipo', 'nome_item', 'quantidade_formatada', 'origem_destino', 'usuario', 'obs'], false);
-    },
-
-    async submitMov(e) {
-        e.preventDefault();
-        const data = getFormData('form-movimentacao');
-        const tipo = data.tipo;
-
-        // Validações
-        if (!tipo || !data.item_id || !data.quantidade || data.quantidade <= 0) {
-            setStatus("Preencha todos os campos obrigatórios (Tipo, Item, Quantidade).", 'err');
-            return;
-        }
-        if ((tipo === 'ENTRADA' || tipo === 'TRANSFERENCIA') && !data.unidade_destino_id) {
-            setStatus("Para Entradas e Transferências, a Unidade de Destino é obrigatória.", 'err');
-            return;
-        }
-        if ((tipo === 'SAIDA' || tipo === 'TRANSFERENCIA' || tipo === 'PRODUCAO') && !data.unidade_origem_id) {
-            setStatus("Para Saídas, Transferências e Produção, a Unidade de Origem é obrigatória.", 'err');
-            return;
-        }
-        if (tipo === 'TRANSFERENCIA' && data.unidade_origem_id === data.unidade_destino_id) {
-            setStatus("A unidade de origem e destino não podem ser a mesma.", 'err');
-            return;
-        }
-
-        setStatus("Registrando movimentação...");
-        try {
-            // O ideal é usar uma RPC que valide o saldo antes de registrar a saída.
-            // Para simplicidade, vamos inserir diretamente.
-            const { error } = await supa.from('movimentacoes').insert([
-                {
-                    tipo: data.tipo,
-                    ingrediente_id: (tipo !== 'PRODUCAO' ? data.item_id : null),
-                    receita_id: (tipo === 'PRODUCAO' ? data.item_id : null),
-                    quantidade: data.quantidade,
-                    custo_unitario: data.custo_unitario || 0,
-                    unidade_origem_id: data.unidade_origem_id || null,
-                    unidade_destino_id: data.unidade_destino_id || null,
-                    data_validade: data.data_validade || null,
-                    obs: data.obs || null
-                }
-            ]);
-
-            if (error) throw error;
-            setStatus("Movimentação registrada com sucesso!", 'ok');
-            $('form-movimentacao').reset();
-            this.refreshAll(); // Atualiza todas as tabelas de estoque
-
-        } catch (e) {
-            console.error("Erro ao registrar movimentação:", e);
-            setStatus(`Erro: ${e.message}`, 'err');
-        }
-    }
-    // <<< FIM DO CÓDIGO RESTAURADO >>>
-};
-
-/* ===== MÓDULO DE COMPRAS ===== */
+/* ===== MÓDULO DE COMPRAS (Sugestões) - Adaptado para o layout do app.html ===== */
 const ComprasModule = {
     init() {
-        addSafeEventListener('btnRefreshSuggestions', 'click', () => this.loadSuggestions());
-        this.loadSuggestions();
+        this.setupEventListeners();
+        this.loadSugestoes();
     },
 
-    // <<< INÍCIO DO CÓDIGO RESTAURADO >>>
-    async loadSuggestions() {
-        const tbody = $('tbl-sugestoes')?.querySelector('tbody');
-        if (!tbody) return;
-        tbody.innerHTML = '<tr><td colspan="5">Carregando sugestões...</td></tr>';
-        setStatus("Buscando sugestões de compra...");
+    setupEventListeners() {
+        addSafeEventListener('btnRefreshSuggestions', 'click', () => this.loadSugestoes(true));
+    },
 
-        try {
-            // Usando a view de sugestões. Pode ser uma RPC para mais complexidade.
-            const { data, error } = await supa.from('vw_sugestao_compras').select('*');
+    async loadSugestoes(force = false) {
+        const tableId = 'tbl-sugestoes';
+        const tb = $(tableId)?.querySelector('tbody');
+        if (!tb) return;
+
+        // Evita recarregar automaticamente se já tiver dados, a menos que forçado
+        if (tb.rows.length > 0 && !force && !tb.dataset.loading) return;
+
+        tb.dataset.loading = true;
+        tb.innerHTML = `<tr><td colspan="5">Carregando sugestões…</td></tr>`;
+
+         try {
+            // Usa a view 'vw_sugestao_compras'
+            const { data, error } = await supa.from('vw_sugestao_compras').select('*').order('sugestao_compra', { ascending: false });
             if (error) throw error;
+            tb.innerHTML = '';
 
-            tbody.innerHTML = '';
-            if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5">Nenhum item precisa de reposição no momento.</td></tr>';
+            if ((data || []).length === 0) {
+                tb.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 20px;">Tudo certo! Nenhum item abaixo do ponto de pedido.</td></tr>`;
             } else {
-                data.forEach(item => {
+                (data || []).forEach(item => {
                     const tr = document.createElement('tr');
+                    // Renderização manual para formatar os números corretamente
                     tr.innerHTML = `
                         <td>${item.nome_ingrediente}</td>
                         <td>${fmt(item.estoque_atual)} ${item.unidade_medida}</td>
                         <td>${fmt(item.ponto_pedido)} ${item.unidade_medida}</td>
-                        <td><strong class="down">${fmt(item.sugestao_compra)} ${item.unidade_medida}</strong></td>
-                        <td>${item.ultimo_fornecedor || 'N/D'}</td>
+                        <td><strong>${fmt(item.sugestao_compra)} ${item.unidade_medida}</strong></td>
+                        <td>${item.ultimo_fornecedor || '—'}</td>
                     `;
-                    tbody.appendChild(tr);
+                    tb.appendChild(tr);
                 });
             }
-            setStatus("Sugestões carregadas.", 'ok');
+            if (force) setStatus('Sugestões de compra atualizadas.', 'ok');
         } catch (e) {
-            console.error("Erro ao carregar sugestões:", e);
-            setStatus(`Erro ao carregar sugestões: ${e.message}`, 'err');
-            tbody.innerHTML = '<tr><td colspan="5">Erro ao carregar.</td></tr>';
+            console.error(`Erro ao carregar sugestões de compra:`, e);
+            tb.innerHTML = `<tr><td colspan="5">Erro ao carregar sugestões.</td></tr>`;
+        } finally {
+            delete tb.dataset.loading;
         }
     }
-    // <<< FIM DO CÓDIGO RESTAURADO >>>
 };
 
 
-/* ===== INICIALIZAÇÃO ===== */
-async function init(){
-  try{
-    // Verifica se o cliente Supabase foi inicializado corretamente
-    if (typeof supa === 'undefined' || !supa.from) {
-      throw new Error("Falha na inicialização do Supabase. Verifique as credenciais (URL/Chave) em estoque_app.js.");
+/* ===== INICIALIZAÇÃO PRINCIPAL ===== */
+document.addEventListener('DOMContentLoaded', () => {
+    if (typeof supa === 'undefined') {
+        setStatus("Erro crítico: Cliente Supabase não inicializado. Verifique a configuração.", 'err');
+        return;
     }
-    setStatus('Inicializando módulos...');
-   
-    // Configura o roteamento
-    setupRouting();
-   
-    // Inicializa módulos na ordem de dependência correta
-    AuxiliaresModule.init();
-    IngredientesModule.init();
-    ReceitasModule.init();
-    PratosModule.init();
-    ProducaoModule.init();
-    EstoqueModule.init();
-    ComprasModule.init();
-   
-    setStatus('Pronto','ok');
-  } catch(e) { 
-    console.error("Erro fatal na inicialização:", e);
-    setStatus(e.message, 'err');
-  }
-}
 
-// Garante que o DOM esteja carregado antes de iniciar
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-} else {
-    init();
-}
+    // Configura o roteamento das abas
+    setupRouting();
+
+    // Inicializa os módulos
+    try {
+        AuxiliaresModule.init();
+        IngredientesModule.init();
+        ReceitasModule.init();
+        PratosModule.init();
+        EstoqueModule.init();
+        ProducaoModule.init();
+        ComprasModule.init();
+        setStatus("Aplicação carregada e pronta.", 'ok');
+    } catch (e) {
+        console.error("Erro durante a inicialização dos módulos:", e);
+        setStatus("Erro na inicialização. Verifique o console.", 'err');
+    }
+});
