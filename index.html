@@ -741,7 +741,7 @@
     init();
   });
   
-  // ===================== LÓGICA DE UPLOAD FINAL E CORRIGIDA PARA SEUS DADOS =====================
+  // ===================== LÓGICA DE UPLOAD =====================
   $('btnUpload').addEventListener('click', () => $('fileExcel').click());
   $('fileExcel').addEventListener('change', async (ev) => {
     const file = ev.target.files[0];
@@ -779,8 +779,13 @@
       if (!dateKey) throw new Error(`Coluna de data não encontrada. Verifique se seu arquivo possui a coluna 'data' ou 'data da venda'.`);
       if (!quantityKey) throw new Error(`Coluna de quantidade não encontrada. Verifique se seu arquivo possui a coluna 'quantidade' ou 'quantidade_vendida'.`);
       
+      // ===============================================================================
+      // INÍCIO DA CORREÇÃO DA DATA
+      // ===============================================================================
       const parseDate = (dateValue) => {
+        // 1. Mantém a lógica para números (datas seriais do Excel), que já funciona
         if (typeof dateValue === 'number' && dateValue > 0) {
+            // A data base para o Excel é 30/12/1899, por isso a soma
             const d = new Date(Date.UTC(1899, 11, 30 + dateValue));
             if (isNaN(d.getTime())) {
                 console.warn('Número de série de data do Excel inválido:', dateValue);
@@ -789,20 +794,42 @@
             const year = d.getUTCFullYear();
             const month = String(d.getUTCMonth() + 1).padStart(2, '0');
             const day = String(d.getUTCDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
+            return `${year}-${month}-${day}`; // Retorna no formato YYYY-MM-DD
         }
+
+        // 2. Nova lógica para strings, forçando o formato DD/MM/YYYY
         if (typeof dateValue === 'string') {
-            const d = new Date(dateValue + ' UTC');
-            if (!isNaN(d.getTime())) {
-                const year = d.getUTCFullYear();
-                const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-                const day = String(d.getUTCDate()).padStart(2, '0');
-                return `${year}-${month}-${day}`;
+            const trimmedDate = dateValue.trim();
+            // Tenta encontrar o padrão DD/MM/YYYY ou DD-MM-YYYY
+            const match = trimmedDate.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+
+            if (match) {
+                const day = parseInt(match[1], 10);
+                const month = parseInt(match[2], 10);
+                const year = parseInt(match[3], 10);
+
+                // Valida se os números fazem sentido (ex: mês entre 1 e 12)
+                if (year > 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+                    // Cria a data em UTC para evitar problemas de fuso horário
+                    const dateObj = new Date(Date.UTC(year, month - 1, day));
+                    
+                    // Confirma que a data é válida (ex: evita 31 de Fev)
+                    if (dateObj.getUTCFullYear() === year && dateObj.getUTCMonth() === month - 1 && dateObj.getUTCDate() === day) {
+                        const isoYear = dateObj.getUTCFullYear();
+                        const isoMonth = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+                        const isoDay = String(dateObj.getUTCDate()).padStart(2, '0');
+                        return `${isoYear}-${isoMonth}-${isoDay}`; // Retorna no formato YYYY-MM-DD
+                    }
+                }
             }
         }
-        console.warn('Formato de data desconhecido ou inválido:', dateValue);
+        
+        console.warn('Formato de data não reconhecido ou inválido (esperado DD/MM/YYYY):', dateValue);
         return null;
       };
+      // ===============================================================================
+      // FIM DA CORREÇÃO DA DATA
+      // ===============================================================================
 
       const dadosFormatados = json_data.map(linha => {
         const dataValue = linha[dateKey];
