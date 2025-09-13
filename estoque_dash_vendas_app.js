@@ -3,7 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Bloco Único de JavaScript: Lógica Principal, UI, e Inicialização
     // ===================================================================================
     
-    /* ===================== CONFIG ===================== */
+    /* ===================== CONFIG (PROJETO VENDAS) ===================== */
     const RPC_FILTER_FUNC = 'filter_vendas';
     const RPC_KPI_FUNC = 'kpi_vendas_unificado';
     const RPC_CHART_MONTH_FUNC = 'chart_vendas_mes_v1';
@@ -15,9 +15,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const DEST_INSERT_TABLE= 'vendas_xlsx';
     const REFRESH_RPC     = 'refresh_sales_materialized';
     
-    const SUPABASE_URL  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
-    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+    const SUPABASE_URL_VENDAS  = "https://msmyfxgrnuusnvoqyeuo.supabase.co";
+    const SUPABASE_ANON_VENDAS = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zbXlmeGdybnV1c252b3F5ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2NTYzMTEsImV4cCI6MjA3MjIzMjMxMX0.21NV7RdrdXLqA9-PIG9TP2aZMgIseW7_qM1LDZzkO7U";
+    
+    var supaVendas;
+    if (window.supabase) {
+        try {
+            supaVendas = window.supabase.createClient(SUPABASE_URL_VENDAS, SUPABASE_ANON_VENDAS);
+        } catch (e) {
+            console.error("Falha ao inicializar o cliente Supabase para Vendas:", e);
+        }
+    } else {
+        console.error("Biblioteca Supabase não carregada!");
+    }
+
     
     /* ===================== CHART.JS — tema vinho ===================== */
     Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol"';
@@ -329,7 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const params = buildParams(de, ate, analiticos);
 
       while (keepFetching) {
-          const { data, error } = await supa.rpc(RPC_FILTER_FUNC, params)
+          const { data, error } = await supaVendas.rpc(RPC_FILTER_FUNC, params)
                                           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
           if (error) {
               console.error(`[RPC ${RPC_FILTER_FUNC}]`, error);
@@ -373,7 +384,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const pTotalPrev = buildParams(dePrev, atePrev, { ...analiticos, cancelado: 'ambos' });
 
             const buildCountQuery = (startDate, endDate, cancelFilter) => {
-                let query = supa.from('vendas_canon').select('*', { count: 'exact', head: true })
+                let query = supaVendas.from('vendas_canon').select('*', { count: 'exact', head: true })
                     .gte('dia', startDate)
                     .lte('dia', endDate);
                 
@@ -397,8 +408,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 { count: cnCount, error: errCn }, { count: vnCount, error: errVn },
                 { count: cpCount, error: errCp }, { count: vpCount, error: errVp }
             ] = await Promise.all([
-                supa.rpc(RPC_KPI_FUNC, pTotalNow),
-                supa.rpc(RPC_KPI_FUNC, pTotalPrev),
+                supaVendas.rpc(RPC_KPI_FUNC, pTotalNow),
+                supaVendas.rpc(RPC_KPI_FUNC, pTotalPrev),
                 buildCountQuery(de, ate, null),
                 buildCountQuery(dePrev, atePrev, null),
                 buildCountQuery(de, ate, 'Sim'),
@@ -410,8 +421,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if(totalFinNowResult.error) throw totalFinNowResult.error;
             if(errPedNow) throw errPedNow;
             
-            const {data: cancDataNow} = await supa.rpc(RPC_KPI_FUNC, { ...buildParams(de, ate, analiticos), p_cancelado: 'Sim' });
-            const {data: cancDataPrev} = await supa.rpc(RPC_KPI_FUNC, { ...buildParams(dePrev, atePrev, analiticos), p_cancelado: 'Sim' });
+            const {data: cancDataNow} = await supaVendas.rpc(RPC_KPI_FUNC, { ...buildParams(de, ate, analiticos), p_cancelado: 'Sim' });
+            const {data: cancDataPrev} = await supaVendas.rpc(RPC_KPI_FUNC, { ...buildParams(dePrev, atePrev, analiticos), p_cancelado: 'Sim' });
 
             const pedTotalNow = analiticos.cancelado === 'sim' ? cnCount : analiticos.cancelado === 'nao' ? vnCount : pedNowCount;
             const pedTotalPrev = analiticos.cancelado === 'sim' ? cpCount : analiticos.cancelado === 'nao' ? vpCount : pedPrevCount;
@@ -673,12 +684,12 @@ document.addEventListener('DOMContentLoaded', () => {
               {data: hourData}, {data: hourDataPrev},
               {data: turnoData}, {data: turnoDataPrev}
           ] = await Promise.all([
-              supa.rpc(RPC_CHART_DOW_FUNC, paramsNow),
-              supa.rpc(RPC_CHART_DOW_FUNC, paramsPrev),
-              supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow),
-              supa.rpc(RPC_CHART_HOUR_FUNC, paramsPrev),
-              supa.rpc(RPC_CHART_TURNO_FUNC, paramsNow),
-              supa.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
+              supaVendas.rpc(RPC_CHART_DOW_FUNC, paramsNow),
+              supaVendas.rpc(RPC_CHART_DOW_FUNC, paramsPrev),
+              supaVendas.rpc(RPC_CHART_HOUR_FUNC, paramsNow),
+              supaVendas.rpc(RPC_CHART_HOUR_FUNC, paramsPrev),
+              supaVendas.rpc(RPC_CHART_TURNO_FUNC, paramsNow),
+              supaVendas.rpc(RPC_CHART_TURNO_FUNC, paramsPrev),
           ]);
           
           const tip = `Período anterior: ${dePrev} → ${atePrev}`;
@@ -740,8 +751,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const paramsPrev = buildChartParams(prev12Start, prev12EndAdj, analiticos);
 
         const [{data: nData, error: nErr}, {data: pData, error: pErr}] = await Promise.all([
-            supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
-            supa.rpc(RPC_CHART_MONTH_FUNC, paramsPrev)
+            supaVendas.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
+            supaVendas.rpc(RPC_CHART_MONTH_FUNC, paramsPrev)
         ]);
 
         if (nErr) throw nErr;
@@ -919,9 +930,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 { data: dowData, error: dowErr },
                 { data: hourData, error: hourErr }
             ] = await Promise.all([
-                supa.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
-                supa.rpc(RPC_CHART_DOW_FUNC, paramsNow),
-                supa.rpc(RPC_CHART_HOUR_FUNC, paramsNow)
+                supaVendas.rpc(RPC_CHART_MONTH_FUNC, paramsNow),
+                supaVendas.rpc(RPC_CHART_DOW_FUNC, paramsNow),
+                supaVendas.rpc(RPC_CHART_HOUR_FUNC, paramsNow)
             ]);
 
             if (monthErr || dowErr || hourErr) throw (monthErr || dowErr || hourErr);
@@ -929,8 +940,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const valueKey = diagChartMode;
 
             {
-                // ### LINHA CORRIGIDA ###
-                // Corrigido para passar o formato 'YYYY-MM-DD' que a função DateHelpers.formatYM espera.
                 const labels = (monthData || []).map(r => DateHelpers.formatYM(r.ym + '-01'));
                 const dataArr = (monthData || []).map(r => +r[valueKey] || 0);
                 ensureSingleSeriesChart('diag_ch_month', labels, dataArr, meta, 'line');
@@ -991,7 +1000,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 p_pags:   isActive(analiticos.pagamento) ? analiticos.pagamento : null
             };
 
-            const { data, error } = await supa.rpc(RPC_DIAGNOSTIC_FUNC, params);
+            const { data, error } = await supaVendas.rpc(RPC_DIAGNOSTIC_FUNC, params);
 
             if (error) throw error;
             if (!data) throw new Error("A resposta da função de diagnóstico está vazia.");
@@ -1089,14 +1098,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             setStatus(`Enviando ${transformedJson.length} registros...`, 'info');
             
-            const { error } = await supa.from(DEST_INSERT_TABLE).upsert(transformedJson, { onConflict: 'row_key' });
+            const { error } = await supaVendas.from(DEST_INSERT_TABLE).upsert(transformedJson, { onConflict: 'row_key' });
 
             if (error) {
                 throw error;
             }
             
             setStatus('Importação concluída! Atualizando...', 'ok');
-            await init(true); // Força reinicialização para pegar nova data
+            await init(true);
 
         } catch(e) {
             console.error("Erro na importação:", e);
@@ -1125,20 +1134,20 @@ document.addEventListener('DOMContentLoaded', () => {
       };
 
       const [topUnids, topLojas, topPags, topCanais] = await Promise.allSettled([
-        supa.rpc('opt_unidades_ranked',  {...baseParams, p_unids: ms.unids.get()}),
-        supa.rpc('opt_lojas_ranked',     {...baseParams, p_lojas: ms.lojas.get()}),
-        supa.rpc('opt_pagamentos_ranked',{...baseParams, p_pags: ms.pags.get()}),
-        supa.rpc('opt_canais_ranked',    {...baseParams, p_canais: ms.canais.get()}),
+        supaVendas.rpc('opt_unidades_ranked',  {...baseParams, p_unids: ms.unids.get()}),
+        supaVendas.rpc('opt_lojas_ranked',     {...baseParams, p_lojas: ms.lojas.get()}),
+        supaVendas.rpc('opt_pagamentos_ranked',{...baseParams, p_pags: ms.pags.get()}),
+        supaVendas.rpc('opt_canais_ranked',    {...baseParams, p_canais: ms.canais.get()}),
       ]);
       const tUnids = (topUnids.status==='fulfilled' && !topUnids.value.error) ? (topUnids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
       const tLojas = (topLojas.status==='fulfilled'  && !topLojas.value.error)  ? (topLojas.value.data||[]).map(r=>r.loja).filter(Boolean)       : [];
       const tPags  = (topPags.status==='fulfilled'   && !topPags.value.error)   ? (topPags.value.data||[]).map(r=>r.pagamento_base).filter(Boolean): [];
       const tCanais= (topCanais.status==='fulfilled' && !topCanais.value.error) ? (topCanais.value.data||[]).map(r=>r.canal).filter(Boolean)      : [];
       const [unids,lojas,canais,pags] = await Promise.allSettled([
-        supa.from('vw_vendas_unidades').select('unidade').order('unidade'),
-        supa.from('vw_vendas_lojas').select('loja').order('loja'),
-        supa.from('vw_vendas_canais').select('canal').order('canal'),
-        supa.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
+        supaVendas.from('vw_vendas_unidades').select('unidade').order('unidade'),
+        supaVendas.from('vw_vendas_lojas').select('loja').order('loja'),
+        supaVendas.from('vw_vendas_canais').select('canal').order('canal'),
+        supaVendas.from('vw_vendas_pagamentos').select('pagamento_base').order('pagamento_base'),
       ]);
       const ok = (r)=> r.status==='fulfilled' && !r.value.error && Array.isArray(r.value.data);
       const allUnids = ok(unids) ? (unids.value.data||[]).map(r=>r.unidade).filter(Boolean) : [];
@@ -1337,7 +1346,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function init(isReload = false){
       try{
         setStatus('Carregando…');
-        const dr = await supa.from('vw_vendas_daterange').select('min_dia, max_dia').limit(1);
+        const dr = await supaVendas.from('vw_vendas_daterange').select('min_dia, max_dia').limit(1);
         if(dr.error) throw dr.error;
         if(dr.data?.length && dr.data[0].max_dia){ 
           firstDay=dr.data[0].min_dia; 
