@@ -43,8 +43,8 @@ const getFormData = (formId) => {
 
 /* ===================== CONFIGURAÇÃO DA API ===================== */
 // ATENÇÃO: SUBSTITUA ESTES VALORES PELOS SEUS DADOS REAIS DO PAINEL SUPABASE
-const SUPABASE_URL  = 'SUA_URL_AQUI'; // DEVE COMEÇAR COM https://
-const SUPABASE_ANON = 'SUA_CHAVE_ANON_AQUI'; // Sua chave pública (ANON)
+const SUPABASE_URL  = 'https://tykdmxaqvqwskpmdiekw.supabase.co'; // DEVE COMEÇAR COM https://
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps'; // Sua chave pública (ANON)
 // ===============================================================
 
 // Inicialização segura do Supabase
