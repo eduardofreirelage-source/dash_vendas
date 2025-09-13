@@ -1,402 +1,188 @@
-// =================================================================================
-// SCRIPT COMPLETO E REVISADO PARA O SISTEMA DE GESTÃO (app.html)
-// =================================================================================
-
-/* ===== Helpers com verificações de segurança ===== */
-const $  = (id)=> document.getElementById(id);
-const $$ = (sel,root=document)=> Array.from(root.querySelectorAll(sel));
-const setStatus=(msg,cls)=>{
-    const el=$('status'); if(!el) return; 
-    el.textContent=msg; 
-    const colorMap = { 'err': 'var(--down)', 'ok': 'var(--ok)', 'warn': 'var(--warn)' };
-    el.style.color = colorMap[cls] || 'var(--muted)';
-};
-const fmt=(n, digits=3)=> new Intl.NumberFormat('pt-BR',{maximumFractionDigits:digits, minimumFractionDigits: digits}).format(+n||0);
-const fmtMoney=(n)=> new Intl.NumberFormat('pt-BR',{style: 'currency', currency: 'BRL'}).format(+n||0);
-const showEditor = (id) => { const el = $(id); if(el) el.style.display = 'block'; };
-const hideEditor = (id) => { const el = $(id); if(el) el.style.display = 'none'; };
-
-const getFormData = (formId) => {
-    const form = $(formId);
-    if (!form) return {};
-    const data = new FormData(form);
-    const obj = {};
-    for (let element of form.elements) {
-        if (element.name) {
-            if (element.type === 'checkbox') {
-                obj[element.name] = element.checked;
-            } else if (element.type === 'number') {
-                obj[element.name] = element.value ? parseFloat(element.value) : null;
-            } else if (data.has(element.name)) {
-                const value = data.get(element.name);
-                obj[element.name] = value ? value : null;
-            }
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width,initial-scale=1" name="viewport"/>
+    <title>Mapa de Produção — v3.5 Final</title>
+    <link href='data:image/svg+xml,&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"&gt;&lt;rect x="0" y="0" width="128" height="128" rx="22" fill="%237b1e3a"/&gt;&lt;text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white"&gt;MP&lt;/text&gt;&lt;/svg&gt;' rel="icon"/>
+    <link rel="stylesheet" href="estoque_styles.css">
+    <style>
+        :root {
+            --pri: #7b1e3a; --bg: #f7f7fa; --card: #fff; --line: #e5e7eb;
+            --ink: #0f172a; --muted: #64748b; --ok: #10b981; --down: #ef4444; --warn: #f59e0b;
         }
-    }
-    const idInput = form.querySelector('input[name="id"]');
-    if (idInput && idInput.value) {
-        obj.id = idInput.value;
-    }
-    return obj;
-};
+        body { font-family: sans-serif; background: var(--bg); color: var(--ink); margin: 0; font-size: 14px; }
+        .main { display: flex; flex-direction: column; min-height: 100vh; }
+        .top { background: var(--card); padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+        .brand { display: flex; align-items: center; gap: 12px; }
+        .logo { background: var(--pri); color: white; padding: 8px; border-radius: 8px; font-weight: bold; }
+        .tabs button { background: none; border: none; padding: 8px 12px; cursor: pointer; color: var(--muted); font-size: 16px;}
+        .tabs button.active { color: var(--pri); font-weight: bold; border-bottom: 2px solid var(--pri); }
+        .content-wrap { flex: 1; padding: 16px; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .section { background: var(--card); padding: 16px; border-radius: 12px; border: 1px solid var(--line); }
+        .subtabs { margin-bottom: 16px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; }
+        .subtabs button { background: none; border: none; padding: 6px 10px; cursor: pointer; color: var(--muted); font-size: 14px; }
+        .subtabs button.active { color: var(--ink); font-weight: bold; border-bottom: 2px solid var(--pri); }
+        .subpage { display: none; }
+        .subpage.active { display: block; }
+        .editor-container { display: none; background: #f9fafb; padding: 16px; border-radius: 8px; margin-bottom: 16px; border: 1px solid var(--line); }
+        .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        .form-span-col-2 { grid-column: span 2; }
+        label { display: block; margin-bottom: 4px; color: var(--ink); }
+        input, select, textarea { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+        input:disabled { background-color: #f1f1f1; }
+        .btn { padding: 8px 16px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; background: white; color: var(--ink); font-weight: 500; }
+        .btn.pri { background: var(--pri); color: white; border-color: var(--pri); }
+        .btn.small { padding: 4px 8px; font-size: 12px; }
+        .right { display: flex; justify-content: flex-end; gap: 8px; }
+        .sep { border-top: 1px solid var(--line); margin: 16px 0; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 8px 12px; border-bottom: 1px solid var(--line); text-align: left; }
+        th { background: var(--bg); font-weight: bold; }
+        .table-container { overflow-x: auto; }
+        .pill { padding: 2px 8px; border-radius: 16px; font-size: 12px; background: var(--line); color: var(--ink); display: inline-block; }
+        .pill.ok { background: rgba(16, 185, 129, 0.1); color: var(--ok); }
+        .pill.bad { background: rgba(239, 68, 68, 0.1); color: var(--down); }
+        .pill.warn { background: rgba(245, 158, 11, 0.1); color: var(--warn); }
+    </style>
+</head>
+<body>
+<main class="main">
+    <div class="top">
+        <div class="brand">
+            <div class="logo">MP</div>
+            <div>
+                <h1 style="font-size:18px; margin:0; line-height:1.2">Mapa de Produção</h1>
+                <div class="hint" style="margin:0;">Ficha técnica, previsão e compras</div>
+            </div>
+        </div>
+        <nav class="tabs" id="main-tabs">
+            <button class="active" data-tab="cadastros">Cadastros</button>
+            <button data-tab="producao">Produção</button>
+            <button data-tab="compras">Compras</button>
+            <button data-tab="estoque">Estoque</button>
+        </nav>
+        <div class="status-bar">
+            <div id="status">Carregando…</div>
+        </div>
+    </div>
 
+    <div class="content-wrap">
+    <section class="tab-content active" id="tab-cadastros">
+        <div class="section" id="section-cadastros">
+            <nav class="subtabs" id="cadastro-subtabs">
+                <button class="active" data-subtab="pratos">Pratos</button>
+                <button data-subtab="componentes">Componentes</button>
+                <button data-subtab="receitas">Receitas</button>
+                <button data-subtab="ingredientes">Ingredientes</button>
+                <button class="chip" data-subtab="um">Unidades de Medida</button>
+                <button class="chip" data-subtab="unidades">Locais/Unidades</button>
+                <button class="chip" data-subtab="categorias">Categorias</button>
+            </nav>
 
-/* ===================== CONFIGURAÇÃO DA API ===================== */
-// ATENÇÃO: SUBSTITUA ESTES VALORES PELOS SEUS DADOS REAIS DO PAINEL SUPABASE
-const SUPABASE_URL  = 'https://rqeagimulvgfecvuzubk.supabase.co'; // DEVE COMEÇAR COM https://
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxZWFnaW11bHZnZmVjdnV6dWJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NzkyMzUsImV4cCI6MjA3MjU1NTIzNX0.SeNHyHOlpqjm-QTl7KXq7YF-48fk5iOQCRgpangP4zU'; // Sua chave pública (ANON)
-// ===============================================================
+            <div class="subpage active" id="sub-pratos">
+                <div class="right" style="margin-bottom: 16px;">
+                    <button class="btn pri" id="btnNovoPrato">+ Novo prato</button>
+                </div>
+                <div class="editor-container" id="prato-editor-container">
+                    <h3 id="prato-form-title" class="form-title">Novo Prato</h3>
+                    <form id="form-prato">
+                        <input type="hidden" name="id">
+                        <div class="form-grid">
+                            <div><label>Nome do Prato</label><input name="nome" required placeholder="Ex.: Strogonoff de frango"/></div>
+                            <div><label>Categoria</label><select name="categoria_id" id="prato-cat" required></select></div>
+                            <div><label>Preço de Venda (R$)</label><input name="preco_venda" type="number" step="0.01" placeholder="Ex.: 34,90"/></div>
+                        </div>
+                        <div class="form-actions right"><button class="btn" type="button" id="btnCancelarPrato">Cancelar</button><button class="btn pri" type="submit">Salvar Prato</button></div>
+                    </form>
+                </div>
+                <div class="table-container"><table id="tblPratos"><thead><tr><th>Nome</th><th>Categoria</th><th>Preço</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
+            </div>
 
-// Inicialização segura do Supabase
-var supa;
-if (!window.supabase) {
-    console.error("Biblioteca Supabase não carregada!");
-} else if (SUPABASE_URL.startsWith('http')) {
-    try {
-        supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-    } catch (e) {
-        console.error("Falha ao inicializar o cliente Supabase:", e);
-    }
-} else {
-    console.error("ERRO CRÍTICO: SUPABASE_URL inválida ou não configurada em estoque_app.js! Verifique se começa com https://.");
-}
+            <div class="subpage" id="sub-receitas">
+                <div class="right" style="margin-bottom: 16px;"><button class="btn pri" id="btnShowNewRecipeForm">+ Nova Receita</button></div>
+                <div class="editor-container" id="recipe-editor-container">
+                    <h3 id="recipe-form-title">Nova Receita</h3>
+                    <form id="form-receita"><input type="hidden" name="id">
+                        <div class="form-grid">
+                            <div><label>Nome da Receita</label><input name="nome" required placeholder="Ex.: Arroz Branco pronto"/></div>
+                            <div><label>Rendimento (qtd)</label><input name="rendimento_qtd" required type="number" step="0.001" placeholder="Ex.: 1000"/></div>
+                            <div><label>Unidade de Rendimento</label><select name="rendimento_unidade" required><option value="g">g</option><option value="kg">kg</option><option value="ml">ml</option><option value="L">L</option></select></div>
+                        </div>
+                        <div class="form-actions right"><button class="btn" type="button" id="btnCancelRecEdit">Cancelar</button><button class="btn pri" type="submit">Salvar Receita</button></div>
+                    </form>
+                </div>
+                <div class="table-container"><table id="tblRec"><thead><tr><th>Nome</th><th>Rendimento</th><th>Unidade</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
+            </div>
 
+            <div class="subpage" id="sub-ingredientes">
+                <div class="right" style="margin-bottom: 16px;"><button class="btn pri" id="btnShowNewIngredienteForm">+ Novo Ingrediente</button></div>
+                <div class="editor-container" id="ingrediente-editor-container">
+                     <h3 id="ingrediente-form-title">Novo Ingrediente</h3>
+                    <form id="form-ingrediente"><input type="hidden" name="id">
+                        <div class="form-grid">
+                            <div><label>Nome do Ingrediente</label><input name="nome" required placeholder="Ex.: Arroz branco cru"/></div>
+                            <div><label>Categoria</label><select name="categoria_id" id="ing-categoria" required></select></div>
+                            <div><label>Custo Unitário (R$)</label><input name="custo_unitario" type="number" step="0.0001" placeholder="Ex.: 0.0123"/></div>
+                            <div><label>Unidade de Medida</label><select name="unidade_medida_id" id="ing-unidade-medida" required></select></div>
+                        </div>
+                        <div class="form-actions right"><button class="btn" type="button" id="btnCancelIngEdit">Cancelar</button><button class="btn pri" type="submit">Salvar Ingrediente</button></div>
+                    </form>
+                </div>
+                <div class="table-container"><table id="tblIng"><thead><tr><th>Nome</th><th>Categoria</th><th>Unidade</th><th>Custo</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
+            </div>
 
-// Listener seguro que verifica se o elemento existe antes de adicionar o evento
-function addSafeEventListener(id, event, handler) {
-    const element = $(id);
-    if (element) { element.addEventListener(event, handler); }
-    else { 
-        // Reporta o elemento faltante no console para ajudar na depuração
-        console.warn(`Elemento não encontrado para listener: ${id}`); 
-    }
-}
+            <div class="subpage" id="sub-um">
+                <h3>Unidades de Medida</h3>
+                <div class="right" style="margin-bottom: 16px;"><button class="btn pri" id="btnShowNewUmForm">+ Nova Unidade</button></div>
+                <div class="editor-container" id="um-editor-container">
+                    <h3 id="um-form-title">Nova Unidade de Medida</h3>
+                    <form id="form-um"><input name="id" type="hidden"/>
+                        <div class="grid cols-2">
+                            <div><label>Sigla</label><input maxlength="5" name="sigla" placeholder="KG" required=""/></div>
+                            <div><label>Nome</label><input name="nome" placeholder="Quilograma" required=""/></div>
+                        </div>
+                        <div class="right" style="margin-top:16px;"><button class="btn" type="button" id="btnCancelUmEdit">Cancelar</button><button class="btn pri" type="submit">Salvar</button></div>
+                    </form>
+                </div>
+                <div class="table-container"><table id="tbl-um"><thead><tr><th>Sigla</th><th>Nome</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
+            </div>
 
-/* ===== ROTEAMENTO POR ABAS ===== */
-function setupRouting() {
-  // Verificação de segurança crítica para evitar o erro de addEventListener
-  const mainTabsContainer = $('main-tabs');
-  if (!mainTabsContainer) {
-      console.error("Container de abas principais 'main-tabs' não encontrado. Roteamento falhou.");
-      return;
-  }
-  
-  const mainContents = $$('.tab-content');
-  
-  const setupSubTabs = (containerId, contentSelector) => {
-      const container = $(containerId);
-      if (!container) {
-          console.warn(`Container de subabas '${containerId}' não encontrado.`);
-          return;
-      }
-      const contents = $$(contentSelector);
-      container.addEventListener('click', (e) => {
-        const btn = e.target.closest('button');
-        if (!btn) return;
-        const subTabId = btn.dataset.subtab;
-        if (!subTabId) return;
-        $$('button', container).forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        contents.forEach(content => content.classList.toggle('active', content.id === 'sub-' + subTabId));
-      });
-  };
-  
-  mainTabsContainer.addEventListener('click', (e) => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-    const tabId = btn.dataset.tab;
-    $$('button', mainTabsContainer).forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    mainContents.forEach(content => content.classList.toggle('active', content.id === 'tab-' + tabId));
-  });
-  
-  setupSubTabs('cadastro-subtabs', '#tab-cadastros .subpage');
-  setupSubTabs('estoque-subtabs', '#tab-estoque .subpage');
-}
+            <div class="subpage" id="sub-unidades">
+                <h3>Locais de Estoque / Unidades</h3>
+                <div class="right" style="margin-bottom: 16px;"><button class="btn pri" id="btnShowNewUnidadesForm">+ Novo Local</button></div>
+                <div class="editor-container" id="unidades-editor-container">
+                     <h3 id="unidades-form-title">Novo Local/Unidade</h3>
+                     <form id="form-unidades"><input name="id" type="hidden"/>
+                         <div><label>Nome</label><input name="nome" placeholder="Ex: Cozinha Central" required=""/></div>
+                         <div class="right" style="margin-top:16px;"><button class="btn" type="button" id="btnCancelUnidadesEdit">Cancelar</button><button class="btn pri" type="submit">Salvar</button></div>
+                     </form>
+                </div>
+                <div class="table-container"><table id="tbl-unidades"><thead><tr><th>Nome</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
+            </div>
 
-/* ===== FUNÇÕES DE CARREGAMENTO (LOADERS) ===== */
-async function fillOptionsFrom(table, selId, valKey, labelKey, whereEq, allowEmpty = true){
-  const sel=$(selId); 
-  // Verificação de segurança
-  if(!sel) {
-      console.warn(`Elemento SELECT não encontrado: ${selId}`);
-      return;
-  }
-
-  if (sel.options.length > (allowEmpty ? 1 : 0) && !sel.dataset.loading) return;
-  
-  sel.dataset.loading = true;
-  const previousHTML = sel.innerHTML;
-  if (sel.options.length === 0 || allowEmpty) sel.innerHTML='<option value="">Carregando…</option>';
-  
-  try{
-    let query=supa.from(table).select(`${valKey},${labelKey}`).order(labelKey,{ascending:true});
-    if(whereEq) Object.entries(whereEq).forEach(([k,v])=> query=query.eq(k,v));
-    const {data,error}=await query;
-    if(error) throw error;
-    
-    sel.innerHTML = allowEmpty ? '<option value="">Selecione</option>' : '';
-    (data||[]).forEach(x=>{ const o=document.createElement('option'); o.value=x[valKey]; o.textContent=x[labelKey]; sel.appendChild(o); });
-  }catch(e){
-    console.error(`Erro ao carregar options para ${selId}:`, e);
-    // Feedback específico para o erro de conexão (Failed to Fetch)
-    if (e.message.includes('Failed to fetch')) {
-        setStatus('Erro de conexão (Failed to Fetch). Verifique as credenciais do Supabase no arquivo JS.', 'err');
-    }
-    sel.innerHTML= previousHTML || '<option value="">(Erro)</option>';
-  } finally {
-      delete sel.dataset.loading;
-  }
-}
-
-/* ===== MÓDULO GENÉRICO DE CRUD (Para tabelas simples) ===== */
-const GenericCRUD = {
-    async loadTable(table, tableId, columns, actions = true) {
-        const tb = $(tableId)?.querySelector('tbody'); 
-        if (!tb) {
-             console.warn(`Tabela não encontrada: ${tableId}`);
-             return;
-        }
-        tb.innerHTML = `<tr><td colspan="${columns.length + (actions ? 1 : 0)}">Carregando…</td></tr>`;
-        try {
-            const orderCol = columns.includes('nome') ? 'nome' : columns[0];
-            const { data, error } = await supa.from(table).select('*').order(orderCol, { ascending: true });
-            if (error) throw error;
-            tb.innerHTML = '';
-            (data || []).forEach(item => {
-                const tr = document.createElement('tr');
-                columns.forEach(col => {
-                    const td = document.createElement('td');
-                    if (col === 'ativo') {
-                        td.innerHTML = item.ativo ? '<span class="pill ok">Ativo</span>' : '<span class="pill bad">Inativo</span>';
-                    } else {
-                        td.textContent = item[col] || '—';
-                    }
-                    tr.appendChild(td);
-                });
-                if (actions) {
-                    const tdActions = document.createElement('td');
-                    tdActions.className = 'row-actions';
-                    tdActions.innerHTML = `<button class="btn small" data-act="edit" data-id="${item.id}">Editar</button>
-                                           <button class="btn small" data-act="toggle" data-id="${item.id}">${item.ativo ? 'Desativar' : 'Ativar'}</button>`;
-                    tr.appendChild(tdActions);
-                }
-                tb.appendChild(tr);
-            });
-        } catch (e) {
-            console.error(`Erro ao carregar ${table}:`, e);
-            tb.innerHTML = `<tr><td colspan="${columns.length + (actions ? 1 : 0)}">Erro ao carregar.</td></tr>`;
-        }
-    },
-
-    showForm(editorId, formId, titleId, titleText, data = null) {
-        const form = $(formId);
-        if (!form) return;
-
-        form.reset();
-        const titleEl = $(titleId);
-        if (titleEl) titleEl.textContent = titleText;
-        
-        if (data) {
-            Object.keys(data).forEach(key => {
-                const input = form.elements[key];
-                if (input) {
-                    if (input.type === 'checkbox') {
-                        input.checked = data[key];
-                    } else {
-                        input.value = data[key];
-                    }
-                }
-            });
-        }
-        showEditor(editorId);
-    },
-
-    async save(e, table, editorId, refreshCallback) {
-        e.preventDefault();
-        const form = e.target;
-        const data = getFormData(form.id);
-        const id = data.id;
-        delete data.id;
-
-        setStatus(`Salvando ${table}...`);
-        try {
-            let query;
-            if (id) {
-                query = supa.from(table).update(data).eq('id', id);
-            } else {
-                query = supa.from(table).insert([data]);
-            }
-            const { error } = await query;
-            if (error) throw error;
-
-            setStatus(`Registro salvo com sucesso!`, 'ok');
-            hideEditor(editorId);
-            if (refreshCallback) refreshCallback();
-        } catch (err) {
-            console.error(`Erro ao salvar ${table}:`, err);
-            setStatus(`Erro: ${err.message}`, 'err');
-        }
-    },
-
-    async toggle(table, id, refreshCallback) {
-        setStatus('Atualizando status...');
-        try {
-            const { data, error: selectError } = await supa.from(table).select('ativo').eq('id', id).single();
-            if (selectError || !data) throw new Error(selectError?.message || "Registro não encontrado.");
-            
-            const { error } = await supa.from(table).update({ ativo: !data.ativo }).eq('id', id);
-            if (error) throw error;
-
-            setStatus('Status atualizado.', 'ok');
-            if (refreshCallback) refreshCallback();
-        } catch (err) {
-            console.error(`Erro ao alternar status em ${table}:`, err);
-            setStatus(`Erro: ${err.message}`, 'err');
-        }
-    },
-
-    async handleTableClick(e, table, editorId, formId, titleId, refreshCallback) {
-        const btn = e.target.closest('button');
-        if (!btn) return;
-        const action = btn.dataset.act;
-        const id = btn.dataset.id;
-
-        if (action === 'toggle') {
-            this.toggle(table, id, refreshCallback);
-        } else if (action === 'edit') {
-            try {
-                const { data, error } = await supa.from(table).select('*').eq('id', id).single();
-                if (error) throw error;
-                this.showForm(editorId, formId, titleId, `Editar Registro`, data);
-            } catch (err) {
-                setStatus(`Erro ao carregar dados: ${err.message}`, 'err');
-            }
-        }
-    }
-};
-
-/* ===== MÓDULO DE CADASTROS AUXILIARES (Unidades, Categorias, UM) ===== */
-const AuxiliaresModule = {
-    init() {
-        // Configuração robusta que agora funciona pois o HTML está completo
-        this.setupCRUD('um', 'unidades_medida', ['sigla', 'nome', 'base', 'fator', 'ativo']);
-        this.setupCRUD('unidades', 'unidades', ['nome', 'ativo']);
-        this.setupCRUD('categorias', 'categorias', ['nome', 'tipo', 'ativo']);
-        
-        this.refreshAll();
-    },
-
-    setupCRUD(prefix, table, columns) {
-        const editorId = `${prefix}-editor-container`;
-        const formId = `form-${prefix}`;
-        const titleId = `${prefix}-form-title`;
-        const tableId = `tbl-${prefix}`;
-        
-        // Nomes dos botões baseados na convenção (Ex: btnShowNewUmForm, btnCancelUmEdit)
-        const capitalizedPrefix = prefix.charAt(0).toUpperCase() + prefix.slice(1);
-        const btnNewName = `btnShowNew${capitalizedPrefix}Form`;
-        const btnCancelName = `btnCancel${capitalizedPrefix}Edit`;
-
-        const refresh = () => {
-            GenericCRUD.loadTable(table, tableId, columns);
-            if (table === 'unidades_medida') this.refreshUMDropdowns();
-            if (table === 'unidades') this.refreshUnidadesDropdowns();
-            if (table === 'categorias') this.refreshCategoriasDropdowns();
-        };
-
-        // Event Listeners seguros
-        addSafeEventListener(btnNewName, 'click', () => {
-            GenericCRUD.showForm(editorId, formId, titleId, `Novo Registro`);
-        });
-        addSafeEventListener(btnCancelName, 'click', () => hideEditor(editorId));
-        addSafeEventListener(formId, 'submit', (e) => GenericCRUD.save(e, table, editorId, refresh));
-        
-        const tableEl = $(tableId);
-        if (tableEl) {
-             tableEl.addEventListener('click', (e) => GenericCRUD.handleTableClick(e, table, editorId, formId, titleId, refresh));
-        }
-    },
-
-    refreshAll() {
-        GenericCRUD.loadTable('unidades_medida', 'tbl-um', ['sigla', 'nome', 'base', 'fator', 'ativo']);
-        GenericCRUD.loadTable('unidades', 'tbl-unidades', ['nome', 'ativo']);
-        GenericCRUD.loadTable('categorias', 'tbl-categorias', ['nome', 'tipo', 'ativo']);
-        this.refreshUMDropdowns();
-        this.refreshUnidadesDropdowns();
-        this.refreshCategoriasDropdowns();
-    },
-    
-    refreshUMDropdowns() {
-        fillOptionsFrom('unidades_medida', 'ing-unidade-medida', 'id', 'sigla', {ativo: true}, false);
-        fillOptionsFrom('unidades_medida', 'draft-und', 'sigla', 'sigla', {ativo: true}, false);
-    },
-    
-    refreshUnidadesDropdowns() {
-        fillOptionsFrom('unidades', 'ing-local-armazenagem', 'id', 'nome', {ativo: true});
-        fillOptionsFrom('unidades', 'mov-unidade-origem', 'id', 'nome', {ativo: true});
-        fillOptionsFrom('unidades', 'mov-unidade-destino', 'id', 'nome', {ativo: true});
-    },
-    
-    refreshCategoriasDropdowns() {
-        fillOptionsFrom('categorias', 'ing-categoria', 'id', 'nome', {tipo: 'INGREDIENTE', ativo: true});
-        fillOptionsFrom('categorias', 'prato-cat', 'id', 'nome', {tipo: 'PRATO', ativo: true});
-        
-        const catFilter = $('cat-filter');
-        if (catFilter && catFilter.options.length === 0) {
-            // Verifica se 'supa' está definido antes de usar
-            if (typeof supa !== 'undefined' && supa.from) {
-                supa.from('categorias').select('id, nome').eq('tipo', 'PRATO').eq('ativo', true).order('nome').then(({data, error}) => {
-                    if (!error && data) {
-                        data.forEach(cat => {
-                            const opt = document.createElement('option');
-                            opt.value = cat.id;
-                            opt.textContent = cat.nome;
-                            catFilter.appendChild(opt);
-                        });
-                    }
-                });
-            }
-        }
-    }
-};
-
-// (Módulos IngredientesModule, ReceitasModule, PratosModule, ProducaoModule, EstoqueModule, ComprasModule 
-// permanecem inalterados da primeira implementação detalhada, omitidos aqui para brevidade)
-// INCLUA O CÓDIGO COMPLETO DESTES MÓDULOS AQUI
-
-
-/* ===== INICIALIZAÇÃO ===== */
-async function init(){
-  try{
-    // Verifica se o cliente Supabase foi inicializado corretamente
-    if (typeof supa === 'undefined' || !supa.from) {
-      throw new Error("Falha na inicialização do Supabase. Verifique as credenciais (URL/Chave) em estoque_app.js.");
-    }
-    setStatus('Inicializando módulos...');
-    
-    // Configura o roteamento (agora seguro)
-    setupRouting();
-    
-    // Inicializa módulos na ordem de dependência
-    AuxiliaresModule.init();
-    // IngredientesModule.init();
-    // ReceitasModule.init();
-    // PratosModule.init();
-    // ProducaoModule.init();
-    // EstoqueModule.init();
-    // ComprasModule.init();
-    
-    setStatus('Pronto','ok');
-  } catch(e) { 
-    console.error("Erro fatal na inicialização:", e);
-    setStatus(e.message, 'err');
-  }
-}
-
-// Garante que o DOM esteja carregado antes de iniciar
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-} else {
-    init();
-}
+            <div class="subpage" id="sub-categorias">
+                <h3>Categorias</h3>
+                 <div class="right" style="margin-bottom: 16px;"><button class="btn pri" id="btnShowNewCategoriasForm">+ Nova Categoria</button></div>
+                <div class="editor-container" id="categorias-editor-container">
+                    <h3 id="categorias-form-title">Nova Categoria</h3>
+                    <form id="form-categorias"><input name="id" type="hidden"/>
+                        <div class="grid cols-2">
+                             <div><label>Nome</label><input name="nome" required="" placeholder="Ex: Proteínas"/></div>
+                             <div><label>Tipo</label><select name="tipo"><option value="INGREDIENTE">INGREDIENTE</option><option value="PRATO">PRATO</option></select></div>
+                        </div>
+                        <div class="right" style="margin-top:16px;"><button class="btn" type="button" id="btnCancelCategoriasEdit">Cancelar</button><button class="btn pri" type="submit">Salvar</button></div>
+                    </form>
+                </div>
+                 <div class="table-container"><table id="tbl-categorias"><thead><tr><th>Nome</th><th>Tipo</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
+            </div>
+        </div>
+    </section>
+    </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="estoque_app.js"></script>
+</body>
+</html>
