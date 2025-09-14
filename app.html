@@ -5,7 +5,7 @@
     <meta content="width=device-width,initial-scale=1" name="viewport"/>
     <title>Mapa de Produção</title>
     <link href='data:image/svg+xml,&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"&gt;&lt;rect x="0" y="0" width="128" height="128" rx="22" fill="%237b1e3a"/&gt;&lt;text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white"&gt;MP&lt;/text&gt;&lt;/svg&gt;' rel="icon"/>
-    <link rel="stylesheet" href="estoque_styles.css">
+    <link rel="stylesheet" href="estoque_styles.css?v=7.0">
 </head>
 <body>
 <main class="main">
@@ -53,6 +53,34 @@
                 <div class="editor-container" id="prato-import-container">
                     <h3>Importar Pratos das Vendas</h3>
                     <p class="hint">Pratos encontrados nas vendas mas não cadastrados no estoque. As categorias serão criadas automaticamente se necessário.</p>
+                    
+                    <div id="import-error-detail" class="import-error-box" style="display:none;">
+                        <strong>Erro na importação.</strong>
+                        <p id="import-error-message" style="margin: 5px 0;"></p>
+                        <div id="import-sql-fix" style="display: none;">
+                            <p style="margin: 5px 0;">Parece que a função necessária não existe no banco de dados (Erro 42883). Execute o seguinte SQL no seu ambiente Supabase para corrigir:</p>
+                            <pre>
+CREATE OR REPLACE FUNCTION get_unregistered_dishes()
+RETURNS TABLE(nome_prato TEXT, categoria_sugerida TEXT) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT DISTINCT
+        vp.prato::TEXT AS nome_prato,
+        vp.categoria::TEXT AS categoria_sugerida
+    FROM
+        vendas_pratos vp
+    LEFT JOIN
+        pratos p ON LOWER(TRIM(p.nome)) = LOWER(TRIM(vp.prato))
+    WHERE
+        p.id IS NULL AND vp.prato IS NOT NULL
+    ORDER BY 
+        nome_prato;
+END;
+$$ LANGUAGE plpgsql;
+                            </pre>
+                        </div>
+                    </div>
+
                     <div id="import-loader" style="display:none; text-align: center; padding: 20px;">Carregando...</div>
                     <div class="table-container" style="max-height: 250px; margin-bottom: 16px;">
                         <table id="tblImportPratos">
@@ -70,6 +98,7 @@
                         <div class="form-grid">
                             <div><label>Nome</label><input name="nome" required></div>
                             <div><label>Categoria</label><select name="categoria_id" id="prato-cat" required></select></div>
+                            <div><label>Código de Barras / QR</label><input name="codigo_barras"></div>
                             <div><label>Peso/Volume</label><input name="peso_volume" type="number" step="0.01"></div>
                             <div><label>Unidade</label><select name="unidade_peso_volume"><option>g</option><option>ml</option><option>un</option></select></div>
                             <div><label>Preço Venda (R$)</label><input name="preco_venda" type="number" step="0.01"></div>
@@ -81,7 +110,7 @@
                         <div class="right"><button class="btn" type="button" id="btnCancelarPrato">Cancelar</button><button class="btn pri" type="submit">Salvar</button></div>
                     </form>
                 </div>
-                <div class="table-container"><table id="tblPratos"><thead><tr><th>Nome</th><th>Categoria</th><th>Preço Venda</th><th>Receitas</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
+                <div class="table-container"><table id="tblPratos"><thead><tr><th>Nome</th><th>Categoria</th><th>Preço Venda</th><th>Cód. Barras</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
             </div>
 
             <div class="subpage" id="sub-componentes">
@@ -109,6 +138,7 @@
                             <div><label>Nome da Receita</label><input name="nome" required></div>
                             <div><label>Rendimento</label><input name="rendimento" type="number" step="0.01"></div>
                             <div><label>Unidade Rendimento</label><input name="unidade_rendimento"></div>
+                            <div><label>Código de Barras / QR</label><input name="codigo_barras"></div>
                             <div>
                                 <label><input type="checkbox" name="ativo" checked> Ativo</label>
                             </div>
@@ -126,7 +156,7 @@
                     <div class="table-container" style="margin-top: 16px;"><table id="tblDraft"><thead><tr><th>Tipo</th><th>Nome</th><th>Qtd</th><th>UN</th><th>Ação</th></tr></thead><tbody></tbody></table></div>
                     <div class="right"><button class="btn" id="btnCancelRecEdit">Cancelar</button><button class="btn pri" form="form-receita" type="submit">Salvar Receita</button></div>
                 </div>
-                <div class="table-container"><table id="tblRec"><thead><tr><th>Nome</th><th>Rendimento</th><th>Nº Itens</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
+                <div class="table-container"><table id="tblRec"><thead><tr><th>Nome</th><th>Rendimento</th><th>Cód. Barras</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
             </div>
 
             <div class="subpage" id="sub-ingredientes">
@@ -138,6 +168,7 @@
                         <div class="form-grid">
                             <div><label>Nome</label><input name="nome" required></div>
                             <div><label>Categoria</label><select name="categoria_id" id="ing-categoria"></select></div>
+                            <div><label>Código de Barras / QR</label><input name="codigo_barras"></div>
                             <div><label>Unidade de Medida</label><select name="unidade_medida_id" id="ing-unidade-medida" required></select></div>
                             <div><label>Custo Unitário (R$)</label><input name="custo_unitario" type="number" step="0.001"></div>
                             <div><label>Local de Armazenagem</label><select name="local_armazenagem_id" id="ing-local-armazenagem"></select></div>
@@ -148,7 +179,7 @@
                         <div class="right"><button class="btn" type="button" id="btnCancelIngEdit">Cancelar</button><button class="btn pri" type="submit">Salvar</button></div>
                     </form>
                 </div>
-                <div class="table-container"><table id="tblIng"><thead><tr><th>Nome</th><th>Categoria</th><th>Unidade</th><th>Custo</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
+                <div class="table-container"><table id="tblIng"><thead><tr><th>Nome</th><th>Categoria</th><th>Unidade</th><th>Custo</th><th>Cód. Barras</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
             </div>
 
 
@@ -249,7 +280,9 @@
         <div class="section">
             <div class="actions-bar">
                 <h3>Sugestão de Compras</h3>
-                <button class="btn" id="btnRefreshSuggestions">Atualizar Sugestões</button>
+                 <div class="right" style="margin-top: 0;">
+                    <button class="btn" id="btnRefreshSuggestions">Atualizar Sugestões</button>
+                </div>
             </div>
             <p class="hint">Baseado no estoque atual e no ponto de pedido de cada ingrediente.</p>
             <div class="table-container"><table id="tbl-sugestoes"><thead><tr><th>Ingrediente</th><th>Estoque Atual</th><th>Ponto de Pedido</th><th>Comprar</th><th>Último Fornecedor</th></tr></thead><tbody></tbody></table></div>
@@ -266,15 +299,30 @@
         <div class="subpage active" id="sub-movimentar">
             <div class="section">
                 <h3>Registrar Movimentação</h3>
+
+                <div class="scanner-area">
+                    <button class="btn" id="btnOpenScanner">📷 Ler Item (Simulação)</button>
+                    <div class="scanner-input-group">
+                        <input type="text" id="scanner-input" placeholder="Ou digite o código de barras e pressione Enter">
+                        <button class="btn pri" id="btnLookupBarcode">Buscar</button>
+                    </div>
+                </div>
+                <div class="sep"></div>
+
                 <form id="form-movimentacao">
                     <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
-                        <div><label>Tipo</label><select name="tipo" id="mov-tipo" required><option value="">Selecione</option><option value="ENTRADA">Entrada</option><option value="SAIDA">Saída</option><option value="PRODUCAO">Produção</option><option value="TRANSFERENCIA">Transferência</option><option value="AJUSTE">Ajuste de Saldo</option></select></div>
+                        <div><label>Tipo</label><select name="tipo" id="mov-tipo" required><option value="">Selecione</option><option value="ENTRADA">Entrada (Compra/Recebimento)</option><option value="SAIDA">Saída (Venda/Perda)</option><option value="PRODUCAO">Produção (Entrada de Item Produzido)</option><option value="TRANSFERENCIA">Transferência Interna</option><option value="AJUSTE">Ajuste de Saldo (Auditoria)</option></select></div>
+
                         <div><label>Item</label><select name="item_id" id="mov-item" required></select></div>
-                        <div><label>Quantidade</label><input name="quantidade" type="number" step="0.001" required></div>
-                        <div><label>Custo Unit. (Entrada)</label><input name="custo_unitario" type="number" step="0.001"></div>
-                        <div><label>Unidade de Origem</label><select name="unidade_origem_id" id="mov-unidade-origem"></select></div>
-                        <div><label>Unidade de Destino</label><select name="unidade_destino_id" id="mov-unidade-destino"></select></div>
-                        <div><label>Data de Validade</label><input name="data_validade" type="date"></div>
+
+                        <div><label>Quantidade</label><input name="quantidade" id="mov-quantidade" type="number" step="0.001" required></div>
+                        
+                        <div id="field-custo"><label>Custo Unit. (R$)</label><input name="custo_unitario" type="number" step="0.001"></div>
+
+                        <div id="field-origem"><label>Unidade de Origem</label><select name="unidade_origem_id" id="mov-unidade-origem"></select></div>
+                        <div id="field-destino"><label>Unidade de Destino</label><select name="unidade_destino_id" id="mov-unidade-destino"></select></div>
+
+                        <div id="field-validade"><label>Data de Validade</label><input name="data_validade" type="date"></div>
                         <div class="form-span-col-2"><label>Observação</label><textarea name="obs" rows="2"></textarea></div>
                     </div>
                     <div class="right"><button class="btn" type="button" id="btnMovCancel">Limpar</button><button class="btn pri" type="submit" id="frmMov">Registrar</button></div>
@@ -289,6 +337,6 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="app.js?v=6.2"></script>
+<script src="app.js?v=7.0"></script>
 </body>
 </html>
