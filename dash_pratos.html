@@ -1,253 +1,922 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
-    <meta charset="utf-8"/>
-    <meta content="width=device-width,initial-scale=1" name="viewport"/>
-    <title>Mapa de Produção</title>
-    <link href='data:image/svg+xml,&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"&gt;&lt;rect x="0" y="0" width="128" height="128" rx="22" fill="%237b1e3a"/&gt;&lt;text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white"&gt;MP&lt;/text&gt;&lt;/svg&gt;' rel="icon"/>
-    <link rel="stylesheet" href="estoque_styles.css?v=7.1">
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Dash Pratos</title>
+  <style>
+    :root{
+      --bg:#f7f7fa; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e5e7eb;
+      --wine:#7b1e3a; --wine-2:#8c2947; --chip:#fef2f2; --ok:#0b5d47; --down:#ef4444;
+      --c-now:#7b1e3a; --c-prev:#9ca3af;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;background:var(--bg);color:var(--ink);font:11px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; height: 100%; overflow: hidden;}
+    .wrap{display:flex;flex-direction:column;min-height:100vh; height: 100%; overflow: hidden;}
+    .main{flex:1;min-width:0;display:flex;flex-direction:column; overflow-y: auto; padding-bottom: 60px;}
+    .top{position:sticky;top:0;z-index:10;background:var(--card);padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px;margin-bottom:8px;justify-content:space-between}
+    .brand{display:flex;align-items:center;gap:10px; font-size:16px; font-weight: 700; color: var(--ink);}
+    .section{order:2;padding:0 16px 12px 16px}
+    .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+    .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;transition:.2s;position:relative}
+    .kpi h4{margin:0 0 4px 0;color:var(--muted);font-size:11px;display:flex;align-items:center;gap:6px;}
+    .kpi h4 .spacer { flex-grow: 1; }
+    .kpi .val{font-size:22px;font-weight:500;letter-spacing:-.5px}
+    .kpi .sub{font-size:10px;color:var(--muted);margin-top:4px}
+    .delta{display:inline-flex;gap:4px;align-items:center;padding:1px 6px;border-radius:999px;border:1px solid rgba(148,163,184,.35);font-weight:700;font-size:10px;margin-left:6px;background:rgba(148,163,184,.15);color:#6b7280}
+    .delta svg{width:10px;height:10px;fill:currentColor}
+    .delta.up{background:rgba(123,30,58,.10);border-color:rgba(123,30,58,.25);color:var(--wine)}
+    .delta.down{background:rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.25); color: var(--down); }
+    .charts-grid{display:grid; grid-template-columns: repeat(2, 1fr); gap: 10px; flex: 1;}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;display:flex;flex-direction:column; min-height: 200px; }
+    .card .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px; flex-shrink: 0;}
+    .title{font-weight:700; color: var(--ink)}
+    .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+    .seg button{padding:4px 8px;border:0;background:#fff;font-weight:700;color:#475569;cursor:pointer; font-size: 10px;}
+    .seg button.active{background:var(--wine);color:#fff}
+    .chart-box{position:relative;flex-grow:1;min-height:180px;}
+    .chart-box canvas{display:block;width:100%;height:100%}
+    @media (max-width:1200px){ .kpis{grid-template-columns:repeat(2,1fr)} .charts-grid{grid-template-columns:1fr} }
+    @media (max-width: 768px) { .kpis{ grid-template-columns: 1fr; } .top { flex-direction: column; align-items: flex-start; } }
+  
+    .spinner { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    /* ESTILOS DA CAIXA DE DIÁLOGO (MODAL) */
+    .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 50; display: none; align-items: center; justify-content: center; }
+    .modal-backdrop.modal-show { display: flex; }
+    .modal-content { background: var(--card); padding: 16px 20px; border-radius: 12px; max-width: 400px; width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+    .modal-content h4 { margin: 0 0 8px 0; font-size: 14px; }
+    .modal-content p { margin: 0 0 16px 0; font-size: 11px; color: var(--muted); }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .fx-textbtn.secondary { background: #e5e7eb; }
+
+    /* =============================================================== */
+    /* INÍCIO: LAYOUT FINAL DO TOP 10                                  */
+    /* =============================================================== */
+    .top10-header-row, .top10-row {
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      flex-shrink: 0; /* Impede que as linhas encolham */
+    }
+    .top10-header-row {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 6px;
+      margin-bottom: 2px;
+    }
+    .top10-list-body {
+      display: flex;
+      flex-direction: column;
+      flex-grow: 1; /* Faz o corpo da lista crescer para ocupar o espaço vertical */
+      min-height: 0; /* Necessário para o flex-grow funcionar corretamente em alguns contextos */
+    }
+    .top10-row {
+      flex-grow: 1; /* CADA LINHA CRESCE PARA DIVIDIR A ALTURA TOTAL */
+      border-bottom: 1px solid #f0f2f5;
+      font-size: 11px;
+    }
+    .top10-row:last-child {
+      border-bottom: none;
+    }
+    .top10-col-rank {
+      flex: 0 0 30px; /* Largura fixa de 30px */
+      font-weight: 700;
+      text-align: center;
+      color: var(--muted);
+    }
+    .top10-col-prato {
+      flex: 1 1 auto; /* Ocupa o espaço restante */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis; /* Adiciona "..." se o nome for muito longo */
+      font-weight: 500;
+      padding-right: 8px; /* Espaço antes da quantidade */
+    }
+    .top10-col-qty {
+      flex: 0 0 50px; /* Largura fixa de 50px */
+      text-align: right;
+      font-weight: 700;
+    }
+    /* Estilos do Pódio */
+    .top10-row[data-rank="1"] .top10-col-rank { color: #d4af37; font-size: 14px; }
+    .top10-row[data-rank="2"] .top10-col-rank { color: #c0c0c0; font-size: 13px; }
+    .top10-row[data-rank="3"] .top10-col-rank { color: #cd7f32; font-size: 12px; }
+    /* =============================================================== */
+    /* FIM: LAYOUT FINAL DO TOP 10                                     */
+    /* =============================================================== */
+  </style>
 </head>
 <body>
-<main class="main">
-    <div class="top">
-        <div class="brand">
-            <div class="logo">MP</div>
-            <div>
-                <h1 style="font-size:18px; margin:0; line-height:1.2">Mapa de Produção</h1>
-                <div class="hint" style="margin:0;">Ficha técnica, previsão e compras</div>
+  <div class="wrap">
+    <main class="main main-content">
+      <div class="top">
+        <div class="brand">Dashboard de Pratos</div>
+        <div class="seg" id="segDowMode">
+            <button data-mode="TOTAL" class="active">TOTAL</button>
+            <button data-mode="MEDIA">MÉDIA</button>
+        </div>
+      </div>
+      <section class="section">
+        <div class="kpis">
+          <div class="kpi"><h4><span>Itens Vendidos</span><span class="spacer"></span><span id="d_qtd" class="delta flat">—</span></h4><div class="val" id="k_qtd">—</div><div class="sub">Anterior: <span id="p_qtd">—</span></div></div>
+          <div class="kpi"><h4><span>Pratos/Itens Únicos</span><span class="spacer"></span><span id="d_pratos_unicos" class="delta flat">—</span></h4><div class="val" id="k_pratos_unicos">—</div><div class="sub">Anterior: <span id="p_pratos_unicos">—</span></div></div>
+          <div class="kpi"><h4><span>Média Diária</span><span class="spacer"></span><span id="d_media_diaria" class="delta flat">—</span></h4><div class="val" id="k_media_diaria">—</div><div class="sub">Anterior: <span id="p_media_diaria">—</span></div></div>
+        </div>
+        <div class="card" style="margin-bottom: 10px;">
+            <div class="head"><div class="title">Vendas por Mês</div></div>
+            <div class="chart-box" style="height: 184px; min-height: 184px;"><canvas id="ch_month"></canvas></div>
+        </div>
+        <div class="charts-grid">
+            <div class="card">
+                <div class="head">
+                    <div class="title">Vendas por Dia da Semana</div>
+                    <button id="btnExportDow" class="fx-iconbtn" title="Exportar Média Semanal (CSV)" style="width: 28px; height: 28px;">
+                        <svg id="iconDownload" fill="currentColor" viewBox="0 0 20 20" height="14px" width="14px"><path d="M13 8V2H7v6H2l8 8 8-8h-5zM0 18h20v2H0v-2z"/></svg>
+                        <svg id="iconSpinner" class="spinner" fill="none" viewBox="0 0 24 24" height="16px" width="16px" style="display:none;"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" opacity="0.25"></circle><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" opacity="0.75"></path></svg>
+                    </button>
+                </div>
+              <div class="chart-box"><canvas id="ch_dow"></canvas></div>
             </div>
-        </div>
-        <nav class="tabs" id="main-tabs">
-            <button class="active" data-tab="cadastros">Cadastros</button>
-            <button data-tab="producao">Produção</button>
-            <button data-tab="compras">Compras</button>
-            <button data-tab="estoque">Estoque</button>
-        </nav>
-        <div class="status-bar">
-            <div id="status">Carregando…</div>
-        </div>
-    </div>
-
-    <div class="content-wrap">
-    <section class="tab-content active" id="tab-cadastros">
-        <div class="section" id="section-cadastros">
-            <nav class="subtabs" id="cadastro-subtabs">
-                <button class="active" data-subtab="pratos">Pratos</button>
-                <button data-subtab="componentes">Componentes</button>
-                <button data-subtab="receitas">Receitas</button>
-                <button data-subtab="ingredientes">Ingredientes</button>
-                <button class="chip" data-subtab="um">Unidades de Medida</button>
-                <button class="chip" data-subtab="unidades">Locais/Unidades</button>
-                <button class="chip" data-subtab="categorias">Categorias</button>
-            </nav>
-
-             <div class="subpage active" id="sub-pratos">
-                <div class="actions-bar">
-                    <div class="filters-container"></div>
-                    <div class="right" style="margin-bottom: 0; margin-top: 0;">
-                        <button class="btn" id="btnImportarPratos">🔄 Importar do Dashboard</button>
-                        <button class="btn pri" id="btnNovoPrato">+ Novo prato</button>
+            <div class="card">
+                <div class="head">
+                    <div class="title">Top 10 Pratos</div>
+                    <div class="seg" id="segTop10">
+                        <button data-mode="MAIS" class="active">Mais Vendidos</button>
+                        <button data-mode="MENOS">Menos Vendidos</button>
                     </div>
                 </div>
+                <div class="top10-header-row">
+                  <span class="top10-col-rank">#</span>
+                  <span class="top10-col-prato">Prato</span>
+                  <span class="top10-col-qty">Qtd.</span>
+                </div>
+                <div id="top10-list-body" class="top10-list-body">
+                </div>
+            </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <style>
+    .fx-filters-bar{ position:sticky; bottom:0; z-index:30; background:#fff; border-top:1px solid var(--line); padding:8px 14px; height:56px; display:flex; align-items:center; justify-content:space-between; }
+    .fx-fb-left{display:flex; align-items:center; gap:10px; min-width:0; flex:1}
+    .fx-fb-label{font-weight:700; color:var(--ink); font-size:12px; white-space:nowrap;}
+    .fx-chips{display:flex; gap:8px; overflow:auto; scrollbar-width:none}
+    .fx-chips::-webkit-scrollbar{display:none}
+    .fx-chip{flex:0 0 auto; padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:#fff; color:#334155; font-weight:700; cursor:pointer; font-size:11px}
+    .fx-chip.active{background:var(--wine); color:#fff; border-color:var(--wine)}
+    .fx-fb-right{display:flex; align-items:center; gap:8px}
+    .fx-iconbtn{display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border:1px solid var(--line); border-radius:8px; background:#fff; cursor:pointer}
+    .fx-textbtn{padding:8px 14px; border:1px solid var(--line); background:#fff; color:#334155; border-radius:8px; font-weight:700; cursor:pointer; font-size:11px; display: inline-flex; align-items: center; gap: 6px;}
+    .fx-dropup{ position:fixed; left:8px; right:8px; bottom:60px; z-index:40; background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:0 16px 40px rgba(0,0,0,.08); padding:0; display:none; }
+    .fx-dropup.fx-show{display:block; animation:fx-pop .15s ease-out}
+    @keyframes fx-pop{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
+    .fx-du-head{position:sticky; top:0; background:#fff; border-bottom:1px solid var(--line); padding:8px 10px; display:flex; align-items:center; justify-content:space-between; border-top-left-radius:12px; border-top-right-radius:12px}
+    .fx-du-title{font-weight:900; color:#334155; font-size:12px}
+    .fx-du-body{padding:10px 10px; display:flex; flex-direction:column; gap:10px;}
+    .fx-du-sec{display:flex; flex-direction:column; gap:8px}
+    .fx-du-sec + .fx-du-sec{padding-top:8px; border-top:1px dashed var(--line)}
+    .fx-du-sec h4{margin:0; font-size:11.5px; letter-spacing:.2px; text-transform:uppercase; color:#475569}
+    .fx-du-grid{display:grid; grid-template-columns:repeat(12,1fr); gap:8px; align-items:end}
+    .fx-field{display:flex; flex-direction:column; gap:4px; min-width:0}
+    .fx-label{font-size:10px; color:#64748b}
+    .fx-input{ height:30px; padding:4px 8px; border:1px solid var(--line); border-radius:8px; background:#fff; font:inherit }
+    .fx-period-line{ display:grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; }
+    .fx-quickwrap{ margin-top: 0; }
+    .fx-quick-hint{font-size:10px; color:#94a3b8; white-space:nowrap; margin-right: 10px;}
+    .fx-seg{border-radius:10px; display:inline-flex; border:1px solid var(--line); background:#fff; white-space:nowrap; overflow:hidden}
+    .fx-seg button{ height:30px; min-width:44px; padding:0 10px; border:0; background:transparent; cursor:pointer; font-weight:800; color:#475569; font-size:10px }
+    .fx-seg button.fx-active{background:var(--wine); color:#fff}
+    .msel{position:relative}
+    .msel-btn{width:100%; text-align: left; height:30px; padding:4px 8px; border:1px solid var(--line); border-radius:8px; background:#fff; font:inherit; cursor: pointer;}
+    .msel-btn:after{content:"▾";float:right;color:#475569}
+    .msel-panel{position:absolute;z-index:40;bottom:110%;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 24px rgba(0,0,0,.08);max-height:300px;overflow:auto;padding:8px;display:none}
+    .msel.open .msel-panel{display:block}
+    .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
+    .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
+    .msel-opt:hover{background:#f3f4f6}
+  </style>
 
-                <div class="editor-container" id="prato-import-container">
-                    <h3>Importar Pratos das Vendas</h3>
-                    <p class="hint">Pratos encontrados nas vendas mas não cadastrados no estoque. As categorias serão criadas automaticamente se necessário.</p>
+  <footer class="fx-filters-bar" aria-label="Barra de filtros">
+    <div class="fx-fb-left">
+      <div class="fx-fb-label">Filtros:</div>
+      <div class="fx-chips" id="fxQuickChips">
+          <button class="fx-chip" data-win="today">Hoje</button>
+          <button class="fx-chip" data-win="yesterday">Ontem</button>
+          <button class="fx-chip" data-win="lastMonth">Último mês</button>
+          <button class="fx-chip" data-win="lastYear">Último ano</button>
+      </div>
+    </div>
+    <div class="fx-fb-right">
+      <button class="fx-iconbtn" id="fxBtnMore" title="Mais filtros" aria-haspopup="dialog" aria-expanded="false">
+        <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" height="16px" width="16px"><path d="M3 6h18M7 12h10M10 18h4"/></svg>
+      </button>
+      <button class="fx-textbtn" id="btnUpload">Importar</button>
+      <input id="fileExcel" type="file" accept=".xlsx,.xls,.csv" style="display:none">
+      <button class="fx-textbtn" id="fxBtnReset">Limpar</button>
+    </div>
+  </footer>
+
+  <div class="fx-dropup" id="fxDropup" role="dialog" aria-modal="true" aria-labelledby="fxDuTitle">
+    <div class="fx-du-head">
+      <div class="fx-du-title" id="fxDuTitle">Filtros Avançados</div>
+    </div>
+    <div class="fx-du-body">
+      <section class="fx-du-sec" aria-labelledby="fxSecPeriodo">
+        <h4 id="fxSecPeriodo">Período Manual</h4>
+        <div class="fx-period-line">
+          <div class="fx-field"><label class="fx-label">Data inicial</label><input type="date" id="fxDuStart" class="fx-input"></div>
+          <div class="fx-field"><label class="fx-label">Data final</label><input type="date" id="fxDuEnd" class="fx-input"></div>
+          <div class="fx-quickwrap">
+            <span class="fx-quick-hint">Rápido</span>
+            <div class="fx-seg" id="fxDuQuickDays">
+              <button data-win="7">07</button><button data-win="15">15</button><button data-win="30" class="fx-active">30</button>
+              <button data-win="60">60</button><button data-win="90">90</button><button data-win="120">120</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="fx-du-sec" aria-labelledby="fxSecAnaliticos">
+        <h4 id="fxSecAnaliticos">Analíticos</h4>
+        <div class="fx-du-grid">
+          <div class="fx-field" style="grid-column:span 4"><label class="fx-label">Unidade</label><div id="ms-unids" class="msel"><button class="msel-btn">Todas</button><div class="msel-panel"></div></div></div>
+          <div class="fx-field" style="grid-column:span 4"><label class="fx-label">Categoria</label><div id="ms-cats" class="msel"><button class="msel-btn">Todas</button><div class="msel-panel"></div></div></div>
+          <div class="fx-field" style="grid-column:span 4"><label class="fx-label">Prato</label><div id="ms-pratos" class="msel"><button class="msel-btn">Todos</button><div class="msel-panel"></div></div></div>
+          <div class="fx-field" style="grid-column:span 12; padding-top: 8px;">
+            <label style="display:flex;align-items:center;gap:8px; cursor: pointer; font-size: 12px;"><input type="checkbox" id="onlyPratos"> Filtrar apenas itens da categoria "PRATOS"</label>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="exportModal" class="modal-backdrop">
+    <div class="modal-content">
+        <h4>Escolha o Formato da Exportação</h4>
+        <p>Como você gostaria de exportar a média de vendas por dia da semana?</p>
+        <div class="modal-actions">
+            <button id="btnExportSeparated" class="fx-textbtn">Separado por Prato</button>
+            <button id="btnExportConsolidated" class="fx-textbtn">Consolidado</button>
+            <button id="btnExportCancel" class="fx-textbtn secondary">Cancelar</button>
+        </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <script>
+  /* ===================== CONFIG (PROJETO ESTOQUE) ===================== */
+  const SUPABASE_URL_ESTOQUE  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
+  const SUPABASE_ANON_ESTOQUE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
+  const supaEstoque = window.supabase.createClient(SUPABASE_URL_ESTOQUE, SUPABASE_ANON_ESTOQUE);
+
+  /* ===================== CHART DEFAULTS ===================== */
+  Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif';
+  Chart.defaults.color = '#334155';
+  Chart.defaults.plugins.legend.position = 'top';
+  Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(15,23,42,.95)';
+  Chart.defaults.datasets.bar.borderRadius = 6;
+  Chart.defaults.datasets.bar.borderSkipped = false;
+  Chart.defaults.devicePixelRatio = Math.max(1, window.devicePixelRatio || 1);
+
+  /* ===================== HELPERS ===================== */
+  const $ = id => document.getElementById(id);
+  const num = v => (v==null||!isFinite(+v)) ? '0' : (+v).toLocaleString('pt-BR');
+  
+  function getTodayISO(baseDate) {
+    const d = baseDate ? new Date(baseDate + 'T12:00:00Z') : new Date();
+    d.setHours(12, 0, 0, 0);
+    return d.toISOString().split('T')[0];
+  }
+
+  function daysLen(de, ate) {
+    if (!de || !ate) return 0;
+    const d1 = new Date(de + 'T12:00:00Z');
+    const d2 = new Date(ate + 'T12:00:00Z');
+    return Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
+  }
+
+  function formatYM(isoStr){
+    if (!isoStr) return '';
+    const d = new Date(isoStr + 'T12:00:00Z');
+    const m = d.getMonth();
+    const y = String(d.getFullYear()).slice(-2);
+    const n = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    return `${n[m]}/${y}`;
+  }
+
+  const rmAcc = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  
+  function fxDispatchApply(){
+      const payload = { start: $('fxDuStart').value, end: $('fxDuEnd').value };
+      document.dispatchEvent(new CustomEvent('filters:apply', { detail: payload }));
+  }
+
+  /* ===================== MULTISELECT ===================== */
+  function MultiSelect(rootId, placeholder){
+    const root=$(rootId), btn=root.querySelector('.msel-btn'), panel=root.querySelector('.msel-panel');
+    let options=[], selected=new Set(), filtered=[];
+    function render(){
+      panel.innerHTML='';
+      const q=document.createElement('input'); q.className='msel-search'; q.placeholder='Filtrar…';
+      q.addEventListener('input',()=>{filtered=options.filter(v=>rmAcc(v).toLowerCase().includes(rmAcc(q.value).toLowerCase())); drawOptions();});
+      panel.appendChild(q);
+      drawOptions();
+    }
+    function drawOptions(){
+      panel.querySelectorAll('.msel-opt-box').forEach(n=>n.remove());
+      const box=document.createElement('div'); box.className = 'msel-opt-box';
+      (filtered.length > 0 ? filtered : options).forEach(v=>{
+        const row=document.createElement('div'); row.className='msel-opt';
+        const cb=document.createElement('input'); cb.type='checkbox'; cb.value=v; cb.checked=selected.has(v);
+        const lb=document.createElement('label'); lb.textContent=v;
+        cb.addEventListener('change',()=>{
+            cb.checked?selected.add(v):selected.delete(v); 
+            refresh();
+            fxDispatchApply();
+        });
+        row.appendChild(cb); row.appendChild(lb); box.appendChild(row);
+      });
+      panel.appendChild(box);
+    }
+    function refresh(){ btn.textContent = selected.size===0 ? placeholder : `${selected.size} selecionado(s)`; }
+    btn.addEventListener('click',()=>root.classList.toggle('open'));
+    document.addEventListener('click',(e)=>{ if(!root.contains(e.target)) root.classList.remove('open'); });
+    return {
+      setOptions(list){ options=(list||[]).filter(v=>v!=null).map(String).sort((a,b)=>a.localeCompare(b,'pt-BR')); filtered=options.slice(); selected=new Set([...selected].filter(v=>options.includes(v))); render(); refresh(); },
+      get(){return [...selected];},
+      set(vals){selected=new Set((vals||[]).map(String)); refresh(); drawOptions();},
+      clear(){ this.set([]); }
+    };
+  }
+
+  /* ===================== ESTADO ===================== */
+  let lastDay='';
+  let dowMode = 'TOTAL';
+  let top10Mode = 'MAIS';
+  let dowChartAverageData = {}; // Guarda a média consolidada para exportação
+  const ms = {
+    unids: MultiSelect('ms-unids', 'Todas as Unidades'),
+    cats:  MultiSelect('ms-cats', 'Todas as Categorias'),
+    pratos: MultiSelect('ms-pratos', 'Todos os Pratos')
+  };
+
+  $('onlyPratos').addEventListener('change', fxDispatchApply);
+  $('segDowMode').addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if(!btn) return;
+    [...e.currentTarget.children].forEach(b=>b.classList.toggle('active', b===btn));
+    dowMode = btn.dataset.mode;
+    fxDispatchApply();
+  });
+  $('segTop10').addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if(!btn) return;
+    [...e.currentTarget.children].forEach(b=>b.classList.toggle('active', b===btn));
+    top10Mode = btn.dataset.mode;
+    fxDispatchApply();
+  });
+
+  /* ===================== KPI & CHARTS ===================== */
+  function upSVG(){return '<svg viewBox="0 0 20 20"><path d="M10 4l5 6h-3v6H8v-6H5l5-6z"/></svg>';}
+  function downSVG(){return '<svg viewBox="0 0 20 20"><path d="M10 16l-5-6h3V4h4v6h3l-5 6z"/></svg>';}
+  function deltaBadge(el,curr,prev){
+    if(!isFinite(prev)||+prev===0){ el.textContent='—'; el.className='delta flat'; return; }
+    const p=((curr-prev)/prev)*100;
+    el.innerHTML=(p>=0? upSVG():downSVG())+' '+Math.abs(p).toFixed(1)+'%';
+    el.className='delta '+(p>=0?'up':'down');
+  }
+
+  function renderChart(canvasId, type, labels, datasets, options = {}) {
+    const canvas = $(canvasId);
+    if (!canvas) return;
+    if (canvas.__chart) { try { canvas.__chart.destroy(); } catch(e){} }
+    const ctx = canvas.getContext('2d');
+    canvas.__chart = new Chart(ctx, {
+      type,
+      data: { labels, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        scales: type === 'bar' ? { y: { beginAtZero: true }, x: { grid: { display: false } } } : {},
+        plugins: { legend: { display: datasets.length > 1 } },
+        ...options
+      }
+    });
+  }
+  
+  function updateKPIs(kpis, len) {
+    const mediaDiaria = len > 0 ? Math.round(kpis.current_total / len) : 0;
+    const prevMediaDiaria = len > 0 ? Math.round(kpis.prev_total / len) : 0;
+    $('k_qtd').textContent = num(kpis.current_total);
+    $('p_qtd').textContent = num(kpis.prev_total);
+    deltaBadge($('d_qtd'), kpis.current_total, kpis.prev_total);
+    $('k_pratos_unicos').textContent = num(kpis.current_unique);
+    $('p_pratos_unicos').textContent = num(kpis.prev_unique);
+    deltaBadge($('d_pratos_unicos'), kpis.current_unique, kpis.prev_unique);
+    $('k_media_diaria').textContent = num(mediaDiaria);
+    $('p_media_diaria').textContent = num(prevMediaDiaria);
+    deltaBadge($('d_media_diaria'), mediaDiaria, prevMediaDiaria);
+  }
+
+  // ===============================================================
+  // INÍCIO: FUNÇÃO JS FINAL PARA O NOVO LAYOUT DO TOP 10
+  // ===============================================================
+  function updateTop10Chart(data) {
+    const bodyContainer = $('top10-list-body');
+    if (!bodyContainer) return;
+
+    const dataToRender = top10Mode === 'MAIS' ? (data?.mais_vendidos || []) : (data?.menos_vendidos || []);
+
+    if (dataToRender.length === 0) {
+        bodyContainer.innerHTML = `<div style="text-align: center; padding-top: 20px; color: var(--muted);">Nenhum dado disponível.</div>`;
+        return;
+    }
+
+    const rowsHtml = dataToRender.map((item, index) => {
+        const rank = index + 1;
+        return `
+            <div class="top10-row" data-rank="${rank}">
+                <span class="top10-col-rank">${rank}</span>
+                <span class="top10-col-prato">${item.prato}</span>
+                <span class="top10-col-qty">${num(item.total)}</span>
+            </div>
+        `;
+    }).join('');
+    
+    bodyContainer.innerHTML = rowsHtml;
+  }
+  // ===============================================================
+  // FIM: FUNÇÃO JS FINAL PARA O NOVO LAYOUT DO TOP 10
+  // ===============================================================
+
+  function updateDowChart(data, len) {
+    const dowLabels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+    let chartDataNow = Array(7).fill(0), chartDataPrev = Array(7).fill(0);
+    for (let item of (data || [])) {
+        chartDataNow[item.dow] = item.current;
+        chartDataPrev[item.dow] = item.previous;
+    }
+    
+    let avgDataNow = Array(7).fill(0), avgDataPrev = Array(7).fill(0);
+    const de = $('fxDuStart').value, ate = $('fxDuEnd').value;
+    const occNow = Array(7).fill(0);
+    let d = new Date(de+'T12:00:00Z'), end = new Date(ate+'T12:00:00Z');
+    while (d <= end) { occNow[d.getUTCDay()]++; d.setUTCDate(d.getUTCDate()+1); }
+    
+    const occPrev = Array(7).fill(0);
+    d = new Date(de+'T12:00:00Z');
+    d.setUTCDate(d.getUTCDate() - len);
+    const endPrev = new Date(d);
+    endPrev.setUTCDate(d.getUTCDate() + len - 1);
+    while (d <= endPrev) { occPrev[d.getUTCDay()]++; d.setUTCDate(d.getUTCDate()+1); }
+    
+    avgDataNow = chartDataNow.map((v,i)=> occNow[i] > 0 ? Math.round(v/occNow[i]) : 0);
+    avgDataPrev = chartDataPrev.map((v,i)=> occPrev[i] > 0 ? Math.round(v/occPrev[i]) : 0);
+    
+    dowChartAverageData = { labels: dowLabels, current: avgDataNow, previous: avgDataPrev };
+    
+    const dataForChart = dowMode === 'MEDIA' ? [avgDataNow, avgDataPrev] : [chartDataNow, chartDataPrev];
+
+    renderChart('ch_dow', 'bar', dowLabels, [
+        { label: 'Atual', data: dataForChart[0], backgroundColor: '#7b1e3a' }, 
+        { label: 'Anterior', data: dataForChart[1], backgroundColor: '#9ca3af' }
+    ]);
+  }
+
+  async function updateMonthChart(endDate) {
+      try {
+        const params = {
+            end_date_iso: endDate,
+            unids_filter: ms.unids.get().length > 0 ? ms.unids.get() : null,
+            cats_filter: ms.cats.get().length > 0 ? ms.cats.get() : null,
+            pratos_filter: ms.pratos.get().length > 0 ? ms.pratos.get() : null,
+            is_pratos_only: $('onlyPratos').checked
+        };
+        const { data, error } = await supaEstoque.rpc('get_monthly_sales_chart_data', params);
+        if (error) throw error;
+        const labels = (data || []).map(d => formatYM(d.period));
+        const nowData = (data || []).map(d => d.current_total);
+        const prevData = (data || []).map(d => d.prev_total);
+        renderChart('ch_month', 'bar', labels, [
+          { label: 'Últimos 12M', data: nowData, backgroundColor: '#7b1e3a' },
+          { label: '12M Anteriores', data: prevData, backgroundColor: '#9ca3af' }
+        ], { plugins: { legend: { display: false } } });
+      } catch (e) { console.error("Erro ao carregar gráfico mensal:", e); }
+  }
+
+  /* ===================== LOOP PRINCIPAL ===================== */
+  async function applyAll(details) {
+    try {
+      const de = details.start, ate = details.end;
+      if (!de || !ate || new Date(de) > new Date(ate)) { return; }
+      const len = daysLen(de, ate);
+      
+      const commonParams = {
+          de_iso: de, ate_iso: ate,
+          unids_filter: ms.unids.get().length > 0 ? ms.unids.get() : null,
+          cats_filter: ms.cats.get().length > 0 ? ms.cats.get() : null,
+          pratos_filter: ms.pratos.get().length > 0 ? ms.pratos.get() : null,
+          is_pratos_only: $('onlyPratos').checked
+      };
+
+      const [kpisResult, dowResult, top10Result] = await Promise.allSettled([
+          supaEstoque.rpc('get_pratos_kpis', commonParams).then(res => res.data[0]),
+          supaEstoque.rpc('get_pratos_dow_chart', commonParams),
+          supaEstoque.rpc('get_pratos_top10_chart', commonParams).then(res => res.data)
+      ]);
+
+      if (kpisResult.status === 'fulfilled' && kpisResult.value) {
+        updateKPIs(kpisResult.value, len);
+      }
+      if (dowResult.status === 'fulfilled' && dowResult.value.data) {
+        updateDowChart(dowResult.value.data, len);
+      }
+      if (top10Result.status === 'fulfilled' && top10Result.value) {
+        updateTop10Chart(top10Result.value);
+      }
+      
+      updateMonthChart(ate);
+
+    } catch (e) { console.error("Erro no applyAll:", e); }
+  }
+
+  /* ===================== INICIALIZAÇÃO E CONTROLES DA UI ===================== */
+  async function reloadFilterOptions() {
+    const [unids, cats, pratos] = await Promise.all([
+      supaEstoque.from('vendas_pratos_unidades').select('unidade'),
+      supaEstoque.from('vendas_pratos_categorias').select('categoria'),
+      supaEstoque.from('vendas_pratos_pratos').select('prato')
+    ]);
+    ms.unids.setOptions((unids.data?.map(r => r.unidade) || []).filter(Boolean));
+    ms.cats.setOptions(cats.data?.map(r => r.categoria).filter(c => c !== null) || []);
+    ms.pratos.setOptions(pratos.data?.map(r => r.prato).filter(p => p !== null) || []);
+  }
+
+  async function init() {
+    try {
+      console.info('[Status] [info]: Inicializando aplicação...');
+      const { data, error } = await supaEstoque.from('vendas_pratos_daterange').select('max_data').limit(1);
+      if (error) throw error;
+      lastDay = (data?.length && data[0].max_data) ? data[0].max_data : getTodayISO();
+      await reloadFilterOptions();
+      
+      document.dispatchEvent(new Event('filters:init'));
+      console.info('[Status] [ok]: Dados atualizados.');
+
+    } catch (e) { console.error(e); }
+  }
+  
+  function exportDowDataConsolidated() {
+    if (!dowChartAverageData.labels || dowChartAverageData.labels.length === 0) {
+        alert("Não há dados de média para exportar.");
+        return;
+    }
+    let csvContent = "Dia da Semana;Média Atual;Média Anterior\n";
+    const dowLabels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+    dowChartAverageData.labels.forEach((label, index) => {
+        const row = [
+            dowLabels[index],
+            dowChartAverageData.current[index],
+            dowChartAverageData.previous[index]
+        ].join(";");
+        csvContent += row + "\n";
+    });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "media_semanal_consolidada.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    $('exportModal').classList.remove('modal-show');
+  }
+
+  async function exportDowDataByPlate() {
+    const btn = $('btnExportDow');
+    const iconDownload = $('iconDownload');
+    const iconSpinner = $('iconSpinner');
+    
+    $('exportModal').classList.remove('modal-show');
+    btn.disabled = true;
+    iconDownload.style.display = 'none';
+    iconSpinner.style.display = 'block';
+
+    try {
+        const de = $('fxDuStart').value;
+        const ate = $('fxDuEnd').value;
+        if (!de || !ate) {
+            alert("Por favor, selecione um período de datas.");
+            return;
+        }
+        
+        const len = daysLen(de, ate);
+        const commonParams = {
+            de_iso: de,
+            ate_iso: ate,
+            unids_filter: ms.unids.get().length > 0 ? ms.unids.get() : null,
+            cats_filter: ms.cats.get().length > 0 ? ms.cats.get() : null,
+            pratos_filter: ms.pratos.get().length > 0 ? ms.pratos.get() : null,
+            is_pratos_only: $('onlyPratos').checked
+        };
+        const { data, error } = await supaEstoque.rpc('get_pratos_dow_export_data', commonParams);
+        
+        if (error) throw error;
+        if (!data || data.length === 0) {
+            alert("Nenhum dado encontrado para exportar com os filtros selecionados.");
+            return;
+        }
+
+        const occNow = Array(7).fill(0);
+        let d = new Date(de + 'T12:00:00Z');
+        const end = new Date(ate + 'T12:00:00Z');
+        while (d <= end) { occNow[d.getUTCDay()]++; d.setUTCDate(d.getUTCDate() + 1); }
+
+        const occPrev = Array(7).fill(0);
+        d = new Date(de + 'T12:00:00Z');
+        d.setUTCDate(d.getUTCDate() - len);
+        const endPrev = new Date(d);
+        endPrev.setUTCDate(d.getUTCDate() + len - 1);
+        while (d <= endPrev) { occPrev[d.getUTCDay()]++; d.setUTCDate(d.getUTCDate() + 1); }
+
+        const resultsByPlate = {};
+        data.forEach(row => {
+            if (!resultsByPlate[row.prato]) {
+                resultsByPlate[row.prato] = {
+                    currentAvg: Array(7).fill(0),
+                    previousAvg: Array(7).fill(0)
+                };
+            }
+            resultsByPlate[row.prato].currentAvg[row.dow] = occNow[row.dow] > 0 ? Math.round(row.current / occNow[row.dow]) : 0;
+            resultsByPlate[row.prato].previousAvg[row.dow] = occPrev[row.dow] > 0 ? Math.round(row.previous / occPrev[row.dow]) : 0;
+        });
+
+        let csvContent = "Prato;Dia da Semana;Média Atual;Média Anterior\n";
+        const dowLabels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+        Object.keys(resultsByPlate).sort().forEach(plateName => {
+            for (let i = 0; i < 7; i++) {
+                const row = [ `"${plateName.replace(/"/g, '""')}"`, dowLabels[i], resultsByPlate[plateName].currentAvg[i], resultsByPlate[plateName].previousAvg[i] ].join(';');
+                csvContent += row + '\n';
+            }
+        });
+        
+        const selectedPlates = ms.pratos.get();
+        let filename = "media_semanal_";
+        if (selectedPlates.length === 0) {
+            filename += "Todos_Pratos.csv";
+        } else if (selectedPlates.length === 1) {
+            filename += selectedPlates[0].replace(/[^a-z0-9]/gi, '_') + ".csv";
+        } else {
+            filename += "Varios_Pratos.csv";
+        }
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+    } catch (err) {
+        console.error("Erro ao exportar dados:", err);
+        alert("Falha ao exportar os dados: " + err.message);
+    } finally {
+        btn.disabled = false;
+        iconDownload.style.display = 'block';
+        iconSpinner.style.display = 'none';
+    }
+}
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const fx = {
+      $drop: $('fxDropup'), $btnMore: $('fxBtnMore'), $btnReset: $('fxBtnReset'),
+      $start: $('fxDuStart'), $end: $('fxDuEnd'),
+      $days: $('fxDuQuickDays'), $chips: $('fxQuickChips')
+    };
+
+    function fxFmt(date){ return date.toISOString().split('T')[0]; }
+    function fxSetRange(start,end){ fx.$start.value = fxFmt(start); fx.$end.value = fxFmt(end); }
+    
+    function fxSetToLastMonthWithData(baseDateStr) {
+        if (!baseDateStr || baseDateStr.startsWith('1970')) return fxLastNDays(30);
+        const baseDate = new Date(baseDateStr + 'T12:00:00Z');
+        const year = baseDate.getUTCFullYear();
+        const month = baseDate.getUTCMonth();
+        
+        const start = new Date(Date.UTC(year, month, 1));
+        const end = new Date(Date.UTC(year, month + 1, 0));
+        
+        fxSetRange(start, end);
+        [...fx.$chips.children, ...fx.$days.children].forEach(b => b.classList.remove('active'));
+    }
+
+    function setNamedPeriod(win) {
+        const baseDate = new Date(lastDay + 'T12:00:00Z');
+        let start, end;
+        if (win === 'today') { start = end = baseDate; } 
+        else if (win === 'yesterday') {
+            start = new Date(baseDate);
+            start.setUTCDate(baseDate.getUTCDate() - 1);
+            end = start;
+        } else if (win === 'lastMonth') {
+            start = new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth() - 1, 1));
+            end = new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), 0));
+        } else if (win === 'lastYear') {
+            const y = baseDate.getUTCFullYear() - 1;
+            start = new Date(Date.UTC(y, 0, 1));
+            end = new Date(Date.UTC(y, 11, 31));
+        }
+        if (start && end) { fxSetRange(start, end); fxDispatchApply(); }
+    }
+    
+    function fxLastNDays(n){
+      const end = new Date(lastDay + 'T12:00:00Z');
+      const start = new Date(end);
+      start.setUTCDate(end.getUTCDate() - (n - 1));
+      fxSetRange(start, end);
+    }
+
+    function fxShowDrop(show){
+      fx.$drop.classList.toggle('fx-show', show);
+      fx.$btnMore.setAttribute('aria-expanded', show?'true':'false');
+      if(show) fx.$start?.focus();
+    }
+    
+    fx.$btnMore.addEventListener('click', ()=> fxShowDrop(!fx.$drop.classList.contains('fx-show')));
+    document.addEventListener('click', (e)=>{ if(!fx.$drop.classList.contains('fx-show')) return; if(!(fx.$drop.contains(e.target) || fx.$btnMore.contains(e.target))) fxShowDrop(false); });
+    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && fx.$drop.classList.contains('fx-show')) fxShowDrop(false) });
+    
+    const clearActiveChips = () => [...fx.$chips.children, ...fx.$days.children].forEach(b => b.classList.remove('active'));
+
+    fx.$chips.addEventListener('click', e => {
+        const btn = e.target.closest('button'); if (!btn) return;
+        clearActiveChips();
+        btn.classList.add('active');
+        setNamedPeriod(btn.dataset.win);
+    });
+    fx.$start.addEventListener('change', () => { clearActiveChips(); fxDispatchApply(); });
+    fx.$end.addEventListener('change', () => { clearActiveChips(); fxDispatchApply(); });
+    fx.$days.addEventListener('click', (e)=>{
+      const b=e.target.closest('button'); if(!b) return;
+      clearActiveChips();
+      b.classList.add('active');
+      const n=parseInt(b.dataset.win,10); 
+      if(!isNaN(n)) { fxLastNDays(n); fxDispatchApply(); }
+    });
+    fx.$btnReset.addEventListener('click', ()=>{
+      Object.values(ms).forEach(m => m.clear());
+      $('onlyPratos').checked = false;
+      fxSetToLastMonthWithData(lastDay);
+      fxDispatchApply();
+    });
+
+    document.addEventListener('filters:apply', (e) => { if(e.detail) { applyAll(e.detail); } });
+    
+    document.addEventListener('filters:init', () => {
+        fxSetToLastMonthWithData(lastDay);
+        fxDispatchApply();
+    });
+
+    $('btnExportDow').addEventListener('click', () => { $('exportModal').classList.add('modal-show'); });
+    $('btnExportCancel').addEventListener('click', () => { $('exportModal').classList.remove('modal-show'); });
+    $('exportModal').addEventListener('click', (e) => { if (e.target.id === 'exportModal') { $('exportModal').classList.remove('modal-show'); } });
+    $('btnExportSeparated').addEventListener('click', exportDowDataByPlate);
+    $('btnExportConsolidated').addEventListener('click', exportDowDataConsolidated);
+
+    init();
+  });
+  
+  // ===================== LÓGICA DE UPLOAD =====================
+  $('btnUpload').addEventListener('click', () => $('fileExcel').click());
+  $('fileExcel').addEventListener('change', async (ev) => {
+    const file = ev.target.files[0];
+    if (!file) return;
+    
+    const btn = $('btnUpload');
+    btn.textContent = 'Importando...';
+    btn.disabled = true;
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      
+      const json_data = XLSX.utils.sheet_to_json(worksheet, { raw: true, defval: null });
+
+      if (json_data.length === 0) throw new Error("O arquivo está vazio ou em um formato inválido.");
+      
+      const headers = Object.keys(json_data[0]);
+      const findHeader = (possibleNames) => {
+          for (const name of possibleNames) {
+              const found = headers.find(h => h.toLowerCase().trim() === name);
+              if (found) return found;
+          }
+          return null;
+      };
+
+      const dateKey = findHeader(['data', 'data da venda']);
+      const unitKey = findHeader(['unidade']);
+      const dishKey = findHeader(['prato']);
+      const categoryKey = findHeader(['categoria']);
+      const quantityKey = findHeader(['quantidade_vendida', 'quantidade', 'qtd']);
+
+      if (!dateKey) throw new Error(`Coluna de data não encontrada. Verifique se seu arquivo possui a coluna 'data' ou 'data da venda'.`);
+      if (!quantityKey) throw new Error(`Coluna de quantidade não encontrada. Verifique se seu arquivo possui a coluna 'quantidade' ou 'quantidade_vendida'.`);
+      
+      const parseDate = (dateValue) => {
+        // 1. Mantém a lógica para números (datas seriais do Excel), que já funciona
+        if (typeof dateValue === 'number' && dateValue > 0) {
+            // A data base para o Excel é 30/12/1899, por isso a soma
+            const d = new Date(Date.UTC(1899, 11, 30 + dateValue));
+            if (isNaN(d.getTime())) {
+                console.warn('Número de série de data do Excel inválido:', dateValue);
+                return null;
+            }
+            const year = d.getUTCFullYear();
+            const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(d.getUTCDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`; // Retorna no formato YYYY-MM-DD
+        }
+
+        // 2. Nova lógica para strings, forçando o formato DD/MM/YYYY
+        if (typeof dateValue === 'string') {
+            const trimmedDate = dateValue.trim();
+            // Tenta encontrar o padrão DD/MM/YYYY ou DD-MM-YYYY
+            const match = trimmedDate.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+
+            if (match) {
+                const day = parseInt(match[1], 10);
+                const month = parseInt(match[2], 10);
+                const year = parseInt(match[3], 10);
+
+                // Valida se os números fazem sentido (ex: mês entre 1 e 12)
+                if (year > 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+                    // Cria a data em UTC para evitar problemas de fuso horário
+                    const dateObj = new Date(Date.UTC(year, month - 1, day));
                     
-                    <div id="import-error-detail" class="import-error-box" style="display:none;">
-                        <strong>Erro na importação.</strong>
-                        <p id="import-error-message" style="margin: 5px 0;"></p>
-                        <div id="import-sql-fix" style="display: none;">
-                            <p style="margin: 5px 0;">Parece que a função necessária não existe no banco de dados (Erro 42883). Execute o seguinte SQL no seu ambiente Supabase (Editor SQL) para corrigir:</p>
-                            <pre>
-CREATE OR REPLACE FUNCTION get_unregistered_dishes()
-RETURNS TABLE(nome_prato TEXT, categoria_sugerida TEXT) AS $$
-BEGIN
-    RETURN QUERY
-    SELECT DISTINCT
-        vp.prato::TEXT AS nome_prato,
-        vp.categoria::TEXT AS categoria_sugerida
-    FROM
-        vendas_pratos vp
-    LEFT JOIN
-        pratos p ON LOWER(TRIM(p.nome)) = LOWER(TRIM(vp.prato))
-    WHERE
-        p.id IS NULL AND vp.prato IS NOT NULL
-    ORDER BY 
-        nome_prato;
-END;
-$$ LANGUAGE plpgsql;
-                            </pre>
-                        </div>
-                    </div>
+                    // Confirma que a data é válida (ex: evita 31 de Fev)
+                    if (dateObj.getUTCFullYear() === year && dateObj.getUTCMonth() === month - 1 && dateObj.getUTCDate() === day) {
+                        const isoYear = dateObj.getUTCFullYear();
+                        const isoMonth = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+                        const isoDay = String(dateObj.getUTCDate()).padStart(2, '0');
+                        return `${isoYear}-${isoMonth}-${isoDay}`; // Retorna no formato YYYY-MM-DD
+                    }
+                }
+            }
+        }
+        
+        console.warn('Formato de data não reconhecido ou inválido (esperado DD/MM/YYYY):', dateValue);
+        return null;
+      };
 
-                    <div id="import-loader" style="display:none; text-align: center; padding: 20px;">Carregando...</div>
-                    <div class="table-container" style="max-height: 250px; margin-bottom: 16px;">
-                        <table id="tblImportPratos">
-                            <thead><tr><th style="width: 40px;"><input type="checkbox" id="importCheckAll"></th><th>Nome do Prato</th><th>Categoria Sugerida</th></tr></thead>
-                            <tbody></tbody>
-                        </table>
-                    </div>
-                    <div class="right"><button class="btn" id="btnCancelImport">Cancelar</button><button class="btn pri" id="btnConfirmImport">Importar</button></div>
-                </div>
+      const dadosFormatados = json_data.map(linha => {
+        const dataValue = linha[dateKey];
+        if (dataValue === null || typeof dataValue === 'undefined') return null;
+        
+        const parsedDate = parseDate(dataValue);
+        if (!parsedDate) {
+          console.warn('Linha ignorada por data inválida:', linha);
+          return null;
+        }
 
-                <div class="editor-container" id="prato-editor-container">
-                    <h3 id="prato-form-title">Novo Prato</h3>
-                    <form id="form-prato">
-                        <input type="hidden" name="id">
-                        <div class="form-grid">
-                            <div><label>Nome</label><input name="nome" required></div>
-                            <div><label>Categoria</label><select name="categoria_id" id="prato-cat" required></select></div>
-                            <div><label>Código de Barras / QR</label><input name="codigo_barras"></div>
-                            <div><label>Peso/Volume</label><input name="peso_volume" type="number" step="0.01"></div>
-                            <div><label>Unidade</label><select name="unidade_peso_volume"><option>g</option><option>ml</option><option>un</option></select></div>
-                            <div><label>Preço Venda (R$)</label><input name="preco_venda" type="number" step="0.01"></div>
-                            <div class="form-span-col-2"><label>Descrição</label><textarea name="descricao" rows="2"></textarea></div>
-                            <div>
-                                <label><input type="checkbox" name="ativo" checked> Ativo</label>
-                            </div>
-                        </div>
-                        <div class="right"><button class="btn" type="button" id="btnCancelarPrato">Cancelar</button><button class="btn pri" type="submit">Salvar</button></div>
-                    </form>
-                </div>
-                <div class="table-container"><table id="tblPratos"><thead><tr><th>Nome</th><th>Categoria</th><th>Preço Venda</th><th>Cód. Barras</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
-            </div>
+        return {
+          data: parsedDate,
+          unidade: unitKey ? linha[unitKey] : null,
+          prato: dishKey ? linha[dishKey] : null,
+          categoria: categoryKey ? linha[categoryKey] : null,
+          quantidade: parseInt(linha[quantityKey], 10) || 0
+        };
+      }).filter(Boolean);
 
-            <div class="subpage" id="sub-componentes">
-                <div class="form-grid">
-                  <div><label>Selecione o Prato</label><select id="cp-prato"></select></div>
-                </div>
-                <div class="sep"></div>
-                <h4>Adicionar Nova Receita ao Prato</h4>
-                <div class="form-grid" style="grid-template-columns: 1fr 100px auto; align-items: end;">
-                    <div><label>Receita</label><select id="cp-receita"></select></div>
-                    <div><label>Qtd.</label><input type="number" id="cp-qtd" value="1" step="0.1"></div>
-                    <div><button class="btn pri" id="btnAddPrComp">Adicionar</button></div>
-                </div>
-                <div class="sep"></div>
-                <div class="table-container"><table id="tblPrComp"><thead><tr><th>Receita Componente</th><th>Quantidade</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
-            </div>
+      if (dadosFormatados.length === 0) throw new Error("Nenhuma linha com dados de data válidos foi encontrada no arquivo.");
 
-            <div class="subpage" id="sub-receitas">
-                <div class="right" style="margin-bottom:16px;"><button class="btn pri" id="btnShowNewRecipeForm">+ Nova Receita</button></div>
-                <div class="editor-container" id="recipe-editor-container">
-                    <h3 id="recipe-form-title">Nova Receita</h3>
-                    <form id="form-receita">
-                        <input type="hidden" name="id" id="rec-id">
-                        <div class="form-grid">
-                            <div><label>Nome da Receita</label><input name="nome" required></div>
-                            <div><label>Rendimento</label><input name="rendimento" type="number" step="0.01"></div>
-                            <div><label>Unidade Rendimento</label><input name="unidade_rendimento"></div>
-                            <div><label>Código de Barras / QR</label><input name="codigo_barras"></div>
-                            <div>
-                                <label><input type="checkbox" name="ativo" checked> Ativo</label>
-                            </div>
-                        </div>
-                    </form>
-                    <div class="sep"></div>
-                    <h4>Itens da Receita</h4>
-                    <div class="form-grid" style="grid-template-columns: 150px 1fr 100px 100px auto; align-items: end;">
-                        <div><label>Tipo</label><select id="draft-tipo"><option value="INGREDIENTE">Ingrediente</option><option value="RECEITA">Receita</option></select></div>
-                        <div><label>Item</label><select id="draft-ref"></select></div>
-                        <div><label>Qtd.</label><input type="number" id="draft-qtd" step="0.001"></div>
-                        <div><label>Unidade</label><select id="draft-und"></select></div>
-                        <div><button class="btn pri" id="btnDraftAdd">Adicionar</button></div>
-                    </div>
-                    <div class="table-container" style="margin-top: 16px;"><table id="tblDraft"><thead><tr><th>Tipo</th><th>Nome</th><th>Qtd</th><th>UN</th><th>Ação</th></tr></thead><tbody></tbody></table></div>
-                    <div class="right"><button class="btn" id="btnCancelRecEdit">Cancelar</button><button class="btn pri" form="form-receita" type="submit">Salvar Receita</button></div>
-                </div>
-                <div class="table-container"><table id="tblRec"><thead><tr><th>Nome</th><th>Rendimento</th><th>Cód. Barras</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
-            </div>
+      const CHUNK_SIZE = 500;
+      for (let i = 0; i < dadosFormatados.length; i += CHUNK_SIZE) {
+          const chunk = dadosFormatados.slice(i, i + CHUNK_SIZE);
+          const { error } = await supaEstoque.from('vendas_pratos').insert(chunk);
+          if (error) throw new Error(`Erro ao importar lote para o banco: ${error.message}`);
+      }
 
-            <div class="subpage" id="sub-ingredientes">
-                <div class="right" style="margin-bottom:16px;"><button class="btn pri" id="btnShowNewIngredienteForm">+ Novo Ingrediente</button></div>
-                <div class="editor-container" id="ingrediente-editor-container">
-                    <h3 id="ingrediente-form-title">Novo Ingrediente</h3>
-                    <form id="form-ingrediente">
-                        <input type="hidden" name="id">
-                        <div class="form-grid">
-                            <div><label>Nome</label><input name="nome" required></div>
-                            <div><label>Categoria</label><select name="categoria_id" id="ing-categoria"></select></div>
-                            <div><label>Código de Barras / QR</label><input name="codigo_barras"></div>
-                            <div><label>Unidade de Medida</label><select name="unidade_medida_id" id="ing-unidade-medida" required></select></div>
-                            <div><label>Custo Unitário (R$)</label><input name="custo_unitario" type="number" step="0.001"></div>
-                            <div><label>Local de Armazenagem</label><select name="local_armazenagem_id" id="ing-local-armazenagem"></select></div>
-                             <div>
-                                <label><input type="checkbox" name="ativo" checked> Ativo</label>
-                            </div>
-                        </div>
-                        <div class="right"><button class="btn" type="button" id="btnCancelIngEdit">Cancelar</button><button class="btn pri" type="submit">Salvar</button></div>
-                    </form>
-                </div>
-                <div class="table-container"><table id="tblIng"><thead><tr><th>Nome</th><th>Categoria</th><th>Unidade</th><th>Custo</th><th>Cód. Barras</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
-            </div>
+      alert(`Importação concluída! ${dadosFormatados.length} linhas inseridas.`);
+      window.location.reload();
 
-
-            <div class="subpage" id="sub-um">
-                </div>
-
-            <div class="subpage" id="sub-unidades">
-                </div>
-
-            <div class="subpage" id="sub-categorias">
-                </div>
-        </div>
-    </section>
-
-     <section class="tab-content" id="tab-producao">
-        </section>
-
-    <section class="tab-content" id="tab-compras">
-        </section>
-
-    <section class="tab-content" id="tab-estoque">
-        <nav class="subtabs" id="estoque-subtabs">
-            <button class="active" data-subtab="movimentar">Movimentar</button>
-            <button data-subtab="geral">Saldo Geral</button>
-            <button data-subtab="lotes">Saldo por Lotes</button>
-            <button data-subtab="historico">Histórico</button>
-        </nav>
-        <div class="subpage active" id="sub-movimentar">
-            <div class="section">
-                <h3>Registrar Movimentação</h3>
-
-                <div class="scanner-area">
-                    <button class="btn" id="btnOpenScanner">📷 Ler Item (Simulação)</button>
-                    <div class="scanner-input-group">
-                        <input type="text" id="scanner-input" placeholder="Ou digite o código de barras e pressione Enter">
-                        <button class="btn pri" id="btnLookupBarcode">Buscar</button>
-                    </div>
-                </div>
-                <div class="sep"></div>
-
-                <form id="form-movimentacao">
-                    <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
-                        <div><label>Tipo</label><select name="tipo" id="mov-tipo" required><option value="">Selecione</option><option value="ENTRADA">Entrada (Compra/Recebimento)</option><option value="SAIDA">Saída (Venda/Perda)</option><option value="PRODUCAO">Produção (Entrada de Item Produzido)</option><option value="TRANSFERENCIA">Transferência Interna</option><option value="AJUSTE">Ajuste de Saldo (Auditoria)</option></select></div>
-
-                        <div><label>Item</label><select name="item_id" id="mov-item" required></select></div>
-
-                        <div><label>Quantidade</label><input name="quantidade" id="mov-quantidade" type="number" step="0.001" required></div>
-                        
-                        <div id="field-custo"><label>Custo Unit. (R$)</label><input name="custo_unitario" type="number" step="0.001"></div>
-
-                        <div id="field-origem"><label>Unidade de Origem</label><select name="unidade_origem_id" id="mov-unidade-origem"></select></div>
-                        <div id="field-destino"><label>Unidade de Destino</label><select name="unidade_destino_id" id="mov-unidade-destino"></select></div>
-
-                        <div id="field-validade"><label>Data de Validade</label><input name="data_validade" type="date"></div>
-                        <div class="form-span-col-2"><label>Observação</label><textarea name="obs" rows="2"></textarea></div>
-                    </div>
-                    <div class="right"><button class="btn" type="button" id="btnMovCancel">Limpar</button><button class="btn pri" type="submit" id="frmMov">Registrar</button></div>
-                </form>
-            </div>
-        </div>
-        <div class="subpage" id="sub-geral"><div class="section"><div class="table-container"><table id="tblEstoqueGeral"><thead><tr><th>Item</th><th>Qtd Total</th><th>Unidade</th><th>Custo Médio</th></tr></thead><tbody></tbody></table></div></div></div>
-        <div class="subpage" id="sub-lotes"><div class="section"><div class="table-container"><table id="tblEstoqueLotes"><thead><tr><th>Item</th><th>Qtd</th><th>Unidade</th><th>Custo Unit.</th><th>Validade</th><th>Local</th></tr></thead><tbody></tbody></table></div></div></div>
-        <div class="subpage" id="sub-historico"><div class="section"><div class="table-container"><table id="tblHistorico"><thead><tr><th>Data/Hora</th><th>Tipo</th><th>Item</th><th>Qtd</th><th>Origem/Destino</th><th>Usuário</th><th>Obs</th></tr></thead><tbody></tbody></table></div></div></div>
-    </section>
-    </div>
-</main>
-
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="app.js?v=7.1"></script>
+    } catch (e) {
+      console.error(e);
+      alert(`Falha na importação: ${e.message}`);
+    } finally {
+      btn.textContent = 'Importar';
+      btn.disabled = false;
+      ev.target.value = '';
+    }
+  });
+  </script>
 </body>
 </html>
