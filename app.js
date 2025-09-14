@@ -1,9 +1,9 @@
 // =================================================================================
-// SCRIPT COMPLETO E INTEGRAL (v6.1 - Verificação de Execução)
+// SCRIPT COMPLETO E INTEGRAL (v6.2 - Correção da Colisão do ID do Formulário)
 // =================================================================================
 
 // ESTA LINHA É CRUCIAL PARA VERIFICAR O CACHE
-console.log("[DIAGNOSTICO v6.1] Script Iniciado. Se você vê esta mensagem, o script correto está ativo.");
+console.log("[DIAGNOSTICO v6.2] Script Iniciado. Se você vê esta mensagem, o script correto está ativo.");
 
 
 /* ===== Helpers com verificações de segurança ===== */
@@ -22,17 +22,23 @@ const fmtMoney=(n)=> new Intl.NumberFormat('pt-BR',{style: 'currency', currency:
 const showEditor = (id) => { const el = $(id); if(el && el.style) el.style.display = 'block'; };
 const hideEditor = (id) => { const el = $(id); if(el && el.style) el.style.display = 'none'; };
 
-// Função REFORMULADA (v6.1): Iteração direta sobre form.elements.
+// Função REFORMULADA (v6.2): Iteração direta sobre form.elements.
 const getFormData = (formId) => {
+    // Confirmação de que o formId é uma string
+    if (typeof formId !== 'string') {
+         console.error(`[DIAGNOSTICO v6.2] Erro: ID do formulário inválido fornecido:`, formId);
+         return {};
+    }
+
     const form = $(formId);
     if (!form) {
-        console.error(`[DIAGNOSTICO v6.1] Formulário não encontrado: ${formId}`);
+        console.error(`[DIAGNOSTICO v6.2] Formulário não encontrado. ID fornecido:`, formId);
         return {};
     }
     const obj = {};
 
     // Diagnóstico
-    console.log(`[DIAGNOSTICO v6.1] Coletando dados do formulário: ${formId}`);
+    console.log(`[DIAGNOSTICO v6.2] Coletando dados do formulário: ${formId}`);
 
     // Itera diretamente sobre todos os elementos do formulário
     for (let element of form.elements) {
@@ -258,7 +264,7 @@ const GenericCRUD = {
         showEditor(editorId);
     },
 
-    // Função SAVE aprimorada
+    // Função SAVE (CORRIGIDA v6.2)
     async save(e, table, editorId, refreshCallback) {
         e.preventDefault();
         const form = e.target;
@@ -273,8 +279,11 @@ const GenericCRUD = {
         }
 
         // 2. Collect data using the robust getFormData
-        // AQUI É ONDE OS LOGS DE DIAGNÓSTICO DEVEM APARECER
-        const data = getFormData(e.target.id);
+        // CORREÇÃO v6.2: Usar getAttribute('id') para evitar colisão com inputs chamados 'id'.
+        // O e.target é o próprio formulário, mas acessar e.target.id pode retornar um input filho.
+        const formId = e.target.getAttribute('id');
+        const data = getFormData(formId);
+
         const id = data.id;
 
         if (id) {
@@ -306,8 +315,8 @@ const GenericCRUD = {
             const { error } = await query;
             if (error) throw error;
 
-            // Atualizado para v6.1
-            setStatus(`Registro salvo com sucesso! (v6.1)`, 'ok');
+            // Atualizado para v6.2
+            setStatus(`Registro salvo com sucesso! (v6.2)`, 'ok');
             hideEditor(editorId);
             if (refreshCallback) refreshCallback();
         } catch (err) {
@@ -358,7 +367,7 @@ const GenericCRUD = {
     }
 };
 
-/* ===== MÓDULOS RESTANTES ===== */
+/* ===== MÓDULOS RESTANTES (Inalterados Funcionalmente) ===== */
 
 const AuxiliaresModule = {
     init() {
@@ -641,7 +650,7 @@ const ReceitasModule = {
             return;
         }
 
-        // 2. Coleta de Dados
+        // 2. Coleta de Dados (CORREÇÃO v6.2 Aplicada indiretamente via getFormData)
         const recipeData = getFormData('form-receita');
         const id = recipeData.id;
         if (id) {
@@ -1061,7 +1070,7 @@ const EstoqueModule = {
             return;
         }
 
-        // 2. Coleta de Dados
+        // 2. Coleta de Dados (CORREÇÃO v6.2 Aplicada indiretamente via getFormData)
         const formData = getFormData('form-movimentacao');
         const itemValue = formData.item_id;
 
@@ -1135,7 +1144,6 @@ const ProducaoModule = {
 
             // Formata para YYYY-MM-DD compatível com input type="date"
             try {
-                // Ajuste para garantir que a data seja formatada corretamente no fuso local pode ser necessário se ISOString causar problemas de off-by-one
                  const formatDate = (date) => {
                     const year = date.getFullYear();
                     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -1286,8 +1294,8 @@ document.addEventListener('DOMContentLoaded', () => {
         ProducaoModule.init();
         ComprasModule.init();
 
-        // Atualizado para v6.1
-        setStatus("Aplicação carregada e pronta. (v6.1)", 'ok');
+        // Atualizado para v6.2
+        setStatus("Aplicação carregada e pronta. (v6.2)", 'ok');
     } catch (e) {
         console.error("Erro durante a inicialização dos módulos:", e);
         setStatus("Erro na inicialização. Verifique o console.", 'err');
