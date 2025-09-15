@@ -1,8 +1,8 @@
-xv// =================================================================================
-// SCRIPT DE DIAGNÓSTICO (v8.5-diag) - NÃO É A CORREÇÃO FINAL
+// =================================================================================
+// SCRIPT COMPLETO E INTEGRAL (v8.4 - Correção na Coleta de Dados do Formulário)
 // =================================================================================
 
-console.log("[DIAGNOSTICO v8.5-diag] Script de diagnóstico iniciado.");
+console.log("[DIAGNOSTICO v8.4] Script Iniciado. Versão com correção de getFormData.");
 
 /* ===== Helpers com verificações de segurança ===== */
 const $  = (id)=> document.getElementById(id);
@@ -21,29 +21,24 @@ const showEditor = (id) => { const el = $(id); if(el && el.style) el.style.displ
 const hideEditor = (id) => { const el = $(id); if(el && el.style) el.style.display = 'none'; };
 
 // ================================================================================
-// >>>>> FUNÇÃO getFormData COM LOGS DE DIAGNÓSTICO <<<<<
+// >>>>> FUNÇÃO CORRIGIDA <<<<<
+// Esta versão é mais robusta e lê os valores diretamente dos elementos do formulário.
 // ================================================================================
 const getFormData = (formId) => {
-    console.log(`%c[DIAGNOSTICO] Iniciando getFormData para o form: #${formId}`, 'color: blue; font-weight: bold;');
     const form = $(formId);
-    if (!form) {
-        console.error(`[DIAGNOSTICO] ERRO CRÍTICO: Formulário #${formId} não foi encontrado no HTML!`);
-        return {};
-    }
+    if (!form) return {};
     const obj = {};
-    console.log(`[DIAGNOSTICO] Formulário encontrado. Iterando sobre ${form.elements.length} elementos.`);
 
     for (let element of form.elements) {
+        // Ignora elementos sem nome ou que não devem ser submetidos
         if (!element.name || ['submit', 'button', 'fieldset', 'reset'].includes(element.type)) {
             continue;
         }
 
-        // Log detalhado de cada elemento que está sendo processado
-        console.log(`[DIAGNOSTICO] -> Processando: name="${element.name}", type="${element.type}", value="${element.value}"`);
-
         if (element.type === 'checkbox') {
             obj[element.name] = element.checked;
         } else if (element.type === 'number' || element.dataset.type === 'number') {
+            // Garante que o valor seja um número ou nulo se o campo estiver vazio
             if (element.value === "" || element.value === null) {
                 obj[element.name] = null;
             } else {
@@ -55,15 +50,16 @@ const getFormData = (formId) => {
                 obj[element.name] = element.value;
             }
         } else {
+            // Para todos os outros tipos (text, select, date, etc.)
+            // Garante que o valor seja nulo se o campo estiver vazio
             obj[element.name] = element.value === "" ? null : element.value;
         }
     }
     
+    // Trata o campo 'id' separadamente
     if (obj.hasOwnProperty('id') && (obj.id === "" || obj.id === null)) {
         delete obj.id;
     }
-
-    console.log('%c[DIAGNOSTICO] Objeto de dados final coletado:', 'color: green; font-weight: bold;', obj);
     return obj;
 };
 
@@ -666,7 +662,7 @@ const PratosModule = {
         const btnConfirm = $('btnConfirmImport');
         if (!tbody || !btnConfirm) return;
         tbody.innerHTML = '';
-        if (loader) showEditor('import-loader');
+        if(loader) showEditor('import-loader');
         $('importCheckAll').checked = false;
         btnConfirm.disabled = true;
         try {
