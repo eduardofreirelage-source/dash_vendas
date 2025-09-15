@@ -1,8 +1,8 @@
 // =================================================================================
-// SCRIPT COMPLETO E INTEGRAL (v8.3 - Módulos Completamente Restaurados)
+// SCRIPT COMPLETO E INTEGRAL (v8.4 - Correção na Coleta de Dados do Formulário)
 // =================================================================================
 
-console.log("[DIAGNOSTICO v8.3] Script Iniciado. Versão Completa e Funcional.");
+console.log("[DIAGNOSTICO v8.4] Script Iniciado. Versão com correção de getFormData.");
 
 /* ===== Helpers com verificações de segurança ===== */
 const $  = (id)=> document.getElementById(id);
@@ -20,31 +20,49 @@ const fmtMoney=(n)=> new Intl.NumberFormat('pt-BR',{style: 'currency', currency:
 const showEditor = (id) => { const el = $(id); if(el && el.style) el.style.display = 'block'; };
 const hideEditor = (id) => { const el = $(id); if(el && el.style) el.style.display = 'none'; };
 
+// ================================================================================
+// >>>>> FUNÇÃO CORRIGIDA <<<<<
+// Esta versão é mais robusta e lê os valores diretamente dos elementos do formulário.
+// ================================================================================
 const getFormData = (formId) => {
     const form = $(formId);
     if (!form) return {};
-    const data = new FormData(form);
     const obj = {};
+
     for (let element of form.elements) {
-        if (element.name) {
-            if (element.type === 'checkbox') {
-                obj[element.name] = element.checked;
-            } else if (element.type === 'number' || element.dataset.type === 'number') {
-                obj[element.name] = element.value ? parseFloat(element.value) : null;
-            } else if (data.has(element.name)) {
-                const value = data.get(element.name);
-                obj[element.name] = value || null;
+        // Ignora elementos sem nome ou que não devem ser submetidos
+        if (!element.name || ['submit', 'button', 'fieldset', 'reset'].includes(element.type)) {
+            continue;
+        }
+
+        if (element.type === 'checkbox') {
+            obj[element.name] = element.checked;
+        } else if (element.type === 'number' || element.dataset.type === 'number') {
+            // Garante que o valor seja um número ou nulo se o campo estiver vazio
+            if (element.value === "" || element.value === null) {
+                obj[element.name] = null;
+            } else {
+                const numVal = parseFloat(element.value);
+                obj[element.name] = isNaN(numVal) ? null : numVal;
             }
+        } else if (element.type === 'radio') {
+            if (element.checked) {
+                obj[element.name] = element.value;
+            }
+        } else {
+            // Para todos os outros tipos (text, select, date, etc.)
+            // Garante que o valor seja nulo se o campo estiver vazio
+            obj[element.name] = element.value === "" ? null : element.value;
         }
     }
-    const idInput = form.querySelector('input[name="id"]');
-    if (idInput && idInput.value) {
-        obj.id = idInput.value;
-    } else {
+    
+    // Trata o campo 'id' separadamente
+    if (obj.hasOwnProperty('id') && (obj.id === "" || obj.id === null)) {
         delete obj.id;
     }
     return obj;
 };
+
 
 /* ===================== CONFIGURAÇÃO DA API ===================== */
 const SUPABASE_URL  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
@@ -212,7 +230,8 @@ const GenericCRUD = {
         }
         const data = getFormData(e.target.id);
         const id = data.id;
-        delete data.id;
+        if (id) delete data.id;
+
         setStatus(`Salvando...`);
         try {
             const { error } = id ? await supa.from(table).update(data).eq('id', id) : await supa.from(table).insert([data]);
@@ -457,7 +476,8 @@ const ReceitasModule = {
         e.preventDefault();
         const recipeData = getFormData('form-receita');
         const id = recipeData.id;
-        delete recipeData.id;
+        if (id) delete recipeData.id;
+
         if (this.draftItems.length === 0) {
             return setStatus('Adicione pelo menos um item à receita antes de salvar.', 'err');
         }
@@ -673,7 +693,7 @@ const PratosModule = {
             setStatus(`Erro ao buscar pratos. Verifique os detalhes.`, 'err');
             tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color: var(--down);">Falha ao carregar. Verifique a caixa de erro.</td></tr>`;
         } finally {
-            hideEditor('import-loader');
+            if (loader) hideEditor('import-loader');
         }
     },
     async confirmImport() {
@@ -917,7 +937,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     setupRouting();
     try {
-        // CORREÇÃO: Todos os módulos agora são inicializados
         AuxiliaresModule.init();
         IngredientesModule.init();
         ReceitasModule.init();
