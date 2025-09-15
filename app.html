@@ -5,343 +5,12 @@
     <meta content="width=device-width,initial-scale=1" name="viewport"/>
     <title>Mapa de Produção</title>
     <link href='data:image/svg+xml,&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"&gt;&lt;rect x="0" y="0" width="128" height="128" rx="22" fill="%237b1e3a"/&gt;&lt;text x="64" y="78" text-anchor="middle" font-family="Arial" font-size="56" fill="white"&gt;MP&lt;/text&gt;&lt;/svg&gt;' rel="icon"/>
-    <link rel="stylesheet" href="estoque_styles.css?v=7.1">
+    <link rel="stylesheet" href="estoque_styles.css?v=8.0">
 </head>
 <body>
 <main class="main">
-    <div class="top">
-        <div class="brand">
-            <div class="logo">MP</div>
-            <div>
-                <h1 style="font-size:18px; margin:0; line-height:1.2">Mapa de Produção</h1>
-                <div class="hint" style="margin:0;">Ficha técnica, previsão e compras</div>
-            </div>
-        </div>
-        <nav class="tabs" id="main-tabs">
-            <button class="active" data-tab="cadastros">Cadastros</button>
-            <button data-tab="producao">Produção</button>
-            <button data-tab="compras">Compras</button>
-            <button data-tab="estoque">Estoque</button>
-        </nav>
-        <div class="status-bar">
-            <div id="status">Carregando…</div>
-        </div>
-    </div>
-
     <div class="content-wrap">
     
-    <section class="tab-content active" id="tab-cadastros">
-        <div class="section" id="section-cadastros">
-            <nav class="subtabs" id="cadastro-subtabs">
-                <button class="active" data-subtab="pratos">Pratos</button>
-                <button data-subtab="componentes">Componentes</button>
-                <button data-subtab="receitas">Receitas</button>
-                <button data-subtab="ingredientes">Ingredientes</button>
-                <button class="chip" data-subtab="um">Unidades de Medida</button>
-                <button class="chip" data-subtab="unidades">Locais/Unidades</button>
-                <button class="chip" data-subtab="categorias">Categorias</button>
-            </nav>
-
-            <div class="subpage active" id="sub-pratos">
-                <div class="actions-bar">
-                    <h2>Pratos</h2>
-                    <div class="right" style="margin-top: 0;">
-                        <button class="btn" id="btnImportarPratos">🔄 Importar do Dashboard</button>
-                        <button class="btn pri" id="btnNovoPrato">+ Novo prato</button>
-                    </div>
-                </div>
-
-                <div class="editor-container" id="prato-import-container">
-                    <h3>Importar Pratos das Vendas</h3>
-                    <p class="hint">Pratos encontrados nas vendas mas não cadastrados no estoque.</p>
-                    
-                    <div id="import-error-detail" class="import-error-box" style="display:none;">
-                        <strong>Atenção: Erro ao buscar dados.</strong>
-                        <p id="import-error-message" style="margin: 5px 0;"></p>
-                        <div id="import-sql-fix" style="display: none;">
-                            <p style="margin: 10px 0; font-weight: 600;">Parece que a função necessária não existe no banco de dados (Erro 42883). Execute o seguinte SQL no seu ambiente Supabase (Editor SQL) para corrigir:</p>
-                            <pre>
-CREATE OR REPLACE FUNCTION get_unregistered_dishes()
-RETURNS TABLE(nome_prato TEXT, categoria_sugerida TEXT) AS $$
-BEGIN
-    RETURN QUERY
-    SELECT DISTINCT
-        vp.prato::TEXT AS nome_prato,
-        vp.categoria::TEXT AS categoria_sugerida
-    FROM
-        vendas_pratos vp
-    LEFT JOIN
-        pratos p ON LOWER(TRIM(p.nome)) = LOWER(TRIM(vp.prato))
-    WHERE
-        p.id IS NULL AND vp.prato IS NOT NULL
-    ORDER BY 
-        nome_prato;
-EXCEPTION
-    WHEN undefined_table THEN
-        RAISE NOTICE 'Tabela vendas_pratos não encontrada.';
-        RETURN;
-END;
-$$ LANGUAGE plpgsql;
-                            </pre>
-                        </div>
-                    </div>
-
-                    <div id="import-loader" style="display:none; text-align: center; padding: 20px;">Carregando...</div>
-                    <div class="table-container" style="max-height: 250px; margin-bottom: 16px;">
-                        <table id="tblImportPratos">
-                            <thead><tr><th style="width: 40px;"><input type="checkbox" id="importCheckAll"></th><th>Nome do Prato</th><th>Categoria Sugerida</th></tr></thead>
-                            <tbody></tbody>
-                        </table>
-                    </div>
-                    <div class="right"><button class="btn" id="btnCancelImport">Cancelar</button><button class="btn pri" id="btnConfirmImport" disabled>Importar Selecionados</button></div>
-                </div>
-
-                <div class="editor-container" id="prato-editor-container">
-                    <h3 id="prato-form-title">Novo Prato</h3>
-                    <form id="form-prato">
-                        <input type="hidden" name="id">
-                        <div class="form-grid">
-                            <div><label>Nome *</label><input name="nome" required></div>
-                            <div><label>Categoria *</label><select name="categoria_id" id="prato-cat" required></select></div>
-                            <div><label>Código de Barras / QR</label><input name="codigo_barras"></div>
-                            <div><label>Peso/Volume</label><input name="peso_volume" type="number" step="0.01" data-type="number"></div>
-                            <div><label>Unidade</label><select name="unidade_peso_volume"><option value="g">g</option><option value="ml">ml</option><option value="un">un</option></select></div>
-                            <div><label>Preço Venda (R$)</label><input name="preco_venda" type="number" step="0.01" data-type="number"></div>
-                            <div class="form-span-col-2"><label>Descrição</label><textarea name="descricao" rows="2"></textarea></div>
-                            <div>
-                                <label><input type="checkbox" name="ativo" checked> Ativo</label>
-                            </div>
-                        </div>
-                        <div class="right"><button class="btn" type="button" id="btnCancelarPrato">Cancelar</button><button class="btn pri" type="submit">Salvar</button></div>
-                    </form>
-                </div>
-                <div class="table-container"><table id="tblPratos"><thead><tr><th>Nome</th><th>Categoria</th><th>Preço Venda</th><th>Total Receitas</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
-            </div>
-
-            <div class="subpage" id="sub-componentes">
-                <div class="actions-bar">
-                    <h2>Associação de Receitas (Componentes)</h2>
-                </div>
-                <div class="form-grid">
-                  <div><label>Selecione o Prato para Gerenciar</label><select id="cp-prato"></select></div>
-                </div>
-                <div class="sep"></div>
-                <h4>Adicionar Nova Receita ao Prato</h4>
-                <div class="form-grid" style="grid-template-columns: 1fr 100px auto; align-items: end;">
-                    <div><label>Receita</label><select id="cp-receita"></select></div>
-                    <div><label>Qtd.</label><input type="number" id="cp-qtd" value="1" step="0.1"></div>
-                    <div><button class="btn pri" id="btnAddPrComp">Adicionar</button></div>
-                </div>
-                <div class="sep"></div>
-                <h4>Receitas Associadas</h4>
-                <div class="table-container"><table id="tblPrComp"><thead><tr><th>Receita Componente</th><th>Quantidade</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
-            </div>
-
-            <div class="subpage" id="sub-receitas">
-                <div class="actions-bar">
-                    <h2>Fichas Técnicas (Receitas)</h2>
-                    <div class="right" style="margin-top: 0;"><button class="btn pri" id="btnShowNewRecipeForm">+ Nova Receita</button></div>
-                </div>
-                
-                <div class="editor-container" id="recipe-editor-container">
-                    <h3 id="recipe-form-title">Nova Receita</h3>
-                    <form id="form-receita">
-                        <input type="hidden" name="id" id="rec-id">
-                        <div class="form-grid">
-                            <div><label>Nome da Receita *</label><input name="nome" required></div>
-                            <div><label>Rendimento</label><input name="rendimento" type="number" step="0.01" data-type="number"></div>
-                            <div><label>Unidade Rendimento</label><input name="unidade_rendimento"></div>
-                            <div><label>Código de Barras / QR</label><input name="codigo_barras"></div>
-                            <div>
-                                <label><input type="checkbox" name="ativo" checked> Ativo</label>
-                            </div>
-                        </div>
-                    </form>
-                    <div class="sep"></div>
-                    <h4>Itens da Receita (Composição)</h4>
-                    <div class="form-grid" style="grid-template-columns: 150px 1fr 100px 100px auto; align-items: end;">
-                        <div><label>Tipo</label><select id="draft-tipo"><option value="INGREDIENTE">Ingrediente</option><option value="RECEITA">Receita</option></select></div>
-                        <div><label>Item</label><select id="draft-ref"></select></div>
-                        <div><label>Qtd.</label><input type="number" id="draft-qtd" step="0.001"></div>
-                        <div><label>Unidade</label><select id="draft-und"></select></div>
-                        <div><button class="btn pri" id="btnDraftAdd">Adicionar</button></div>
-                    </div>
-                    <div class="table-container" style="margin-top: 16px;"><table id="tblDraft"><thead><tr><th>Tipo</th><th>Nome</th><th>Qtd</th><th>UN</th><th>Ação</th></tr></thead><tbody></tbody></table></div>
-                    <div class="right"><button class="btn" id="btnCancelRecEdit">Cancelar</button><button class="btn pri" form="form-receita" type="submit">Salvar Receita</button></div>
-                </div>
-                <div class="table-container"><table id="tblRec"><thead><tr><th>Nome</th><th>Rendimento</th><th>Total Itens</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
-            </div>
-
-            <div class="subpage" id="sub-ingredientes">
-                <div class="actions-bar">
-                    <h2>Ingredientes</h2>
-                    <div class="right" style="margin-top: 0;"><button class="btn pri" id="btnShowNewIngredienteForm">+ Novo Ingrediente</button></div>
-                </div>
-
-                <div class="editor-container" id="ingrediente-editor-container">
-                    <h3 id="ingrediente-form-title">Novo Ingrediente</h3>
-                    <form id="form-ingrediente">
-                        <input type="hidden" name="id">
-                        <div class="form-grid">
-                            <div><label>Nome *</label><input name="nome" required></div>
-                            <div><label>Categoria</label><select name="categoria_id" id="ing-categoria"></select></div>
-                            <div><label>Código de Barras / QR</label><input name="codigo_barras"></div>
-                            <div><label>Unidade de Medida *</label><select name="unidade_medida_id" id="ing-unidade-medida" required></select></div>
-                            <div><label>Custo Unitário (R$)</label><input name="custo_unitario" type="number" step="0.001" data-type="number"></div>
-                            <div><label>Ponto de Pedido (Estoque Mín.)</label><input name="ponto_pedido" type="number" step="0.001" data-type="number"></div>
-                            <div><label>Último Fornecedor</label><input name="ultimo_fornecedor"></div>
-                             <div>
-                                <label><input type="checkbox" name="ativo" checked> Ativo</label>
-                            </div>
-                        </div>
-                        <div class="right"><button class="btn" type="button" id="btnCancelIngEdit">Cancelar</button><button class="btn pri" type="submit">Salvar</button></div>
-                    </form>
-                </div>
-                <div class="table-container"><table id="tblIng"><thead><tr><th>Nome</th><th>Categoria</th><th>Unidade</th><th>Custo Unit.</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
-            </div>
-
-            <div class="subpage" id="sub-um">
-                <div class="actions-bar">
-                    <h2>Unidades de Medida</h2>
-                    <div class="right" style="margin-top: 0;">
-                        <button class="btn pri" id="btnShowNewUmForm">+ Nova UM</button>
-                    </div>
-                </div>
-                <div class="editor-container" id="um-editor-container">
-                    <h3 id="um-form-title">Nova Unidade de Medida</h3>
-                    <form id="form-um">
-                        <input type="hidden" name="id">
-                        <div class="form-grid">
-                            <div><label>Sigla (Ex: KG, L) *</label><input name="sigla" required maxlength="10"></div>
-                            <div><label>Nome (Ex: Quilograma)</label><input name="nome"></div>
-                            <div><label>Base (Opcional)</label><input name="base" maxlength="10"></div>
-                            <div><label>Fator de Conversão</label><input name="fator" type="number" step="0.0001" data-type="number" value="1"></div>
-                            <div>
-                                <label><input type="checkbox" name="ativo" checked> Ativo</label>
-                            </div>
-                        </div>
-                        <div class="right"><button class="btn" type="button" id="btnCancelUmEdit">Cancelar</button><button class="btn pri" type="submit">Salvar</button></div>
-                    </form>
-                </div>
-                <div class="table-container"><table id="tbl-um"><thead><tr><th>Sigla</th><th>Nome</th><th>Base</th><th>Fator</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
-            </div>
-
-            <div class="subpage" id="sub-unidades">
-                 <div class="actions-bar">
-                    <h2>Locais de Armazenagem / Unidades</h2>
-                    <div class="right" style="margin-top: 0;">
-                        <button class="btn pri" id="btnShowNewUnidadesForm">+ Novo Local</button>
-                    </div>
-                </div>
-                <div class="editor-container" id="unidades-editor-container">
-                    <h3 id="unidades-form-title">Novo Local/Unidade</h3>
-                    <form id="form-unidades">
-                        <input type="hidden" name="id">
-                        <div class="form-grid">
-                            <div class="form-span-col-2"><label>Nome (Ex: Cozinha Principal, Estoque Seco) *</label><input name="nome" required></div>
-                            <div>
-                                <label><input type="checkbox" name="ativo" checked> Ativo</label>
-                            </div>
-                        </div>
-                        <div class="right"><button class="btn" type="button" id="btnCancelUnidadesEdit">Cancelar</button><button class="btn pri" type="submit">Salvar</button></div>
-                    </form>
-                </div>
-                <div class="table-container"><table id="tbl-unidades"><thead><tr><th>Nome</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
-            </div>
-
-            <div class="subpage" id="sub-categorias">
-                 <div class="actions-bar">
-                    <h2>Categorias</h2>
-                    <div class="right" style="margin-top: 0;">
-                        <button class="btn pri" id="btnShowNewCategoriasForm">+ Nova Categoria</button>
-                    </div>
-                </div>
-                <div class="editor-container" id="categorias-editor-container">
-                    <h3 id="categorias-form-title">Nova Categoria</h3>
-                    <form id="form-categorias">
-                        <input type="hidden" name="id">
-                        <div class="form-grid">
-                            <div><label>Nome (Ex: Proteínas, Bebidas) *</label><input name="nome" required></div>
-                            <div><label>Tipo *</label><select name="tipo" required><option value="INGREDIENTE">Ingrediente</option><option value="PRATO">Prato</option></select></div>
-                            <div>
-                                <label><input type="checkbox" name="ativo" checked> Ativo</label>
-                            </div>
-                        </div>
-                        <div class="right"><button class="btn" type="button" id="btnCancelCategoriasEdit">Cancelar</button><button class="btn pri" type="submit">Salvar</button></div>
-                    </form>
-                </div>
-                <div class="table-container"><table id="tbl-categorias"><thead><tr><th>Nome</th><th>Tipo</th><th>Ativo</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
-            </div>
-        </div>
-    </section>
-
-    <section class="tab-content" id="tab-producao">
-        <div class="section">
-            <div class="actions-bar">
-                <h2>Previsão de Vendas</h2>
-                <div class="filters-container">
-                    <div>
-                        <label for="prev-data-inicio">Data Início</label>
-                        <input type="date" id="prev-data-inicio">
-                    </div>
-                    <div>
-                        <label for="prev-data-fim">Data Fim</label>
-                        <input type="date" id="prev-data-fim">
-                    </div>
-                    <div>
-                        <label for="cat-filter">Categoria de Prato</label>
-                        <select id="cat-filter"><option value="">Todas as Categorias</option></select>
-                    </div>
-                </div>
-                <div class="right" style="margin-top: 0;">
-                    <button class="btn pri" id="btnCalcularPrev">Calcular</button>
-                </div>
-            </div>
-            
-            <div class="table-container">
-                <table id="tbl-previsao">
-                    <thead>
-                        <tr>
-                            <th>Nome do Prato</th>
-                            <th>Total Vendido no Período</th>
-                            <th>Previsão Ajustada (Diária)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td colspan="3" style="text-align: center; padding: 20px;">Selecione o período e clique em Calcular.</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </section>
-
-    <section class="tab-content" id="tab-compras">
-        <div class="section">
-             <div class="actions-bar">
-                <h2>Sugestões de Compra</h2>
-                <div class="right" style="margin-top: 0;">
-                    <button class="btn" id="btnRefreshSuggestions">🔄 Atualizar</button>
-                </div>
-            </div>
-            <p class="hint">Itens que estão abaixo do ponto de pedido (Estoque Mínimo) definido no cadastro de Ingredientes.</p>
-            <div class="table-container">
-                <table id="tbl-sugestoes">
-                    <thead>
-                        <tr>
-                            <th>Ingrediente</th>
-                            <th>Estoque Atual</th>
-                            <th>Ponto de Pedido</th>
-                            <th>Sugestão de Compra</th>
-                            <th>Último Fornecedor</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </section>
-
     <section class="tab-content" id="tab-estoque">
         <div class="section">
             <nav class="subtabs" id="estoque-subtabs">
@@ -352,55 +21,28 @@ $$ LANGUAGE plpgsql;
             </nav>
             
             <div class="subpage active" id="sub-movimentar">
-                <h3>Registrar Movimentação</h3>
-
-                <div class="scanner-area">
-                    <button class="btn" id="btnOpenScanner">📷 Ler Item</button>
-                    <div class="scanner-input-group">
-                        <input type="text" id="scanner-input" placeholder="Digite o código de barras e pressione Enter ou clique em Buscar">
-                        <button class="btn pri" id="btnLookupBarcode">Buscar</button>
-                    </div>
+                
+                <div class="actions-bar">
+                    <h2>Movimentação de Estoque</h2>
                 </div>
-                <div class="sep"></div>
 
-                <form id="form-movimentacao">
-                    <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
-                        <div><label>Tipo *</label><select name="tipo" id="mov-tipo" required><option value="">Selecione</option><option value="ENTRADA">Entrada (Compra/Recebimento)</option><option value="SAIDA">Saída (Venda/Perda)</option><option value="PRODUCAO">Produção (Entrada de Item Produzido)</option><option value="TRANSFERENCIA">Transferência Interna</option><option value="AJUSTE">Ajuste de Saldo (Auditoria)</option></select></div>
+                <div class="quick-actions-bar" id="quick-actions-bar">
+                    <div class="quick-actions-label">Ações Rápidas:</div>
+                    <button class="btn quick-btn" data-quickmov="ENTRADA">➕ Entrada</button>
+                    <button class="btn quick-btn" data-quickmov="SAIDA">➖ Saída</button>
+                    <button class="btn quick-btn" data-quickmov="AJUSTE">🔧 Ajuste</button>
+                    <button class="btn quick-btn" data-quickmov="TRANSFERENCIA">➡️ Transferência</button>
+                    <button class="btn quick-btn" data-quickmov="PRODUCAO">🍳 Produção</button>
+                </div>
 
-                        <div><label>Item (Ingrediente ou Receita) *</label><select name="item_id" id="mov-item" required></select></div>
-
-                        <div><label>Quantidade *</label><input name="quantidade" id="mov-quantidade" type="number" step="0.001" required data-type="number"></div>
-                        
-                        <div id="field-custo"><label>Custo Unit. (R$)</label><input name="custo_unitario" type="number" step="0.001" data-type="number"></div>
-
-                        <div id="field-origem"><label>Unidade de Origem</label><select name="unidade_origem_id" id="mov-unidade-origem"></select></div>
-                        <div id="field-destino"><label>Unidade de Destino</label><select name="unidade_destino_id" id="mov-unidade-destino"></select></div>
-
-                        <div id="field-validade"><label>Data de Validade</label><input name="data_validade" type="date"></div>
-                        <div class="form-span-col-2"><label>Observação</label><textarea name="obs" rows="2"></textarea></div>
-                    </div>
-                    <div class="right"><button class="btn" type="button" id="btnMovCancel">Limpar</button><button class="btn pri" type="submit" id="frmMov">Registrar</button></div>
-                </form>
-            </div>
+                </div>
             
-            <div class="subpage" id="sub-geral">
-                <h3>Saldo Geral</h3>
-                <div class="table-container"><table id="tblEstoqueGeral"><thead><tr><th>Item</th><th>Qtd Total</th><th>Unidade</th><th>Custo Médio</th></tr></thead><tbody></tbody></table></div>
             </div>
-            <div class="subpage" id="sub-lotes">
-                <h3>Saldo por Lotes e Validades</h3>
-                <div class="table-container"><table id="tblEstoqueLotes"><thead><tr><th>Item</th><th>Qtd</th><th>Unidade</th><th>Custo Unit.</th><th>Validade</th><th>Local</th></tr></thead><tbody></tbody></table></div>
-            </div>
-            <div class="subpage" id="sub-historico">
-                <h3>Histórico</h3>
-                <div class="table-container"><table id="tblHistorico"><thead><tr><th>Data/Hora</th><th>Tipo</th><th>Item</th><th>Qtd</th><th>Origem/Destino</th><th>Usuário</th><th>Obs</th></tr></thead><tbody></tbody></table></div>
-            </div>
-        </div>
     </section>
     </div>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="app.js?v=7.1"></script>
+<script src="app.js?v=8.0"></script>
 </body>
 </html>
