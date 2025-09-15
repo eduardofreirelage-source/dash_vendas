@@ -111,6 +111,7 @@
                   <span class="top10-col-qty">Qtd.</span>
                 </div>
                 <div id="top10-list-body" class="top10-list-body">
+                   <div style="text-align: center; padding: 20px; color: var(--muted);">Carregando...</div>
                 </div>
             </div>
         </div>
@@ -233,14 +234,11 @@
   const SUPABASE_ANON_ESTOQUE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
   const supaEstoque = window.supabase.createClient(SUPABASE_URL_ESTOQUE, SUPABASE_ANON_ESTOQUE);
 
-  /* ===================== CHART DEFAULTS ===================== */
-  // (Mantido)
-
-  /* ===================== HELPERS (v8.1 - Timezone/Date Fixes) ===================== */
+  /* ===================== HELPERS ===================== */
   const $ = id => document.getElementById(id);
+  const $$ = sel => document.querySelectorAll(sel);
   const num = v => (v==null||!isFinite(+v)) ? '0' : (+v).toLocaleString('pt-BR');
   
-  // v8.1: Função robusta para obter data ISO (Garantindo UTC meio-dia)
   function getDateISO(baseDate) {
     let d;
     if (baseDate) {
@@ -252,7 +250,6 @@
     } 
     
     if (!d || isNaN(d.getTime())) {
-        // Fallback para hoje se a entrada for inválida
         const now = new Date();
         d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0));
     }
@@ -262,13 +259,10 @@
     const day = String(d.getUTCDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   }
-
-  // (daysLen, formatYM, rmAcc mantidos da v8.0)
   
   function fxDispatchApply(){
       const startInput = $('fxDuStart');
       const endInput = $('fxDuEnd');
-      // v8.1: Segurança adicional contra elementos nulos
       if (!startInput || !endInput) {
           console.error("Elementos de data não encontrados. Dispatch falhou.");
           return;
@@ -277,29 +271,179 @@
       document.dispatchEvent(new CustomEvent('filters:apply', { detail: payload }));
   }
 
-  /* ===================== MULTISELECT ===================== */
-  // (Implementação do MultiSelect - Mantida)
+  // >>>>> LÓGICA DE FILTRO CORRIGIDA <<<<<
+  function fxSetRange(start, end) {
+      const startInput = $('fxDuStart');
+      const endInput = $('fxDuEnd');
+      if (startInput && endInput) {
+          startInput.value = getDateISO(start);
+          endInput.value = getDateISO(end);
+      }
+  }
 
-  /* ===================== ESTADO ===================== */
-  let lastDay='';
-  // (Restante do estado e listeners mantidos)
+  function fxSetToLastMonthWithData(baseDateStr) {
+      if (!baseDateStr) {
+          baseDateStr = getDateISO(new Date());
+      }
+      const baseDate = new Date(baseDateStr + 'T12:00:00Z');
+      const year = baseDate.getUTCFullYear();
+      const month = baseDate.getUTCMonth(); 
 
-  /* ===================== KPI & CHARTS ===================== */
-  // (Funções de Gráficos mantidas)
+      const startOfLastMonth = new Date(Date.UTC(year, month - 1, 1));
+      const endOfLastMonth = new Date(Date.UTC(year, month, 0));
 
-  /* ===================== LOOP PRINCIPAL ===================== */
-  // (applyAll mantido)
-
-  /* ===================== INICIALIZAÇÃO E CONTROLES DA UI (v8.1) ===================== */
+      fxSetRange(startOfLastMonth, endOfLastMonth);
+      
+      $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
+      const lastMonthBtn = document.querySelector('#fxQuickChips button[data-win="lastMonth"]');
+      if (lastMonthBtn) lastMonthBtn.classList.add('active');
+  }
   
-  // (reloadFilterOptions mantido)
+  /* ===================== ESTADO E GRÁFICOS ===================== */
+  let lastDay = '';
+  let chartMonth, chartDow;
 
-  // v8.1: Função de inicialização
+  // Função principal de busca de dados
+  async function applyAll(startDate, endDate) {
+      if (!startDate || !endDate) {
+        console.warn("applyAll foi chamado sem datas válidas.");
+        return;
+      }
+      console.log(`Buscando dados de ${startDate} a ${endDate}`);
+      // Lógica para mostrar spinners ou estado de carregamento
+      $('k_qtd').textContent = '...';
+      $('k_pratos_unicos').textContent = '...';
+      $('k_media_diaria').textContent = '...';
+
+      // Chama a função RPC do Supabase para buscar os dados consolidados
+      const { data, error } = await supaEstoque.rpc('get_sales_dashboard_data', {
+          start_date: startDate,
+          end_date: endDate
+      });
+
+      if (error) {
+          console.error("Erro ao buscar dados do dashboard:", error);
+          alert(`Falha ao carregar dados: ${error.message}`);
+          return;
+      }
+      
+      // Atualiza os KPIs
+      updateKpis(data.kpis);
+      
+      // Renderiza os gráficos
+      renderMonthChart(data.sales_by_month);
+      renderDowChart(data.sales_by_dow);
+      renderTop10(data.top_10_mais_vendidos, 'MAIS');
+      
+      // Armazena dados para alternância
+      window.dashboardData = data;
+  }
+  
+  function updateKpis(kpis) {
+      if (!kpis) return;
+      $('k_qtd').textContent = num(kpis.total_itens_vendidos);
+      $('p_qtd').textContent = num(kpis.total_itens_vendidos_anterior);
+      
+      $('k_pratos_unicos').textContent = num(kpis.pratos_unicos);
+      $('p_pratos_unicos').textContent = num(kpis.pratos_unicos_anterior);
+      
+      $('k_media_diaria').textContent = num(kpis.media_diaria_vendas);
+      $('p_media_diaria').textContent = num(kpis.media_diaria_vendas_anterior);
+
+      // Lógica para deltas (up/down)
+      updateDelta('d_qtd', kpis.total_itens_vendidos, kpis.total_itens_vendidos_anterior);
+      updateDelta('d_pratos_unicos', kpis.pratos_unicos, kpis.pratos_unicos_anterior);
+      updateDelta('d_media_diaria', kpis.media_diaria_vendas, kpis.media_diaria_vendas_anterior);
+  }
+  
+  function updateDelta(elId, current, previous) {
+      const el = $(elId);
+      if (!el) return;
+      const change = ((current - previous) / (previous || 1)) * 100;
+      el.classList.remove('up', 'down', 'flat');
+      if (Math.abs(change) < 0.1 || !isFinite(change)) {
+          el.textContent = '—';
+          el.classList.add('flat');
+      } else if (change > 0) {
+          el.innerHTML = `▲ ${change.toFixed(1)}%`;
+          el.classList.add('up');
+      } else {
+          el.innerHTML = `▼ ${Math.abs(change).toFixed(1)}%`;
+          el.classList.add('down');
+      }
+  }
+
+  function renderMonthChart(data) {
+    const ctx = $('ch_month').getContext('2d');
+    const labels = data.map(d => d.mes);
+    const currentData = data.map(d => d.vendas_atual);
+    const previousData = data.map(d => d.vendas_anterior);
+    
+    if (chartMonth) chartMonth.destroy();
+    chartMonth = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: 'Período Atual', data: currentData, backgroundColor: 'var(--wine)', borderRadius: 4 },
+                { label: 'Período Anterior', data: previousData, backgroundColor: 'var(--c-prev)', borderRadius: 4 }
+            ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+    });
+  }
+
+  function renderDowChart(data) {
+    const ctx = $('ch_dow').getContext('2d');
+    const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    // Ordena os dados para corresponder aos labels
+    const sortedData = labels.map(label => data.find(d => d.dia_semana_nome === label) || { total_vendido: 0 });
+
+    if (chartDow) chartDow.destroy();
+    chartDow = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Itens Vendidos',
+                data: sortedData.map(d => d.total_vendido),
+                backgroundColor: 'rgba(123, 30, 58, 0.7)',
+                borderColor: 'var(--wine)',
+                borderWidth: 1
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: { x: { beginAtZero: true } } }
+    });
+  }
+
+  function renderTop10(data, mode) {
+      const listBody = $('top10-list-body');
+      if (!listBody) return;
+      listBody.innerHTML = '';
+
+      if (!data || data.length === 0) {
+          listBody.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--muted);">Nenhum prato encontrado.</div>`;
+          return;
+      }
+      
+      data.forEach((item, index) => {
+          const rank = index + 1;
+          const row = document.createElement('div');
+          row.className = 'top10-row';
+          row.dataset.rank = rank;
+          row.innerHTML = `
+              <span class="top10-col-rank">${rank}</span>
+              <span class="top10-col-prato">${item.nome_prato}</span>
+              <span class="top10-col-qty">${num(item.total_vendido)}</span>
+          `;
+          listBody.appendChild(row);
+      });
+  }
+
+  /* ===================== INICIALIZAÇÃO E CONTROLES DA UI ===================== */
   async function init() {
     try {
       console.info('[Status v8.1] [info]: Inicializando aplicação...');
-      
-      // Busca a data mais recente das vendas (depende da view 'vendas_pratos_daterange')
       const { data, error } = await supaEstoque.from('vendas_pratos_daterange').select('max_data').limit(1);
       
       if (error) {
@@ -313,8 +457,6 @@
       }
       
       console.info(`[Status v8.1] Data base definida para: ${lastDay}`);
-
-      // await reloadFilterOptions(); // Descomentar quando a implementação do MultiSelect for incluída
       document.dispatchEvent(new Event('filters:init'));
       console.info('[Status v8.1] [ok]: Dados atualizados.');
 
@@ -323,47 +465,50 @@
         alert("Falha ao inicializar o Dashboard.");
     }
   }
-  
-  // (Funções de Exportação mantidas)
 
-  // v8.1: Lógica de controle de filtros (Corrigida para funcionar com o HTML restaurado)
   document.addEventListener('DOMContentLoaded', () => {
     const fx = {
-      $drop: $('fxDropup'), $btnMore: $('fxBtnMore'), $btnReset: $('fxBtnReset'),
-      // v8.1: Estes elementos agora existem no HTML
       $start: $('fxDuStart'), $end: $('fxDuEnd'),
-      $days: $('fxDuQuickDays'), $chips: $('fxQuickChips')
     };
 
-    // v8.1: Verificação de segurança crucial
     if (!fx.$start || !fx.$end) {
-        console.error("ERRO CRÍTICO: Elementos de data (fxDuStart ou fxDuEnd) não encontrados no HTML. O Dashboard não funcionará.");
-        // Tenta inicializar o básico, mas os filtros falharão.
+        console.error("ERRO CRÍTICO: Elementos de data não encontrados.");
         init(); 
         return; 
     }
 
-    function fxFmt(dateObj){ return getDateISO(dateObj); }
-    // v8.1: Esta função agora funciona sem erros
-    function fxSetRange(start,end){ 
-        fx.$start.value = fxFmt(start); 
-        fx.$end.value = fxFmt(end); 
-    }
-    
-    // (fxSetToLastMonthWithData, setNamedPeriod, fxLastNDays mantidos)
-    // (Event Listeners dos filtros mantidos)
-    
-    // v8.1: Ponto de entrada da inicialização dos filtros.
+    // Listener para o evento que dispara a busca de dados
+    document.addEventListener('filters:apply', (e) => {
+        applyAll(e.detail.start, e.detail.end);
+    });
+
+    // Ponto de entrada da inicialização dos filtros.
     document.addEventListener('filters:init', () => {
-        // fxSetToLastMonthWithData(lastDay); // Descomentar quando a implementação for incluída
+        // >>>>> CORREÇÃO APLICADA AQUI <<<<<
+        // Define o período inicial para o "Mês Anterior" antes de buscar os dados
+        fxSetToLastMonthWithData(lastDay); 
         fxDispatchApply();
     });
 
-    init(); // Start the initialization process
+    // Listener para alternar entre Top 10 Mais/Menos vendidos
+    $('segTop10').addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn || btn.classList.contains('active')) return;
+        
+        $$('#segTop10 button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        const mode = btn.dataset.mode;
+        if (window.dashboardData) {
+            const data = (mode === 'MAIS') ? window.dashboardData.top_10_mais_vendidos : window.dashboardData.top_10_menos_vendidos;
+            renderTop10(data, mode);
+        }
+    });
+
+    init(); // Inicia o processo de inicialização
   });
   
-  // ===================== LÓGICA DE UPLOAD =====================
-  // (Lógica de Upload mantida)
+  // (Outras lógicas como Upload e Exportação podem ser adicionadas aqui)
   </script>
 </body>
 </html>
