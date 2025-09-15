@@ -28,35 +28,30 @@ const getFormData = (formId) => {
     const form = $(formId);
     if (!form) return {};
     
-    // Usa a API FormData para coletar a maioria dos campos
     const formData = new FormData(form);
     const obj = {};
     for (const [key, value] of formData.entries()) {
         obj[key] = value;
     }
 
-    // A API FormData não inclui checkboxes desmarcados, então precisamos tratá-los manualmente.
     form.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
         obj[checkbox.name] = checkbox.checked;
     });
 
-    // Garante que campos numéricos vazios se tornem nulos
     form.querySelectorAll('input[type="number"], input[data-type="number"]').forEach(numInput => {
         if (obj[numInput.name] === '' || obj[numInput.name] === undefined) {
             obj[numInput.name] = null;
-        } else {
+        } else if (obj[numInput.name]) {
             obj[numInput.name] = parseFloat(obj[numInput.name]);
         }
     });
 
-    // Garante que outros campos de texto vazios se tornem nulos
     for (const key in obj) {
         if (obj[key] === "") {
             obj[key] = null;
         }
     }
     
-    // Trata o campo 'id'
     const idInput = form.querySelector('input[name="id"]');
     if (idInput && idInput.value) {
         obj.id = idInput.value;
