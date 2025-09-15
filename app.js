@@ -1,756 +1,1305 @@
-import { supabase, getSession } from './supabase-client.js';
 
-document.addEventListener('DOMContentLoaded', async () => {
-    // =================================================================
-    // ESTADO GLOBAL E CONFIGURAÇÃO
-    // =================================================================
-    let services = [];
-    let priceTables = [];
-    let servicePrices = [];
-    let currentQuote = {
-        id: null,
-        client_name: '',
-        client_cnpj: '',
-        client_email: '',
-        client_phone: '',
-        guest_count: 100,
-        price_table_id: null,
-        event_dates: [],
-        items: [],
-        discount_general: 0,
-        status: 'Rascunho'
-    };
-    let userRole = 'client';
-    let isDirty = false;
 
-    const CATEGORY_ORDER = ['Espaço', 'Gastronomia', 'Equipamentos', 'Serviços e Outros'];
+// =================================================================================
+// SCRIPT COMPLETO E INTEGRAL (v6.2 - Correção da Colisão do ID do Formulário)
+// =================================================================================
 
-    const notification = document.getElementById('save-notification');
-    const catalogModal = document.getElementById('catalogModal');
+// ESTA LINHA É CRUCIAL PARA VERIFICAR O CACHE
+console.log("[DIAGNOSTICO v6.2] Script Iniciado. Se você vê esta mensagem, o script correto está ativo.");
 
-    // =================================================================
-    // INICIALIZAÇÃO
-    // =================================================================
-    async function initialize() {
-        await checkUserRole();
-        await fetchData();
-        populatePriceTables();
-        setupEventListeners();
-        
-        const urlParams = new URLSearchParams(window.location.search);
-        const quoteId = urlParams.get('quote_id');
-        const autoPrint = urlParams.get('print') === 'true';
 
-        if (quoteId) {
-            await loadQuote(quoteId);
-        } 
-        
-        renderQuote();
-        setDirty(false);
+/* ===== Helpers com verificações de segurança ===== */
+const $  = (id)=> document.getElementById(id);
+const $$ = (sel,root=document)=> Array.from(root.querySelectorAll(sel));
+const setStatus=(msg,cls)=>{
+    const el=$('status'); if(!el) return;
+    el.textContent=msg;
+    const colorMap = { 'err': 'var(--down)', 'ok': 'var(--ok)', 'warn': 'var(--warn)' };
+    if (el && el.style) {
+        el.style.color = colorMap[cls] || 'var(--muted)';
+    }
+};
+const fmt=(n, digits=3)=> new Intl.NumberFormat('pt-BR',{maximumFractionDigits:digits, minimumFractionDigits: digits}).format(+n||0);
+const fmtMoney=(n)=> new Intl.NumberFormat('pt-BR',{style: 'currency', currency: 'BRL'}).format(+n||0);
+const showEditor = (id) => { const el = $(id); if(el && el.style) el.style.display = 'block'; };
+const hideEditor = (id) => { const el = $(id); if(el && el.style) el.style.display = 'none'; };
 
-        if (autoPrint) {
-            if (userRole === 'admin') {
-                const newUrl = new URL(window.location);
-                newUrl.searchParams.delete('print');
-                window.history.replaceState({}, document.title, newUrl);
-
-                setTimeout(() => {
-                    window.print();
-                }, 500);
-            } else {
-                console.warn("Acesso de impressão negado para clientes.");
-                 window.history.replaceState({}, document.title, window.location.pathname);
-            }
-        }
+// Função REFORMULADA (v6.2): Iteração direta sobre form.elements.
+const getFormData = (formId) => {
+    // Confirmação de que o formId é uma string
+    if (typeof formId !== 'string') {
+         console.error(`[DIAGNOSTICO v6.2] Erro: ID do formulário inválido fornecido:`, formId);
+         return {};
     }
 
-    async function checkUserRole() {
-        const { role } = await getSession();
-        userRole = role;
+    const form = $(formId);
+    if (!form) {
+        console.error(`[DIAGNOSTICO v6.2] Formulário não encontrado. ID fornecido:`, formId);
+        return {};
+    }
+    const obj = {};
 
-        const adminLink = document.getElementById('admin-link');
-        const logoutBtn = document.getElementById('logout-btn');
-        const loginLink = document.getElementById('login-link');
-        const mainTitle = document.getElementById('main-title');
-        const saveBtn = document.getElementById('save-quote-btn');
+    // Diagnóstico
+    console.log(`[DIAGNOSTICO v6.2] Coletando dados do formulário: ${formId}`);
 
-        if (userRole === 'admin') {
-            document.body.classList.remove('client-view');
-            if(adminLink) adminLink.style.display = 'inline-block';
-            if(logoutBtn) logoutBtn.style.display = 'inline-block';
-            if(loginLink) loginLink.style.display = 'none';
-            if(mainTitle) mainTitle.textContent = 'Gerador de Propostas (Admin)';
+    // Itera diretamente sobre todos os elementos do formulário
+    for (let element of form.elements) {
+        // Ignora elementos sem nome, botões de submit/button, reset e fieldsets
+        if (!element.name || ['submit', 'button', 'fieldset', 'reset'].includes(element.type)) {
+            continue;
+        }
+
+        // Diagnóstico
+        console.log(`[DIAGNOSTICO] Processando: Name=${element.name}, Type=${element.type}, Value=${element.value}`);
+
+        if (element.type === 'checkbox') {
+            obj[element.name] = element.checked;
+        } else if (element.type === 'number' || element.dataset.type === 'number') {
+            // Tratamento de Números
+            if (element.value === "" || element.value === null) {
+                obj[element.name] = null;
+            } else {
+                const numVal = parseFloat(element.value);
+                obj[element.name] = isNaN(numVal) ? null : numVal;
+            }
+        } else if (element.type === 'radio') {
+            // Tratamento de Radio Buttons (só inclui se estiver marcado)
+            if (element.checked) {
+                obj[element.name] = element.value;
+            }
         } else {
-            document.body.classList.add('client-view');
-            if(adminLink) adminLink.style.display = 'none';
-            if(logoutBtn) logoutBtn.style.display = 'none';
-            if(loginLink) loginLink.style.display = 'inline-block';
-            if(mainTitle) mainTitle.textContent = 'Solicitação de Orçamento (Cliente)';
-            if(saveBtn) saveBtn.textContent = 'Enviar Solicitação';
-            currentQuote.status = 'Solicitado';
+            // Tratamento padrão (text, select-one, textarea, date, hidden, etc.)
+            obj[element.name] = element.value;
         }
     }
 
-    async function fetchData() {
+    // Tratamento do ID (Remove se estiver vazio para permitir INSERTs)
+    if (obj.hasOwnProperty('id')) {
+         if (obj.id === "" || obj.id === null) {
+             delete obj.id;
+         }
+    }
+
+    // Diagnóstico
+    console.log("[DIAGNOSTICO] Objeto Final Coletado:", obj);
+    return obj;
+};
+
+
+/* ===================== CONFIGURAÇÃO DA API ===================== */
+const SUPABASE_URL  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
+// ===============================================================
+
+// Inicialização segura do Supabase
+var supa;
+if (!window.supabase) {
+    console.error("Biblioteca Supabase não carregada!");
+} else if (SUPABASE_URL.startsWith('http')) {
+    try {
+        supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+    } catch (e) {
+        console.error("Falha ao inicializar o cliente Supabase:", e);
+    }
+} else {
+    console.error("ERRO CRÍTICO: SUPABASE_URL inválida ou não configurada em app.js!");
+}
+
+
+// Listener seguro
+function addSafeEventListener(id, event, handler) {
+    const element = $(id);
+    if (element) { element.addEventListener(event, handler); }
+}
+
+/* ===== ROTEAMENTO POR ABAS ===== */
+function setupRouting() {
+  const mainTabsContainer = $('main-tabs');
+  if (!mainTabsContainer) return;
+
+  const mainContents = $$('.tab-content');
+
+  const setupSubTabs = (containerId, contentSelector) => {
+      const container = $(containerId);
+      if (!container) return;
+
+      const contents = $$(contentSelector);
+      container.addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn || !btn.dataset.subtab) return;
+        const subTabId = btn.dataset.subtab;
+        $$('button', container).forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        contents.forEach(content => content.classList.toggle('active', content.id === 'sub-' + subTabId));
+      });
+  };
+
+  mainTabsContainer.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn || !btn.dataset.tab) return;
+    const tabId = btn.dataset.tab;
+    $$('button', mainTabsContainer).forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    mainContents.forEach(content => content.classList.toggle('active', content.id === 'tab-' + tabId));
+  });
+
+  setupSubTabs('cadastro-subtabs', '#tab-cadastros .subpage');
+  setupSubTabs('estoque-subtabs', '#tab-estoque .subpage');
+}
+
+/* ===== FUNÇÕES DE CARREGAMENTO (LOADERS) ===== */
+async function fillOptionsFrom(table, selId, valKey, labelKey, whereEq, allowEmpty = true){
+  const sel=$(selId);
+  if(!sel) return;
+
+  if (sel.options.length > (allowEmpty ? 1 : 0) && !sel.dataset.loading) return;
+
+  sel.dataset.loading = true;
+  const previousHTML = sel.innerHTML;
+  if (sel.options.length === 0 || allowEmpty) sel.innerHTML='<option value="">Carregando…</option>';
+
+  try{
+    let query=supa.from(table).select(`${valKey},${labelKey}`).order(labelKey,{ascending:true});
+    if(whereEq) Object.entries(whereEq).forEach(([k,v])=> query=query.eq(k,v));
+    const {data,error}=await query;
+    if(error) throw error;
+
+    sel.innerHTML = allowEmpty ? '<option value="">Selecione</option>' : '';
+    (data||[]).forEach(x=>{ const o=document.createElement('option'); o.value=x[valKey]; o.textContent=x[labelKey]; sel.appendChild(o); });
+  }catch(e){
+    console.error(`Erro ao carregar options para ${selId}:`, e);
+    sel.innerHTML= previousHTML || '<option value="">(Erro)</option>';
+  } finally {
+      delete sel.dataset.loading;
+  }
+}
+
+/* ===== MÓDULO GENÉRICO DE CRUD ===== */
+const GenericCRUD = {
+    async loadTable(table, tableId, columns, actions = true, view = null) {
+        const tb = $(tableId)?.querySelector('tbody');
+        if (!tb) return;
+
+        const source = view || table;
+
+        let orderCol = columns[0];
+        if (columns.includes('nome')) orderCol = 'nome';
+        else if (columns.includes('data_hora')) orderCol = 'data_hora';
+        const ascending = !columns.includes('data_hora');
+
+        tb.innerHTML = `<tr><td colspan="${columns.length + (actions ? 1 : 0)}">Carregando…</td></tr>`;
+
         try {
-            const servicesRes = await supabase.from('services').select('*').order('category').order('name');
-            if (servicesRes.error) throw servicesRes.error;
-            services = servicesRes.data || [];
-
-            if (userRole === 'admin') {
-                const [tablesRes, pricesRes] = await Promise.all([
-                    supabase.from('price_tables').select('*').order('name'),
-                    supabase.from('service_prices').select('*')
-                ]);
-                if (tablesRes.error) throw tablesRes.error;
-                if (pricesRes.error) throw pricesRes.error;
-                priceTables = tablesRes.data || [];
-                servicePrices = pricesRes.data || [];
-            } else {
-                priceTables = [];
-                servicePrices = [];
-            }
-        } catch (error) {
-            console.error("Erro ao carregar dados:", error);
-            showNotification("Erro ao carregar dados iniciais.", true);
-        }
-    }
-    
-    function setDirty(state) {
-        isDirty = state;
-        updateSaveButtonState();
-    }
-
-    function updateSaveButtonState() {
-        const saveBtn = document.getElementById('save-quote-btn');
-        if (!saveBtn) return;
-        if (userRole === 'admin') {
-            if (isDirty) {
-                saveBtn.classList.add('dirty');
-                saveBtn.textContent = 'Salvar Alterações*';
-            } else {
-                saveBtn.classList.remove('dirty');
-                saveBtn.textContent = 'Salvo';
-            }
-        }
-    }
-
-    function showNotification(message, isError = false) {
-        if (!notification) return;
-        notification.textContent = message;
-        notification.style.backgroundColor = isError ? 'var(--danger-color)' : 'var(--success-color)';
-        notification.classList.add('show');
-        setTimeout(() => notification.classList.remove('show'), 4000);
-    }
-
-    function formatCurrency(value) {
-        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(parseFloat(value) || 0);
-    }
-    
-    function populatePriceTables() {
-        const select = document.getElementById('priceTableSelect');
-        if (!select) return;
-        select.innerHTML = '<option value="">Selecione uma tabela</option>';
-        priceTables.forEach(table => {
-            const option = document.createElement('option');
-            option.value = table.id;
-            option.textContent = table.name;
-            select.appendChild(option);
-        });
-    }
-
-    function syncClientData() {
-        currentQuote.client_name = document.getElementById('clientName')?.value || '';
-        currentQuote.client_cnpj = document.getElementById('clientCnpj')?.value || '';
-        currentQuote.client_email = document.getElementById('clientEmail')?.value || '';
-        currentQuote.client_phone = document.getElementById('clientPhone')?.value || '';
-        currentQuote.guest_count = parseInt(document.getElementById('guestCount')?.value) || 0;
-        
-        if (userRole === 'admin') {
-            currentQuote.price_table_id = document.getElementById('priceTableSelect')?.value || null;
-            currentQuote.discount_general = parseFloat(document.getElementById('discountValue')?.value) || 0;
-        }
-        syncEventDates();
-        setDirty(true);
-    }
-
-    function syncEventDates() {
-        const container = document.getElementById('event-dates-container');
-        if (!container) return;
-        const entries = container.querySelectorAll('.date-entry');
-        currentQuote.event_dates = [];
-        entries.forEach(entry => {
-            const date = entry.querySelector('input[type="date"]').value;
-            const start = entry.querySelector('.start-time').value;
-            const end = entry.querySelector('.end-time').value;
-            if (date) {
-                currentQuote.event_dates.push({ date, start, end });
-            }
-        });
-    }
-
-    function addDateEntry(data = {}) {
-        const container = document.getElementById('event-dates-container');
-        if (!container) return;
-        const div = document.createElement('div');
-        div.className = 'date-entry';
-        const uniqueId = Date.now() + Math.random();
-        div.innerHTML = `
-            <div class="form-group">
-                <label for="event_date_${uniqueId}">Data</label>
-                <input type="date" id="event_date_${uniqueId}" value="${data.date || ''}" required>
-            </div>
-            <div class="form-group">
-                <label for="start_time_${uniqueId}">Início</label>
-                <input type="time" class="start-time" id="start_time_${uniqueId}" value="${data.start || '19:00'}">
-            </div>
-            <div class="form-group">
-                <label for="end_time_${uniqueId}">Fim</label>
-                <input type="time" class="end-time" id="end_time_${uniqueId}" value="${data.end || '23:00'}">
-            </div>
-            <button type="button" class="btn-icon remove-date-btn" title="Remover Data">&times;</button>
-        `;
-        container.appendChild(div);
-        updateDateInputs();
-    }
-
-    function updateDateInputs() {
-        document.querySelectorAll('#event-dates-container input').forEach(input => {
-            input.onchange = () => {
-                syncClientData();
-                renderQuote();
-            };
-        });
-    }
-    
-    function calculateQuote() {
-        let consumableSubtotal = 0;
-        let nonConsumableSubtotal = 0;
-        const guestCount = currentQuote.guest_count;
-        const priceTableId = currentQuote.price_table_id;
-        currentQuote.items.forEach(item => {
-            const service = services.find(s => s.id === item.service_id);
-            if (!service) return;
-            let basePrice = 0;
-            if (userRole === 'admin' && priceTableId) {
-                const priceRecord = servicePrices.find(p => p.service_id === item.service_id && p.price_table_id === priceTableId);
-                basePrice = priceRecord ? parseFloat(priceRecord.price) : 0;
-            }
-            let quantity = item.quantity;
-            if (service.unit === 'por_pessoa' && service.category !== 'Gastronomia') {
-                quantity = guestCount;
-                item.quantity = quantity;
-            }
-            const cost = basePrice * quantity;
-            const discountRate = (userRole === 'admin' ? (parseFloat(item.discount_percent) || 0) : 0) / 100;
-            const total = cost * (1 - discountRate);
-            item.calculated_unit_price = basePrice;
-            item.calculated_total = total;
-            if (service.category === 'Serviços e Outros' || service.category === 'Espaço') {
-                nonConsumableSubtotal += total;
-            } else {
-                consumableSubtotal += total;
-            }
-        });
-        const subtotal = consumableSubtotal + nonConsumableSubtotal;
-        const discountGeneral = userRole === 'admin' ? (parseFloat(currentQuote.discount_general) || 0) : 0;
-        let availableConsumableCredit = 0;
-        if (userRole === 'admin' && priceTableId) {
-            const table = priceTables.find(t => t.id === priceTableId);
-            availableConsumableCredit = table ? (parseFloat(table.consumable_credit) || 0) : 0;
-        }
-        const consumableCreditUsed = Math.min(consumableSubtotal, availableConsumableCredit);
-        const total = subtotal - discountGeneral - consumableCreditUsed;
-        return { subtotal, consumableCredit: consumableCreditUsed, discountGeneral, total: Math.max(0, total) };
-    }
-
-    function sortCategories(categories) {
-        return categories.sort((a, b) => {
-            const indexA = CATEGORY_ORDER.indexOf(a);
-            const indexB = CATEGORY_ORDER.indexOf(b);
-            if (indexA === -1 && indexB === -1) return a.localeCompare(b);
-            if (indexA === -1) return 1;
-            if (indexB === -1) return -1;
-            return indexA - indexB;
-        });
-    }
-
-    function renderQuote() {
-        const calculation = calculateQuote();
-        renderCategories();
-        renderSummary(calculation);
-        if (userRole === 'admin') {
-            generatePrintOutput(calculation);
-        }
-        if (catalogModal.style.display === 'block') {
-            updateCatalogButtonsState();
-        }
-    }
-
-    function renderCategories() {
-        const container = document.getElementById('quote-categories-container');
-        if (!container) return;
-        const categoriesInQuote = sortCategories([...new Set(currentQuote.items.map(item => {
-            const service = services.find(s => s.id === item.service_id);
-            return service?.category;
-        }).filter(Boolean))]);
-        const elementsToRender = [];
-        categoriesInQuote.forEach(category => {
-            let accordion = container.querySelector(`details[data-category="${category}"]`);
-            if (!accordion) {
-                const template = document.getElementById('category-template').content.cloneNode(true);
-                accordion = template.querySelector('details');
-                accordion.dataset.category = category;
-                accordion.querySelector('.category-title').textContent = category;
-            }
-            renderItems(accordion, category);
-            elementsToRender.push(accordion);
-        });
-        container.innerHTML = '';
-        elementsToRender.forEach(element => container.appendChild(element));
-        if (categoriesInQuote.length === 0) {
-            container.innerHTML = '<p style="padding: 1.2rem; text-align: center; color: var(--subtle-text-color);">Nenhum item adicionado ainda. Clique em "+ Adicionar Itens" para começar.</p>';
-        }
-    }
-
-    function renderItems(accordion, category) {
-        const tbody = accordion.querySelector('tbody');
-        tbody.innerHTML = '';
-        const itemsInCategory = currentQuote.items.filter(item => {
-            const service = services.find(s => s.id === item.service_id);
-            return service && service.category === category;
-        }).sort((a, b) => {
-            const serviceA = services.find(s => s.id === a.service_id);
-            const serviceB = services.find(s => s.id === b.service_id);
-            if (!serviceA || !serviceB) return 0;
-            return serviceA.name.localeCompare(serviceB.name);
-        });
-        itemsInCategory.forEach(item => {
-            const service = services.find(s => s.id === item.service_id);
-            if (!service) return;
-            const row = document.createElement('tr');
-            row.dataset.itemId = item.id;
-            const isQuantityLocked = service.unit === 'por_pessoa' && service.category !== 'Gastronomia';
-            row.innerHTML = `
-                <td class="col-item">${service.name}</td>
-                <td class="col-date">${renderDateSelect(item)}</td>
-                <td class="col-qty">
-                    <input type="number" value="${item.quantity}" min="1" class="qty-input" ${isQuantityLocked ? 'disabled' : ''}>
-                </td>
-                <td class="col-unit-price price">${formatCurrency(item.calculated_unit_price)}</td>
-                <td class="col-discount">
-                    <input type="number" value="${item.discount_percent || 0}" min="0" max="100" class="discount-input price-input">
-                </td>
-                <td class="col-total-price price">${formatCurrency(item.calculated_total)}</td>
-                <td class="col-actions item-actions">
-                    <button class="btn-icon duplicate-item-btn" title="Duplicar Item">⧉</button>
-                    <button class="btn-icon obs-btn" title="Observações">${item.observations ? '📝' : '📄'}</button>
-                    <button class="btn-icon remove-item-btn" title="Remover Item">&times;</button>
-                </td>
-            `;
-            tbody.appendChild(row);
-        });
-    }
-
-    function renderDateSelect(item) {
-        if (currentQuote.event_dates.length === 0) return 'N/A';
-        let options = currentQuote.event_dates.map(d => 
-            `<option value="${d.date}" ${item.event_date === d.date ? 'selected' : ''}>${new Date(d.date + 'T12:00:00').toLocaleDateString('pt-BR')}</option>`
-        ).join('');
-        return `<select class="date-select">${options}</select>`;
-    }
-
-    function renderSummary(calculation) {
-        const consumableText = "(-) " + formatCurrency(calculation.consumableCredit);
-        document.getElementById('subtotalValue').textContent = formatCurrency(calculation.subtotal);
-        document.getElementById('consumableValue').textContent = consumableText;
-        document.getElementById('discountValue').value = calculation.discountGeneral.toFixed(2);
-        document.getElementById('totalValue').textContent = formatCurrency(calculation.total);
-        document.getElementById('summary-subtotal-value').textContent = formatCurrency(calculation.subtotal);
-        document.getElementById('summary-consumable-value').textContent = consumableText;
-        document.getElementById('summary-discount-value').textContent = formatCurrency(calculation.discountGeneral);
-        document.getElementById('summary-total-value').textContent = formatCurrency(calculation.total);
-        const categoryList = document.getElementById('summary-categories-list');
-        if (!categoryList) return;
-        categoryList.innerHTML = '';
-        const categoriesInQuote = sortCategories([...new Set(currentQuote.items.map(item => {
-            const service = services.find(s => s.id === item.service_id);
-            return service ? service.category : null;
-        }).filter(Boolean))]);
-        categoriesInQuote.forEach(category => {
-            const categoryTotal = currentQuote.items.reduce((sum, item) => {
-                const service = services.find(s => s.id === item.service_id);
-                if (service && service.category === category) {
-                    return sum + item.calculated_total;
-                }
-                return sum;
-            }, 0);
-            const div = document.createElement('div');
-            div.className = 'summary-line';
-            div.innerHTML = `<span>${category}</span><strong>${formatCurrency(categoryTotal)}</strong>`;
-            categoryList.appendChild(div);
-        });
-    }
-
-    function generatePrintOutput(calculation) {
-        const printOutput = document.getElementById('print-output');
-        if (!printOutput) return;
-        let html = `<div class="print-header"><h1>Proposta Comercial</h1><p>Data da Proposta: ${new Date().toLocaleDateString('pt-BR')}</p></div>`;
-        html += `
-            <div class="print-client-info">
-                <p><strong>Cliente:</strong> ${currentQuote.client_name || 'N/A'}</p>
-                <p><strong>CNPJ:</strong> ${currentQuote.client_cnpj || 'N/A'}</p>
-                <p><strong>E-mail:</strong> ${currentQuote.client_email || 'N/A'}</p>
-                <p><strong>Nº Convidados:</strong> ${currentQuote.guest_count}</p>
-                <p><strong>Datas do Evento:</strong> ${currentQuote.event_dates.map(d => new Date(d.date + 'T12:00:00').toLocaleDateString('pt-BR')).join(', ')}</p>
-            </div>
-        `;
-        const categoriesInQuote = sortCategories([...new Set(currentQuote.items.map(item => {
-             const service = services.find(s => s.id === item.service_id);
-             return service?.category;
-        }).filter(Boolean))]);
-        categoriesInQuote.forEach(category => {
-            html += `<h2 class="print-category-title">${category}</h2>`;
-            html += `<table class="print-table"><thead><tr><th>Item</th><th class="center">Data</th><th class="center">Qtde.</th><th class="price">Vlr. Unitário</th><th class="price">Desconto (%)</th><th class="price">Vlr. Total</th></tr></thead><tbody>`;
-            const itemsInCategory = currentQuote.items.filter(item => {
-                const service = services.find(s => s.id === item.service_id);
-                return service && service.category === category;
-            }).sort((a,b) => {
-                 const serviceA = services.find(s => s.id === a.service_id);
-                 const serviceB = services.find(s => s.id === b.service_id);
-                 if (!serviceA || !serviceB) return 0;
-                 return serviceA.name.localeCompare(serviceB.name);
-            });
-            itemsInCategory.forEach(item => {
-                const service = services.find(s => s.id === item.service_id);
-                if (!service) return;
-                const formattedDate = item.event_date ? new Date(item.event_date + 'T12:00:00').toLocaleDateString('pt-BR') : 'N/A';
-                html += `
-                    <tr>
-                        <td>${service.name}${item.observations ? `<div class="print-item-obs">${item.observations}</div>` : ''}</td>
-                        <td class="center">${formattedDate}</td>
-                        <td class="center">${item.quantity}</td>
-                        <td class="price">${formatCurrency(item.calculated_unit_price)}</td>
-                        <td class="price">${item.discount_percent || 0}%</td>
-                        <td class="price">${formatCurrency(item.calculated_total)}</td>
-                    </tr>
-                `;
-            });
-            html += `</tbody></table>`;
-        });
-        html += `
-            <div class="print-summary">
-                <table>
-                    <tr><td class="total-label">Subtotal:</td><td class="total-value">${formatCurrency(calculation.subtotal)}</td></tr>
-                    <tr><td class="total-label">Consumação Inclusa:</td><td class="total-value">(-) ${formatCurrency(calculation.consumableCredit)}</td></tr>
-                    <tr><td class="total-label">Desconto Geral:</td><td class="total-value">(-) ${formatCurrency(calculation.discountGeneral)}</td></tr>
-                    <tr class="grand-total"><td class="total-label">VALOR TOTAL:</td><td class="total-value">${formatCurrency(calculation.total)}</td></tr>
-                </table>
-            </div>
-        `;
-        printOutput.innerHTML = html;
-    }
-
-    let activeCategory = 'Todos';
-    let searchQuery = '';
-
-    function openCatalogModal() {
-        if (currentQuote.event_dates.length === 0) {
-            alert("Por favor, adicione pelo menos uma data de evento antes de adicionar itens.");
-            return;
-        }
-        activeCategory = 'Todos';
-        searchQuery = '';
-        document.getElementById('catalog-search').value = '';
-        renderCatalog();
-        catalogModal.style.display = 'block';
-        document.getElementById('catalog-search').focus();
-    }
-
-    function closeCatalogModal() {
-        catalogModal.style.display = 'none';
-    }
-
-    function renderCatalog() {
-        renderCatalogCategories();
-        renderCatalogItems();
-    }
-
-    function renderCatalogCategories() {
-        const container = document.getElementById('catalog-categories');
-        const categories = ['Todos', ...new Set(services.map(s => s.category))].sort((a, b) => a === 'Todos' ? -1 : b === 'Todos' ? 1 : a.localeCompare(b));
-        container.innerHTML = categories.map(category => `<div class="catalog-category-tab ${category === activeCategory ? 'active' : ''}" data-category="${category}">${category}</div>`).join('');
-    }
-
-    function renderCatalogItems() {
-        const container = document.getElementById('catalog-items');
-        let filteredServices = services;
-        if (activeCategory !== 'Todos') {
-            filteredServices = filteredServices.filter(s => s.category === activeCategory);
-        }
-        if (searchQuery) {
-            filteredServices = filteredServices.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()));
-        }
-        const defaultDate = currentQuote.event_dates[0]?.date;
-        container.innerHTML = filteredServices.map(service => {
-            const isAdded = currentQuote.items.some(item => item.service_id === service.id && item.event_date === defaultDate);
-            return `<div class="catalog-item"><span class="catalog-item-name">${service.name}</span><button class="btn btn-primary btn-add-item ${isAdded ? 'btn-added' : ''}" data-service-id="${service.id}" ${isAdded ? 'disabled' : ''}>${isAdded ? 'Adicionado ✔' : 'Adicionar'}</button></div>`;
-        }).join('');
-    }
-
-    function updateCatalogButtonsState() {
-        const container = document.getElementById('catalog-items');
-        if (!container) return;
-        const defaultDate = currentQuote.event_dates[0]?.date;
-        container.querySelectorAll('.btn-add-item').forEach(button => {
-            const serviceId = button.dataset.serviceId;
-            const isAdded = currentQuote.items.some(item => item.service_id === serviceId && item.event_date === defaultDate);
-            if (isAdded) {
-                button.classList.add('btn-added');
-                button.disabled = true;
-                button.textContent = 'Adicionado ✔';
-            } else {
-                button.classList.remove('btn-added');
-                button.disabled = false;
-                button.textContent = 'Adicionar';
-            }
-        });
-    }
-
-    function addItemsToQuote(serviceId) {
-        if (currentQuote.event_dates.length === 0) return;
-        const defaultDate = currentQuote.event_dates[0].date;
-        const existing = currentQuote.items.find(item => item.service_id === serviceId && item.event_date === defaultDate);
-        if (existing) return;
-        const service = services.find(s => s.id === serviceId);
-        if (!service) return;
-        let initialQuantity = 1;
-        if (service.category === 'Gastronomia') {
-            initialQuantity = currentQuote.guest_count > 0 ? currentQuote.guest_count : 1;
-        }
-        const newItem = { id: Date.now() + '-' + serviceId, service_id: serviceId, quantity: initialQuantity, discount_percent: 0, event_date: defaultDate, observations: '' };
-        currentQuote.items.push(newItem);
-        setDirty(true);
-        renderQuote();
-    }
-
-    function updateItem(itemId, field, value) {
-        const item = currentQuote.items.find(i => i.id === itemId);
-        if (item) {
-            if (field === 'quantity' || field === 'discount_percent') {
-                item[field] = parseFloat(value) || 0;
-            } else {
-                item[field] = value;
-            }
-            setDirty(true);
-            renderQuote();
-        }
-    }
-
-    function removeItem(itemId) {
-        currentQuote.items = currentQuote.items.filter(i => i.id !== itemId);
-        setDirty(true);
-        renderQuote();
-    }
-
-    function showObsPopover(button, itemId) {
-        const popover = document.getElementById('obs-popover');
-        if (!popover) return;
-        const item = currentQuote.items.find(i => i.id === itemId);
-        if (!item) return;
-        popover.innerHTML = `<textarea id="obs-text">${item.observations || ''}</textarea><button id="save-obs-btn" class="btn">Salvar Observação</button>`;
-        const rect = button.getBoundingClientRect();
-        popover.style.position = 'absolute';
-        popover.style.top = `${window.scrollY + rect.top}px`;
-        popover.style.left = rect.left < 310 ? `${rect.right + 10}px` : `${rect.left - 310}px`;
-        popover.classList.add('show');
-        document.getElementById('save-obs-btn').onclick = () => {
-            const text = document.getElementById('obs-text').value;
-            updateItem(itemId, 'observations', text);
-            popover.classList.remove('show');
-            renderQuote(); 
-        };
-    }
-
-    function duplicateItem(itemId) {
-        const originalItemIndex = currentQuote.items.findIndex(i => i.id === itemId);
-        if (originalItemIndex === -1) return;
-        const originalItem = currentQuote.items[originalItemIndex];
-        const duplicatedItem = JSON.parse(JSON.stringify(originalItem));
-        duplicatedItem.id = Date.now() + '-dup-' + (originalItem.service_id || originalItemIndex);
-        currentQuote.items.splice(originalItemIndex + 1, 0, duplicatedItem);
-        setDirty(true);
-        renderQuote();
-    }
-    
-    function exportToXLSX() {
-        if (userRole !== 'admin') { return; }
-        const clientName = currentQuote.client_name || 'Cliente';
-        const fileName = `Proposta - ${clientName.replace(/[^a-z0-9]/gi, '_')}.xlsx`;
-        const calculation = calculateQuote();
-        const data = [
-            ["Proposta Comercial"], [], ["DADOS DO CLIENTE"], ["Nome", currentQuote.client_name], ["CNPJ", currentQuote.client_cnpj], ["E-mail", currentQuote.client_email], ["Telefone", currentQuote.client_phone], [],
-            ["DADOS DO EVENTO"], ["Nº de Convidados", currentQuote.guest_count], ["Datas do Evento", currentQuote.event_dates.map(d => new Date(d.date + 'T12:00:00').toLocaleDateString('pt-BR')).join(', ')], [],
-            ["ITENS DO ORÇAMENTO"], ["Categoria", "Item", "Data", "Qtde.", "Vlr. Unitário", "Desc. (%)", "Vlr. Total", "Observações"]
-        ];
-        const categoriesInQuote = sortCategories([...new Set(currentQuote.items.map(item => { const service = services.find(s => s.id === item.service_id); return service?.category; }).filter(Boolean))]);
-        categoriesInQuote.forEach(category => {
-            const itemsInCategory = currentQuote.items.filter(item => { const service = services.find(s => s.id === item.service_id); return service && service.category === category; }).sort((a,b) => { const serviceA = services.find(s => s.id === a.service_id); const serviceB = services.find(s => s.id === b.service_id); if (!serviceA || !serviceB) return 0; return serviceA.name.localeCompare(serviceB.name); });
-            itemsInCategory.forEach(item => {
-                const service = services.find(s => s.id === item.service_id);
-                if (!service) return;
-                const formattedDate = item.event_date ? new Date(item.event_date + 'T12:00:00').toLocaleDateString('pt-BR') : 'N/A';
-                data.push([ service.category, service.name, formattedDate, item.quantity, item.calculated_unit_price, item.discount_percent || 0, item.calculated_total, item.observations || '' ]);
-            });
-        });
-        data.push([], [], [null, null, null, null, null, "Subtotal", calculation.subtotal], [null, null, null, null, null, "Consumação Inclusa", -calculation.consumableCredit], [null, null, null, null, null, "Desconto Geral", -calculation.discountGeneral], [null, null, null, null, null, "VALOR TOTAL", calculation.total]);
-        const ws = XLSX.utils.aoa_to_sheet(data);
-        ws['!cols'] = [ { wch: 25 }, { wch: 40 }, { wch: 12 }, { wch: 8 }, { wch: 15 }, { wch: 12 }, { wch: 15 }, { wch: 50 } ];
-        const currencyFormat = 'R$ #,##0.00';
-        const itemsHeaderRowIndex = 13;
-        for (let i = itemsHeaderRowIndex; i < data.length; i++) {
-            if (data[i].length < 4) continue;
-            const unitPriceCell = ws[XLSX.utils.encode_cell({ c: 4, r: i })];
-            if (unitPriceCell && typeof unitPriceCell.v === 'number') { unitPriceCell.t = 'n'; unitPriceCell.z = currencyFormat; }
-            const totalCell = ws[XLSX.utils.encode_cell({ c: 6, r: i })];
-            if (totalCell && typeof totalCell.v === 'number') { totalCell.t = 'n'; totalCell.z = currencyFormat; }
-        }
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Proposta");
-        XLSX.writeFile(wb, fileName);
-    }
-    
-    function setupEventListeners() {
-        const exportBtn = document.getElementById('export-btn');
-        const exportMenu = document.getElementById('export-menu');
-        if(exportBtn && exportMenu) {
-            exportBtn.addEventListener('click', (e) => { e.stopPropagation(); exportMenu.classList.toggle('show'); });
-            document.getElementById('export-pdf-option')?.addEventListener('click', () => { if (userRole === 'admin') { window.print(); } exportMenu.classList.remove('show'); });
-            document.getElementById('export-xlsx-option')?.addEventListener('click', () => { exportToXLSX(); exportMenu.classList.remove('show'); });
-        }
-        document.addEventListener('click', (e) => {
-            if (exportMenu && exportMenu.classList.contains('show') && !exportBtn.contains(e.target)) { exportMenu.classList.remove('show'); }
-            const popover = document.getElementById('obs-popover');
-            if (popover && popover.classList.contains('show') && !popover.contains(e.target) && !e.target.classList.contains('obs-btn')) { popover.classList.remove('show'); }
-        });
-        document.querySelectorAll('#clientName, #clientCnpj, #clientEmail, #clientPhone').forEach(input => { input.addEventListener('change', syncClientData); });
-        document.querySelectorAll('#guestCount, #priceTableSelect').forEach(input => { input.addEventListener('change', () => { syncClientData(); renderQuote(); }); });
-        document.getElementById('add-date-btn')?.addEventListener('click', () => { addDateEntry(); syncClientData(); renderQuote(); });
-        document.getElementById('event-dates-container')?.addEventListener('click', (e) => { if (e.target.classList.contains('remove-date-btn')) { e.target.closest('.date-entry').remove(); syncClientData(); renderQuote(); } });
-        document.getElementById('quote-categories-container')?.addEventListener('change', (e) => {
-            const row = e.target.closest('tr'); if (!row) return; const itemId = row.dataset.itemId;
-            if (e.target.classList.contains('qty-input')) { updateItem(itemId, 'quantity', e.target.value); }
-            else if (e.target.classList.contains('discount-input')) { if (userRole === 'admin') { updateItem(itemId, 'discount_percent', e.target.value); } else { e.target.value = 0; } }
-            else if (e.target.classList.contains('date-select')) { updateItem(itemId, 'event_date', e.target.value); }
-        });
-        document.getElementById('quote-categories-container')?.addEventListener('click', (e) => {
-            const row = e.target.closest('tr'); if (row) {
-                const itemId = row.dataset.itemId;
-                if (e.target.classList.contains('duplicate-item-btn')) { duplicateItem(itemId); return; }
-                if (e.target.classList.contains('remove-item-btn')) { removeItem(itemId); return; }
-                else if (e.target.classList.contains('obs-btn')) { e.stopPropagation(); showObsPopover(e.target, itemId); return; }
-            }
-        });
-        document.getElementById('discountValue')?.addEventListener('change', (e) => { currentQuote.discount_general = parseFloat(e.target.value) || 0; setDirty(true); renderQuote(); });
-        document.getElementById('save-quote-btn')?.addEventListener('click', saveQuote);
-        document.getElementById('open-catalog-btn')?.addEventListener('click', openCatalogModal);
-        document.getElementById('close-catalog-btn')?.addEventListener('click', closeCatalogModal);
-        window.addEventListener('click', (event) => { if (event.target == catalogModal) { closeCatalogModal(); } });
-        let searchTimeout;
-        document.getElementById('catalog-search')?.addEventListener('input', (e) => { clearTimeout(searchTimeout); searchTimeout = setTimeout(() => { searchQuery = e.target.value; renderCatalogItems(); }, 300); });
-        document.getElementById('catalog-categories')?.addEventListener('click', (e) => { const tab = e.target.closest('.catalog-category-tab'); if (tab) { activeCategory = tab.dataset.category; renderCatalog(); } });
-        document.getElementById('catalog-items')?.addEventListener('click', (e) => { const button = e.target.closest('.btn-add-item'); if (button && !button.disabled) { const serviceId = button.dataset.serviceId; addItemsToQuote(serviceId); } });
-    }
-
-    async function saveQuote() {
-        syncClientData();
-        if (currentQuote.items.length === 0 && document.getElementById('quote-categories-container').children.length > 0) {
-            showNotification("Adicione itens antes de salvar ou enviar.", true);
-            return;
-        }
-        const calculation = calculateQuote();
-        const quoteDataObject = {
-            client_cnpj: currentQuote.client_cnpj, client_email: currentQuote.client_email, client_phone: currentQuote.client_phone,
-            guest_count: currentQuote.guest_count, price_table_id: currentQuote.price_table_id, event_dates: currentQuote.event_dates,
-            items: currentQuote.items.map(item => { const { id, ...rest } = item; return rest; }),
-            discount_general: currentQuote.discount_general, subtotal_value: calculation.subtotal, consumable_credit_used: calculation.consumableCredit
-        };
-        const finalPayload = { client_name: currentQuote.client_name, status: currentQuote.status, total_value: calculation.total, quote_data: quoteDataObject };
-        if (userRole === 'client') {
-            finalPayload.status = 'Solicitado pelo Cliente';
-            finalPayload.total_value = 0;
-            finalPayload.quote_data.price_table_id = null;
-            finalPayload.quote_data.discount_general = 0;
-            finalPayload.quote_data.subtotal_value = 0;
-            finalPayload.quote_data.consumable_credit_used = 0;
-            finalPayload.quote_data.items.forEach(item => { item.discount_percent = 0; item.calculated_unit_price = 0; item.calculated_total = 0; });
-        } else if (userRole === 'admin' && !isDirty) { return; }
-        try {
-            let result;
-            if (currentQuote.id) {
-                const { data, error } = await supabase.from('quotes').update(finalPayload).eq('id', currentQuote.id).select().single();
-                result = { data, error };
-            } else {
-                const { data, error } = await supabase.from('quotes').insert(finalPayload).select().single();
-                result = { data, error };
-            }
-            if (result.error) throw result.error;
-            const savedData = result.data;
-            currentQuote.id = savedData.id;
-            Object.assign(currentQuote, savedData.quote_data);
-            currentQuote.items = (savedData.quote_data.items || []).map((item, index) => ({ ...item, id: `saved-${savedData.id}-${index}-${item.service_id || index}` }));
-            if (userRole === 'client') {
-                showNotification('Solicitação enviada com sucesso! Entraremos em contato.');
-            } else {
-                showNotification('Orçamento salvo com sucesso!');
-                setDirty(false);
-                if (window.location.search.indexOf('quote_id=') === -1) {
-                     const newUrl = new URL(window.location);
-                     newUrl.searchParams.set('quote_id', savedData.id);
-                     window.history.pushState({}, '', newUrl);
-                }
-            }
-            renderQuote();
-        } catch (error) {
-            console.error("Erro ao salvar orçamento:", error);
-            showNotification(`Erro ao salvar/enviar: ${error.message}`, true);
-        }
-    }
-
-    async function loadQuote(id) {
-        if (userRole === 'client') {
-            window.history.pushState({}, '', window.location.pathname);
-            return;
-        }
-        try {
-            const { data, error } = await supabase.from('quotes').select('*').eq('id', id).single();
+            const { data, error } = await supa.from(source).select('*').order(orderCol, { ascending: ascending }).limit(500);
             if (error) throw error;
-            if (!data) throw new Error("Orçamento não encontrado.");
-            const quoteDetails = data.quote_data || {};
-            currentQuote = {
-                ...currentQuote, ...quoteDetails, id: data.id, client_name: data.client_name, status: data.status,
-                items: (quoteDetails.items || []).map((item, index) => ({ ...item, id: `loaded-${id}-${index}-${item.service_id || index}` })),
-            };
-            document.getElementById('clientName').value = currentQuote.client_name || '';
-            document.getElementById('clientCnpj').value = currentQuote.client_cnpj || '';
-            document.getElementById('clientEmail').value = currentQuote.client_email || '';
-            document.getElementById('clientPhone').value = currentQuote.client_phone || '';
-            document.getElementById('guestCount').value = currentQuote.guest_count || 100;
-            document.getElementById('priceTableSelect').value = currentQuote.price_table_id || '';
-            document.getElementById('discountValue').value = (currentQuote.discount_general || 0).toFixed(2);
-            const datesContainer = document.getElementById('event-dates-container');
-            if (datesContainer) {
-                datesContainer.innerHTML = '';
-                if (currentQuote.event_dates && currentQuote.event_dates.length > 0) {
-                    currentQuote.event_dates.forEach(dateData => addDateEntry(dateData));
-                }
+            tb.innerHTML = '';
+            if ((data || []).length === 0) {
+                tb.innerHTML = `<tr><td colspan="${columns.length + (actions ? 1 : 0)}" style="text-align:center; padding: 20px;">Nenhum registro encontrado.</td></tr>`;
             }
-        } catch (error) {
-            console.error("Erro ao carregar orçamento:", error);
-            showNotification(`Erro ao carregar orçamento ID ${id}. Iniciando novo.`, true);
-            window.history.pushState({}, '', window.location.pathname);
+
+            (data || []).forEach(item => {
+                const tr = document.createElement('tr');
+                columns.forEach(col => {
+                    const td = document.createElement('td');
+                    if (col === 'ativo') {
+                        td.innerHTML = item.ativo ? '<span class="pill ok">Ativo</span>' : '<span class="pill bad">Inativo</span>';
+                    } else if (col.includes('custo') || col.includes('preco')) {
+                         td.textContent = fmtMoney(item[col]);
+                    } else if (col === 'data_hora') {
+                        td.textContent = new Date(item[col]).toLocaleString('pt-BR');
+                    }
+                    else {
+                        td.textContent = item[col] || '—';
+                    }
+                    tr.appendChild(td);
+                });
+                if (actions) {
+                    const tdActions = document.createElement('td');
+                    tdActions.className = 'row-actions';
+                    const toggleBtn = item.hasOwnProperty('ativo') ? `<button class="btn small" data-act="toggle" data-id="${item.id}">${item.ativo ? 'Desativar' : 'Ativar'}</button>` : '';
+                    tdActions.innerHTML = `<button class="btn small" data-act="edit" data-id="${item.id}">Editar</button>
+                                           ${toggleBtn}`;
+                    tr.appendChild(tdActions);
+                }
+                tb.appendChild(tr);
+            });
+        } catch (e) {
+            console.error(`Erro ao carregar ${table}:`, e);
+            tb.innerHTML = `<tr><td colspan="${columns.length + (actions ? 1 : 0)}">Erro ao carregar.</td></tr>`;
+        }
+    },
+
+    showForm(editorId, formId, titleId, titleText, data = null) {
+        const form = $(formId);
+        if (!form) return;
+
+        form.reset();
+        if ($(titleId)) $(titleId).textContent = titleText;
+
+        if (data) {
+             // Preenche o formulário com os dados existentes (Edição)
+            Object.keys(data).forEach(key => {
+                const input = form.elements[key];
+                if (input) {
+                    if (input.type === 'checkbox') {
+                        input.checked = data[key];
+                    } else {
+                        // Evita definir o valor como 'null' ou 'undefined' em campos de texto
+                        input.value = data[key] || '';
+                    }
+                }
+            });
+             // Garante que o ID seja preenchido no campo hidden se existir
+            const idInput = form.querySelector('input[name="id"]');
+            if (idInput) idInput.value = data.id || '';
+
+        } else {
+            // Limpa o ID ao criar novo registro
+            const idInput = form.querySelector('input[name="id"]');
+            if (idInput) idInput.value = '';
+
+            // Ao criar novo, garante que o checkbox 'ativo' esteja marcado se existir no form
+            if (form.elements['ativo'] && form.elements['ativo'].type === 'checkbox') {
+                form.elements['ativo'].checked = true;
+            }
+        }
+        showEditor(editorId);
+    },
+
+    // Função SAVE (CORRIGIDA v6.2)
+    async save(e, table, editorId, refreshCallback) {
+        e.preventDefault();
+        const form = e.target;
+
+        // 1. Use native browser validation
+        if (form && typeof form.checkValidity === 'function' && !form.checkValidity()) {
+            setStatus('Por favor, preencha todos os campos obrigatórios.', 'err');
+            if (typeof form.reportValidity === 'function') {
+                form.reportValidity();
+            }
+            return;
+        }
+
+        // 2. Collect data using the robust getFormData
+        // CORREÇÃO v6.2: Usar getAttribute('id') para evitar colisão com inputs chamados 'id'.
+        // O e.target é o próprio formulário, mas acessar e.target.id pode retornar um input filho.
+        const formId = e.target.getAttribute('id');
+        const data = getFormData(formId);
+
+        const id = data.id;
+
+        if (id) {
+             delete data.id;
+        }
+
+        // 3. Manual validation
+        if (table === 'unidades_medida' && (!data.sigla || String(data.sigla).trim() === '')) {
+            setStatus('O campo Sigla é obrigatório.', 'err');
+            return;
+        }
+
+        setStatus(`Salvando...`);
+        try {
+            let query;
+            if (id) {
+                // UPDATE path
+                query = supa.from(table).update(data).eq('id', id);
+            } else {
+                // INSERT path
+                if (!data.hasOwnProperty('ativo') && (table !== 'movimentacoes')) {
+                    // Verifica se o elemento 'ativo' realmente existe no formulário antes de definir padrão
+                    if (form.elements['ativo']) {
+                         data.ativo = true;
+                    }
+                }
+                query = supa.from(table).insert([data]);
+            }
+            const { error } = await query;
+            if (error) throw error;
+
+            // Atualizado para v6.2
+            setStatus(`Registro salvo com sucesso! (v6.2)`, 'ok');
+            hideEditor(editorId);
+            if (refreshCallback) refreshCallback();
+        } catch (err) {
+            console.error(`Erro ao salvar ${table}:`, err);
+            if (err.code === '23505') {
+                setStatus(`Erro: Registro duplicado (violação de unicidade).`, 'err');
+            } else {
+                // Exibe o erro detalhado do banco de dados
+                setStatus(`Erro no Banco de Dados: ${err.message} (Code: ${err.code})`, 'err');
+            }
+        }
+    },
+
+    async toggle(table, id, refreshCallback) {
+        setStatus('Atualizando status...');
+        try {
+            const { data, error: selectError } = await supa.from(table).select('ativo').eq('id', id).single();
+            if (selectError || !data) throw new Error(selectError?.message || "Registro não encontrado.");
+
+            const { error } = await supa.from(table).update({ ativo: !data.ativo }).eq('id', id);
+            if (error) throw error;
+
+            setStatus('Status atualizado.', 'ok');
+            if (refreshCallback) refreshCallback();
+        } catch (err) {
+            console.error(`Erro ao alternar status em ${table}:`, err);
+            setStatus(`Erro: ${err.message}`, 'err');
+        }
+    },
+
+    async handleTableClick(e, table, editorId, formId, titleId, refreshCallback) {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        const action = btn.dataset.act;
+        const id = btn.dataset.id;
+
+        if (action === 'toggle') {
+            this.toggle(table, id, refreshCallback);
+        } else if (action === 'edit') {
+            try {
+                const { data, error } = await supa.from(table).select('*').eq('id', id).single();
+                if (error) throw error;
+                this.showForm(editorId, formId, titleId, `Editar Registro`, data);
+            } catch (err) {
+                setStatus(`Erro ao carregar dados: ${err.message}`, 'err');
+            }
         }
     }
+};
 
-    initialize();
+/* ===== MÓDULOS RESTANTES (Inalterados Funcionalmente) ===== */
+
+const AuxiliaresModule = {
+    init() {
+        this.setupCRUD('um', 'unidades_medida', ['sigla', 'nome', 'base', 'fator', 'ativo']);
+        this.setupCRUD('unidades', 'unidades', ['nome', 'ativo']);
+        this.setupCRUD('categorias', 'categorias', ['nome', 'tipo', 'ativo']);
+
+        this.refreshAll();
+    },
+
+    setupCRUD(prefix, table, columns) {
+        const editorId = `${prefix}-editor-container`;
+        const formId = `form-${prefix}`;
+        const titleId = `${prefix}-form-title`;
+        const tableId = `tbl-${prefix}`;
+
+        const capitalizedPrefix = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+        const btnNewName = `btnShowNew${capitalizedPrefix}Form`;
+        const btnCancelName = `btnCancel${capitalizedPrefix}Edit`;
+
+        const refresh = () => {
+            GenericCRUD.loadTable(table, tableId, columns);
+            if (table === 'unidades_medida') this.refreshUMDropdowns();
+            if (table === 'unidades') this.refreshUnidadesDropdowns();
+            if (table === 'categorias') this.refreshCategoriasDropdowns(true);
+        };
+
+        addSafeEventListener(btnNewName, 'click', () => {
+            GenericCRUD.showForm(editorId, formId, titleId, `Novo Registro`);
+        });
+        addSafeEventListener(btnCancelName, 'click', () => hideEditor(editorId));
+        addSafeEventListener(formId, 'submit', (e) => GenericCRUD.save(e, table, editorId, refresh));
+
+        const tableEl = $(tableId);
+        if (tableEl) {
+             tableEl.addEventListener('click', (e) => GenericCRUD.handleTableClick(e, table, editorId, formId, titleId, refresh));
+        }
+    },
+
+    refreshAll() {
+        GenericCRUD.loadTable('unidades_medida', 'tbl-um', ['sigla', 'nome', 'base', 'fator', 'ativo']);
+        GenericCRUD.loadTable('unidades', 'tbl-unidades', ['nome', 'ativo']);
+        GenericCRUD.loadTable('categorias', 'tbl-categorias', ['nome', 'tipo', 'ativo']);
+        this.refreshUMDropdowns();
+        this.refreshUnidadesDropdowns();
+        this.refreshCategoriasDropdowns();
+    },
+
+    refreshUMDropdowns() {
+        fillOptionsFrom('unidades_medida', 'ing-unidade-medida', 'id', 'sigla', {ativo: true}, false);
+        fillOptionsFrom('unidades_medida', 'draft-und', 'sigla', 'sigla', {ativo: true}, false);
+    },
+
+    refreshUnidadesDropdowns() {
+        fillOptionsFrom('unidades', 'ing-local-armazenagem', 'id', 'nome', {ativo: true});
+        fillOptionsFrom('unidades', 'mov-unidade-origem', 'id', 'nome', {ativo: true});
+        fillOptionsFrom('unidades', 'mov-unidade-destino', 'id', 'nome', {ativo: true});
+    },
+
+    refreshCategoriasDropdowns(forceReload = false) {
+        fillOptionsFrom('categorias', 'ing-categoria', 'id', 'nome', {tipo: 'INGREDIENTE', ativo: true});
+        fillOptionsFrom('categorias', 'prato-cat', 'id', 'nome', {tipo: 'PRATO', ativo: true});
+
+        const catFilter = $('cat-filter');
+        if (catFilter && (catFilter.options.length <= 1 || forceReload)) {
+            if (typeof supa !== 'undefined' && supa.from) {
+                const defaultOptionText = catFilter.options[0]?.text || 'Todas as Categorias';
+                catFilter.innerHTML = `<option value="">${defaultOptionText}</option>`;
+                supa.from('categorias').select('id, nome').eq('tipo', 'PRATO').eq('ativo', true).order('nome').then(({data, error}) => {
+                    if (!error && data) {
+                        data.forEach(cat => {
+                            const opt = document.createElement('option');
+                            opt.value = cat.id;
+                            opt.textContent = cat.nome;
+                            catFilter.appendChild(opt);
+                        });
+                    }
+                });
+            }
+        }
+    }
+};
+
+const IngredientesModule = {
+    init() {
+        this.setupCRUD();
+        this.loadIngredientes();
+    },
+
+    setupCRUD() {
+        const table = 'ingredientes';
+        const editorId = 'ingrediente-editor-container';
+        const formId = 'form-ingrediente';
+        const titleId = 'ingrediente-form-title';
+        const tableId = 'tblIng';
+
+        const refresh = () => {
+            this.loadIngredientes();
+            ReceitasModule.updateDraftRefOptions();
+            EstoqueModule.updateMovItemDropdown();
+            // Evitar chamar loadSugestoes aqui para performance, melhor chamar após movimentação de estoque.
+        };
+
+        addSafeEventListener('btnShowNewIngredienteForm', 'click', () => GenericCRUD.showForm(editorId, formId, titleId, 'Novo Ingrediente'));
+        addSafeEventListener('btnCancelIngEdit', 'click', () => hideEditor(editorId));
+        addSafeEventListener(formId, 'submit', (e) => GenericCRUD.save(e, table, editorId, refresh));
+
+        const tableEl = $(tableId);
+        if (tableEl) tableEl.addEventListener('click', (e) => GenericCRUD.handleTableClick(e, table, editorId, formId, titleId, refresh));
+    },
+
+    loadIngredientes() {
+        const columns = ['nome', 'categoria_nome', 'unidade_medida_sigla', 'custo_unitario', 'ativo'];
+        GenericCRUD.loadTable('ingredientes', 'tblIng', columns, true, 'vw_ingredientes');
+    }
+};
+
+const ReceitasModule = {
+    draftItems: [],
+
+    init() {
+        this.setupEventListeners();
+        this.loadReceitas();
+        this.updateDraftRefOptions();
+    },
+
+    setupEventListeners() {
+        addSafeEventListener('btnShowNewRecipeForm', 'click', () => this.showRecipeForm());
+        addSafeEventListener('btnCancelRecEdit', 'click', () => hideEditor('recipe-editor-container'));
+        addSafeEventListener('form-receita', 'submit', (e) => this.saveRecipe(e));
+        addSafeEventListener('draft-tipo', 'change', () => this.updateDraftRefOptions());
+        addSafeEventListener('btnDraftAdd', 'click', () => this.addDraftItem());
+
+        const tblRec = $('tblRec');
+        if (tblRec) tblRec.addEventListener('click', (e) => this.handleRecipeTableClick(e));
+
+        const tblDraft = $('tblDraft');
+        if (tblDraft) tblDraft.addEventListener('click', (e) => this.handleDraftTableClick(e));
+    },
+
+    async loadReceitas() {
+        GenericCRUD.loadTable('receitas', 'tblRec', ['nome', 'rendimento_formatado', 'total_itens', 'ativo'], true, 'vw_receitas_resumo');
+    },
+
+    updateDraftRefOptions() {
+        const tipo = $('draft-tipo')?.value;
+        if (!tipo) return;
+
+        if (tipo === 'INGREDIENTE') {
+            fillOptionsFrom('ingredientes', 'draft-ref', 'id', 'nome', {ativo: true});
+        } else if (tipo === 'RECEITA') {
+            fillOptionsFrom('receitas', 'draft-ref', 'id', 'nome', {ativo: true});
+        }
+    },
+
+    async showRecipeForm(id = null) {
+        const form = $('form-receita');
+        if (!form) return;
+        form.reset();
+        this.draftItems = [];
+        if ($('rec-id')) $('rec-id').value = '';
+        if ($('recipe-form-title')) $('recipe-form-title').textContent = id ? 'Editar Receita' : 'Nova Receita';
+
+        if (id) {
+            setStatus('Carregando receita para edição...');
+            try {
+                const { data: recData, error: recError } = await supa.from('receitas').select('*').eq('id', id).single();
+                if (recError) throw recError;
+
+                // Preenche o formulário principal
+                Object.keys(recData).forEach(key => {
+                    const input = form.elements[key];
+                    if(input) {
+                         if (input.type === 'checkbox') {
+                            input.checked = recData[key];
+                        } else {
+                            input.value = recData[key] || '';
+                        }
+                    }
+                });
+                if ($('rec-id')) $('rec-id').value = id;
+
+                // Carrega os itens da receita
+                const { data: itemsData, error: itemsError } = await supa.from('vw_receita_itens_detalhes').select('*').eq('receita_id', id);
+                if (itemsError) throw itemsError;
+
+                this.draftItems = itemsData.map(item => ({
+                    tipo: item.tipo,
+                    referencia_id: item.referencia_id,
+                    nome: item.nome_item,
+                    quantidade: item.quantidade,
+                    unidade: item.unidade
+                }));
+                setStatus('Receita carregada.', 'ok');
+            } catch (e) {
+                console.error("Erro ao carregar receita para edição:", e);
+                setStatus(`Erro: ${e.message}`, 'err');
+                return;
+            }
+        } else {
+             // Garante que o checkbox 'ativo' esteja marcado ao criar novo, se existir no formulário
+            if (form.elements['ativo'] && form.elements['ativo'].type === 'checkbox') {
+                form.elements['ativo'].checked = true;
+            }
+        }
+
+        this.renderDraftTable();
+        this.updateDraftRefOptions();
+        showEditor('recipe-editor-container');
+    },
+
+    async addDraftItem() {
+        const tipoEl = $('draft-tipo');
+        const refEl = $('draft-ref');
+        const qtdEl = $('draft-qtd');
+        const undEl = $('draft-und');
+
+        if (!tipoEl || !refEl || !qtdEl || !undEl) return;
+
+        const tipo = tipoEl.value;
+        const refId = refEl.value;
+        const qtd = parseFloat(qtdEl.value);
+        const unidade = undEl.value;
+        const refName = refEl.options[refEl.selectedIndex]?.text;
+
+        if (!refId || !qtd || qtd <= 0 || !unidade) {
+            setStatus('Preencha todos os campos do item corretamente.', 'err');
+            return;
+        }
+
+        const exists = this.draftItems.some(item => item.tipo === tipo && item.referencia_id == refId);
+        if (exists) {
+            setStatus('Este item já foi adicionado à receita.', 'warn');
+            return;
+        }
+
+        this.draftItems.push({
+            tipo: tipo,
+            referencia_id: refId,
+            nome: refName,
+            quantidade: qtd,
+            unidade: unidade
+        });
+
+        this.renderDraftTable();
+        qtdEl.value = '';
+        refEl.value = '';
+    },
+
+    renderDraftTable() {
+        const tbody = $('tblDraft')?.querySelector('tbody');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        this.draftItems.forEach((item, index) => {
+            const tr = document.createElement('tr');
+            // Ajustado para as colunas do app.html (Tipo, Nome, Qtd, UN, Ação)
+            tr.innerHTML = `
+                <td>${item.tipo}</td>
+                <td>${item.nome}</td>
+                <td>${fmt(item.quantidade)}</td>
+                <td>${item.unidade}</td>
+                <td><button type="button" class="btn small" data-act="remove-draft" data-index="${index}">Remover</button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    },
+
+    // Função saveRecipe ajustada para usar a validação nativa e o getFormData robusto
+    async saveRecipe(e) {
+        e.preventDefault();
+        // Garante que estamos referenciando o formulário correto, mesmo se o evento vier de um botão externo (atributo form)
+        const form = e.target.id === 'form-receita' ? e.target : $('form-receita');
+
+         // 1. Validação Nativa
+        if (form && typeof form.checkValidity === 'function' && !form.checkValidity()) {
+            setStatus('Por favor, preencha os campos obrigatórios da receita.', 'err');
+            if (typeof form.reportValidity === 'function') {
+                form.reportValidity();
+            }
+            return;
+        }
+
+        // 2. Coleta de Dados (CORREÇÃO v6.2 Aplicada indiretamente via getFormData)
+        const recipeData = getFormData('form-receita');
+        const id = recipeData.id;
+        if (id) {
+            delete recipeData.id;
+        }
+
+        // 3. Validação de Negócio
+        if (this.draftItems.length === 0) {
+            setStatus('Adicione pelo menos um item à receita antes de salvar.', 'err');
+            return;
+        }
+
+        setStatus('Salvando receita...');
+        try {
+            // 4. Salvar/Atualizar o cabeçalho da receita
+            let savedRecipe;
+            if (id) {
+                const { data, error } = await supa.from('receitas').update(recipeData).eq('id', id).select().single();
+                if (error) throw error;
+                savedRecipe = data;
+                // Deleta os itens antigos para depois inserir os novos (simula REPLACE)
+                await supa.from('receita_itens').delete().eq('receita_id', id);
+            } else {
+                // Garante que 'ativo' seja definido se não estiver presente (e se o campo existir no HTML)
+                 if (!recipeData.hasOwnProperty('ativo') && form.elements['ativo']) {
+                    recipeData.ativo = true;
+                }
+                const { data, error } = await supa.from('receitas').insert([recipeData]).select().single();
+                if (error) throw error;
+                savedRecipe = data;
+            }
+
+            // 5. Preparar e salvar os novos itens da receita
+            const itemsToInsert = this.draftItems.map(item => ({
+                receita_id: savedRecipe.id,
+                tipo: item.tipo,
+                referencia_id: item.referencia_id,
+                quantidade: item.quantidade,
+                unidade: item.unidade
+            }));
+
+            const { error: itemsError } = await supa.from('receita_itens').insert(itemsToInsert);
+            if (itemsError) {
+                // Rollback manual simplificado
+                if (!id) await supa.from('receitas').delete().eq('id', savedRecipe.id);
+                throw itemsError;
+            }
+
+            setStatus('Receita salva com sucesso!', 'ok');
+            hideEditor('recipe-editor-container');
+            this.refreshAll();
+
+        } catch (err) {
+            console.error("Erro ao salvar receita:", err);
+            setStatus(`Erro: ${err.message}`, 'err');
+        }
+    },
+
+    handleRecipeTableClick(e) {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        const action = btn.dataset.act;
+        const id = btn.dataset.id;
+
+        if (action === 'edit') {
+            this.showRecipeForm(id);
+        } else if (action === 'toggle') {
+            GenericCRUD.toggle('receitas', id, () => this.refreshAll());
+        }
+    },
+
+    handleDraftTableClick(e) {
+        const btn = e.target.closest('button');
+        if (!btn || btn.dataset.act !== 'remove-draft') return;
+        const index = parseInt(btn.dataset.index);
+        this.draftItems.splice(index, 1);
+        this.renderDraftTable();
+    },
+
+    refreshAll() {
+        this.loadReceitas();
+        this.updateDraftRefOptions();
+        PratosModule.updatePratoComponentDropdowns();
+        EstoqueModule.updateMovItemDropdown();
+    }
+};
+
+const PratosModule = {
+    init() {
+        this.setupPratoCRUD();
+        this.setupComponentesEventListeners();
+        this.loadPratos();
+        this.updatePratoComponentDropdowns();
+        this.setupImportEventListeners();
+    },
+
+    setupPratoCRUD() {
+        const table = 'pratos';
+        const editorId = 'prato-editor-container';
+        const formId = 'form-prato';
+        const titleId = 'prato-form-title';
+        const tableId = 'tblPratos';
+
+        const refresh = () => {
+            this.loadPratos();
+            this.updatePratoComponentDropdowns();
+        };
+
+        addSafeEventListener('btnNovoPrato', 'click', () => {
+            hideEditor('prato-import-container');
+            GenericCRUD.showForm(editorId, formId, titleId, 'Novo Prato');
+        });
+        addSafeEventListener('btnCancelarPrato', 'click', () => hideEditor(editorId));
+        addSafeEventListener(formId, 'submit', (e) => GenericCRUD.save(e, table, editorId, refresh));
+
+        const tableEl = $(tableId);
+        if (tableEl) {
+             tableEl.addEventListener('click', (e) => {
+                const btn = e.target.closest('button');
+                if (btn && btn.dataset.act === 'edit') {
+                    hideEditor('prato-import-container');
+                }
+                GenericCRUD.handleTableClick(e, table, editorId, formId, titleId, refresh)
+            });
+        }
+    },
+
+    setupComponentesEventListeners() {
+        addSafeEventListener('cp-prato', 'change', (e) => this.loadComponentes(e.target.value));
+        addSafeEventListener('btnAddPrComp', 'click', () => this.addComponente());
+
+        const tblPrComp = $('tblPrComp');
+        if (tblPrComp) tblPrComp.addEventListener('click', (e) => this.handleComponenteTableClick(e));
+    },
+
+    loadPratos() {
+        const columns = ['nome', 'categoria_nome', 'preco_venda', 'total_receitas', 'ativo'];
+        GenericCRUD.loadTable('pratos', 'tblPratos', columns, true, 'vw_pratos_resumo');
+    },
+
+    updatePratoComponentDropdowns() {
+        fillOptionsFrom('pratos', 'cp-prato', 'id', 'nome', {ativo: true});
+        fillOptionsFrom('receitas', 'cp-receita', 'id', 'nome', {ativo: true});
+    },
+
+    async loadComponentes(pratoId) {
+        const tbody = $('tblPrComp')?.querySelector('tbody');
+        if (!tbody) return;
+        tbody.innerHTML = '<tr><td colspan="3">Carregando...</td></tr>';
+        if (!pratoId) {
+            tbody.innerHTML = '<tr><td colspan="3">Selecione um prato.</td></tr>';
+            return;
+        }
+
+        try {
+            const { data, error } = await supa.from('vw_prato_componentes_detalhes').select('*').eq('prato_id', pratoId).order('nome_receita', { ascending: true });
+            if (error) throw error;
+            tbody.innerHTML = '';
+            data.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${item.nome_receita}</td>
+                    <td>${item.quantidade}</td>
+                    <td>
+                        <button class="btn small" data-act="remove-comp" data-id="${item.id}">Remover</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3">Nenhuma receita associada.</td></tr>';
+            }
+        } catch (e) {
+            console.error("Erro ao carregar componentes:", e);
+            tbody.innerHTML = '<tr><td colspan="3">Erro ao carregar.</td></tr>';
+        }
+    },
+
+    async addComponente() {
+        const pratoId = $('cp-prato')?.value;
+        const receitaId = $('cp-receita')?.value;
+        const quantidadeInput = $('cp-qtd');
+        const quantidade = parseFloat(quantidadeInput?.value);
+
+        if (!pratoId || !receitaId || !quantidade || quantidade <= 0) {
+            setStatus("Preencha todos os campos para adicionar o componente.", 'err');
+            return;
+        }
+        setStatus("Adicionando componente...");
+        try {
+            const { error } = await supa.from('prato_componentes').insert([{
+                prato_id: pratoId,
+                receita_id: receitaId,
+                quantidade: quantidade
+            }]);
+            if (error) throw error;
+            setStatus("Componente adicionado!", 'ok');
+            this.loadComponentes(pratoId);
+            this.loadPratos();
+            if (quantidadeInput) quantidadeInput.value = 1;
+        } catch (e) {
+            console.error("Erro ao adicionar componente:", e);
+            if (e.code === '23505') {
+                setStatus("Erro: Esta receita já é um componente deste prato.", 'err');
+            } else {
+                setStatus(`Erro: ${e.message}`, 'err');
+            }
+        }
+    },
+
+    async handleComponenteTableClick(e) {
+        const btn = e.target.closest('button');
+        if (!btn || btn.dataset.act !== 'remove-comp') return;
+        const id = btn.dataset.id;
+        const pratoId = $('cp-prato')?.value;
+
+        if (confirm("Tem certeza que deseja remover este componente?")) {
+            setStatus("Removendo...");
+            try {
+                const { error } = await supa.from('prato_componentes').delete().eq('id', id);
+                if (error) throw error;
+                setStatus("Componente removido.", 'ok');
+                this.loadComponentes(pratoId);
+                this.loadPratos();
+            } catch (e) {
+                console.error("Erro ao remover componente:", e);
+                setStatus(`Erro: ${e.message}`, 'err');
+            }
+        }
+    },
+
+    // --- FUNÇÕES DE IMPORTAÇÃO ---
+
+    setupImportEventListeners() {
+        addSafeEventListener('btnImportarPratos', 'click', () => this.showImportUI());
+        addSafeEventListener('btnCancelImport', 'click', () => hideEditor('prato-import-container'));
+        addSafeEventListener('btnConfirmImport', 'click', () => this.confirmImport());
+        addSafeEventListener('importCheckAll', 'click', (e) => {
+            $$('#tblImportPratos tbody input[type="checkbox"]').forEach(chk => chk.checked = e.target.checked);
+        });
+    },
+
+    async showImportUI() {
+        hideEditor('prato-editor-container');
+        showEditor('prato-import-container');
+
+        const loader = $('import-loader');
+        const tbody = $('#tblImportPratos tbody');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        if (loader) loader.style.display = 'block';
+        if ($('importCheckAll')) $('importCheckAll').checked = false;
+
+        try {
+            const { data, error } = await supa.rpc('get_unregistered_dishes');
+            if (error) throw error;
+
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3">Tudo certo! Todos os pratos vendidos já estão cadastrados no estoque.</td></tr>';
+                if ($('btnConfirmImport')) $('btnConfirmImport').disabled = true;
+            } else {
+                if ($('btnConfirmImport')) $('btnConfirmImport').disabled = false;
+                data.forEach(item => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><input type="checkbox" data-nome="${encodeURIComponent(item.nome_prato)}" data-cat="${encodeURIComponent(item.categoria_sugerida)}"></td>
+                        <td>${item.nome_prato}</td>
+                        <td><span class="pill">${item.categoria_sugerida}</span></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+        } catch (e) {
+            console.error("Erro ao buscar pratos não registrados:", e);
+            let errorMessage = e.message;
+            if (e.code === '42883' || (e.message && e.message.includes('function get_unregistered_dishes'))) {
+                 errorMessage = "Função 'get_unregistered_dishes' não encontrada.";
+            }
+            setStatus(`Erro ao buscar pratos: ${errorMessage}`, 'err');
+            tbody.innerHTML = `<tr><td colspan="3">Erro ao carregar dados. Verifique o status e o console.</td></tr>`;
+        } finally {
+            if (loader) loader.style.display = 'none';
+        }
+    },
+
+    async confirmImport() {
+        const selectedItems = $$('#tblImportPratos tbody input[type="checkbox"]:checked');
+        if (selectedItems.length === 0) {
+            alert("Selecione pelo menos um prato para importar.");
+            return;
+        }
+
+        setStatus('Iniciando importação...');
+
+        const uniqueCategories = [...new Set(selectedItems.map(item => decodeURIComponent(item.dataset.cat)))].filter(Boolean);
+
+        try {
+            const { data: existingCats, error: catError } = await supa.from('categorias').select('id, nome').eq('tipo', 'PRATO');
+            if (catError) throw catError;
+
+            const catMap = new Map(existingCats.map(c => [c.nome.toLowerCase(), c.id]));
+
+            const catsToCreate = uniqueCategories
+                .filter(name => !catMap.has(name.toLowerCase()))
+                .map(name => ({ nome: name, tipo: 'PRATO', ativo: true }));
+
+            if (catsToCreate.length > 0) {
+                setStatus(`Importando ${catsToCreate.length} novas categorias...`);
+                const { data: insertedCats, error: newCatError } = await supa.from('categorias').insert(catsToCreate).select('id, nome');
+                if (newCatError) throw newCatError;
+
+                insertedCats.forEach(c => catMap.set(c.nome.toLowerCase(), c.id));
+                AuxiliaresModule.refreshCategoriasDropdowns(true);
+            }
+
+            setStatus('Preparando pratos para inserção...');
+            const newPratosToInsert = selectedItems.map(item => {
+                const nome = decodeURIComponent(item.dataset.nome);
+                const catName = decodeURIComponent(item.dataset.cat);
+                const categoriaId = catName ? catMap.get(catName.toLowerCase()) : null;
+
+                return {
+                    nome: nome,
+                    categoria_id: categoriaId,
+                    ativo: true,
+                    peso_volume: 0,
+                    unidade_peso_volume: 'g',
+                    preco_venda: 0
+                };
+            });
+
+            if (newPratosToInsert.length > 0) {
+                setStatus(`Importando ${newPratosToInsert.length} novos pratos...`);
+                const { error: pratoError } = await supa.from('pratos').insert(newPratosToInsert);
+                if (pratoError) throw pratoError;
+                setStatus(`Importação concluída! ${newPratosToInsert.length} pratos adicionados.`, 'ok');
+            }
+
+            hideEditor('prato-import-container');
+            this.loadPratos();
+            this.updatePratoComponentDropdowns();
+
+        } catch (e) {
+            console.error("Erro na importação de pratos:", e);
+            if (e.code === '23505') {
+                setStatus(`Erro: Um ou mais pratos já existem. Tente novamente.`, 'err');
+            } else {
+                setStatus(`Erro na importação: ${e.message}`, 'err');
+            }
+        }
+    }
+};
+
+const EstoqueModule = {
+    init() {
+        this.setupEventListeners();
+        this.loadAllStockData();
+        this.updateMovItemDropdown();
+    },
+
+    setupEventListeners() {
+        addSafeEventListener('form-movimentacao', 'submit', (e) => this.registrarMovimentacao(e));
+        addSafeEventListener('btnMovCancel', 'click', () => {
+            const form = $('form-movimentacao');
+            if (form) form.reset();
+        });
+    },
+
+    loadAllStockData() {
+        GenericCRUD.loadTable('vw_estoque_geral', 'tblEstoqueGeral', ['nome_item', 'quantidade_total', 'unidade_medida', 'custo_medio_formatado'], false);
+        GenericCRUD.loadTable('vw_estoque_lotes', 'tblEstoqueLotes', ['nome_item', 'quantidade', 'unidade_medida', 'custo_unitario_formatado', 'data_validade', 'unidade_nome'], false);
+        GenericCRUD.loadTable('vw_movimentacoes_historico', 'tblHistorico', ['data_hora', 'tipo', 'nome_item', 'quantidade_formatada', 'origem_destino', 'usuario', 'obs'], false);
+    },
+
+    async updateMovItemDropdown() {
+        const sel = $('mov-item');
+        if (!sel || sel.options.length > 1) return;
+
+        sel.innerHTML = '<option value="">Carregando itens...</option>';
+
+        try {
+            const [{ data: ingData }, { data: recData }] = await Promise.all([
+                supa.from('ingredientes').select('id, nome').eq('ativo', true).order('nome'),
+                supa.from('receitas').select('id, nome').eq('ativo', true).order('nome')
+            ]);
+
+            sel.innerHTML = '<option value="">Selecione o Item</option>';
+
+            const ingredientes = (ingData || []).map(i => ({ id: `ING:${i.id}`, name: i.nome, type: 'Ingrediente' }));
+            const receitas = (recData || []).map(r => ({ id: `REC:${r.id}`, name: r.nome, type: 'Receita' }));
+            const allItems = [...ingredientes, ...receitas].sort((a, b) => a.name.localeCompare(b.name));
+
+             allItems.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.id;
+                opt.textContent = `${item.name} (${item.type})`;
+                sel.appendChild(opt);
+            });
+
+        } catch (e) {
+            console.error("Erro ao carregar itens para movimentação:", e);
+            sel.innerHTML = '<option value="">(Erro ao carregar)</option>';
+        }
+    },
+
+    // Função atualizada para usar validação nativa e getFormData robusto
+    async registrarMovimentacao(e) {
+        e.preventDefault();
+        const form = e.target;
+
+         // 1. Validação Nativa
+        if (form && typeof form.checkValidity === 'function' && !form.checkValidity()) {
+            setStatus('Por favor, preencha todos os campos obrigatórios da movimentação.', 'err');
+            if (typeof form.reportValidity === 'function') {
+                form.reportValidity();
+            }
+            return;
+        }
+
+        // 2. Coleta de Dados (CORREÇÃO v6.2 Aplicada indiretamente via getFormData)
+        const formData = getFormData('form-movimentacao');
+        const itemValue = formData.item_id;
+
+        // 3. Validação de Negócio
+        if (!itemValue || !itemValue.includes(':')) {
+            setStatus("Selecione um item válido.", 'err');
+            return;
+        }
+
+        const [itemType, itemId] = itemValue.split(':');
+
+        // Prepara o objeto de inserção (getFormData já trata números como null se vazios)
+        const movData = {
+            tipo: formData.tipo,
+            quantidade: formData.quantidade,
+            custo_unitario: formData.custo_unitario,
+            // Campos de select/date devem ser explicitamente NULL se vazios (string vazia "")
+            unidade_origem_id: formData.unidade_origem_id || null,
+            unidade_destino_id: formData.unidade_destino_id || null,
+            data_validade: formData.data_validade || null,
+            obs: formData.obs,
+            usuario: 'Sistema'
+        };
+
+        if (itemType === 'ING') {
+            movData.ingrediente_id = itemId;
+        } else if (itemType === 'REC') {
+            movData.receita_id = itemId;
+        }
+
+        if (movData.tipo === 'TRANSFERENCIA' && movData.unidade_origem_id && movData.unidade_origem_id === movData.unidade_destino_id) {
+            setStatus("A unidade de origem e destino não podem ser iguais em uma transferência.", 'err');
+            return;
+        }
+
+        // 4. Envio ao Banco de Dados
+        setStatus("Registrando movimentação...");
+        try {
+            const { error } = await supa.from('movimentacoes').insert([movData]);
+            if (error) throw error;
+
+            setStatus("Movimentação registrada com sucesso!", 'ok');
+            if (form) form.reset();
+            this.loadAllStockData();
+            ComprasModule.loadSugestoes(true); // Atualiza sugestões após movimentação
+        } catch (err) {
+            console.error("Erro ao registrar movimentação:", err);
+            setStatus(`Erro: ${err.message}`, 'err');
+        }
+    }
+};
+
+const ProducaoModule = {
+    init() {
+        this.setupEventListeners();
+        this.setDefaultDates();
+    },
+
+    setupEventListeners() {
+        addSafeEventListener('btnCalcularPrev', 'click', () => this.calcularPrevisao());
+    },
+
+    setDefaultDates() {
+        const inicio = $('prev-data-inicio');
+        const fim = $('prev-data-fim');
+
+        if (inicio && fim && !inicio.value && !fim.value) {
+            const hoje = new Date();
+            const seteDiasAtras = new Date(hoje);
+            seteDiasAtras.setDate(hoje.getDate() - 7);
+
+            // Formata para YYYY-MM-DD compatível com input type="date"
+            try {
+                 const formatDate = (date) => {
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                };
+                fim.value = formatDate(hoje);
+                inicio.value = formatDate(seteDiasAtras);
+
+            } catch (e) {
+                console.warn("Não foi possível definir as datas padrão:", e);
+            }
+        }
+    },
+
+    async calcularPrevisao() {
+        const dataInicio = $('prev-data-inicio')?.value;
+        const dataFim = $('prev-data-fim')?.value;
+        const categoriaId = $('cat-filter')?.value || null;
+
+        if (!dataInicio || !dataFim) {
+            setStatus("Selecione as datas de início e fim.", 'err');
+            return;
+        }
+
+        if (new Date(dataInicio) > new Date(dataFim)) {
+            setStatus("A data de início não pode ser posterior à data de fim.", 'err');
+            return;
+        }
+
+        const tbody = $('tbl-previsao')?.querySelector('tbody');
+        if (!tbody) return;
+        tbody.innerHTML = '<tr><td colspan="3">Calculando previsão...</td></tr>';
+        setStatus("Calculando previsão...");
+
+        try {
+            const { data, error } = await supa.rpc('calcular_previsao_venda', {
+                p_data_inicio: dataInicio,
+                p_data_fim: dataFim,
+                p_categoria_id: categoriaId
+            });
+
+            if (error) throw error;
+
+            tbody.innerHTML = '';
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3">Nenhum dado de venda encontrado no período ou a tabela de vendas não existe.</td></tr>';
+                setStatus("Previsão calculada (sem dados).", 'warn');
+            } else {
+                data.forEach(item => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${item.nome_prato}</td>
+                        <td>${item.total_vendido}</td>
+                        <td>${fmt(item.previsao_ajustada, 2)}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+                setStatus("Previsão calculada.", 'ok');
+            }
+
+        } catch (e) {
+            console.error("Erro ao calcular previsão:", e);
+            let errorMessage = e.message;
+             if (e.code === 'P0001') {
+                 errorMessage = "Tabela de vendas não encontrada.";
+             } else if (e.code === '42883') {
+                 errorMessage = "Função de cálculo não encontrada no banco de dados.";
+             }
+            setStatus(`Erro: ${errorMessage}`, 'err');
+            tbody.innerHTML = '<tr><td colspan="3">Erro ao calcular. Verifique o status.</td></tr>';
+        }
+    }
+};
+
+const ComprasModule = {
+    init() {
+        this.setupEventListeners();
+        this.loadSugestoes();
+    },
+
+    setupEventListeners() {
+        addSafeEventListener('btnRefreshSuggestions', 'click', () => this.loadSugestoes(true));
+    },
+
+    async loadSugestoes(force = false) {
+        const tableId = 'tbl-sugestoes';
+        const tb = $(tableId)?.querySelector('tbody');
+        if (!tb) return;
+
+        // Só carrega se forçado, se estiver vazio, ou se não estiver carregando
+        if (tb.rows.length > 0 && !force && !tb.dataset.loading) return;
+
+        tb.dataset.loading = true;
+         // Só mostra o spinner se estiver forçando ou se a tabela estiver vazia/carregando
+        if (force || tb.rows.length === 0 || (tb.rows.length === 1 && tb.rows[0].cells[0].textContent.includes('Carregando'))) {
+             tb.innerHTML = `<tr><td colspan="5">Carregando sugestões…</td></tr>`;
+        }
+
+
+         try {
+            const { data, error } = await supa.from('vw_sugestao_compras').select('*').order('sugestao_compra', { ascending: false });
+            if (error) throw error;
+            tb.innerHTML = '';
+
+            if ((data || []).length === 0) {
+                tb.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 20px;">Tudo certo! Nenhum item abaixo do ponto de pedido.</td></tr>`;
+            } else {
+                (data || []).forEach(item => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${item.nome_ingrediente}</td>
+                        <td>${fmt(item.estoque_atual)} ${item.unidade_medida}</td>
+                        <td>${fmt(item.ponto_pedido)} ${item.unidade_medida}</td>
+                        <td><strong>${fmt(item.sugestao_compra)} ${item.unidade_medida}</strong></td>
+                        <td>${item.ultimo_fornecedor || '—'}</td>
+                    `;
+                    tb.appendChild(tr);
+                });
+            }
+            if (force) setStatus('Sugestões de compra atualizadas.', 'ok');
+        } catch (e) {
+            console.error(`Erro ao carregar sugestões de compra:`, e);
+            tb.innerHTML = `<tr><td colspan="5">Erro ao carregar sugestões.</td></tr>`;
+        } finally {
+            delete tb.dataset.loading;
+        }
+    }
+};
+
+
+/* ===== INICIALIZAÇÃO PRINCIPAL ===== */
+document.addEventListener('DOMContentLoaded', () => {
+    if (typeof supa === 'undefined') {
+        setStatus("Erro crítico: Cliente Supabase não inicializado.", 'err');
+        return;
+    }
+
+    setupRouting();
+
+    try {
+        // Inicialização de todos os módulos
+        AuxiliaresModule.init();
+        IngredientesModule.init();
+        ReceitasModule.init();
+        PratosModule.init();
+        EstoqueModule.init();
+        ProducaoModule.init();
+        ComprasModule.init();
+
+        // Atualizado para v6.2
+        setStatus("Aplicação carregada e pronta. (v6.2)", 'ok');
+    } catch (e) {
+        console.error("Erro durante a inicialização dos módulos:", e);
+        setStatus("Erro na inicialização. Verifique o console.", 'err');
+    }
 });
