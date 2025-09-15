@@ -30,7 +30,6 @@ const getFormData = (formId) => {
     const obj = {};
 
     for (let element of form.elements) {
-        // Ignora elementos sem nome ou que não devem ser submetidos
         if (!element.name || ['submit', 'button', 'fieldset', 'reset'].includes(element.type)) {
             continue;
         }
@@ -38,7 +37,6 @@ const getFormData = (formId) => {
         if (element.type === 'checkbox') {
             obj[element.name] = element.checked;
         } else if (element.type === 'number' || element.dataset.type === 'number') {
-            // Garante que o valor seja um número ou nulo se o campo estiver vazio
             if (element.value === "" || element.value === null) {
                 obj[element.name] = null;
             } else {
@@ -50,13 +48,10 @@ const getFormData = (formId) => {
                 obj[element.name] = element.value;
             }
         } else {
-            // Para todos os outros tipos (text, select, date, etc.)
-            // Garante que o valor seja nulo se o campo estiver vazio
             obj[element.name] = element.value === "" ? null : element.value;
         }
     }
     
-    // Trata o campo 'id' separadamente
     if (obj.hasOwnProperty('id') && (obj.id === "" || obj.id === null)) {
         delete obj.id;
     }
