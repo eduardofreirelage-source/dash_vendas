@@ -1,8 +1,8 @@
 // =================================================================================
-// SCRIPT COMPLETO E INTEGRAL (v8.1 - Lógica Unificada e Corrigida)
+// SCRIPT COMPLETO E INTEGRAL (v8.3 - Módulos Completamente Restaurados)
 // =================================================================================
 
-console.log("[DIAGNOSTICO v8.1] Script Iniciado. Versão Completa e Harmonizada.");
+console.log("[DIAGNOSTICO v8.3] Script Iniciado. Versão Completa e Funcional.");
 
 /* ===== Helpers com verificações de segurança ===== */
 const $  = (id)=> document.getElementById(id);
@@ -33,7 +33,7 @@ const getFormData = (formId) => {
                 obj[element.name] = element.value ? parseFloat(element.value) : null;
             } else if (data.has(element.name)) {
                 const value = data.get(element.name);
-                obj[element.name] = value ? value : null;
+                obj[element.name] = value || null;
             }
         }
     }
@@ -53,11 +53,13 @@ const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 var supa;
 if (!window.supabase) {
     console.error("Biblioteca Supabase não carregada!");
+    setStatus("Erro: Biblioteca Supabase não carregada.", "err");
 } else {
     try {
         supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     } catch (e) {
         console.error("Falha ao inicializar o cliente Supabase:", e);
+        setStatus("Erro: Falha ao conectar com o banco de dados.", "err");
     }
 }
 
@@ -104,15 +106,18 @@ async function fillOptionsFrom(table, selId, valKey, labelKey, whereEq, allowEmp
   const sel=$(selId);
   if(!sel) return;
   if (sel.options.length > (allowEmpty ? 1 : 0) && !sel.dataset.loading && !sel.dataset.forceReload) return;
+  
   sel.dataset.loading = true;
   delete sel.dataset.forceReload;
   const previousHTML = sel.innerHTML;
   if (sel.options.length === 0 || allowEmpty) sel.innerHTML='<option value="">Carregando…</option>';
+
   try{
     let query=supa.from(table).select(`${valKey},${labelKey}`).order(labelKey,{ascending:true});
     if(whereEq) Object.entries(whereEq).forEach(([k,v])=> query=query.eq(k,v));
     const {data,error}=await query;
     if(error) throw error;
+
     sel.innerHTML = allowEmpty ? '<option value="">Selecione</option>' : '';
     (data||[]).forEach(x=>{ const o=document.createElement('option'); o.value=x[valKey]; o.textContent=x[labelKey]; sel.appendChild(o); });
   }catch(e){
@@ -129,20 +134,19 @@ const GenericCRUD = {
         const tb = $(tableId)?.querySelector('tbody');
         if (!tb) return;
         const source = view || table;
-        let orderCol = columns[0];
-        if (columns.includes('nome')) orderCol = 'nome';
-        else if (columns.includes('data_hora')) orderCol = 'data_hora';
+        let orderCol = columns.includes('nome') ? 'nome' : (columns.includes('data_hora') ? 'data_hora' : columns[0]);
         const ascending = !columns.includes('data_hora');
         tb.innerHTML = `<tr><td colspan="${columns.length + (actions ? 1 : 0)}">Carregando…</td></tr>`;
+
         try {
             const { data, error } = await supa.from(source).select('*').order(orderCol, { ascending: ascending }).limit(500);
             if (error) throw error;
             tb.innerHTML = '';
-            if ((data || []).length === 0) {
+            if (!data || data.length === 0) {
                 tb.innerHTML = `<tr><td colspan="${columns.length + (actions ? 1 : 0)}" style="text-align:center; padding: 20px;">Nenhum registro encontrado.</td></tr>`;
                 return;
             }
-            (data || []).forEach(item => {
+            data.forEach(item => {
                 const tr = document.createElement('tr');
                 columns.forEach(col => {
                     const td = document.createElement('td');
@@ -172,6 +176,7 @@ const GenericCRUD = {
             tb.innerHTML = `<tr><td colspan="${columns.length + (actions ? 1 : 0)}">Erro ao carregar.</td></tr>`;
         }
     },
+
     showForm(editorId, formId, titleId, titleText, data = null) {
         const form = $(formId);
         if (!form) return;
@@ -196,6 +201,7 @@ const GenericCRUD = {
         }
         showEditor(editorId);
     },
+
     async save(e, table, editorId, refreshCallback) {
         e.preventDefault();
         const form = e.target;
@@ -216,9 +222,10 @@ const GenericCRUD = {
             if (refreshCallback) refreshCallback();
         } catch (err) {
             console.error(`Erro ao salvar ${table}:`, err);
-            setStatus(`Erro: ${err.message}`, 'err');
+            setStatus(err.code === '23505' ? 'Erro: Já existe um registro com estes dados.' : `Erro: ${err.message}`, 'err');
         }
     },
+
     async toggle(table, id, refreshCallback) {
         setStatus('Atualizando status...');
         try {
@@ -233,10 +240,12 @@ const GenericCRUD = {
             setStatus(`Erro: ${err.message}`, 'err');
         }
     },
+
     async handleTableClick(e, table, editorId, formId, titleId, refreshCallback) {
         const btn = e.target.closest('button');
         if (!btn) return;
         const { act: action, id } = btn.dataset;
+
         if (action === 'toggle') {
             this.toggle(table, id, refreshCallback);
         } else if (action === 'edit') {
@@ -249,6 +258,257 @@ const GenericCRUD = {
                 setStatus(`Erro ao carregar dados: ${err.message}`, 'err');
             }
         }
+    }
+};
+
+/* ===== MÓDULO DE CADASTROS AUXILIARES ===== */
+const AuxiliaresModule = {
+    init() {
+        this.setupCRUD('um', 'unidades_medida', ['sigla', 'nome', 'base', 'fator', 'ativo']);
+        this.setupCRUD('unidades', 'unidades', ['nome', 'ativo']);
+        this.setupCRUD('categorias', 'categorias', ['nome', 'tipo', 'ativo']);
+        this.refreshAll();
+    },
+
+    setupCRUD(prefix, table, columns) {
+        const editorId = `${prefix}-editor-container`;
+        const formId = `form-${prefix}`;
+        const titleId = `${prefix}-form-title`;
+        const tableId = `tbl-${prefix}`;
+        const capitalizedPrefix = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+        const btnNewName = `btnShowNew${capitalizedPrefix}Form`;
+        const btnCancelName = `btnCancel${capitalizedPrefix}Edit`;
+
+        const refresh = () => {
+            GenericCRUD.loadTable(table, tableId, columns);
+            if (table === 'unidades_medida') this.refreshUMDropdowns();
+            if (table === 'unidades') this.refreshUnidadesDropdowns();
+            if (table === 'categorias') this.refreshCategoriasDropdowns(true);
+        };
+        addSafeEventListener(btnNewName, 'click', () => GenericCRUD.showForm(editorId, formId, titleId, `Novo Registro`));
+        addSafeEventListener(btnCancelName, 'click', () => hideEditor(editorId));
+        addSafeEventListener(formId, 'submit', (e) => GenericCRUD.save(e, table, editorId, refresh));
+        const tableEl = $(tableId);
+        if (tableEl) {
+             tableEl.addEventListener('click', (e) => GenericCRUD.handleTableClick(e, table, editorId, formId, titleId, refresh));
+        }
+    },
+    
+    refreshAll() {
+        GenericCRUD.loadTable('unidades_medida', 'tbl-um', ['sigla', 'nome', 'base', 'fator', 'ativo']);
+        GenericCRUD.loadTable('unidades', 'tbl-unidades', ['nome', 'ativo']);
+        GenericCRUD.loadTable('categorias', 'tbl-categorias', ['nome', 'tipo', 'ativo']);
+        this.refreshUMDropdowns();
+        this.refreshUnidadesDropdowns();
+        this.refreshCategoriasDropdowns();
+    },
+
+    refreshUMDropdowns() {
+        fillOptionsFrom('unidades_medida', 'ing-unidade-medida', 'id', 'sigla', {ativo: true}, false);
+        fillOptionsFrom('unidades_medida', 'draft-und', 'sigla', 'sigla', {ativo: true}, false);
+    },
+
+    refreshUnidadesDropdowns() {
+        fillOptionsFrom('unidades', 'mov-unidade-origem', 'id', 'nome', {ativo: true});
+        fillOptionsFrom('unidades', 'mov-unidade-destino', 'id', 'nome', {ativo: true});
+    },
+
+    refreshCategoriasDropdowns(forceReload = false) {
+        if(forceReload) {
+            ['ing-categoria', 'prato-cat', 'cat-filter'].forEach(id => {
+                const sel = $(id);
+                if(sel) sel.dataset.forceReload = true;
+            });
+        }
+        fillOptionsFrom('categorias', 'ing-categoria', 'id', 'nome', {tipo: 'INGREDIENTE', ativo: true});
+        fillOptionsFrom('categorias', 'prato-cat', 'id', 'nome', {tipo: 'PRATO', ativo: true});
+        fillOptionsFrom('categorias', 'cat-filter', 'id', 'nome', {tipo: 'PRATO', ativo: true});
+    }
+};
+
+/* ===== MÓDULO DE INGREDIENTES ===== */
+const IngredientesModule = {
+     init() {
+        this.setupCRUD();
+        this.loadIngredientes();
+    },
+
+    setupCRUD() {
+        const table = 'ingredientes';
+        const editorId = 'ingrediente-editor-container';
+        const formId = 'form-ingrediente';
+        const titleId = 'ingrediente-form-title';
+        const tableId = 'tblIng';
+        const refresh = () => {
+            this.loadIngredientes();
+            ReceitasModule.updateDraftRefOptions();
+            EstoqueModule.updateMovItemDropdown();
+        };
+        addSafeEventListener('btnShowNewIngredienteForm', 'click', () => GenericCRUD.showForm(editorId, formId, titleId, 'Novo Ingrediente'));
+        addSafeEventListener('btnCancelIngEdit', 'click', () => hideEditor(editorId));
+        addSafeEventListener(formId, 'submit', (e) => GenericCRUD.save(e, table, editorId, refresh));
+        const tableEl = $(tableId);
+        if (tableEl) tableEl.addEventListener('click', (e) => GenericCRUD.handleTableClick(e, table, editorId, formId, titleId, refresh));
+    },
+
+    loadIngredientes() {
+        const columns = ['nome', 'categoria_nome', 'unidade_medida_sigla', 'custo_unitario', 'ativo'];
+        GenericCRUD.loadTable('ingredientes', 'tblIng', columns, true, 'vw_ingredientes');
+    }
+}
+
+/* ===== MÓDULO DE RECEITAS (FICHA TÉCNICA) ===== */
+const ReceitasModule = {
+    draftItems: [],
+    init() {
+        this.setupEventListeners();
+        this.loadReceitas();
+        this.updateDraftRefOptions();
+    },
+    setupEventListeners() {
+        addSafeEventListener('btnShowNewRecipeForm', 'click', () => this.showRecipeForm());
+        addSafeEventListener('btnCancelRecEdit', 'click', () => hideEditor('recipe-editor-container'));
+        addSafeEventListener('form-receita', 'submit', (e) => this.saveRecipe(e));
+        addSafeEventListener('draft-tipo', 'change', () => this.updateDraftRefOptions());
+        addSafeEventListener('btnDraftAdd', 'click', () => this.addDraftItem());
+        const tblRec = $('tblRec');
+        if (tblRec) tblRec.addEventListener('click', (e) => this.handleRecipeTableClick(e));
+        const tblDraft = $('tblDraft');
+        if (tblDraft) tblDraft.addEventListener('click', (e) => this.handleDraftTableClick(e));
+    },
+    async loadReceitas() {
+        GenericCRUD.loadTable('receitas', 'tblRec', ['nome', 'rendimento_formatado', 'total_itens', 'ativo'], true, 'vw_receitas_resumo');
+    },
+    updateDraftRefOptions() {
+        const tipo = $('draft-tipo')?.value;
+        if (!tipo) return;
+        if (tipo === 'INGREDIENTE') {
+            fillOptionsFrom('ingredientes', 'draft-ref', 'id', 'nome', {ativo: true});
+        } else if (tipo === 'RECEITA') {
+            fillOptionsFrom('receitas', 'draft-ref', 'id', 'nome', {ativo: true});
+        }
+    },
+    async showRecipeForm(id = null) {
+        const form = $('form-receita');
+        if (!form) return;
+        form.reset();
+        this.draftItems = [];
+        $('rec-id').value = '';
+        $('recipe-form-title').textContent = id ? 'Editar Receita' : 'Nova Receita';
+        if (id) {
+            setStatus('Carregando receita para edição...');
+            try {
+                const { data: recData, error: recError } = await supa.from('receitas').select('*').eq('id', id).single();
+                if (recError) throw recError;
+                Object.keys(recData).forEach(key => {
+                    const input = form.elements[key];
+                    if(input) input.value = recData[key];
+                });
+                $('rec-id').value = id;
+                const { data: itemsData, error: itemsError } = await supa.from('vw_receita_itens_detalhes').select('*').eq('receita_id', id);
+                if (itemsError) throw itemsError;
+                this.draftItems = itemsData.map(item => ({
+                    tipo: item.tipo, referencia_id: item.referencia_id,
+                    nome: item.nome_item, quantidade: item.quantidade, unidade: item.unidade
+                }));
+                setStatus('Receita carregada.', 'ok');
+            } catch (e) {
+                console.error("Erro ao carregar receita para edição:", e);
+                setStatus(`Erro: ${e.message}`, 'err');
+                return;
+            }
+        }
+        this.renderDraftTable();
+        this.updateDraftRefOptions();
+        showEditor('recipe-editor-container');
+    },
+    async addDraftItem() {
+        const tipo = $('draft-tipo').value;
+        const refId = $('draft-ref').value;
+        const qtd = parseFloat($('draft-qtd').value);
+        const unidade = $('draft-und').value;
+        const refSelect = $('draft-ref');
+        const refName = refSelect.options[refSelect.selectedIndex]?.text;
+        if (!refId || !qtd || qtd <= 0 || !unidade) {
+            return setStatus('Preencha todos os campos do item corretamente.', 'err');
+        }
+        if (this.draftItems.some(item => item.tipo === tipo && item.referencia_id == refId)) {
+            return setStatus('Este item já foi adicionado à receita.', 'warn');
+        }
+        this.draftItems.push({ tipo, referencia_id: refId, nome: refName, quantidade: qtd, unidade });
+        this.renderDraftTable();
+        $('draft-qtd').value = '';
+        $('draft-ref').value = '';
+    },
+    renderDraftTable() {
+        const tbody = $('tblDraft')?.querySelector('tbody');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        this.draftItems.forEach((item, index) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.tipo}</td><td>${item.nome}</td>
+                <td>${fmt(item.quantidade)}</td><td>${item.unidade}</td>
+                <td><button type="button" class="btn small" data-act="remove-draft" data-index="${index}">Remover</button></td>`;
+            tbody.appendChild(tr);
+        });
+    },
+    async saveRecipe(e) {
+        e.preventDefault();
+        const recipeData = getFormData('form-receita');
+        const id = recipeData.id;
+        delete recipeData.id;
+        if (this.draftItems.length === 0) {
+            return setStatus('Adicione pelo menos um item à receita antes de salvar.', 'err');
+        }
+        setStatus('Salvando receita...');
+        try {
+            let savedRecipe;
+            if (id) {
+                const { data, error } = await supa.from('receitas').update(recipeData).eq('id', id).select().single();
+                if (error) throw error;
+                savedRecipe = data;
+                await supa.from('receita_itens').delete().eq('receita_id', id);
+            } else {
+                const { data, error } = await supa.from('receitas').insert([recipeData]).select().single();
+                if (error) throw error;
+                savedRecipe = data;
+            }
+            const itemsToInsert = this.draftItems.map(item => ({
+                receita_id: savedRecipe.id, tipo: item.tipo, referencia_id: item.referencia_id,
+                quantidade: item.quantidade, unidade: item.unidade
+            }));
+            const { error: itemsError } = await supa.from('receita_itens').insert(itemsToInsert);
+            if (itemsError) {
+                if (!id) await supa.from('receitas').delete().eq('id', savedRecipe.id);
+                throw itemsError;
+            }
+            setStatus('Receita salva com sucesso!', 'ok');
+            hideEditor('recipe-editor-container');
+            this.refreshAll();
+        } catch (err) {
+            console.error("Erro ao salvar receita:", err);
+            setStatus(`Erro: ${err.message}`, 'err');
+        }
+    },
+    handleRecipeTableClick(e) {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        const { act: action, id } = btn.dataset;
+        if (action === 'edit') this.showRecipeForm(id);
+        else if (action === 'toggle') GenericCRUD.toggle('receitas', id, () => this.refreshAll());
+    },
+    handleDraftTableClick(e) {
+        const btn = e.target.closest('button[data-act="remove-draft"]');
+        if (!btn) return;
+        this.draftItems.splice(parseInt(btn.dataset.index), 1);
+        this.renderDraftTable();
+    },
+    refreshAll() {
+        this.loadReceitas();
+        this.updateDraftRefOptions();
+        PratosModule.updatePratoComponentDropdowns();
+        EstoqueModule.updateMovItemDropdown();
     }
 };
 
@@ -368,7 +628,7 @@ const PratosModule = {
     showImportError(message, showSQLFix = false) {
         showEditor('import-error-detail');
         $('import-error-message').textContent = message;
-        $(showSQLFix ? 'showEditor' : 'hideEditor')('import-sql-fix');
+        showSQLFix ? showEditor('import-sql-fix') : hideEditor('import-sql-fix');
     },
     hideImportError() {
         hideEditor('import-error-detail');
@@ -493,7 +753,7 @@ const EstoqueModule = {
         const tipoMov = tipo || $('mov-tipo')?.value;
         if (tipoMov === 'PRODUCAO') {
             fillOptionsFrom('receitas', 'mov-item', 'id', 'nome', { ativo: true }, false);
-        } else if (['ENTRADA', 'SAIDA', 'AJUSTE'].includes(tipoMov)) {
+        } else if (['ENTRADA', 'SAIDA', 'AJUSTE', 'TRANSFERENCIA'].includes(tipoMov)) {
             fillOptionsFrom('ingredientes', 'mov-item', 'id', 'nome', { ativo: true }, false);
         }
     },
@@ -506,7 +766,6 @@ const EstoqueModule = {
         const movTipo = $('mov-tipo');
         if (movTipo) {
             movTipo.value = type;
-            // Dispara o evento change para garantir que tudo seja atualizado
             movTipo.dispatchEvent(new Event('change'));
             $('mov-item')?.focus();
         }
@@ -650,10 +909,6 @@ const ComprasModule = {
     }
 };
 
-// Módulos de cadastros auxiliares e ingredientes são mais simples e podem ser omitidos para brevidade
-// se a lógica principal estiver focada em Pratos, Estoque, Produção e Compras.
-// Para uma solução completa, eles seriam incluídos aqui.
-
 /* ===== INICIALIZAÇÃO PRINCIPAL ===== */
 document.addEventListener('DOMContentLoaded', () => {
     if (typeof supa === 'undefined') {
@@ -662,17 +917,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     setupRouting();
     try {
-        // Inicializa todos os módulos
-        // AuxiliaresModule.init(); // Dependências para os outros
-        // IngredientesModule.init();
-        // ReceitasModule.init();
+        // CORREÇÃO: Todos os módulos agora são inicializados
+        AuxiliaresModule.init();
+        IngredientesModule.init();
+        ReceitasModule.init();
         PratosModule.init();
         EstoqueModule.init();
         ProducaoModule.init();
         ComprasModule.init();
+        
         setStatus("Aplicação carregada e pronta.", 'ok');
     } catch (e) {
         console.error("Erro durante a inicialização dos módulos:", e);
-        setStatus("Erro na inicialização. Verifique o console.", 'err');
+        setStatus(`Erro na inicialização: ${e.message}`, 'err');
     }
 });
