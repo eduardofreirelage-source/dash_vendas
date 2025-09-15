@@ -1,8 +1,8 @@
 // =================================================================================
-// SCRIPT DE TESTE (v8.6-test) - Teste focado em salvar "Unidades"
+// SCRIPT COMPLETO E INTEGRAL (v8.7 - Correção Definitiva de getFormData)
 // =================================================================================
 
-console.log("[DIAGNOSTICO v8.6-test] Script de teste iniciado.");
+console.log("[DIAGNÓSTICO v8.7] Script final iniciado.");
 
 /* ===== Helpers com verificações de segurança ===== */
 const $  = (id)=> document.getElementById(id);
@@ -20,30 +20,50 @@ const fmtMoney=(n)=> new Intl.NumberFormat('pt-BR',{style: 'currency', currency:
 const showEditor = (id) => { const el = $(id); if(el && el.style) el.style.display = 'block'; };
 const hideEditor = (id) => { const el = $(id); if(el && el.style) el.style.display = 'none'; };
 
+// ================================================================================
+// >>>>> FUNÇÃO getFormData REESCRITA E CORRIGIDA <<<<<
+// Utiliza a API FormData, que é mais moderna e robusta.
+// ================================================================================
 const getFormData = (formId) => {
     const form = $(formId);
     if (!form) return {};
+    
+    // Usa a API FormData para coletar a maioria dos campos
+    const formData = new FormData(form);
     const obj = {};
-    for (let element of form.elements) {
-        if (!element.name || ['submit', 'button', 'fieldset', 'reset'].includes(element.type)) {
-            continue;
-        }
-        if (element.type === 'checkbox') {
-            obj[element.name] = element.checked;
-        } else if (element.type === 'number' || element.dataset.type === 'number') {
-            if (element.value === "" || element.value === null) {
-                obj[element.name] = null;
-            } else {
-                const numVal = parseFloat(element.value);
-                obj[element.name] = isNaN(numVal) ? null : numVal;
-            }
+    for (const [key, value] of formData.entries()) {
+        obj[key] = value;
+    }
+
+    // A API FormData não inclui checkboxes desmarcados, então precisamos tratá-los manualmente.
+    form.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+        obj[checkbox.name] = checkbox.checked;
+    });
+
+    // Garante que campos numéricos vazios se tornem nulos
+    form.querySelectorAll('input[type="number"], input[data-type="number"]').forEach(numInput => {
+        if (obj[numInput.name] === '' || obj[numInput.name] === undefined) {
+            obj[numInput.name] = null;
         } else {
-            obj[element.name] = element.value === "" ? null : element.value;
+            obj[numInput.name] = parseFloat(obj[numInput.name]);
+        }
+    });
+
+    // Garante que outros campos de texto vazios se tornem nulos
+    for (const key in obj) {
+        if (obj[key] === "") {
+            obj[key] = null;
         }
     }
-    if (obj.hasOwnProperty('id') && (obj.id === "" || obj.id === null)) {
+    
+    // Trata o campo 'id'
+    const idInput = form.querySelector('input[name="id"]');
+    if (idInput && idInput.value) {
+        obj.id = idInput.value;
+    } else {
         delete obj.id;
     }
+
     return obj;
 };
 
@@ -283,56 +303,12 @@ const AuxiliaresModule = {
             if (table === 'categorias') this.refreshCategoriasDropdowns(true);
         };
         
-        // >>>>> LÓGICA DE TESTE DIRECIONADO <<<<<
-        // Usa uma função de salvar especial APENAS para o formulário de 'unidades'
-        if (prefix === 'unidades') {
-            addSafeEventListener(formId, 'submit', (e) => this.saveUnidadeTest(e, table, editorId, refresh));
-        } else {
-            // Todos os outros formulários usam a função genérica normal
-            addSafeEventListener(formId, 'submit', (e) => GenericCRUD.save(e, table, editorId, refresh));
-        }
-        
+        addSafeEventListener(formId, 'submit', (e) => GenericCRUD.save(e, table, editorId, refresh));
         addSafeEventListener(btnNewName, 'click', () => GenericCRUD.showForm(editorId, formId, titleId, `Novo Registro`));
         addSafeEventListener(btnCancelName, 'click', () => hideEditor(editorId));
         const tableEl = $(tableId);
         if (tableEl) {
              tableEl.addEventListener('click', (e) => GenericCRUD.handleTableClick(e, table, editorId, formId, titleId, refresh));
-        }
-    },
-    
-    // >>>>> FUNÇÃO DE TESTE PARA ISOLAR O PROBLEMA <<<<<
-    async saveUnidadeTest(e, table, editorId, refreshCallback) {
-        e.preventDefault();
-        console.log('%c[DIAGNOSTICO] Executando saveUnidadeTest...', 'color: orange; font-weight: bold;');
-    
-        // Bypass getFormData. Lê os valores diretamente do HTML pelos seus IDs.
-        const nomeInput = $('un-nome');
-        const ativoInput = document.querySelector('#form-unidades input[name="ativo"]');
-        const idInput = document.querySelector('#form-unidades input[name="id"]');
-    
-        const nomeValue = nomeInput ? nomeInput.value : 'ERRO: INPUT DE NOME NAO ENCONTRADO';
-        const ativoValue = ativoInput ? ativoInput.checked : false;
-        const idValue = idInput ? idInput.value : null;
-    
-        console.log(`[DIAGNOSTICO] Lido diretamente do DOM: Nome="${nomeValue}", Ativo=${ativoValue}, ID="${idValue}"`);
-    
-        if (!nomeValue || nomeValue === 'ERRO: INPUT DE NOME NAO ENCONTRADO' || nomeValue.trim() === '') {
-            setStatus('Erro de teste: o campo nome está vazio ou não foi encontrado.', 'err');
-            return;
-        }
-    
-        const data = { nome: nomeValue, ativo: ativoValue };
-        
-        setStatus(`Salvando (TESTE)...`);
-        try {
-            const { error } = idValue ? await supa.from(table).update(data).eq('id', idValue) : await supa.from(table).insert([data]);
-            if (error) throw error;
-            setStatus(`Registro salvo com sucesso!`, 'ok');
-            hideEditor(editorId);
-            if (refreshCallback) refreshCallback();
-        } catch (err) {
-            console.error(`Erro ao salvar ${table} (TESTE):`, err);
-            setStatus(`Erro (TESTE): ${err.message}`, 'err');
         }
     },
     
