@@ -1,8 +1,8 @@
 // =================================================================================
-// SCRIPT COMPLETO E INTEGRAL (v8.4 - Correção na Coleta de Dados do Formulário)
+// SCRIPT DE TESTE (v8.6-test) - Teste focado em salvar "Unidades"
 // =================================================================================
 
-console.log("[DIAGNOSTICO v8.4] Script Iniciado. Versão com correção de getFormData.");
+console.log("[DIAGNOSTICO v8.6-test] Script de teste iniciado.");
 
 /* ===== Helpers com verificações de segurança ===== */
 const $  = (id)=> document.getElementById(id);
@@ -20,43 +20,27 @@ const fmtMoney=(n)=> new Intl.NumberFormat('pt-BR',{style: 'currency', currency:
 const showEditor = (id) => { const el = $(id); if(el && el.style) el.style.display = 'block'; };
 const hideEditor = (id) => { const el = $(id); if(el && el.style) el.style.display = 'none'; };
 
-// ================================================================================
-// >>>>> FUNÇÃO CORRIGIDA <<<<<
-// Esta versão é mais robusta e lê os valores diretamente dos elementos do formulário.
-// ================================================================================
 const getFormData = (formId) => {
     const form = $(formId);
     if (!form) return {};
     const obj = {};
-
     for (let element of form.elements) {
-        // Ignora elementos sem nome ou que não devem ser submetidos
         if (!element.name || ['submit', 'button', 'fieldset', 'reset'].includes(element.type)) {
             continue;
         }
-
         if (element.type === 'checkbox') {
             obj[element.name] = element.checked;
         } else if (element.type === 'number' || element.dataset.type === 'number') {
-            // Garante que o valor seja um número ou nulo se o campo estiver vazio
             if (element.value === "" || element.value === null) {
                 obj[element.name] = null;
             } else {
                 const numVal = parseFloat(element.value);
                 obj[element.name] = isNaN(numVal) ? null : numVal;
             }
-        } else if (element.type === 'radio') {
-            if (element.checked) {
-                obj[element.name] = element.value;
-            }
         } else {
-            // Para todos os outros tipos (text, select, date, etc.)
-            // Garante que o valor seja nulo se o campo estiver vazio
             obj[element.name] = element.value === "" ? null : element.value;
         }
     }
-    
-    // Trata o campo 'id' separadamente
     if (obj.hasOwnProperty('id') && (obj.id === "" || obj.id === null)) {
         delete obj.id;
     }
@@ -67,18 +51,12 @@ const getFormData = (formId) => {
 /* ===================== CONFIGURAÇÃO DA API ===================== */
 const SUPABASE_URL  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
-
 var supa;
-if (!window.supabase) {
-    console.error("Biblioteca Supabase não carregada!");
-    setStatus("Erro: Biblioteca Supabase não carregada.", "err");
-} else {
-    try {
-        supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-    } catch (e) {
-        console.error("Falha ao inicializar o cliente Supabase:", e);
-        setStatus("Erro: Falha ao conectar com o banco de dados.", "err");
-    }
+try {
+    supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+} catch (e) {
+    console.error("Falha ao inicializar o cliente Supabase:", e);
+    setStatus("Erro: Falha ao conectar com o banco de dados.", "err");
 }
 
 function addSafeEventListener(id, event, handler) {
@@ -304,12 +282,57 @@ const AuxiliaresModule = {
             if (table === 'unidades') this.refreshUnidadesDropdowns();
             if (table === 'categorias') this.refreshCategoriasDropdowns(true);
         };
+        
+        // >>>>> LÓGICA DE TESTE DIRECIONADO <<<<<
+        // Usa uma função de salvar especial APENAS para o formulário de 'unidades'
+        if (prefix === 'unidades') {
+            addSafeEventListener(formId, 'submit', (e) => this.saveUnidadeTest(e, table, editorId, refresh));
+        } else {
+            // Todos os outros formulários usam a função genérica normal
+            addSafeEventListener(formId, 'submit', (e) => GenericCRUD.save(e, table, editorId, refresh));
+        }
+        
         addSafeEventListener(btnNewName, 'click', () => GenericCRUD.showForm(editorId, formId, titleId, `Novo Registro`));
         addSafeEventListener(btnCancelName, 'click', () => hideEditor(editorId));
-        addSafeEventListener(formId, 'submit', (e) => GenericCRUD.save(e, table, editorId, refresh));
         const tableEl = $(tableId);
         if (tableEl) {
              tableEl.addEventListener('click', (e) => GenericCRUD.handleTableClick(e, table, editorId, formId, titleId, refresh));
+        }
+    },
+    
+    // >>>>> FUNÇÃO DE TESTE PARA ISOLAR O PROBLEMA <<<<<
+    async saveUnidadeTest(e, table, editorId, refreshCallback) {
+        e.preventDefault();
+        console.log('%c[DIAGNOSTICO] Executando saveUnidadeTest...', 'color: orange; font-weight: bold;');
+    
+        // Bypass getFormData. Lê os valores diretamente do HTML pelos seus IDs.
+        const nomeInput = $('un-nome');
+        const ativoInput = document.querySelector('#form-unidades input[name="ativo"]');
+        const idInput = document.querySelector('#form-unidades input[name="id"]');
+    
+        const nomeValue = nomeInput ? nomeInput.value : 'ERRO: INPUT DE NOME NAO ENCONTRADO';
+        const ativoValue = ativoInput ? ativoInput.checked : false;
+        const idValue = idInput ? idInput.value : null;
+    
+        console.log(`[DIAGNOSTICO] Lido diretamente do DOM: Nome="${nomeValue}", Ativo=${ativoValue}, ID="${idValue}"`);
+    
+        if (!nomeValue || nomeValue === 'ERRO: INPUT DE NOME NAO ENCONTRADO' || nomeValue.trim() === '') {
+            setStatus('Erro de teste: o campo nome está vazio ou não foi encontrado.', 'err');
+            return;
+        }
+    
+        const data = { nome: nomeValue, ativo: ativoValue };
+        
+        setStatus(`Salvando (TESTE)...`);
+        try {
+            const { error } = idValue ? await supa.from(table).update(data).eq('id', idValue) : await supa.from(table).insert([data]);
+            if (error) throw error;
+            setStatus(`Registro salvo com sucesso!`, 'ok');
+            hideEditor(editorId);
+            if (refreshCallback) refreshCallback();
+        } catch (err) {
+            console.error(`Erro ao salvar ${table} (TESTE):`, err);
+            setStatus(`Erro (TESTE): ${err.message}`, 'err');
         }
     },
     
@@ -374,7 +397,7 @@ const IngredientesModule = {
         const columns = ['nome', 'categoria_nome', 'unidade_medida_sigla', 'custo_unitario', 'ativo'];
         GenericCRUD.loadTable('ingredientes', 'tblIng', columns, true, 'vw_ingredientes');
     }
-}
+};
 
 /* ===== MÓDULO DE RECEITAS (FICHA TÉCNICA) ===== */
 const ReceitasModule = {
