@@ -36,6 +36,9 @@
     .seg button.active{background:var(--wine);color:#fff}
     .chart-box{position:relative;flex-grow:1;min-height:180px;}
     .chart-box canvas{display:block;width:100%;height:100%}
+    /* Adicionado para exibir mensagens nos gráficos */
+    .chart-message { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); text-align: center; padding: 16px; background: rgba(255,255,255,0.8); }
+
     @media (max-width:1200px){ .kpis{grid-template-columns:repeat(2,1fr)} .charts-grid{grid-template-columns:1fr} }
     @media (max-width: 768px) { .kpis{ grid-template-columns: 1fr; } .top { flex-direction: column; align-items: flex-start; } }
   
@@ -84,7 +87,7 @@
         </div>
         <div class="card" style="margin-bottom: 10px;">
             <div class="head"><div class="title">Vendas por Mês</div></div>
-            <div class="chart-box" style="height: 184px; min-height: 184px;"><canvas id="ch_month"></canvas></div>
+            <div class="chart-box" id="box_month" style="height: 184px; min-height: 184px;"><canvas id="ch_month"></canvas></div>
         </div>
         <div class="charts-grid">
             <div class="card">
@@ -95,7 +98,7 @@
                         <svg id="iconSpinner" class="spinner" fill="none" viewBox="0 0 24 24" height="16px" width="16px" style="display:none;"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" opacity="0.25"></circle><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" opacity="0.75"></path></svg>
                     </button>
                 </div>
-              <div class="chart-box"><canvas id="ch_dow"></canvas></div>
+              <div class="chart-box" id="box_dow"><canvas id="ch_dow"></canvas></div>
             </div>
             <div class="card">
                 <div class="head">
@@ -233,11 +236,13 @@
   const SUPABASE_URL_ESTOQUE  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
   const SUPABASE_ANON_ESTOQUE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
   const supaEstoque = window.supabase.createClient(SUPABASE_URL_ESTOQUE, SUPABASE_ANON_ESTOQUE);
+  const APP_VERSION = 'v9.2'; // Versão atualizada
 
   /* ===================== HELPERS ===================== */
   const $ = id => document.getElementById(id);
   const $$ = sel => document.querySelectorAll(sel);
-  const num = v => (v==null||!isFinite(+v)) ? '0' : (+v).toLocaleString('pt-BR');
+  // Função de formatação atualizada para suportar decimais na média diária
+  const num = (v, decimals = 0) => (v==null||!isFinite(+v)) ? '0' : (+v).toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
   
   function getDateISO(baseDate) {
     let d;
@@ -271,7 +276,6 @@
       document.dispatchEvent(new CustomEvent('filters:apply', { detail: payload }));
   }
 
-  // >>>>> LÓGICA DE FILTRO CORRIGIDA <<<<<
   function fxSetRange(start, end) {
       const startInput = $('fxDuStart');
       const endInput = $('fxDuEnd');
@@ -289,11 +293,14 @@
       const year = baseDate.getUTCFullYear();
       const month = baseDate.getUTCMonth(); 
 
+      // Lógica para calcular o mês anterior com base na data fornecida
+      // O dia 0 do mês atual é o último dia do mês anterior.
       const startOfLastMonth = new Date(Date.UTC(year, month - 1, 1));
-      const endOfLastMonth = new Date(Date.UTC(year, month, 0));
+      const endOfLastMonth = new Date(Date.UTC(year, month, 0)); 
 
       fxSetRange(startOfLastMonth, endOfLastMonth);
       
+      // Atualiza os botões de filtro rápido
       $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
       const lastMonthBtn = document.querySelector('#fxQuickChips button[data-win="lastMonth"]');
       if (lastMonthBtn) lastMonthBtn.classList.add('active');
@@ -303,52 +310,169 @@
   let lastDay = '';
   let chartMonth, chartDow;
 
-  // Função principal de busca de dados
+  // Helper para gerenciar mensagens nos gráficos (erro, vazio ou carregando)
+  function setChartMessage(boxId, message) {
+    const box = $(boxId);
+    if (!box) return;
+    // Remove mensagem existente, se houver
+    const existingMessage = box.querySelector('.chart-message');
+    if (existingMessage) {
+        box.removeChild(existingMessage);
+    }
+    // Adiciona nova mensagem, se fornecida
+    if (message) {
+        box.insertAdjacentHTML('beforeend', `<div class="chart-message">${message}</div>`);
+    }
+  }
+
+
+  // Função principal de busca de dados (CORRIGIDA)
   async function applyAll(startDate, endDate) {
       if (!startDate || !endDate) {
-        console.warn("applyAll foi chamado sem datas válidas.");
+        console.warn(`[${APP_VERSION}] applyAll foi chamado sem datas válidas.`);
         return;
       }
-      console.log(`Buscando dados de ${startDate} a ${endDate}`);
-      // Lógica para mostrar spinners ou estado de carregamento
-      $('k_qtd').textContent = '...';
-      $('k_pratos_unicos').textContent = '...';
-      $('k_media_diaria').textContent = '...';
+      
+      console.log(`[${APP_VERSION}] Buscando dados de ${startDate} a ${endDate}`);
+      setLoadingState(true); // Ativa o estado de carregamento
 
-      // Chama a função RPC do Supabase para buscar os dados consolidados
-      const { data, error } = await supaEstoque.rpc('get_sales_dashboard_data', {
+      // Chama a função RPC. Renomeamos 'data' para 'rawData' para evitar confusão.
+      const { data: rawData, error } = await supaEstoque.rpc('get_sales_dashboard_data', {
           start_date: startDate,
           end_date: endDate
       });
 
+      // Não chamamos setLoadingState(false) aqui imediatamente, as funções de renderização farão isso.
+
       if (error) {
-          console.error("Erro ao buscar dados do dashboard:", error);
-          alert(`Falha ao carregar dados: ${error.message}`);
+          handleApiError(error);
           return;
       }
+
+      // >>>>> CORREÇÃO DO ERRO data.map (Normalização da Resposta) <<<<<
+      // O Supabase RPC pode retornar o resultado (o JSONB) diretamente, 
+      // OU pode retorná-lo dentro de um array. Precisamos garantir que temos o objeto.
+      let dashboardData;
+
+      if (Array.isArray(rawData) && rawData.length > 0) {
+          // Cenário 1: Resposta veio envolvida em um Array (causa do erro anterior)
+          console.log("[DIAGNÓSTICO] Dados recebidos em formato Array, extraindo primeiro elemento.");
+          dashboardData = rawData[0];
+      } else if (rawData && typeof rawData === 'object' && !Array.isArray(rawData) && Object.keys(rawData).length > 0) {
+          // Cenário 2: Resposta é o próprio objeto JSONB
+          dashboardData = rawData;
+      } else {
+          // Cenário 3: Resposta nula, vazia ou inesperada
+          console.error(`[${APP_VERSION}] Resposta do RPC em formato inesperado ou vazia:`, rawData);
+          alert("Falha ao carregar dados: Resposta do servidor inválida ou vazia.");
+          // Renderiza estado vazio
+          updateKpis({});
+          renderMonthChart([]);
+          renderDowChart([]);
+          renderTop10([], 'MAIS');
+          return;
+      }
+      // >>>>> FIM DA CORREÇÃO <<<<<
+
+
+      // Verifica se a função SQL retornou um erro interno (definido no bloco EXCEPTION do SQL)
+      if (dashboardData.error) {
+        console.error(`[${APP_VERSION}] Erro interno na função SQL:`, dashboardData.error);
+        alert(`ERRO NO SQL DO SERVIDOR:\n\n${dashboardData.error}`);
+        // Continua para tentar renderizar o que for possível.
+      }
       
-      // Atualiza os KPIs
-      updateKpis(data.kpis);
+      // Atualiza os KPIs e Gráficos
+      updateKpis(dashboardData.kpis);
+      renderMonthChart(dashboardData.sales_by_month);
+      renderDowChart(dashboardData.sales_by_dow);
+
+      // Define o estado do Top 10 baseado no botão ativo
+      const activeTop10Btn = document.querySelector('#segTop10 button.active');
+      const mode = activeTop10Btn ? activeTop10Btn.dataset.mode : 'MAIS';
+      const top10Data = (mode === 'MAIS') ? dashboardData.top_10_mais_vendidos : dashboardData.top_10_menos_vendidos;
+      renderTop10(top10Data, mode);
       
-      // Renderiza os gráficos
-      renderMonthChart(data.sales_by_month);
-      renderDowChart(data.sales_by_dow);
-      renderTop10(data.top_10_mais_vendidos, 'MAIS');
-      
-      // Armazena dados para alternância
-      window.dashboardData = data;
+      // Armazena dados para alternância futura
+      window.dashboardData = dashboardData;
+      console.info(`[Status ${APP_VERSION}] [ok]: Dados atualizados.`);
   }
+
+
+  // Funções de Estado e Tratamento de Erro (Melhoradas)
+  function setLoadingState(isLoading) {
+    const listBody = $('top10-list-body');
+    if (isLoading) {
+        // KPIs para "..."
+        $('k_qtd').textContent = '...';
+        $('k_pratos_unicos').textContent = '...';
+        $('k_media_diaria').textContent = '...';
+        // Destrói gráficos antigos e mostra "Carregando..."
+        if (chartMonth) chartMonth.destroy();
+        if (chartDow) chartDow.destroy();
+        setChartMessage('box_month', 'Carregando...');
+        setChartMessage('box_dow', 'Carregando...');
+        // Top 10 para "Carregando..."
+        if (listBody) {
+            listBody.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--muted);">Carregando...</div>`;
+        }
+    } 
+    // O estado de "não carregando" é tratado pelas funções de renderização que limpam a mensagem.
+  }
+
+  function handleApiError(error) {
+    // Log estruturado para depuração detalhada no console
+    console.error(`[${APP_VERSION}] Erro ao buscar dados do dashboard (RPC). Detalhes:`, error);
+    
+    // Atualiza a UI para refletir o erro
+    $('k_qtd').textContent = '—';
+    $('k_pratos_unicos').textContent = '—';
+    $('k_media_diaria').textContent = '—';
+    setChartMessage('box_month', 'Falha ao carregar.');
+    setChartMessage('box_dow', 'Falha ao carregar.');
+    const listBody = $('top10-list-body');
+    if (listBody) {
+        listBody.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--down);">Falha ao carregar dados.</div>`;
+    }
+
+    // Alertas específicos para o usuário
+    if (error.message && error.message.includes('Failed to fetch')) {
+        alert("ERRO DE REDE (Failed to fetch): Não foi possível conectar ao Supabase.\n\nVerifique sua conexão com a internet ou as configurações de CORS no projeto Supabase (especialmente se estiver hospedado no Vercel).");
+    } else if (error.code === 'PGRST116') {
+        alert("ERRO 404: A função RPC não foi encontrada no Supabase.");
+    } else {
+        alert(`Falha ao carregar dados: ${error.message || 'Erro desconhecido'} (Código: ${error.code || 'N/A'})`);
+    }
+  }
+
   
+  // Funções de Renderização (Com robustez adicionada)
   function updateKpis(kpis) {
-      if (!kpis) return;
+      // Verificação de robustez para dados de KPIs inválidos
+      if (!kpis || typeof kpis !== 'object' || Object.keys(kpis).length === 0) {
+        console.warn(`[${APP_VERSION}] Dados de KPIs inválidos ou ausentes.`);
+        // Resetar KPIs para 0
+        $('k_qtd').textContent = '0';
+        $('p_qtd').textContent = '0';
+        $('k_pratos_unicos').textContent = '0';
+        $('p_pratos_unicos').textContent = '0';
+        $('k_media_diaria').textContent = '0.0';
+        $('p_media_diaria').textContent = '0.0';
+        updateDelta('d_qtd', 0, 0);
+        updateDelta('d_pratos_unicos', 0, 0);
+        updateDelta('d_media_diaria', 0, 0);
+        return;
+      }
+
       $('k_qtd').textContent = num(kpis.total_itens_vendidos);
       $('p_qtd').textContent = num(kpis.total_itens_vendidos_anterior);
       
       $('k_pratos_unicos').textContent = num(kpis.pratos_unicos);
       $('p_pratos_unicos').textContent = num(kpis.pratos_unicos_anterior);
       
-      $('k_media_diaria').textContent = num(kpis.media_diaria_vendas);
-      $('p_media_diaria').textContent = num(kpis.media_diaria_vendas_anterior);
+      // Média diária com 1 casa decimal
+      $('k_media_diaria').textContent = num(kpis.media_diaria_vendas, 1);
+      $('p_media_diaria').textContent = num(kpis.media_diaria_vendas_anterior, 1);
 
       // Lógica para deltas (up/down)
       updateDelta('d_qtd', kpis.total_itens_vendidos, kpis.total_itens_vendidos_anterior);
@@ -359,9 +483,27 @@
   function updateDelta(elId, current, previous) {
       const el = $(elId);
       if (!el) return;
-      const change = ((current - previous) / (previous || 1)) * 100;
+
+      // Garante que os valores sejam números
+      const currentVal = parseFloat(current) || 0;
+      const previousVal = parseFloat(previous) || 0;
+
+      // Lógica robusta para cálculo de variação, tratando divisão por zero
+      let change;
+      if (previousVal === 0) {
+        // Se o anterior for 0 e o atual for maior que 0, consideramos como "Novo"
+        change = (currentVal > 0) ? Infinity : 0; 
+      } else {
+        change = ((currentVal - previousVal) / previousVal) * 100;
+      }
+
       el.classList.remove('up', 'down', 'flat');
-      if (Math.abs(change) < 0.1 || !isFinite(change)) {
+
+      if (change === Infinity) {
+          el.innerHTML = `▲ Novo`;
+          el.classList.add('up');
+      } else if (Math.abs(change) < 0.01 || !isFinite(change)) {
+          // Se a mudança for muito pequena ou não for um número finito (NaN)
           el.textContent = '—';
           el.classList.add('flat');
       } else if (change > 0) {
@@ -373,13 +515,25 @@
       }
   }
 
+  // >>>>> CORREÇÃO ADICIONAL: Validação de Array antes do .map() <<<<<
   function renderMonthChart(data) {
+    // Limpa gráfico anterior e mensagens
+    if (chartMonth) chartMonth.destroy();
+    setChartMessage('box_month', null);
+
+    // Verificação de robustez: Garante que 'data' seja um Array válido antes de tentar usar .map().
+    if (!data || !Array.isArray(data) || data.length === 0) {
+        console.warn(`[${APP_VERSION}] Dados do gráfico mensal inválidos ou vazios.`);
+        setChartMessage('box_month', 'Nenhum dado mensal encontrado para o período.');
+        return; // Sai da função se não houver dados válidos
+    }
+
     const ctx = $('ch_month').getContext('2d');
+    // As linhas abaixo agora são seguras, pois garantimos que 'data' é um array válido
     const labels = data.map(d => d.mes);
     const currentData = data.map(d => d.vendas_atual);
     const previousData = data.map(d => d.vendas_anterior);
     
-    if (chartMonth) chartMonth.destroy();
     chartMonth = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -394,12 +548,24 @@
   }
 
   function renderDowChart(data) {
+    if (chartDow) chartDow.destroy();
+    setChartMessage('box_dow', null);
+
+    // Verificação de robustez
+    if (!data || !Array.isArray(data)) {
+        console.warn(`[${APP_VERSION}] Dados do gráfico semanal inválidos, definindo como vazio.`);
+        data = []; // Define como array vazio para evitar erros abaixo
+    }
+
+    if (data.length === 0) {
+        setChartMessage('box_dow', 'Nenhum dado semanal encontrado para o período.');
+    }
+
     const ctx = $('ch_dow').getContext('2d');
     const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-    // Ordena os dados para corresponder aos labels
+    // Ordena os dados para corresponder aos labels, garantindo que todos os dias apareçam (com valor 0 se não houver vendas)
     const sortedData = labels.map(label => data.find(d => d.dia_semana_nome === label) || { total_vendido: 0 });
 
-    if (chartDow) chartDow.destroy();
     chartDow = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -421,8 +587,9 @@
       if (!listBody) return;
       listBody.innerHTML = '';
 
-      if (!data || data.length === 0) {
-          listBody.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--muted);">Nenhum prato encontrado.</div>`;
+      // Verificação de robustez
+      if (!data || !Array.isArray(data) || data.length === 0) {
+          listBody.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--muted);">Nenhum prato encontrado no período.</div>`;
           return;
       }
       
@@ -441,40 +608,61 @@
   }
 
   /* ===================== INICIALIZAÇÃO E CONTROLES DA UI ===================== */
+  
+  // Função de inicialização (Melhorada para 'Failed to fetch')
   async function init() {
     try {
-      console.info('[Status v8.1] [info]: Inicializando aplicação...');
-      const { data, error } = await supaEstoque.from('vendas_pratos_daterange').select('max_data').limit(1);
+      console.info(`[Status ${APP_VERSION}] [info]: Inicializando aplicação...`);
+      
+      // Tenta buscar a data mais recente dos dados disponíveis.
+      // Otimização: Usamos .maybeSingle() para buscar uma única linha na view.
+      // Isso retorna o objeto diretamente ({ max_data: ... }), sem o wrapper de array.
+      const { data, error } = await supaEstoque.from('vendas_pratos_daterange').select('max_data').maybeSingle();
       
       if (error) {
-          console.warn("Erro ao carregar a data mais recente:", error);
-          lastDay = getDateISO(); 
-      } else if (data?.length && data[0].max_data) {
-          lastDay = data[0].max_data;
+          // Tratamento para erros de banco de dados ou de rede capturados pelo SDK
+          console.warn(`[${APP_VERSION}] Aviso na inicialização: Falha ao buscar data mais recente. Verifique a view 'vendas_pratos_daterange', permissões ou conexão/CORS. Erro: ${error.message}`, error);
+          lastDay = getDateISO(); // Fallback para data atual
+      } else if (data && data.max_data) {
+          lastDay = data.max_data;
       } else {
-          console.warn("Tabela de vendas vazia.");
-          lastDay = getDateISO();
+          // Se a view existir mas estiver vazia (data nula ou max_data nulo)
+          console.warn(`[${APP_VERSION}] Tabela/View de vendas vazia ou data máxima nula.`);
+          lastDay = getDateISO(); // Fallback para data atual
       }
       
-      console.info(`[Status v8.1] Data base definida para: ${lastDay}`);
+      console.info(`[Status ${APP_VERSION}] Data base definida para: ${lastDay}`);
+      // Dispara o evento para inicializar os filtros e carregar os dados iniciais
       document.dispatchEvent(new Event('filters:init'));
-      console.info('[Status v8.1] [ok]: Dados atualizados.');
-
+      
     } catch (e) { 
-        console.error("Erro crítico na inicialização:", e);
-        alert("Falha ao inicializar o Dashboard.");
+        // Captura erros inesperados que o SDK pode não ter tratado internamente (como 'Failed to fetch' lançados como exceções brutas)
+        console.error(`[${APP_VERSION}] Erro crítico na inicialização (Exceção):`, e);
+        
+        // Tratamento específico para 'Failed to fetch' lançado como exceção
+        if (e.message && e.message.includes('Failed to fetch')) {
+            alert("Falha Crítica de Rede (Failed to fetch) ao inicializar.\n\nVerifique sua conexão com a internet e as configurações de CORS no Supabase (ex: permitir o domínio Vercel).");
+        } else {
+            alert("Falha crítica ao inicializar o Dashboard.");
+        }
+
+        // Tenta continuar com fallback mesmo após erro crítico, para que o usuário possa usar a interface de filtros
+        lastDay = getDateISO();
+        document.dispatchEvent(new Event('filters:init'));
     }
   }
 
   document.addEventListener('DOMContentLoaded', () => {
+    console.log(`[DIAGNÓSTICO ${APP_VERSION}] Script final iniciado.`);
+
     const fx = {
       $start: $('fxDuStart'), $end: $('fxDuEnd'),
     };
 
+    // Verificação básica da existência dos elementos de filtro
     if (!fx.$start || !fx.$end) {
         console.error("ERRO CRÍTICO: Elementos de data não encontrados.");
-        init(); 
-        return; 
+        // Continua a inicialização, mas os filtros manuais não funcionarão corretamente.
     }
 
     // Listener para o evento que dispara a busca de dados
@@ -484,26 +672,30 @@
 
     // Ponto de entrada da inicialização dos filtros.
     document.addEventListener('filters:init', () => {
-        // >>>>> CORREÇÃO APLICADA AQUI <<<<<
         // Define o período inicial para o "Mês Anterior" antes de buscar os dados
         fxSetToLastMonthWithData(lastDay); 
-        fxDispatchApply();
+        fxDispatchApply(); // Dispara a primeira busca de dados
     });
 
     // Listener para alternar entre Top 10 Mais/Menos vendidos
-    $('segTop10').addEventListener('click', (e) => {
-        const btn = e.target.closest('button');
-        if (!btn || btn.classList.contains('active')) return;
-        
-        $$('#segTop10 button').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+    const segTop10 = $('segTop10');
+    if (segTop10) {
+        segTop10.addEventListener('click', (e) => {
+            const btn = e.target.closest('button');
+            if (!btn || btn.classList.contains('active')) return;
+            
+            $$('#segTop10 button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
 
-        const mode = btn.dataset.mode;
-        if (window.dashboardData) {
-            const data = (mode === 'MAIS') ? window.dashboardData.top_10_mais_vendidos : window.dashboardData.top_10_menos_vendidos;
-            renderTop10(data, mode);
-        }
-    });
+            const mode = btn.dataset.mode;
+            // Usa os dados já carregados para alternar a visualização
+            if (window.dashboardData) {
+                const data = (mode === 'MAIS') ? window.dashboardData.top_10_mais_vendidos : window.dashboardData.top_10_menos_vendidos;
+                renderTop10(data, mode);
+            }
+        });
+    }
+
 
     init(); // Inicia o processo de inicialização
   });
