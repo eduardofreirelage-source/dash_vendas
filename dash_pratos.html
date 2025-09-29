@@ -82,11 +82,10 @@
     .fx-seg button{ height:30px; min-width:44px; padding:0 10px; border:0; background:transparent; cursor:pointer; font-weight:800; color:#475569; font-size:10px }
     .fx-seg button.fx-active{background:var(--wine); color:#fff}
     
-    /* Estilos para MultiSelect (msel) - NOVO */
+    /* Estilos para MultiSelect (msel) */
     .msel{position:relative}
     .msel-btn{width:100%; text-align: left; height:30px; padding:4px 8px; border:1px solid var(--line); border-radius:8px; background:#fff; font:inherit; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
     .msel-btn:after{content:"▾";float:right;color:#475569; margin-left: 8px;}
-    /* O painel fica posicionado acima do botão para melhor visualização no dropup */
     .msel-panel{position:absolute;z-index:45;bottom:110%;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 24px rgba(0,0,0,.08);max-height:250px;overflow:hidden;padding:8px;display:none; flex-direction: column;}
     .msel.open .msel-panel{display:flex}
     .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px; flex-shrink: 0; font-size: 11px;}
@@ -210,7 +209,7 @@
   const SUPABASE_URL_ESTOQUE  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
   const SUPABASE_ANON_ESTOQUE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
   const supaEstoque = window.supabase.createClient(SUPABASE_URL_ESTOQUE, SUPABASE_ANON_ESTOQUE);
-  const APP_VERSION = 'v10.1'; // VERSÃO COM FILTROS E IMPORTAÇÃO
+  const APP_VERSION = 'v10.2'; // VERSÃO COMPLETA
 
   /* ===================== HELPERS GERAIS ===================== */
   const $ = id => document.getElementById(id);
@@ -241,7 +240,6 @@
   
 
   /* ===================== COMPONENTE MULTI-SELECT (MSel) ===================== */
-  // Gerencia a lógica de UI dos dropdowns de filtro (Unidade, Categoria, Prato)
 
   class MultiSelect {
     constructor(containerId, onChangeCallback) {
@@ -262,19 +260,17 @@
 
     initEvents() {
         this.btn.addEventListener('click', (e) => {
-            e.stopPropagation(); // Impede que o clique feche o dropup principal
+            e.stopPropagation();
             if (!this.initialized) return;
             this.toggle();
         });
 
-        // Delegação de eventos para cliques nas opções
         this.panel.addEventListener('click', (e) => {
             const opt = e.target.closest('.msel-opt');
             if (opt) {
                 const value = opt.dataset.value;
                 const checkbox = opt.querySelector('input[type="checkbox"]');
                 
-                // Se o clique não foi exatamente no checkbox (mas sim na label), inverte o estado
                 if (e.target !== checkbox) {
                     checkbox.checked = !checkbox.checked;
                 }
@@ -282,11 +278,9 @@
             }
         });
 
-        // Impede que cliques dentro do painel fechem ele ou o dropup
         this.panel.addEventListener('click', (e) => e.stopPropagation());
     }
 
-    // Popula o componente com dados
     initialize(optionsList) {
         this.options = optionsList.sort((a, b) => a.localeCompare(b));
         this.renderPanel();
@@ -299,15 +293,14 @@
     }
 
     open() {
-        // Fecha outros MSels abertos antes de abrir este
         document.dispatchEvent(new CustomEvent('msel:closeAll', { detail: { except: this.container.id } }));
         
         this.container.classList.add('open');
         this.isOpen = true;
         const searchInput = this.panel.querySelector('.msel-search');
         if (searchInput) {
-            searchInput.value = ''; // Limpa a busca ao abrir
-            this.filterOptions(''); // Reseta o filtro
+            searchInput.value = '';
+            this.filterOptions('');
             searchInput.focus();
         }
     }
@@ -325,7 +318,6 @@
             html += `<div style="text-align: center; padding: 10px; color: var(--muted); font-size: 11px;">Nenhuma opção</div>`;
         } else {
             this.options.forEach(option => {
-                // Escapa caracteres especiais para segurança no HTML
                 const safeOption = option.replace(/"/g, '&quot;');
                 const isChecked = this.selected.has(option) ? 'checked' : '';
                 html += `
@@ -339,7 +331,6 @@
         html += `</div>`;
         this.panel.innerHTML = html;
 
-        // Listener de busca
         const searchInput = this.panel.querySelector('.msel-search');
         if (searchInput) {
             searchInput.addEventListener('input', (e) => this.filterOptions(e.target.value));
@@ -362,7 +353,6 @@
             this.selected.delete(value);
         }
         this.updateButtonText();
-        // Dispara o callback (que chama fxDispatchApply) - Feedback imediato
         if (this.onChange) this.onChange();
     }
 
@@ -378,14 +368,13 @@
     }
 
     getSelected() {
-        // Retorna NULL se nada estiver selecionado (importante para a função SQL)
         return this.selected.size > 0 ? Array.from(this.selected) : null;
     }
 
     reset() {
         this.selected.clear();
         if (this.initialized) {
-            this.renderPanel(); // Re-renderiza para desmarcar checkboxes
+            this.renderPanel();
             this.updateButtonText();
         }
     }
@@ -393,10 +382,8 @@
 
   /* ===================== LÓGICA DOS FILTROS (FX) ===================== */
   
-  // Instâncias dos filtros analíticos
   let filterUnidades, filterCategorias, filterPratos;
 
-  // Dispara o evento que inicia a busca de dados com base nos filtros atuais
   function fxDispatchApply(){
       const startInput = $('fxDuStart');
       const endInput = $('fxDuEnd');
@@ -404,7 +391,6 @@
           return;
       }
 
-      // Coleta os filtros analíticos (podem ser NULL)
       const payload = { 
         start: startInput.value, 
         end: endInput.value,
@@ -416,7 +402,6 @@
       document.dispatchEvent(new CustomEvent('filters:apply', { detail: payload }));
   }
 
-  // (Funções fxSetRange e fxSetToLastMonthWithData - Sem alterações)
   function fxSetRange(start, end) {
       const startInput = $('fxDuStart');
       const endInput = $('fxDuEnd');
@@ -442,7 +427,6 @@
       $$('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
   }
 
-  // Gerenciamento das Interações com os Filtros (Atualizado para resetar MSel)
   function setupFilterInteractions() {
     const fx = {
         $btnMore: $('fxBtnMore'),
@@ -463,16 +447,13 @@
 
     // Fechar o dropup e MSels ao clicar fora
     document.addEventListener('click', (e) => {
-        // Fecha Dropup
         if (fx.$dropup.classList.contains('fx-show')) {
             fx.$dropup.classList.remove('fx-show');
             fx.$btnMore.setAttribute('aria-expanded', false);
         }
-        // Fecha MSels
         document.dispatchEvent(new CustomEvent('msel:closeAll'));
     });
 
-    // Impede que cliques dentro do dropup o fechem (exceto cliques nos MSels que são tratados por eles mesmos)
     fx.$dropup.addEventListener('click', (e) => {
         if (!e.target.closest('.msel')) {
              e.stopPropagation();
@@ -541,7 +522,6 @@
 
         fxSetRange(start, end);
         $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
-        // Não reseta filtros analíticos aqui, permite combinação
         fxDispatchApply();
     });
 
@@ -558,15 +538,12 @@
 
     // 5. Botão Limpar (Reset)
     fx.$btnReset.addEventListener('click', () => {
-        // Reseta período
         fxSetToLastMonthWithData(lastDay);
-        // Limpa filtros analíticos
         if (filterUnidades) filterUnidades.reset();
         if (filterCategorias) filterCategorias.reset();
         if (filterPratos) filterPratos.reset();
 
         fxDispatchApply();
-        // Fecha o dropup
         fx.$dropup.classList.remove('fx-show');
         fx.$btnMore.setAttribute('aria-expanded', false);
     });
@@ -576,19 +553,204 @@
   let lastDay = '';
   let chartMonth, chartDow;
 
-  // (Funções de Renderização e Estado - Sem alterações desde v9.4, omitidas por brevidade)
-  // Incluir aqui: setChartMessage, setLoadingState, handleApiError, updateKpis, updateDelta, renderMonthChart, renderDowChart, renderTop10
-    function setChartMessage(boxId, message) { /* ... */ }
-    function setLoadingState(isLoading) { /* ... */ }
-    function handleApiError(error) { /* ... */ }
-    function updateKpis(kpis) { /* ... */ }
-    function updateDelta(elId, current, previous) { /* ... */ }
-    function renderMonthChart(data) { /* ... */ }
-    function renderDowChart(data) { /* ... */ }
-    function renderTop10(data, mode) { /* ... */ }
+  // >>>>> FUNÇÕES DE RENDERIZAÇÃO E ESTADO (RESTAURADAS) <<<<<
+
+  function setChartMessage(boxId, message) {
+    const box = $(boxId);
+    if (!box) return;
+    const existingMessage = box.querySelector('.chart-message');
+    if (existingMessage) {
+        box.removeChild(existingMessage);
+    }
+    if (message) {
+        box.insertAdjacentHTML('beforeend', `<div class="chart-message">${message}</div>`);
+    }
+  }
+
+  function setLoadingState(isLoading) {
+    const listBody = $('top10-list-body');
+    if (isLoading) {
+        $('k_qtd').textContent = '...';
+        $('k_pratos_unicos').textContent = '...';
+        $('k_media_diaria').textContent = '...';
+        if (chartMonth) chartMonth.destroy();
+        if (chartDow) chartDow.destroy();
+        setChartMessage('box_month', 'Carregando...');
+        setChartMessage('box_dow', 'Carregando...');
+        if (listBody) {
+            listBody.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--muted);">Carregando...</div>`;
+        }
+    } 
+  }
+
+  function handleApiError(error) {
+    console.error(`[${APP_VERSION}] Erro ao buscar dados do dashboard (RPC). Detalhes:`, error);
+    
+    $('k_qtd').textContent = '—';
+    $('k_pratos_unicos').textContent = '—';
+    $('k_media_diaria').textContent = '—';
+    setChartMessage('box_month', 'Falha ao carregar.');
+    setChartMessage('box_dow', 'Falha ao carregar.');
+    const listBody = $('top10-list-body');
+    if (listBody) {
+        listBody.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--down);">Falha ao carregar dados.</div>`;
+    }
+
+    if (error.message && error.message.includes('Failed to fetch')) {
+        alert("ERRO DE REDE (Failed to fetch): Não foi possível conectar ao Supabase.\n\nVerifique sua conexão e as configurações de CORS no Supabase (Configurações > API > CORS).");
+    } else {
+        alert(`Falha ao carregar dados: ${error.message || 'Erro desconhecido'} (Código: ${error.code || 'N/A'})`);
+    }
+  }
+
+  function updateKpis(kpis) {
+      if (!kpis || typeof kpis !== 'object' || Object.keys(kpis).length === 0) {
+        console.warn(`[${APP_VERSION}] Dados de KPIs inválidos ou ausentes (Período sem vendas).`);
+        $('k_qtd').textContent = '0';
+        $('p_qtd').textContent = '0';
+        $('k_pratos_unicos').textContent = '0';
+        $('p_pratos_unicos').textContent = '0';
+        $('k_media_diaria').textContent = '0.0';
+        $('p_media_diaria').textContent = '0.0';
+        updateDelta('d_qtd', 0, 0);
+        updateDelta('d_pratos_unicos', 0, 0);
+        updateDelta('d_media_diaria', 0, 0);
+        return;
+      }
+
+      $('k_qtd').textContent = num(kpis.total_itens_vendidos);
+      $('p_qtd').textContent = num(kpis.total_itens_vendidos_anterior);
+      
+      $('k_pratos_unicos').textContent = num(kpis.pratos_unicos);
+      $('p_pratos_unicos').textContent = num(kpis.pratos_unicos_anterior);
+      
+      $('k_media_diaria').textContent = num(kpis.media_diaria_vendas, 1);
+      $('p_media_diaria').textContent = num(kpis.media_diaria_vendas_anterior, 1);
+
+      updateDelta('d_qtd', kpis.total_itens_vendidos, kpis.total_itens_vendidos_anterior);
+      updateDelta('d_pratos_unicos', kpis.pratos_unicos, kpis.pratos_unicos_anterior);
+      updateDelta('d_media_diaria', kpis.media_diaria_vendas, kpis.media_diaria_vendas_anterior);
+  }
+  
+  function updateDelta(elId, current, previous) {
+      const el = $(elId);
+      if (!el) return;
+
+      const currentVal = parseFloat(current) || 0;
+      const previousVal = parseFloat(previous) || 0;
+
+      let change;
+      if (previousVal === 0) {
+        change = (currentVal > 0) ? Infinity : 0; 
+      } else {
+        change = ((currentVal - previousVal) / previousVal) * 100;
+      }
+
+      el.classList.remove('up', 'down', 'flat');
+
+      if (change === Infinity) {
+          el.innerHTML = `▲ Novo`;
+          el.classList.add('up');
+      } else if (Math.abs(change) < 0.01 || !isFinite(change)) {
+          el.textContent = '—';
+          el.classList.add('flat');
+      } else if (change > 0) {
+          el.innerHTML = `▲ ${change.toFixed(1)}%`;
+          el.classList.add('up');
+      } else {
+          el.innerHTML = `▼ ${Math.abs(change).toFixed(1)}%`;
+          el.classList.add('down');
+      }
+  }
+
+  function renderMonthChart(data) {
+    if (chartMonth) chartMonth.destroy();
+    setChartMessage('box_month', null);
+
+    if (!data || !Array.isArray(data) || data.length === 0) {
+        console.warn(`[${APP_VERSION}] Dados do gráfico mensal inválidos ou vazios.`);
+        setChartMessage('box_month', 'Nenhum dado mensal encontrado para o período.');
+        return;
+    }
+
+    const ctx = $('ch_month').getContext('2d');
+    const labels = data.map(d => d.mes);
+    const currentData = data.map(d => d.vendas_atual);
+    const previousData = data.map(d => d.vendas_anterior);
+    
+    chartMonth = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: 'Período Atual', data: currentData, backgroundColor: 'var(--wine)', borderRadius: 4 },
+                { label: 'Período Anterior', data: previousData, backgroundColor: 'var(--c-prev)', borderRadius: 4 }
+            ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+    });
+  }
+
+  function renderDowChart(data) {
+    if (chartDow) chartDow.destroy();
+    setChartMessage('box_dow', null);
+
+    if (!data || !Array.isArray(data)) {
+        data = [];
+    }
+
+    if (data.length === 0) {
+        setChartMessage('box_dow', 'Nenhum dado semanal encontrado para o período.');
+    }
+
+    const ctx = $('ch_dow').getContext('2d');
+    const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const sortedData = labels.map(label => data.find(d => d.dia_semana_nome === label) || { total_vendido: 0 });
+
+    chartDow = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Itens Vendidos',
+                data: sortedData.map(d => d.total_vendido),
+                backgroundColor: 'rgba(123, 30, 58, 0.7)',
+                borderColor: 'var(--wine)',
+                borderWidth: 1
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: { x: { beginAtZero: true } } }
+    });
+  }
+
+  function renderTop10(data, mode) {
+      const listBody = $('top10-list-body');
+      if (!listBody) return;
+      listBody.innerHTML = '';
+
+      if (!data || !Array.isArray(data) || data.length === 0) {
+          listBody.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--muted);">Nenhum prato encontrado no período.</div>`;
+          return;
+      }
+      
+      data.forEach((item, index) => {
+          const rank = index + 1;
+          const row = document.createElement('div');
+          row.className = 'top10-row';
+          row.dataset.rank = rank;
+          row.innerHTML = `
+              <span class="top10-col-rank">${rank}</span>
+              <span class="top10-col-prato">${item.nome_prato}</span>
+              <span class="top10-col-qty">${num(item.total_vendido)}</span>
+          `;
+          listBody.appendChild(row);
+      });
+  }
+
+  // >>>>> FIM DAS FUNÇÕES RESTAURADAS <<<<<
 
 
-  // Função principal de busca de dados (Atualizada para incluir filtros)
+  // Função principal de busca de dados
   async function applyAll(payload) {
       if (!payload || !payload.start || !payload.end) {
         return;
@@ -597,7 +759,7 @@
       console.log(`[${APP_VERSION}] Buscando dados...`, payload);
       setLoadingState(true);
 
-      // Chama a função RPC com os parâmetros atualizados (payload já contém NULL se os filtros estiverem vazios)
+      // Chama a função RPC com os parâmetros atualizados
       const { data: rawData, error } = await supaEstoque.rpc('get_sales_dashboard_data', {
           start_date: payload.start,
           end_date: payload.end,
@@ -612,7 +774,7 @@
           return;
       }
 
-      // Normalização da Resposta (Mantida)
+      // Normalização da Resposta
       let dashboardData;
 
       if (Array.isArray(rawData) && rawData.length > 0) {
@@ -620,11 +782,22 @@
       } else if (rawData && typeof rawData === 'object' && !Array.isArray(rawData) && Object.keys(rawData).length > 0) {
           dashboardData = rawData;
       } else {
-          // (Tratamento de resposta vazia)
+          console.error(`[${APP_VERSION}] Resposta do RPC inesperada ou vazia:`, rawData);
+          alert("Falha ao carregar dados: Resposta do servidor inválida ou vazia.");
+          updateKpis({});
+          renderMonthChart([]);
+          renderDowChart([]);
+          renderTop10([], 'MAIS');
           return;
       }
       
-      // (Atualização dos KPIs e Gráficos)
+       // Verifica se a função SQL retornou um erro interno
+      if (dashboardData.error) {
+        console.error(`[${APP_VERSION}] Erro interno na função SQL:`, dashboardData.error);
+        alert(`ERRO NO SQL DO SERVIDOR:\n\n${dashboardData.error}`);
+      }
+
+      // Atualiza os KPIs e Gráficos (Agora funciona pois as funções foram restauradas)
       updateKpis(dashboardData.kpis);
       renderMonthChart(dashboardData.sales_by_month);
       renderDowChart(dashboardData.sales_by_dow);
@@ -639,26 +812,21 @@
   }
 
 
-  /* ===================== LÓGICA DE IMPORTAÇÃO (NOVO) ===================== */
+  /* ===================== LÓGICA DE IMPORTAÇÃO ===================== */
   
-  // Helper robusto para converter datas do Excel (número serial) para Date JavaScript (UTC)
   function parseExcelDate(serial) {
     if (typeof serial !== 'number' || !isFinite(serial)) {
         return null;
     }
-    // A diferença entre a época do Excel (ajustada para UTC) e a época Unix (1970-01-01 UTC) é 25569 dias.
+    // Diferença entre a época do Excel (UTC) e a época Unix (1970-01-01 UTC).
     const excelEpochDiff = 25569; 
     const millisecondsPerDay = 24 * 60 * 60 * 1000;
-
-    // Calcula o timestamp Unix em milissegundos UTC
     const timestamp = (serial - excelEpochDiff) * millisecondsPerDay;
-
     const date = new Date(timestamp);
     
     if (isNaN(date.getTime())) {
         return null;
     }
-    
     return date;
   }
 
@@ -679,7 +847,6 @@
         const file = event.target.files[0];
         if (!file) return;
 
-        // Estado de Carregamento
         btnUpload.disabled = true;
         uploadText.textContent = 'Processando...';
         uploadSpinner.style.display = 'inline-block';
@@ -690,7 +857,6 @@
             const workbook = XLSX.read(data, { type: 'array' });
             const firstSheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[firstSheetName];
-            // header: 1 retorna um array de arrays. raw: true obtém valores brutos (incluindo números seriais de data).
             const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: null });
 
             if (rawData.length <= 1) {
@@ -706,14 +872,13 @@
                      return null;
                 }
 
-                // Parse da Data (Robusto)
+                // Parse da Data
                 const rawDate = row[0];
                 let date;
 
                 if (typeof rawDate === 'number') {
                     date = parseExcelDate(rawDate);
                 } else if (typeof rawDate === 'string') {
-                    // Tentativa de fallback para string (ex: CSV)
                     const parsedDate = new Date(rawDate);
                      if (!isNaN(parsedDate.getTime())) {
                         date = parsedDate;
@@ -732,19 +897,19 @@
                 }
 
                 return {
-                    data: getDateISO(date), // Formata para YYYY-MM-DD
+                    data: getDateISO(date),
                     unidade: String(row[1]).trim(),
                     prato: String(row[2]).trim(),
                     categoria: row[3] ? String(row[3]).trim() : 'N/A',
                     quantidade: quantity
                 };
-            }).filter(item => item !== null); // Remove linhas inválidas
+            }).filter(item => item !== null);
 
             if (processedData.length === 0) {
                 throw new Error("Nenhum dado válido encontrado no arquivo após o processamento.");
             }
 
-            // 3. Upload em Lotes (Robusto para grandes arquivos)
+            // 3. Upload em Lotes
             uploadText.textContent = 'Enviando...';
             const BATCH_SIZE = 500;
             for (let i = 0; i < processedData.length; i += BATCH_SIZE) {
@@ -757,7 +922,7 @@
 
             alert(`${processedData.length} registros importados com sucesso!\n\nAtualizando dashboard...`);
             
-            // 4. Recarrega a página para garantir que filtros e dados estejam atualizados
+            // 4. Recarrega a página
             window.location.reload();
 
         } catch (error) {
@@ -768,7 +933,7 @@
             btnUpload.disabled = false;
             uploadText.textContent = 'Importar';
             uploadSpinner.style.display = 'none';
-            fileInput.value = ''; // Limpa o input file
+            fileInput.value = '';
         }
     });
   }
@@ -776,13 +941,11 @@
 
   /* ===================== INICIALIZAÇÃO E CONTROLES DA UI ===================== */
   
-  // Função de inicialização (ATUALIZADA)
   async function init() {
     try {
       console.info(`[Status ${APP_VERSION}] [info]: Inicializando aplicação...`);
 
-      // 1. Inicializar componentes MultiSelect (sem dados ainda)
-      // O callback fxDispatchApply será chamado sempre que a seleção mudar
+      // 1. Inicializar componentes MultiSelect
       filterUnidades = new MultiSelect('ms-unids', fxDispatchApply);
       filterCategorias = new MultiSelect('ms-cats', fxDispatchApply);
       filterPratos = new MultiSelect('ms-pratos', fxDispatchApply);
@@ -847,21 +1010,16 @@
   document.addEventListener('DOMContentLoaded', () => {
     console.log(`[DIAGNÓSTICO ${APP_VERSION}] Script final iniciado.`);
 
-    // Listener para a busca de dados
     document.addEventListener('filters:apply', (e) => {
         applyAll(e.detail);
     });
 
-    // Ponto de entrada da inicialização dos filtros.
     document.addEventListener('filters:init', () => {
-        // Configura as interações dos filtros (Botões, inputs, etc.)
         setupFilterInteractions(); 
-        // Define o período inicial (Mês Anterior)
         fxSetToLastMonthWithData(lastDay); 
-        fxDispatchApply(); // Dispara a primeira busca de dados
+        fxDispatchApply();
     });
 
-    // Listener para alternar entre Top 10
     const segTop10 = $('segTop10');
     if (segTop10) {
         segTop10.addEventListener('click', (e) => {
@@ -880,19 +1038,12 @@
     }
 
 
-    // Configura a funcionalidade de Importação (NOVO)
+    // Configura a funcionalidade de Importação
     setupImportFeature();
 
     init(); // Inicia o processo
   });
   
-  // =================================================================================
-  // ATENÇÃO: As funções de Renderização e Estado (v9.4) devem estar presentes aqui. 
-  // Elas foram omitidas no código acima para focar nas novas funcionalidades, 
-  // mas são essenciais para o funcionamento do dashboard.
-  // Funções necessárias: setChartMessage, setLoadingState, handleApiError, updateKpis, 
-  // updateDelta, renderMonthChart, renderDowChart, renderTop10.
-  // =================================================================================
   </script>
 </body>
 </html>
