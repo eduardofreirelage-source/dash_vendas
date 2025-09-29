@@ -36,7 +36,7 @@
     .seg button.active{background:var(--wine);color:#fff}
     .chart-box{position:relative;flex-grow:1;min-height:180px;}
     .chart-box canvas{display:block;width:100%;height:100%}
-    /* Adicionado para exibir mensagens nos gráficos */
+    /* Estilo para exibir mensagens nos gráficos (Carregando/Erro) */
     .chart-message { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); text-align: center; padding: 16px; background: rgba(255,255,255,0.8); }
 
     @media (max-width:1200px){ .kpis{grid-template-columns:repeat(2,1fr)} .charts-grid{grid-template-columns:1fr} }
@@ -160,6 +160,8 @@
     .msel-search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
     .msel-opt{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
     .msel-opt:hover{background:#f3f4f6}
+    /* Estilo para filtros analíticos desativados temporariamente */
+    .fx-disabled { opacity: 0.5; pointer-events: none; }
   </style>
 
   <footer class="fx-filters-bar" aria-label="Barra de filtros">
@@ -201,8 +203,8 @@
           </div>
         </div>
       </section>
-      <section class="fx-du-sec" aria-labelledby="fxSecAnaliticos">
-        <h4 id="fxSecAnaliticos">Analíticos</h4>
+      <section class="fx-du-sec fx-disabled" aria-labelledby="fxSecAnaliticos" title="Filtros analíticos ainda não implementados no backend">
+        <h4 id="fxSecAnaliticos">Analíticos (Em Breve)</h4>
         <div class="fx-du-grid">
           <div class="fx-field" style="grid-column:span 4"><label class="fx-label">Unidade</label><div id="ms-unids" class="msel"><button class="msel-btn">Todas</button><div class="msel-panel"></div></div></div>
           <div class="fx-field" style="grid-column:span 4"><label class="fx-label">Categoria</label><div id="ms-cats" class="msel"><button class="msel-btn">Todas</button><div class="msel-panel"></div></div></div>
@@ -236,46 +238,61 @@
   const SUPABASE_URL_ESTOQUE  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
   const SUPABASE_ANON_ESTOQUE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
   const supaEstoque = window.supabase.createClient(SUPABASE_URL_ESTOQUE, SUPABASE_ANON_ESTOQUE);
-  const APP_VERSION = 'v9.2'; // Versão atualizada
+  const APP_VERSION = 'v9.4'; // VERSÃO CORRETA
 
-  /* ===================== HELPERS ===================== */
+  /* ===================== HELPERS GERAIS ===================== */
   const $ = id => document.getElementById(id);
   const $$ = sel => document.querySelectorAll(sel);
-  // Função de formatação atualizada para suportar decimais na média diária
   const num = (v, decimals = 0) => (v==null||!isFinite(+v)) ? '0' : (+v).toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
   
-  function getDateISO(baseDate) {
+  // Helpers de Data (Trabalhando em UTC para evitar problemas de fuso horário)
+  
+  // Cria um objeto Date em UTC a partir de uma string YYYY-MM-DD ou outro Date
+  function getDateUTC(input) {
     let d;
-    if (baseDate) {
-        if (typeof baseDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(baseDate)) {
-            d = new Date(baseDate + 'T12:00:00Z');
-        } else if (baseDate instanceof Date) {
-             d = new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), baseDate.getUTCDate(), 12, 0, 0));
-        }
-    } 
-    
-    if (!d || isNaN(d.getTime())) {
+    if (typeof input === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
+        // Interpreta a string como UTC (usando meio-dia para segurança contra mudança de dia)
+        d = new Date(input + 'T12:00:00Z'); 
+    } else if (input instanceof Date) {
+        d = new Date(Date.UTC(input.getUTCFullYear(), input.getUTCMonth(), input.getUTCDate(), 12, 0, 0));
+    } else {
+        // Fallback para agora se a entrada for inválida ou nula
         const now = new Date();
         d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0));
     }
+    // Verifica se a data é válida
+    if (isNaN(d.getTime())) {
+        return getDateUTC(new Date()); // Fallback seguro para hoje se inválido
+    }
+    return d;
+  }
 
+  // Formata um Date para YYYY-MM-DD (ISO string)
+  function getDateISO(dateObj) {
+    const d = getDateUTC(dateObj);
     const year = d.getUTCFullYear();
     const month = String(d.getUTCMonth() + 1).padStart(2, '0');
     const day = String(d.getUTCDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   }
   
+
+  /* ===================== LÓGICA DOS FILTROS (FX) ===================== */
+  
+  // Dispara o evento que inicia a busca de dados com base nos filtros atuais
   function fxDispatchApply(){
       const startInput = $('fxDuStart');
       const endInput = $('fxDuEnd');
-      if (!startInput || !endInput) {
-          console.error("Elementos de data não encontrados. Dispatch falhou.");
+      if (!startInput || !endInput || !startInput.value || !endInput.value) {
+          console.warn("DispatchApply abortado: Datas inválidas.");
           return;
       }
+
       const payload = { start: startInput.value, end: endInput.value };
       document.dispatchEvent(new CustomEvent('filters:apply', { detail: payload }));
   }
 
+  // Define o intervalo de datas nos inputs
   function fxSetRange(start, end) {
       const startInput = $('fxDuStart');
       const endInput = $('fxDuEnd');
@@ -285,29 +302,152 @@
       }
   }
 
+  // Lógica para definir o período inicial (Mês Anterior relativo à data base)
   function fxSetToLastMonthWithData(baseDateStr) {
-      if (!baseDateStr) {
-          baseDateStr = getDateISO(new Date());
-      }
-      const baseDate = new Date(baseDateStr + 'T12:00:00Z');
+      const baseDate = getDateUTC(baseDateStr);
       const year = baseDate.getUTCFullYear();
       const month = baseDate.getUTCMonth(); 
 
-      // Lógica para calcular o mês anterior com base na data fornecida
-      // O dia 0 do mês atual é o último dia do mês anterior.
+      // Calcula o primeiro e o último dia do mês anterior
+      // O dia 0 do mês atual (em UTC) é o último dia do mês anterior.
       const startOfLastMonth = new Date(Date.UTC(year, month - 1, 1));
       const endOfLastMonth = new Date(Date.UTC(year, month, 0)); 
 
       fxSetRange(startOfLastMonth, endOfLastMonth);
       
-      // Atualiza os botões de filtro rápido
+      // Ativa o botão correspondente na barra rápida e limpa outros estados
       $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
       const lastMonthBtn = document.querySelector('#fxQuickChips button[data-win="lastMonth"]');
       if (lastMonthBtn) lastMonthBtn.classList.add('active');
+      $$('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
   }
-  
+
+
+  // >>>>> CÓDIGO ADICIONADO (v9.4): Gerenciamento das Interações com os Filtros <<<<<
+
+  function setupFilterInteractions() {
+    const fx = {
+        $btnMore: $('fxBtnMore'),
+        $dropup: $('fxDropup'),
+        $quickChips: $('fxQuickChips'),
+        $quickDays: $('fxDuQuickDays'),
+        $start: $('fxDuStart'),
+        $end: $('fxDuEnd'),
+        $btnReset: $('fxBtnReset')
+    };
+
+    if (!fx.$btnMore || !fx.$dropup) {
+        console.warn("Elementos de filtro avançado não encontrados.");
+        return;
+    }
+
+    // 1. Toggle do Dropup (Menu de Filtros Avançados)
+    fx.$btnMore.addEventListener('click', () => {
+        const isShown = fx.$dropup.classList.toggle('fx-show');
+        fx.$btnMore.setAttribute('aria-expanded', isShown);
+    });
+
+    // Fechar o dropup ao clicar fora dele (melhora a usabilidade)
+    document.addEventListener('click', (e) => {
+        if (!fx.$dropup.contains(e.target) && !fx.$btnMore.contains(e.target)) {
+            fx.$dropup.classList.remove('fx-show');
+            fx.$btnMore.setAttribute('aria-expanded', false);
+        }
+    });
+
+    // 2. Botões Rápidos (Barra inferior)
+    fx.$quickChips.addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn || btn.classList.contains('active')) return;
+
+        $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        // Limpa seleção do segmento de dias
+        $$('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
+
+
+        const win = btn.dataset.win;
+        // Usa 'lastDay' (a data mais recente com dados) como referência para os cálculos
+        const baseDate = getDateUTC(lastDay);
+        
+        let start, end;
+
+        switch(win) {
+            case 'today':
+                start = end = baseDate;
+                break;
+            case 'yesterday':
+                start = new Date(baseDate.getTime());
+                start.setUTCDate(baseDate.getUTCDate() - 1);
+                end = start;
+                break;
+            case 'lastMonth':
+                // Reutiliza a lógica de inicialização
+                fxSetToLastMonthWithData(lastDay);
+                fxDispatchApply();
+                return; // Sai cedo pois já cuidou de tudo
+            case 'lastYear':
+                const year = baseDate.getUTCFullYear() - 1;
+                start = new Date(Date.UTC(year, 0, 1)); // 1 Jan
+                end = new Date(Date.UTC(year, 11, 31)); // 31 Dez
+                break;
+        }
+
+        if (start && end) {
+            fxSetRange(start, end);
+            fxDispatchApply();
+        }
+    });
+
+    // 3. Segmento de Dias Rápidos (No Dropup - ex: últimos 30 dias)
+    fx.$quickDays.addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+
+        $$('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
+        btn.classList.add('fx-active');
+
+        const days = parseInt(btn.dataset.win);
+        // Calcula o período baseado na data final atual (ou lastDay se não estiver definida)
+        const currentEndStr = fx.$end.value || lastDay;
+        const end = getDateUTC(currentEndStr);
+        const start = new Date(end.getTime());
+        start.setUTCDate(end.getUTCDate() - (days - 1)); // Subtrai dias-1 porque o período inclui o dia final
+
+        fxSetRange(start, end);
+        // Desativa os chips rápidos da barra inferior, pois agora é um período customizado
+        $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
+        fxDispatchApply();
+    });
+
+    // 4. Mudanças Manuais nos Inputs de Data (No Dropup)
+    const handleDateChange = () => {
+        if (fx.$start.value && fx.$end.value) {
+            // Desativa os chips rápidos e os segmentos de dias, pois a data foi alterada manualmente
+            $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
+            $$('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
+            fxDispatchApply();
+        }
+    };
+    fx.$start.addEventListener('change', handleDateChange);
+    fx.$end.addEventListener('change', handleDateChange);
+
+    // 5. Botão Limpar (Reset)
+    fx.$btnReset.addEventListener('click', () => {
+        // Reseta para o padrão inicial (Mês Anterior)
+        fxSetToLastMonthWithData(lastDay);
+        fxDispatchApply();
+        // Fecha o dropup se estiver aberto
+        fx.$dropup.classList.remove('fx-show');
+        fx.$btnMore.setAttribute('aria-expanded', false);
+    });
+  }
+
+  // >>>>> FIM DO CÓDIGO ADICIONADO <<<<<
+
+
   /* ===================== ESTADO E GRÁFICOS ===================== */
-  let lastDay = '';
+  let lastDay = ''; // Armazena a data mais recente dos dados disponíveis
   let chartMonth, chartDow;
 
   // Helper para gerenciar mensagens nos gráficos (erro, vazio ou carregando)
@@ -326,37 +466,33 @@
   }
 
 
-  // Função principal de busca de dados (CORRIGIDA)
+  // Função principal de busca de dados
   async function applyAll(startDate, endDate) {
       if (!startDate || !endDate) {
-        console.warn(`[${APP_VERSION}] applyAll foi chamado sem datas válidas.`);
         return;
       }
       
       console.log(`[${APP_VERSION}] Buscando dados de ${startDate} a ${endDate}`);
       setLoadingState(true); // Ativa o estado de carregamento
 
-      // Chama a função RPC. Renomeamos 'data' para 'rawData' para evitar confusão.
+      // Chama a função RPC
       const { data: rawData, error } = await supaEstoque.rpc('get_sales_dashboard_data', {
           start_date: startDate,
           end_date: endDate
       });
 
-      // Não chamamos setLoadingState(false) aqui imediatamente, as funções de renderização farão isso.
 
       if (error) {
           handleApiError(error);
           return;
       }
 
-      // >>>>> CORREÇÃO DO ERRO data.map (Normalização da Resposta) <<<<<
-      // O Supabase RPC pode retornar o resultado (o JSONB) diretamente, 
-      // OU pode retorná-lo dentro de um array. Precisamos garantir que temos o objeto.
+      // >>>>> CORREÇÃO DE NORMALIZAÇÃO (Resolve o problema do dashboard vazio na v8.1) <<<<<
+      // Garante que estamos acessando o objeto de dados, independentemente de vir em um array ou não.
       let dashboardData;
 
       if (Array.isArray(rawData) && rawData.length > 0) {
-          // Cenário 1: Resposta veio envolvida em um Array (causa do erro anterior)
-          console.log("[DIAGNÓSTICO] Dados recebidos em formato Array, extraindo primeiro elemento.");
+          // Cenário 1: Resposta veio envolvida em um Array (Comum no Supabase RPC)
           dashboardData = rawData[0];
       } else if (rawData && typeof rawData === 'object' && !Array.isArray(rawData) && Object.keys(rawData).length > 0) {
           // Cenário 2: Resposta é o próprio objeto JSONB
@@ -372,14 +508,13 @@
           renderTop10([], 'MAIS');
           return;
       }
-      // >>>>> FIM DA CORREÇÃO <<<<<
+       // >>>>> FIM DA CORREÇÃO <<<<<
 
 
-      // Verifica se a função SQL retornou um erro interno (definido no bloco EXCEPTION do SQL)
+      // Verifica se a função SQL retornou um erro interno
       if (dashboardData.error) {
         console.error(`[${APP_VERSION}] Erro interno na função SQL:`, dashboardData.error);
         alert(`ERRO NO SQL DO SERVIDOR:\n\n${dashboardData.error}`);
-        // Continua para tentar renderizar o que for possível.
       }
       
       // Atualiza os KPIs e Gráficos
@@ -399,7 +534,7 @@
   }
 
 
-  // Funções de Estado e Tratamento de Erro (Melhoradas)
+  // Funções de Estado e Tratamento de Erro
   function setLoadingState(isLoading) {
     const listBody = $('top10-list-body');
     if (isLoading) {
@@ -421,7 +556,6 @@
   }
 
   function handleApiError(error) {
-    // Log estruturado para depuração detalhada no console
     console.error(`[${APP_VERSION}] Erro ao buscar dados do dashboard (RPC). Detalhes:`, error);
     
     // Atualiza a UI para refletir o erro
@@ -437,20 +571,18 @@
 
     // Alertas específicos para o usuário
     if (error.message && error.message.includes('Failed to fetch')) {
-        alert("ERRO DE REDE (Failed to fetch): Não foi possível conectar ao Supabase.\n\nVerifique sua conexão com a internet ou as configurações de CORS no projeto Supabase (especialmente se estiver hospedado no Vercel).");
-    } else if (error.code === 'PGRST116') {
-        alert("ERRO 404: A função RPC não foi encontrada no Supabase.");
+        alert("ERRO DE REDE (Failed to fetch): Não foi possível conectar ao Supabase.\n\nVerifique sua conexão e as configurações de CORS no Supabase (Configurações > API > CORS).");
     } else {
         alert(`Falha ao carregar dados: ${error.message || 'Erro desconhecido'} (Código: ${error.code || 'N/A'})`);
     }
   }
 
   
-  // Funções de Renderização (Com robustez adicionada)
+  // Funções de Renderização (Robustas)
   function updateKpis(kpis) {
-      // Verificação de robustez para dados de KPIs inválidos
+      // Verificação de robustez
       if (!kpis || typeof kpis !== 'object' || Object.keys(kpis).length === 0) {
-        console.warn(`[${APP_VERSION}] Dados de KPIs inválidos ou ausentes.`);
+        console.warn(`[${APP_VERSION}] Dados de KPIs inválidos ou ausentes (Período sem vendas).`);
         // Resetar KPIs para 0
         $('k_qtd').textContent = '0';
         $('p_qtd').textContent = '0';
@@ -484,11 +616,9 @@
       const el = $(elId);
       if (!el) return;
 
-      // Garante que os valores sejam números
       const currentVal = parseFloat(current) || 0;
       const previousVal = parseFloat(previous) || 0;
 
-      // Lógica robusta para cálculo de variação, tratando divisão por zero
       let change;
       if (previousVal === 0) {
         // Se o anterior for 0 e o atual for maior que 0, consideramos como "Novo"
@@ -503,7 +633,6 @@
           el.innerHTML = `▲ Novo`;
           el.classList.add('up');
       } else if (Math.abs(change) < 0.01 || !isFinite(change)) {
-          // Se a mudança for muito pequena ou não for um número finito (NaN)
           el.textContent = '—';
           el.classList.add('flat');
       } else if (change > 0) {
@@ -515,21 +644,19 @@
       }
   }
 
-  // >>>>> CORREÇÃO ADICIONAL: Validação de Array antes do .map() <<<<<
   function renderMonthChart(data) {
     // Limpa gráfico anterior e mensagens
     if (chartMonth) chartMonth.destroy();
     setChartMessage('box_month', null);
 
-    // Verificação de robustez: Garante que 'data' seja um Array válido antes de tentar usar .map().
+    // Verificação de robustez
     if (!data || !Array.isArray(data) || data.length === 0) {
         console.warn(`[${APP_VERSION}] Dados do gráfico mensal inválidos ou vazios.`);
         setChartMessage('box_month', 'Nenhum dado mensal encontrado para o período.');
-        return; // Sai da função se não houver dados válidos
+        return;
     }
 
     const ctx = $('ch_month').getContext('2d');
-    // As linhas abaixo agora são seguras, pois garantimos que 'data' é um array válido
     const labels = data.map(d => d.mes);
     const currentData = data.map(d => d.vendas_atual);
     const previousData = data.map(d => d.vendas_anterior);
@@ -553,8 +680,7 @@
 
     // Verificação de robustez
     if (!data || !Array.isArray(data)) {
-        console.warn(`[${APP_VERSION}] Dados do gráfico semanal inválidos, definindo como vazio.`);
-        data = []; // Define como array vazio para evitar erros abaixo
+        data = [];
     }
 
     if (data.length === 0) {
@@ -563,7 +689,7 @@
 
     const ctx = $('ch_dow').getContext('2d');
     const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-    // Ordena os dados para corresponder aos labels, garantindo que todos os dias apareçam (com valor 0 se não houver vendas)
+    // Garante que todos os dias apareçam (com valor 0 se não houver vendas)
     const sortedData = labels.map(label => data.find(d => d.dia_semana_nome === label) || { total_vendido: 0 });
 
     chartDow = new Chart(ctx, {
@@ -609,24 +735,20 @@
 
   /* ===================== INICIALIZAÇÃO E CONTROLES DA UI ===================== */
   
-  // Função de inicialização (Melhorada para 'Failed to fetch')
+  // Função de inicialização
   async function init() {
     try {
       console.info(`[Status ${APP_VERSION}] [info]: Inicializando aplicação...`);
       
-      // Tenta buscar a data mais recente dos dados disponíveis.
-      // Otimização: Usamos .maybeSingle() para buscar uma única linha na view.
-      // Isso retorna o objeto diretamente ({ max_data: ... }), sem o wrapper de array.
+      // Busca a data mais recente dos dados disponíveis.
       const { data, error } = await supaEstoque.from('vendas_pratos_daterange').select('max_data').maybeSingle();
       
       if (error) {
-          // Tratamento para erros de banco de dados ou de rede capturados pelo SDK
-          console.warn(`[${APP_VERSION}] Aviso na inicialização: Falha ao buscar data mais recente. Verifique a view 'vendas_pratos_daterange', permissões ou conexão/CORS. Erro: ${error.message}`, error);
+          console.warn(`[${APP_VERSION}] Aviso na inicialização: Falha ao buscar data mais recente. Erro: ${error.message}`, error);
           lastDay = getDateISO(); // Fallback para data atual
       } else if (data && data.max_data) {
           lastDay = data.max_data;
       } else {
-          // Se a view existir mas estiver vazia (data nula ou max_data nulo)
           console.warn(`[${APP_VERSION}] Tabela/View de vendas vazia ou data máxima nula.`);
           lastDay = getDateISO(); // Fallback para data atual
       }
@@ -636,17 +758,16 @@
       document.dispatchEvent(new Event('filters:init'));
       
     } catch (e) { 
-        // Captura erros inesperados que o SDK pode não ter tratado internamente (como 'Failed to fetch' lançados como exceções brutas)
+        // Captura erros inesperados (como 'Failed to fetch' lançados como exceções brutas)
         console.error(`[${APP_VERSION}] Erro crítico na inicialização (Exceção):`, e);
         
-        // Tratamento específico para 'Failed to fetch' lançado como exceção
         if (e.message && e.message.includes('Failed to fetch')) {
-            alert("Falha Crítica de Rede (Failed to fetch) ao inicializar.\n\nVerifique sua conexão com a internet e as configurações de CORS no Supabase (ex: permitir o domínio Vercel).");
+            alert("Falha Crítica de Rede (Failed to fetch) ao inicializar.\n\nVerifique sua conexão e as configurações de CORS no Supabase.");
         } else {
             alert("Falha crítica ao inicializar o Dashboard.");
         }
 
-        // Tenta continuar com fallback mesmo após erro crítico, para que o usuário possa usar a interface de filtros
+        // Tenta continuar com fallback
         lastDay = getDateISO();
         document.dispatchEvent(new Event('filters:init'));
     }
@@ -655,16 +776,6 @@
   document.addEventListener('DOMContentLoaded', () => {
     console.log(`[DIAGNÓSTICO ${APP_VERSION}] Script final iniciado.`);
 
-    const fx = {
-      $start: $('fxDuStart'), $end: $('fxDuEnd'),
-    };
-
-    // Verificação básica da existência dos elementos de filtro
-    if (!fx.$start || !fx.$end) {
-        console.error("ERRO CRÍTICO: Elementos de data não encontrados.");
-        // Continua a inicialização, mas os filtros manuais não funcionarão corretamente.
-    }
-
     // Listener para o evento que dispara a busca de dados
     document.addEventListener('filters:apply', (e) => {
         applyAll(e.detail.start, e.detail.end);
@@ -672,7 +783,9 @@
 
     // Ponto de entrada da inicialização dos filtros.
     document.addEventListener('filters:init', () => {
-        // Define o período inicial para o "Mês Anterior" antes de buscar os dados
+        // Configura as interações dos filtros (Botões, inputs, etc.) - Deve ser feito após lastDay estar definido
+        setupFilterInteractions(); 
+        // Define o período inicial (Mês Anterior)
         fxSetToLastMonthWithData(lastDay); 
         fxDispatchApply(); // Dispara a primeira busca de dados
     });
@@ -700,7 +813,6 @@
     init(); // Inicia o processo de inicialização
   });
   
-  // (Outras lógicas como Upload e Exportação podem ser adicionadas aqui)
   </script>
 </body>
 </html>
