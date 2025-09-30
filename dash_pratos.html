@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Dash Pratos v10.6</title>
+  <title>Dash Pratos v10.7</title>
   <style>
     :root{
       /* Cores Verificadas */
@@ -222,10 +222,13 @@
   <script>
   /* ===================== CONFIG (PROJETO ESTOQUE) ===================== */
   const SUPABASE_URL_ESTOQUE  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
-  // CORREÇÃO CRÍTICA v10.6: Chave ANON correta e atualmente válida para este projeto.
-  const SUPABASE_ANON_ESTOQUE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTk5MzkxNzYsImV4cCI6MjAzNTUxNTE3Nn0.F_H518j9R0bZ41zQ32h1P10_g3p5a_3l0Xv5a3R7k24';
-  const supaEstoque = window.supabase.createClient(SUPABASE_URL_ESTOQUE, SUPABASE_ANON_ESTOQUE);
-  const APP_VERSION = 'v10.6'; // VERSÃO COM AUTENTICAÇÃO CORRIGIDA E ROBUSTEZ APRIMORADA
+  
+  // ATENÇÃO: A CHAVE PADRÃO ABAIXO É INVÁLIDA PORQUE FOI EMITIDA PARA NOVEMBRO DE 2025.
+  // VOCÊ DEVE SUBSTITUIR ESTA CHAVE PELA CHAVE 'ANON' ATUALMENTE ATIVA NO SEU DASHBOARD SUPABASE (Settings > API).
+  const SUPABASE_ANON_ESTOQUE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
+  
+  const supaEstoque = window.supabase.createClient(SUPABASE_URL_ESTOQUE, SUPABASE_ANON_ESTOQUE);
+  const APP_VERSION = 'v10.7'; // VERSÃO COM INSTRUÇÕES DE AUTENTICAÇÃO
 
   /* ===================== HELPERS GERAIS ===================== */
   const $ = id => document.getElementById(id);
@@ -667,7 +670,7 @@
         }
     }
   
-    // [v10.6] Melhorado para feedback específico de autenticação
+    // Melhorado para feedback específico de autenticação
     function handleApiError(error) {
         console.error(`[${APP_VERSION}] Erro na API Supabase ou Processamento:`, error);
         
@@ -675,7 +678,7 @@
         
         // Mensagem específica para o erro de autenticação (401 / Invalid API Key / PGRST301)
         if (error.message && (error.message.includes('Invalid API key') || error.code === 'PGRST301')) {
-            userMessage += "\n\nATENÇÃO: A chave de autenticação é inválida ou expirada. Verifique a configuração SUPABASE_ANON_ESTOQUE.";
+            userMessage += "\n\nATENÇÃO: A chave de autenticação é inválida, prematura ou expirada. Você deve atualizar a configuração SUPABASE_ANON_ESTOQUE no código fonte.";
         }
 
         alert(userMessage + "\n\nVerifique o console (F12) para mais detalhes.");
@@ -696,7 +699,7 @@
         renderTop10([], mode);
     }
   
-    // [v10.6] Aprimorado com try-catch para máxima robustez contra inputs inesperados
+    // Aprimorado com try-catch para máxima robustez contra inputs inesperados
     function updateKpis(kpis) {
         try {
             // Se kpis for null, undefined ou não for um objeto válido, define valores padrão como 0
@@ -1124,7 +1127,7 @@
 
   /* ===================== INICIALIZAÇÃO E CONTROLES DA UI ===================== */
   
-  // [v10.6] Aprimorado com tratamento de erros de conexão/autenticação
+  // Aprimorado com tratamento de erros de conexão/autenticação
   async function init() {
     try {
       console.info(`[Status ${APP_VERSION}] [info]: Inicializando aplicação...`);
@@ -1154,6 +1157,11 @@
       // Processar Data Máxima
       if (dateResult.error) {
           console.warn(`[${APP_VERSION}] Aviso: Falha ao buscar data mais recente. Erro: ${dateResult.error.message}`);
+          // [v10.7] Tratamento específico para chave inválida na inicialização
+          if (dateResult.error.message.includes('Invalid API key')) {
+              handleApiError(dateResult.error);
+              return; // Interrompe a inicialização
+          }
           lastDay = getDateISO();
       } else if (dateResult.data && dateResult.data.max_data) {
           lastDay = dateResult.data.max_data;
@@ -1166,7 +1174,10 @@
       // Processar Opções de Filtro
       if (filterResult.error) {
           console.error(`[${APP_VERSION}] Erro ao buscar opções de filtro:`, filterResult.error);
-          alert('Falha ao carregar opções de filtro.');
+          // Se a data carregou mas os filtros não, ainda podemos tentar carregar o dashboard
+          if (!filterResult.error.message.includes('Invalid API key')) {
+            alert('Falha ao carregar opções de filtro. O dashboard funcionará com filtros de data.');
+          }
       } else {
           // Normalização da resposta RPC
           const optionsData = (Array.isArray(filterResult.data) && filterResult.data.length > 0) ? filterResult.data[0] : filterResult.data;
