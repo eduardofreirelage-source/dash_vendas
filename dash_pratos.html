@@ -208,7 +208,7 @@
   /* ===================== CONFIG (PROJETO ESTOQUE) ===================== */
   const SUPABASE_URL_ESTOQUE  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
   const SUPABASE_ANON_ESTOQUE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
-  const APP_VERSION = 'v10.5';
+  const APP_VERSION = 'v10.6';
   
   let supaEstoque;
 
@@ -243,10 +243,8 @@
   function formatMonthName(isoMonth) {
     if (!isoMonth || !/^\d{4}-\d{2}$/.test(isoMonth)) return isoMonth;
     const [year, monthIndex] = isoMonth.split('-').map(Number);
-    // Cria data em UTC e formata usando pt-BR
     const date = new Date(Date.UTC(year, monthIndex - 1, 1));
     const monthName = date.toLocaleString('pt-BR', { month: 'long', timeZone: 'UTC' });
-    // Capitaliza a primeira letra
     return monthName.charAt(0).toUpperCase() + monthName.slice(1);
   }
   
@@ -566,8 +564,6 @@
   /* ===================== ESTADO E GRÁFICOS ===================== */
   let lastDay = '';
   let chartMonth, chartDow;
-
-  // ===== Funções de Renderização e Estado (Implementadas) =====
   
   function setChartMessage(boxId, message) {
       const box = $(boxId);
@@ -588,10 +584,11 @@
       
       const kpiVals = $$('.kpi .val, .kpi .sub, .kpi .delta');
       if (isLoading) {
-          kpiVals.forEach(el => el.textContent = '—');
+          kpiVals.forEach(el => { if(el) el.textContent = '—' });
           setChartMessage('box_month', 'Carregando dados...');
           setChartMessage('box_dow', 'Carregando dados...');
-          $('top10-list-body').innerHTML = '<div style="text-align: center; padding: 20px; color: var(--muted);">Carregando...</div>';
+          const top10Body = $('top10-list-body');
+          if (top10Body) top10Body.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--muted);">Carregando...</div>';
       }
   }
 
@@ -601,9 +598,10 @@
       setLoadingState(false);
   }
 
+  // CORREÇÃO: Função 'updateDelta' tornada mais "defensiva"
   function updateDelta(elId, current, previous) {
       const el = $(elId);
-      if (!el) return;
+      if (!el) return; // Verifica se o elemento existe antes de usá-lo
       
       el.classList.remove('up', 'down', 'flat');
       if (current == null || previous == null || previous === 0) {
@@ -625,18 +623,26 @@
       }
   }
   
+  // CORREÇÃO: Função 'updateKpis' tornada mais "defensiva"
   function updateKpis(kpis) {
       if (!kpis) return;
-      $('k_qtd').textContent = num(kpis.current_total);
-      $('p_qtd').textContent = num(kpis.prev_total);
+      
+      // Helper para atualizar um elemento de forma segura
+      const updateElement = (id, value) => {
+          const el = $(id);
+          if (el) el.textContent = value;
+      };
+
+      updateElement('k_qtd', num(kpis.current_total));
+      updateElement('p_qtd', num(kpis.prev_total));
       updateDelta('d_qtd', kpis.current_total, kpis.prev_total);
 
-      $('k_pratos_unicos').textContent = num(kpis.current_unique);
-      $('p_pratos_unicos').textContent = num(kpis.prev_unique);
+      updateElement('k_pratos_unicos', num(kpis.current_unique));
+      updateElement('p_pratos_unicos', num(kpis.prev_unique));
       updateDelta('d_pratos_unicos', kpis.current_unique, kpis.prev_unique);
 
-      $('k_media_diaria').textContent = num(kpis.current_avg, 1);
-      $('p_media_diaria').textContent = num(kpis.prev_avg, 1);
+      updateElement('k_media_diaria', num(kpis.current_avg, 1));
+      updateElement('p_media_diaria', num(kpis.prev_avg, 1));
       updateDelta('d_media_diaria', kpis.current_avg, kpis.prev_avg);
   }
 
@@ -700,7 +706,7 @@
       const listBody = $('top10-list-body');
       if (!listBody) return;
       
-      listBody.innerHTML = ''; // Limpa a lista
+      listBody.innerHTML = '';
       
       if (!data || !Array.isArray(data) || data.length === 0) {
           const message = (mode === 'MAIS') ? 'Nenhum prato vendido no período.' : 'Nenhum prato com pouca venda no período.';
@@ -729,7 +735,6 @@
     setLoadingState(true);
 
     try {
-        // CORREÇÃO: Adicionado o parâmetro 'is_pratos_only: false' para resolver a ambiguidade da função
         const { data: rawData, error } = await supaEstoque.rpc('get_sales_dashboard_data', {
             start_date: payload.start,
             end_date: payload.end,
