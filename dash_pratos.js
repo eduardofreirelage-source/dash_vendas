@@ -46,7 +46,6 @@ function formatMonthNameFromAny(x){
 function ensureXLSX(){
   return new Promise((resolve, reject)=>{
     if (window.XLSX) return resolve(window.XLSX);
-    // tenta novamente caso o CDN ainda não carregou
     const existing = document.querySelector('script[src*="xlsx.full.min.js"]');
     if (existing){
       existing.addEventListener('load', ()=> resolve(window.XLSX));
@@ -276,10 +275,14 @@ function setChartMessage(boxId, message){
   msg.textContent = message;
 }
 
+/* HOTFIX aplicado aqui */
 function setLoadingState(isLoading){
-  // desabilita botões principais durante load (opcional)
-  const els = [ 'fxBtnMore','btnUpload','fxBtnReset' ].map($(/*id*/));
-  els.forEach(el=>{ if (el) el.disabled = !!isLoading; });
+  // desabilita botões principais durante load
+  const els = ['fxBtnMore','btnUpload','fxBtnReset']
+    .map(id => $(id))
+    .filter(Boolean);
+
+  els.forEach(el => { el.disabled = !!isLoading; });
 }
 
 function handleApiError(error){
@@ -303,7 +306,6 @@ function updateDelta(elId, current, previous){
 }
 
 function updateKpis(kpis, fallback){
-  // kpis esperado: { current_total, prev_total, current_unique, prev_unique, current_daily_avg, prev_daily_avg }
   const safe = kpis || {};
   const k_qtd  = safe.current_total ?? fallback?.current_total ?? 0;
   const p_qtd  = safe.prev_total ?? fallback?.prev_total ?? 0;
@@ -366,7 +368,6 @@ function renderDowChart(data, mode='TOTAL'){
   let source = Array.isArray(data) ? data : [];
   if (source.length===0){ setChartMessage('box_dow','Nenhum dado semanal encontrado para o período.'); }
 
-  // normaliza chaves
   const rows = labels.map(name=>{
     const found = source.find(r => (r.dia_semana_nome??r.dow_name) === name);
     return {
@@ -374,14 +375,14 @@ function renderDowChart(data, mode='TOTAL'){
       media: +(found?.media ?? 0)
     };
   });
-  const values = mode==='MEDIA' ? rows.map(r=> r.media) : rows.map(r=> r.total);
+  const values = mode==='MÉDIA' ? rows.map(r=> r.media) : rows.map(r=> r.total);
 
   const ctx = $('ch_dow').getContext('2d');
   const wine = cssVar('--wine') || '#7b1e3a';
 
   chartDow = new Chart(ctx, {
     type: 'bar',
-    data: { labels, datasets: [{ label: (mode==='MEDIA'?'Média Diária':'Itens Vendidos'), data: values, backgroundColor: wine, borderColor: wine, borderWidth:1 }] },
+    data: { labels, datasets: [{ label: (mode==='MÉDIA'?'Média Diária':'Itens Vendidos'), data: values, backgroundColor: wine, borderColor: wine, borderWidth:1 }] },
     options: { responsive:true, maintainAspectRatio:false, indexAxis:'y', scales:{ x:{ beginAtZero:true } } }
   });
 }
@@ -391,7 +392,6 @@ function renderTop10(data, mode='MAIS'){
   cont.innerHTML = '';
   const list = Array.isArray(data) ? data.slice() : [];
 
-  // aceita entradas em vários formatos
   const norm = list.map((r)=> ({
     prato: r.prato ?? r.nome_prato ?? r.item ?? '—',
     qty: +(r.qtd ?? r.quantidade ?? r.total ?? r.total_vendido ?? 0)
@@ -420,7 +420,6 @@ async function applyAll(payload){
   console.log(`[${APP_VERSION}] Buscando dados...`, payload);
   setLoadingState(true);
 
-  // chama RPC canônica (existe nas suas definições com assinaturas flexíveis)
   const { data: rawData, error } = await supaEstoque.rpc('get_sales_dashboard_data', {
     start_date: payload.start,
     end_date: payload.end,
@@ -431,7 +430,6 @@ async function applyAll(payload){
 
   if (error){ handleApiError(error); return; }
 
-  // Normalização defensiva
   let dash = null;
   if (Array.isArray(rawData) && rawData.length>0) dash = rawData[0];
   else if (rawData && typeof rawData==='object') dash = rawData;
@@ -443,9 +441,7 @@ async function applyAll(payload){
     return;
   }
 
-  // tenta várias chaves possíveis conforme suas funções listadas
   const kpis = dash.kpis ?? dash.kpi ?? dash.metrics ?? null;
-
   const byMonth = dash.sales_by_month ?? dash.month_chart ?? dash.months ?? dash.month ?? [];
   const byDow   = dash.sales_by_dow   ?? dash.dow_chart   ?? dash.dow   ?? [];
 
@@ -505,11 +501,9 @@ async function setupImportFeature(){
       const buf = await file.arrayBuffer();
       let wb;
       if (file.name.toLowerCase().endsWith('.csv')){
-        // CSV precisa ser string
         const text = new TextDecoder('utf-8').decode(new Uint8Array(buf));
         wb = XLSX.read(text, { type:'string' });
       } else {
-        // XLSX/XLS
         wb = XLSX.read(buf, { type:'array', cellDates:false });
       }
 
@@ -552,7 +546,6 @@ async function setupImportFeature(){
       }
 
       alert(`${out.length} registros importados com sucesso! Atualizando dashboard...`);
-      // sem reload para manter estado: só reconsulta com o período atual
       fxDispatchApply();
 
     } catch(err){
@@ -577,7 +570,7 @@ async function init(){
     filterCategorias = new MultiSelect('ms-cats',  fxDispatchApply);
     filterPratos    = new MultiSelect('ms-pratos', fxDispatchApply);
 
-    // pega data máxima (preferir RPC dedicada se disponível)
+    // pega data máxima
     let last = null;
     try{
       const { data, error } = await supaEstoque.rpc('get_max_date');
@@ -620,7 +613,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     const b = e.target.closest('button'); if (!b) return;
     $$('#segDowMode button').forEach(x=> x.classList.remove('active'));
     b.classList.add('active');
-    // re-render usando dados já carregados
+    // re-render com dados já carregados
     const mode = b.dataset.mode || 'TOTAL';
     const src = window.dashboardData?.sales_by_dow ?? window.dashboardData?.dow_chart ?? [];
     renderDowChart(src, mode);
