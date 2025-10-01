@@ -1,5 +1,5 @@
 /* ===================== CONFIG ===================== */
-const APP_VERSION = 'v10.4-dbg6';
+const APP_VERSION = 'v10.4-dbg7';
 const DEBUG = true;
 
 const SUPABASE_URL_ESTOQUE  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
@@ -55,10 +55,8 @@ function formatMonthNameFromAny(x){
 
 /* ===================== XLSX LOADER (ROBUSTO) ===================== */
 function ensureXLSX(){
-  // Resolve imediatamente se já disponível
   if (window.XLSX){ dbg('XLSX presente (window)'); return Promise.resolve(window.XLSX); }
 
-  // Procura script existente ou injeta um novo
   const CDN_SRC = 'https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js';
   let script = document.querySelector(`script[src="${CDN_SRC}"]`) || document.querySelector('script[src*="xlsx.full.min.js"]');
   if (!script){
@@ -71,13 +69,12 @@ function ensureXLSX(){
     dbg('Script XLSX já presente no DOM, aguardando disponibilidade…');
   }
 
-  // Faz polling até window.XLSX aparecer (com timeout)
   return new Promise((resolve, reject)=>{
     const start = Date.now();
-    const MAX_MS = 15000;
+    const MAX_MS = 45000; // ↑ 45s
     const tick = ()=>{
       if (window.XLSX){ dbg('XLSX OK'); return resolve(window.XLSX); }
-      if (Date.now()-start > MAX_MS) return reject(new Error('Timeout carregando XLSX (15s)'));
+      if (Date.now()-start > MAX_MS) return reject(new Error('Timeout carregando XLSX (45s)'));
       setTimeout(tick, 120);
     };
     script.addEventListener('error', ()=> reject(new Error('Falha ao baixar XLSX')));
@@ -215,6 +212,24 @@ function normalizeKpis(k){
   const prev_daily_avg    = clampNum(co(k.prev_daily_avg,    k.media_diaria_prev, k.media_anterior, k.avg_prev));
   return { current_total, prev_total, current_unique, prev_unique, current_daily_avg, prev_daily_avg };
 }
+
+/* FIX CRÍTICO: escrevia como função. Agora é DOM-safe. */
+function updateKpis(kpisObj){
+  const K = normalizeKpis(kpisObj||{});
+
+  const kQtd=$('k_qtd'); if(kQtd) kQtd.textContent = num(K.current_total);
+  const pQtd=$('p_qtd'); if(pQtd) pQtd.textContent = num(K.prev_total);
+  updateDelta('d_qtd', K.current_total, K.prev_total);
+
+  const kUni=$('k_pratos_unicos'); if(kUni) kUni.textContent = num(K.current_unique);
+  const pUni=$('p_pratos_unicos'); if(pUni) pUni.textContent = num(K.prev_unique);
+  updateDelta('d_pratos_unicos', K.current_unique, K.prev_unique);
+
+  const kMed=$('k_media_diaria'); if(kMed) kMed.textContent = num(K.current_daily_avg,1);
+  const pMed=$('p_media_diaria'); if(pMed) pMed.textContent = num(K.prev_daily_avg,1);
+  updateDelta('d_media_diaria', K.current_daily_avg, K.prev_daily_avg);
+}
+
 function updateDelta(elId, current, previous){
   const el=$(elId); if(!el) return;
   const c=+current||0, p=+previous||0;
@@ -222,20 +237,6 @@ function updateDelta(elId, current, previous){
   if(p===0){ el.textContent='+100%'; el.classList.add('up'); el.classList.remove('down'); return; }
   const d=((c-p)/p)*100; const txt=(d>=0?'+':'')+d.toFixed(1)+'%';
   el.textContent=txt; el.classList.toggle('up', d>=0); el.classList.toggle('down', d<0);
-}
-function updateKpis(kpisObj){
-  const K=normalizeKpis(kpisObj||{});
-  $('k_qtd')?.( $('k_qtd').textContent = num(K.current_total) );
-  $('p_qtd')?.( $('p_qtd').textContent = num(K.prev_total) );
-  updateDelta('d_qtd', K.current_total, K.prev_total);
-
-  $('k_pratos_unicos')?.( $('k_pratos_unicos').textContent = num(K.current_unique) );
-  $('p_pratos_unicos')?.( $('p_pratos_unicos').textContent = num(K.prev_unique) );
-  updateDelta('d_pratos_unicos', K.current_unique, K.prev_unique);
-
-  $('k_media_diaria')?.( $('k_media_diaria').textContent = num(K.current_daily_avg,1) );
-  $('p_media_diaria')?.( $('p_media_diaria').textContent = num(K.prev_daily_avg,1) );
-  updateDelta('d_media_diaria', K.current_daily_avg, K.prev_daily_avg);
 }
 
 /* ===================== GRÁFICOS ===================== */
@@ -337,7 +338,6 @@ async function rpcSafe(name, args){
   }
 }
 
-/* Paginador de linhas para agregações locais */
 async function fetchRowsPaged(payload, limit=5000){
   dgbegc('🧩 Fallback scan — carregando linhas paginadas');
   let base = supaEstoque.from('vendas_pratos').gte('data', payload.start).lte('data', payload.end);
@@ -363,14 +363,13 @@ async function fetchRowsPaged(payload, limit=5000){
   dgend();
   return rows;
 }
-
 function aggregateDowFromRows(rows){
-  const mapPerDate = new Map(); // 'YYYY-MM-DD' -> total do dia
+  const mapPerDate = new Map();
   for(const r of rows){
     const dt = r.data; const q = clampNum(r.quantidade);
     mapPerDate.set(dt, (mapPerDate.get(dt) || 0) + q);
   }
-  const totals = [0,0,0,0,0,0,0]; // 0=Dom...6=Sáb
+  const totals = [0,0,0,0,0,0,0];
   const dayCounts = [0,0,0,0,0,0,0];
   for(const [dateStr,total] of mapPerDate){
     const d = new Date(dateStr+'T00:00:00Z');
@@ -379,11 +378,10 @@ function aggregateDowFromRows(rows){
     dayCounts[dow] += 1;
   }
   const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const out = labels.map((name, idx)=> ({ dia_semana_nome:name, total: totals[idx]||0, media: dayCounts[idx] ? (totals[idx]/dayCounts[idx]) : 0 }));
-  return out;
+  return labels.map((name, idx)=> ({ dia_semana_nome:name, total: totals[idx]||0, media: dayCounts[idx] ? (totals[idx]/dayCounts[idx]) : 0 }));
 }
 function aggregateTop10FromRows(rows){
-  const map = new Map(); // prato -> total
+  const map = new Map();
   for(const r of rows){
     const prato = r.prato || '—';
     const q = clampNum(r.quantidade);
@@ -405,9 +403,8 @@ async function fetchMonthIfMissing(payload){
   const v2 = await rpcSafe('get_month_v2', { de:payload.start, ate:payload.end, unidades_filtro:payload.unidades, categorias_filtro:payload.categorias, pratos_filtro:payload.pratos });
   if(Array.isArray(v2) && v2.length) return v2.map(r=>({ period:r.mes, current_total:r.total, prev_total:0 }));
 
-  // fallback: agrega por mês a partir de linhas (prev_total=0)
   const rows = await fetchRowsPaged(payload, 8000);
-  const monthMap = new Map(); // 'YYYY-MM' -> total
+  const monthMap = new Map();
   for(const r of rows){
     const k = (r.data||'').slice(0,7);
     monthMap.set(k, (monthMap.get(k)||0) + clampNum(r.quantidade));
@@ -417,8 +414,6 @@ async function fetchMonthIfMissing(payload){
 async function fetchDowIfMissing(payload){
   const d = await rpcSafe('get_dow_v2', { de:payload.start, ate:payload.end, unidades_filtro:payload.unidades, categorias_filtro:payload.categorias, pratos_filtro:payload.pratos });
   if(Array.isArray(d) && d.length) return d.map(r=>({ dia_semana_nome:r.dia_semana_nome, total:r.total ?? r.total_vendido ?? 0, media:r.media ?? 0 }));
-
-  // agrega localmente
   const rows = await fetchRowsPaged(payload, 8000);
   return aggregateDowFromRows(rows);
 }
@@ -548,8 +543,9 @@ async function setupImportFeature(){
     btn.disabled=true; txt.textContent='Processando...'; spn.style.display='inline-block';
     try{
       dtime('ensureXLSX');
-      await runWithTimeout(ensureXLSX(), 16000, 'ensureXLSX');
+      await runWithTimeout(ensureXLSX(), 48000, 'ensureXLSX'); // ↑ 48s
       dtimeEnd('ensureXLSX');
+      dbg('ensureXLSX concluído');
 
       if(!window.XLSX) throw new Error('Biblioteca XLSX indisponível.');
 
@@ -620,7 +616,7 @@ async function setupImportFeature(){
         const batch=processed.slice(i,i+BATCH);
         txt.textContent=`Enviando ${Math.min(i+BATCH,processed.length)}/${processed.length}…`;
         dtime(`insert:lote:${i/BATCH+1}`);
-        const { error } = await runWithTimeout( supaEstoque.from('vendas_pratos').insert(batch), 120000, `insert lote ${i/BATCH+1}` );
+        const { error } = await runWithTimeout( supaEstoque.from('vendas_pratos').insert(batch), 300000, `insert lote ${i/BATCH+1}` ); // ↑ 5 min/lote
         dtimeEnd(`insert:lote:${i/BATCH+1}`);
         if(error) throw new Error(`Falha ao enviar lote: ${error.message}`);
         sent+=batch.length; dbg(`✔️ Lote ${i/BATCH+1} concluído — total acumulado: ${sent}`); await new Promise(r=> setTimeout(r,0));
