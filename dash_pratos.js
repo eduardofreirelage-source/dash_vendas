@@ -1,17 +1,38 @@
 /* ===================== CONFIG ===================== */
-const APP_VERSION = 'v10.4-fix2';
+const APP_VERSION = 'v10.4-dbg3';
+const DEBUG = true; // ative/desative logs
 const SUPABASE_URL_ESTOQUE  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
 const SUPABASE_ANON_ESTOQUE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
 
 const supaEstoque = window.supabase.createClient(SUPABASE_URL_ESTOQUE, SUPABASE_ANON_ESTOQUE);
 
+/* ===================== DEBUG HELPERS ===================== */
+function dbg(...args){ if (DEBUG) console.log(...args); }
+function dgbeg(label){ if (DEBUG) console.group(label); }
+function dgbegc(label){ if (DEBUG) console.groupCollapsed(label); }
+function dgend(){ if (DEBUG) console.groupEnd(); }
+function dtime(label){ if (DEBUG) console.time(label); }
+function dtimeEnd(label){ if (DEBUG) console.timeEnd(label); }
+
+/* Timeout seguro para promessas longas (diagnóstico de “travou”) */
+async function runWithTimeout(promise, ms, stage='op'){
+  let t;
+  const timeout = new Promise((_, rej)=> t = setTimeout(()=> rej(new Error(`Timeout (${ms}ms) em ${stage}`)), ms));
+  try{
+    const res = await Promise.race([promise, timeout]);
+    clearTimeout(t);
+    return res;
+  }catch(e){
+    clearTimeout(t);
+    throw e;
+  }
+}
+
 /* ===================== HELPERS ===================== */
 const $  = (id)  => document.getElementById(id);
 const $$ = (sel) => document.querySelectorAll(sel);
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-const clampNum = (v) => {
-  const n = +v; return Number.isFinite(n) ? n : 0;
-};
+const clampNum = (v) => { const n = +v; return Number.isFinite(n) ? n : 0; };
 const num = (v, d=0) => (v==null||!isFinite(+v)) ? '0' : (+v).toLocaleString('pt-BR', {
   minimumFractionDigits:d, maximumFractionDigits:d
 });
@@ -343,6 +364,7 @@ function updateKpis(kpisObj){
   updateDelta('d_media_diaria', K.current_daily_avg, K.prev_daily_avg);
 }
 
+/* ===================== CHARTS ===================== */
 function renderMonthChart(data){
   if (chartMonth) chartMonth.destroy();
   setChartMessage('box_month', null);
@@ -363,15 +385,13 @@ function renderMonthChart(data){
   const current = data.map(d=> clampNum(d.vendas_atual ?? d.current ?? d.current_total ?? d.total));
   const previous = data.map(d=> clampNum(d.vendas_anterior ?? d.previous ?? d.prev_total));
 
-  chartMonth = new Chart(ctx, {
+  new Chart(ctx, {
     type: 'bar',
-    data: {
-      labels,
+    data: { labels,
       datasets: [
         { label:'Período Atual', data: current, backgroundColor: wine, borderRadius: 4 },
         { label:'Período Anterior', data: previous, backgroundColor: cprev, borderRadius: 4 }
-      ]
-    },
+      ]},
     options: { responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true } } }
   });
 }
@@ -386,10 +406,7 @@ function renderDowChart(data, mode='TOTAL'){
 
   const rows = labels.map(name=>{
     const found = source.find(r => (r.dia_semana_nome??r.dow_name) === name);
-    return {
-      total: clampNum(found?.total_vendido ?? found?.total),
-      media: clampNum(found?.media)
-    };
+    return { total: clampNum(found?.total_vendido ?? found?.total), media: clampNum(found?.media) };
   });
   const values = mode==='MÉDIA' ? rows.map(r=> r.media) : rows.map(r=> r.total);
 
@@ -430,76 +447,52 @@ function renderTop10(data, mode='MAIS'){
   });
 }
 
-/* ===================== RPC HELPERS (fallbacks) ===================== */
+/* ===================== DIAGNÓSTICO DE DADOS ===================== */
+async function diagnoseDataAvailability(payload, note=''){
+  if (!DEBUG) return;
+  dgbegc(`🔎 Diagnose vendas_pratos ${note ? '— '+note : ''}`);
+  try{
+    let query = supaEstoque
+      .from('vendas_pratos')
+      .select('quantidade', { count: 'exact', head: true })
+      .gte('data', payload.start)
+      .lte('data', payload.end);
+
+    if (payload.categorias) query = query.in('categoria', payload.categorias);
+    if (payload.unidades)   query = query.in('unidade', payload.unidades);
+    if (payload.pratos)     query = query.in('prato', payload.pratos);
+
+    dtime('count vendas_pratos');
+    const { count, error } = await query;
+    dtimeEnd('count vendas_pratos');
+    dbg('Período:', payload.start, '→', payload.end);
+    dbg('Filtros:', { unidades: payload.unidades, categorias: payload.categorias, pratos: payload.pratos });
+    dbg('Total de linhas no período (com filtros):', count);
+    if (error) console.warn('Erro no COUNT vendas_pratos:', error);
+  } catch(e){
+    console.warn('Diagnose exception:', e);
+  } finally{
+    dgend();
+  }
+}
+
+/* ===================== RPC HELPERS (com logs) ===================== */
 async function rpcSafe(name, args){
   try{
+    dtime(`rpc:${name}`);
     const { data, error } = await supaEstoque.rpc(name, args || {});
+    dtimeEnd(`rpc:${name}`);
     if (error) throw error;
+    dgbegc(`✅ RPC ${name} ok`); dbg('args:', args); dbg('data:', data); dgend();
     return data;
   }catch(e){
-    console.warn(`[${APP_VERSION}] RPC ${name} falhou:`, e?.message||e);
+    dgbegc(`⚠️ RPC ${name} falhou`); dbg('args:', args); console.warn(`[${APP_VERSION}] RPC ${name} falhou:`, e?.message||e); dgend();
     return null;
   }
 }
-async function fetchKpisIfMissing(payload, currentKpis){
-  const K = normalizeKpis(currentKpis || {});
-  const hasCore = (K.current_total || K.prev_total || K.current_unique || K.prev_unique || K.current_daily_avg || K.prev_daily_avg);
-  if (hasCore) return K;
 
-  // 1) tenta get_kpis_v2 (jsonb)
-  const kjson = await rpcSafe('get_kpis_v2', {
-    de: payload.start, ate: payload.end,
-    unidades_filtro: payload.unidades,
-    categorias_filtro: payload.categorias,
-    pratos_filtro: payload.pratos
-  });
-  if (kjson){
-    // get_kpis_v2 retorna jsonb (objeto), às vezes dentro de array
-    const obj = Array.isArray(kjson) ? (kjson[0]||{}) : kjson;
-    const NK = normalizeKpis(obj);
-    const any = NK.current_total || NK.prev_total || NK.current_unique || NK.prev_unique || NK.current_daily_avg || NK.prev_daily_avg;
-    if (any) return NK;
-  }
-
-  // 2) tenta get_pratos_kpis (TABLE)
-  const t = await rpcSafe('get_pratos_kpis', {
-    de_iso: payload.start, ate_iso: payload.end,
-    unids_filter: payload.unidades,
-    cats_filter: payload.categorias,
-    pratos_filter: payload.pratos,
-    is_pratos_only: false
-  });
-  if (t && (Array.isArray(t) ? t.length : 0)){
-    const row = Array.isArray(t) ? t[0] : t;
-    const NK = normalizeKpis({
-      current_total: row.current_total,
-      prev_total: row.prev_total,
-      current_unique: row.current_unique,
-      prev_unique: row.prev_unique
-    });
-    // calcula médias pelo período
-    const ndays = daysInclusive(payload.start, payload.end) || 1;
-    NK.current_daily_avg = NK.current_total / ndays;
-    NK.prev_daily_avg    = NK.prev_total    / ndays; // aproximação
-    return NK;
-  }
-
-  // 3) fallback calculado a partir de gráficos
-  const month = await fetchMonthIfMissing(payload);
-  const totalC = (month||[]).reduce((s,r)=> s + clampNum(r.current_total ?? r.current ?? r.vendas_atual ?? r.total), 0);
-  const totalP = (month||[]).reduce((s,r)=> s + clampNum(r.prev_total ?? r.previous ?? r.vendas_anterior), 0);
-  const ndays = daysInclusive(payload.start, payload.end) || 1;
-  return {
-    current_total: totalC,
-    prev_total: totalP,
-    current_unique: 0, // desconhecido sem RPC
-    prev_unique: 0,    // idem
-    current_daily_avg: totalC/ndays,
-    prev_daily_avg: totalP/ndays
-  };
-}
+/* Fallbacks não-404 */
 async function fetchMonthIfMissing(payload){
-  // tenta a função MOM (date)
   let m = await rpcSafe('get_monthly_sales_chart_data_mom', {
     end_date_iso: payload.end,
     unids_filter: payload.unidades,
@@ -511,7 +504,6 @@ async function fetchMonthIfMissing(payload){
     period: r.period, current_total: r.current_total, prev_total: r.prev_total
   }));
 
-  // tenta a função (text)
   m = await rpcSafe('get_monthly_sales_chart_data', {
     end_date_iso: payload.end,
     unids_filter: payload.unidades,
@@ -523,7 +515,6 @@ async function fetchMonthIfMissing(payload){
     period: r.period, current_total: r.current_total, prev_total: r.prev_total
   }));
 
-  // v2 simples (sem previous)
   const v2 = await rpcSafe('get_month_v2', {
     de: payload.start, ate: payload.end,
     unidades_filtro: payload.unidades,
@@ -536,22 +527,21 @@ async function fetchMonthIfMissing(payload){
 
   return [];
 }
+
 async function fetchDowIfMissing(payload){
+  // get_dow_v2 tem dado 404/erro de MV — evitamos chamar se falhar
   const d = await rpcSafe('get_dow_v2', {
     de: payload.start, ate: payload.end,
     unidades_filtro: payload.unidades,
     categorias_filtro: payload.categorias,
     pratos_filtro: payload.pratos
   });
-  if (!d) return [];
-  // padroniza para { dia_semana_nome, total, media }
-  const names = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  return d.map(r=>({
-    dia_semana_nome: r.dia_semana_nome ?? names[(r.dia_semana_num ?? r.dow) % 7],
-    total: r.total ?? r.total_vendido ?? 0,
-    media: r.media ?? 0
+  if (d && Array.isArray(d)) return d.map(r=>({
+    dia_semana_nome: r.dia_semana_nome, total: r.total ?? r.total_vendido ?? 0, media: r.media ?? 0
   }));
+  return []; // ficará com mensagem de “sem dados”
 }
+
 async function fetchTop10IfMissing(payload){
   const j = await rpcSafe('get_top10_v2', {
     de: payload.start, ate: payload.end,
@@ -572,13 +562,15 @@ let __inFlight = false;
 
 async function applyAll(payload){
   if (!payload || !payload.start || !payload.end) return;
-  if (__inFlight) return; // anti-reentrância (evita spam de chamadas)
+  if (__inFlight) return; // evita reentrância
   __inFlight = true;
 
+  dgbegc(`[${APP_VERSION}] applyAll`);
+  dbg('payload:', JSON.stringify(payload));
   try{
-    console.log(`[${APP_VERSION}] Buscando dados...`, payload);
     setLoadingState(true);
 
+    dtime('rpc:get_sales_dashboard_data');
     const { data: rawData, error } = await supaEstoque.rpc('get_sales_dashboard_data', {
       start_date: payload.start,
       end_date: payload.end,
@@ -586,42 +578,66 @@ async function applyAll(payload){
       categorias_filter: payload.categorias,
       pratos_filter: payload.pratos
     });
+    dtimeEnd('rpc:get_sales_dashboard_data');
     if (error) throw error;
 
     let dash = null;
     if (Array.isArray(rawData) && rawData.length>0) dash = rawData[0];
     else if (rawData && typeof rawData==='object') dash = rawData;
     dash = dash || {};
+    dgbegc('↩️ resposta get_sales_dashboard_data'); dbg(dash); dgend();
 
-    // Normaliza/obtem cada bloco com fallback
-    let kpis = dash.kpis ?? dash.kpi ?? dash.metrics ?? null;
-    const byMonth = (dash.sales_by_month ?? dash.month_chart ?? dash.month ?? []);
-    const byDow   = (dash.sales_by_dow   ?? dash.dow_chart   ?? dash.dow   ?? []);
-    const top10Mais  = dash.top_10_mais_vendidos ?? dash.top10_mais ?? dash.top10 ?? [];
-    const top10Menos = dash.top_10_menos_vendidos ?? dash.top10_menos ?? [];
+    let kpisBlock = dash.kpis ?? dash.kpi ?? dash.metrics ?? null;
+    let monthBlock = (dash.sales_by_month ?? dash.month_chart ?? dash.month ?? []);
+    let dowBlock   = (dash.sales_by_dow   ?? dash.dow_chart   ?? dash.dow   ?? []);
+    let tMais      = dash.top_10_mais_vendidos ?? dash.top10_mais ?? dash.top10 ?? [];
+    let tMenos     = dash.top_10_menos_vendidos ?? dash.top10_menos ?? [];
 
-    // KPI: busca se faltou
-    const kFixed = await fetchKpisIfMissing(payload, kpis);
-    updateKpis(kFixed);
+    // KPI
+    const K = normalizeKpis(kpisBlock || {});
+    dbg('KPIs normalizados (primário):', K);
 
-    // Month: se veio vazio, tenta RPCs específicas
-    let monthBlock = byMonth;
+    // Se tudo zerado, tenta derivar do mês e diagnosticar disponibilidade
+    const allZero = Object.values(K).every(v => (v==null || v===0));
+    if (allZero){
+      console.warn('KPIs vieram zerados — executando diagnose e fallbacks.');
+      await diagnoseDataAvailability(payload, 'após get_sales_dashboard_data');
+
+      // Month fallback
+      if (!Array.isArray(monthBlock) || monthBlock.length===0){
+        monthBlock = await fetchMonthIfMissing(payload);
+      }
+      const totalC = (monthBlock||[]).reduce((s,r)=> s + clampNum(r.current_total ?? r.current ?? r.vendas_atual ?? r.total), 0);
+      const totalP = (monthBlock||[]).reduce((s,r)=> s + clampNum(r.prev_total ?? r.previous ?? r.vendas_anterior), 0);
+      const days = daysInclusive(payload.start, payload.end) || 1;
+      kpisBlock = {
+        current_total: totalC,
+        prev_total: totalP,
+        current_unique: 0,
+        prev_unique: 0,
+        current_daily_avg: totalC/days,
+        prev_daily_avg: totalP/days
+      };
+    }
+
+    updateKpis(kpisBlock || K);
+
+    // Month
     if (!Array.isArray(monthBlock) || monthBlock.length===0){
       monthBlock = await fetchMonthIfMissing(payload);
     }
     renderMonthChart(monthBlock);
 
-    // DOW: idem
-    let dowBlock = byDow;
+    // DOW
     if (!Array.isArray(dowBlock) || dowBlock.length===0){
-      dowBlock = await fetchDowIfMissing(payload);
+      const tmp = await fetchDowIfMissing(payload);
+      if (tmp && tmp.length) dowBlock = tmp;
     }
     const segModeBtn = document.querySelector('#segDowMode button.active');
     const mode = segModeBtn ? segModeBtn.dataset.mode : 'TOTAL';
     renderDowChart(dowBlock, mode);
 
-    // TOP10: se vier vazio, tenta get_top10_v2
-    let tMais = top10Mais, tMenos = top10Menos;
+    // TOP10
     if ((!Array.isArray(tMais) || tMais.length===0) && (!Array.isArray(tMenos) || tMenos.length===0)){
       const t = await fetchTop10IfMissing(payload);
       tMais = t.mais; tMenos = t.menos;
@@ -632,7 +648,7 @@ async function applyAll(payload){
 
     window.dashboardData = {
       ...dash,
-      kpis: kFixed,
+      kpis: normalizeKpis(kpisBlock || K),
       sales_by_month: monthBlock,
       sales_by_dow: dowBlock,
       top_10_mais_vendidos: tMais,
@@ -645,6 +661,7 @@ async function applyAll(payload){
   } finally{
     setLoadingState(false);
     __inFlight = false;
+    dgend();
   }
 }
 
@@ -678,25 +695,34 @@ async function setupImportFeature(){
   input.addEventListener('change', async (ev)=>{
     const file = ev.target.files?.[0]; if (!file) return;
 
+    dgbegc('📥 Importação — arquivo selecionado');
+    dbg('nome:', file.name, 'tamanho:', file.size, 'tipo:', file.type);
     btn.disabled = true; txt.textContent = 'Processando...'; spn.style.display = 'inline-block';
     try{
       await ensureXLSX();
 
       const buf = await file.arrayBuffer();
       let wb;
-      if (file.name.toLowerCase().endsWith('.csv')){
+      const isCsv = file.name.toLowerCase().endsWith('.csv');
+      dbg('isCsv:', isCsv);
+
+      dtime('xlsx:read');
+      if (isCsv){
         const text = new TextDecoder('utf-8').decode(new Uint8Array(buf));
         wb = XLSX.read(text, { type:'string', raw:true });
       } else {
         wb = XLSX.read(buf, { type:'array', cellDates:false });
       }
+      dtimeEnd('xlsx:read');
 
       const first = wb.SheetNames[0];
       const ws = wb.Sheets[first];
       const rows = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:null });
+      dbg('linhas totais (incl cabeçalho):', rows.length);
       if (rows.length <= 1) throw new Error('O arquivo está vazio ou contém apenas o cabeçalho.');
 
       rows.shift(); // cabeçalho
+      dtime('parse linhas');
       const out = rows.map((r, i)=>{
         // Esperado: Data[0], Unidade[1], Prato[2], Categoria[3], Quantidade[4]
         if (r.length < 5 || r[1]==null || r[2]==null) return null;
@@ -706,7 +732,7 @@ async function setupImportFeature(){
         if (typeof rawDate === 'string') date = parseBrazilianDate(rawDate);
         if (!date && typeof rawDate === 'number') date = parseExcelDate(rawDate);
         if (!date && rawDate){ const d2 = new Date(rawDate); if (!isNaN(d2)) date = d2; }
-        if (!date){ console.warn(`[Import] Linha ${i+2} ignorada (data inválida):`, rawDate); return null; }
+        if (!date){ if (DEBUG) console.warn(`[Import] Linha ${i+2} ignorada (data inválida):`, rawDate); return null; }
 
         const qty = parseInt(r[4],10); if (isNaN(qty) || qty<=0) return null;
 
@@ -718,6 +744,10 @@ async function setupImportFeature(){
           quantidade: qty
         };
       }).filter(Boolean);
+      dtimeEnd('parse linhas');
+
+      dbg('registros válidos:', out.length);
+      if (DEBUG) console.table(out.slice(0,5));
 
       if (out.length===0) throw new Error('Nenhum dado válido encontrado após processamento. Verifique as datas (dd/mm/aaaa) ou seriais Excel.');
 
@@ -726,9 +756,16 @@ async function setupImportFeature(){
       for (let i=0;i<out.length;i+=BATCH){
         const batch = out.slice(i,i+BATCH);
         txt.textContent = `Enviando ${Math.min(i+BATCH,out.length)}/${out.length}…`;
-        const { error } = await supaEstoque.from('vendas_pratos').insert(batch);
+        dtime(`insert lote ${i/BATCH+1}`);
+        const { error } = await runWithTimeout(
+          supaEstoque.from('vendas_pratos').insert(batch),
+          120000, // 120s por lote
+          `insert lote ${i/BATCH+1}`
+        );
+        dtimeEnd(`insert lote ${i/BATCH+1}`);
         if (error) throw new Error(`Falha ao enviar lote: ${error.message}`);
         sent += batch.length;
+        dbg(`✔️ Lote ${i/BATCH+1} enviado. Total acumulado: ${sent}`);
         await sleep0(); // mantém a UI responsiva
       }
 
@@ -738,15 +775,15 @@ async function setupImportFeature(){
 
     } catch(err){
       console.error(`[${APP_VERSION}] Erro na importação:`, err);
-      alert(`Falha na importação:\n${err.message||err}`);
+      alert(`Falha na importação:\n${err?.message||err}`);
     } finally{
       btn.disabled = false; txt.textContent = 'Importar'; spn.style.display = 'none'; input.value='';
+      dgend();
     }
   });
 }
 
 /* ===================== INIT ===================== */
-let __filtersReady = false;
 window.__lastDay = getDateISO(); // fallback
 
 async function init(){
