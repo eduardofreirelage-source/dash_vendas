@@ -1,8 +1,7 @@
 /* ===================== CONFIG ===================== */
-const APP_VERSION = 'v10.4-dbg4';
+const APP_VERSION = 'v10.4-dbg5';
 const DEBUG = true;
 
-// --- Supabase Estoque
 const SUPABASE_URL_ESTOQUE  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
 const SUPABASE_ANON_ESTOQUE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
 const supaEstoque = window.supabase.createClient(SUPABASE_URL_ESTOQUE, SUPABASE_ANON_ESTOQUE);
@@ -22,14 +21,10 @@ function runWithTimeout(promise, ms, stage='op'){
 }
 
 /* ===================== HARDENING GLOBAL ===================== */
-window.addEventListener('error', (e)=>{
-  console.error(`[${APP_VERSION}] window.onerror:`, e?.message, e?.filename, e?.lineno, e?.colno, e?.error);
-});
-window.addEventListener('unhandledrejection', (e)=>{
-  console.error(`[${APP_VERSION}] unhandledrejection:`, e?.reason);
-});
+window.addEventListener('error', (e)=> console.error(`[${APP_VERSION}] window.onerror:`, e?.message, e?.filename, e?.lineno, e?.colno, e?.error));
+window.addEventListener('unhandledrejection', (e)=> console.error(`[${APP_VERSION}] unhandledrejection:`, e?.reason));
 
-/* ===================== HELPERS GERAIS ===================== */
+/* ===================== HELPERS ===================== */
 const $  = (id)=> document.getElementById(id);
 const $$ = (sel)=> document.querySelectorAll(sel);
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -61,9 +56,10 @@ function formatMonthNameFromAny(x){
 /* ===================== XLSX LOADER ===================== */
 function ensureXLSX(){
   return new Promise((resolve, reject)=>{
-    if (window.XLSX) return resolve(window.XLSX);
+    if (window.XLSX){ dbg('XLSX presente (window)'); return resolve(window.XLSX); }
     const existing = document.querySelector('script[src*="xlsx.full.min.js"]');
     if (existing){
+      dbg('Esperando script XLSX carregar…');
       existing.addEventListener('load', ()=> resolve(window.XLSX));
       existing.addEventListener('error', ()=> reject(new Error('Falha ao carregar XLSX (cdn)')));
       return;
@@ -216,16 +212,16 @@ function updateDelta(elId, current, previous){
 }
 function updateKpis(kpisObj){
   const K=normalizeKpis(kpisObj||{});
-  $('k_qtd')?.( $('k_qtd').textContent = num(K.current_total) );
-  $('p_qtd')?.( $('p_qtd').textContent = num(K.prev_total) );
+  const elKQtd = $('k_qtd'); if (elKQtd) elKQtd.textContent = num(K.current_total);
+  const elPQtd = $('p_qtd'); if (elPQtd) elPQtd.textContent = num(K.prev_total);
   updateDelta('d_qtd', K.current_total, K.prev_total);
 
-  $('k_pratos_unicos')?.( $('k_pratos_unicos').textContent = num(K.current_unique) );
-  $('p_pratos_unicos')?.( $('p_pratos_unicos').textContent = num(K.prev_unique) );
+  const elKU = $('k_pratos_unicos'); if (elKU) elKU.textContent = num(K.current_unique);
+  const elPU = $('p_pratos_unicos'); if (elPU) elPU.textContent = num(K.prev_unique);
   updateDelta('d_pratos_unicos', K.current_unique, K.prev_unique);
 
-  $('k_media_diaria')?.( $('k_media_diaria').textContent = num(K.current_daily_avg,1) );
-  $('p_media_diaria')?.( $('p_media_diaria').textContent = num(K.prev_daily_avg,1) );
+  const elKM = $('k_media_diaria'); if (elKM) elKM.textContent = num(K.current_daily_avg,1);
+  const elPM = $('p_media_diaria'); if (elPM) elPM.textContent = num(K.prev_daily_avg,1);
   updateDelta('d_media_diaria', K.current_daily_avg, K.prev_daily_avg);
 }
 
@@ -281,7 +277,7 @@ function renderTop10(data, mode='MAIS'){
   });
 }
 
-/* ===================== DIAGNÓSTICOS DE DADOS/DB ===================== */
+/* ===================== DIAGNÓSTICOS E FALLBACKS ===================== */
 async function diagnoseDataAvailability(payload, note=''){
   if(!DEBUG) return;
   dgbegc(`🔎 Diagnose vendas_pratos ${note?('— '+note):''}`);
@@ -300,7 +296,6 @@ async function diagnoseDataAvailability(payload, note=''){
     dbg('Total linhas no período (com filtros):', count);
     if(error) console.warn('Erro COUNT vendas_pratos:', error);
 
-    // amostra (1 linha) para verificar RLS
     const sample = await supaEstoque.from('vendas_pratos').select('*').gte('data', payload.start).lte('data', payload.end).limit(1);
     if(sample.error) console.warn('RLS/sample erro:', sample.error);
     else dbg('Sample linha:', sample.data);
@@ -309,13 +304,8 @@ async function diagnoseDataAvailability(payload, note=''){
   finally{ dgend(); }
 }
 
-/* ===================== RPC HELPERS ===================== */
-const RPC_FAIL_CACHE = new Map(); // evita spammar RPC que não existem
-function canCallRpc(name, coolDownMs=300000){ // 5 min
-  const last = RPC_FAIL_CACHE.get(name);
-  if(!last) return true;
-  return (Date.now()-last) > coolDownMs;
-}
+const RPC_FAIL_CACHE = new Map();
+function canCallRpc(name, coolDownMs=300000){ const last = RPC_FAIL_CACHE.get(name); return !last || (Date.now()-last) > coolDownMs; }
 function markRpcFail(name){ RPC_FAIL_CACHE.set(name, Date.now()); }
 
 async function rpcSafe(name, args){
@@ -334,7 +324,64 @@ async function rpcSafe(name, args){
   }
 }
 
-/* Fallbacks para gráficos/dados quando get_sales_dashboard_data não entrega tudo */
+/* Paginador de linhas para agregações locais */
+async function fetchRowsPaged(payload, limit=5000){
+  dgbegc('🧩 Fallback scan — carregando linhas paginadas');
+  let base = supaEstoque.from('vendas_pratos').gte('data', payload.start).lte('data', payload.end);
+  if(payload.categorias) base = base.in('categoria', payload.categorias);
+  if(payload.unidades)   base = base.in('unidade', payload.unidades);
+  if(payload.pratos)     base = base.in('prato', payload.pratos);
+
+  const head = await base.select('*', { count:'exact', head:true });
+  const total = head.count || 0;
+  dbg('total rows scan:', total);
+  if(total===0){ dgend(); return []; }
+
+  const rows = [];
+  for(let from=0; from<total; from+=limit){
+    const to = Math.min(from+limit-1, total-1);
+    dtime(`scan ${from}-${to}`);
+    const { data, error } = await base.select('data,quantidade,prato,unidade,categoria').order('data', { ascending:true }).range(from, to);
+    dtimeEnd(`scan ${from}-${to}`);
+    if(error){ console.warn('scan error:', error); break; }
+    rows.push(...(data||[]));
+    await new Promise(r=> setTimeout(r,0));
+  }
+  dgend();
+  return rows;
+}
+
+function aggregateDowFromRows(rows){
+  const mapPerDate = new Map(); // 'YYYY-MM-DD' -> total do dia
+  for(const r of rows){
+    const dt = r.data; const q = clampNum(r.quantidade);
+    mapPerDate.set(dt, (mapPerDate.get(dt) || 0) + q);
+  }
+  const totals = [0,0,0,0,0,0,0]; // 0=Dom...6=Sáb (usaremos UTC getUTCDay)
+  const dayCounts = [0,0,0,0,0,0,0];
+  for(const [dateStr,total] of mapPerDate){
+    const d = new Date(dateStr+'T00:00:00Z');
+    const dow = d.getUTCDay(); // 0..6
+    totals[dow] += total;
+    dayCounts[dow] += 1;
+  }
+  const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const out = labels.map((name, idx)=> ({ dia_semana_nome:name, total: totals[idx]||0, media: dayCounts[idx] ? (totals[idx]/dayCounts[idx]) : 0 }));
+  return out;
+}
+function aggregateTop10FromRows(rows){
+  const map = new Map(); // prato -> total
+  for(const r of rows){
+    const prato = r.prato || '—';
+    const q = clampNum(r.quantidade);
+    map.set(prato, (map.get(prato)||0) + q);
+  }
+  const arr = Array.from(map.entries()).map(([prato,qty])=>({ prato, total_vendido: qty }));
+  const mais = arr.slice().sort((a,b)=> b.total_vendido - a.total_vendido).slice(0,10);
+  const menos = arr.slice().filter(x=> x.total_vendido>0).sort((a,b)=> a.total_vendido - b.total_vendido).slice(0,10);
+  return { mais, menos };
+}
+
 async function fetchMonthIfMissing(payload){
   let m = await rpcSafe('get_monthly_sales_chart_data_mom', { end_date_iso:payload.end, unids_filter:payload.unidades, cats_filter:payload.categorias, pratos_filter:payload.pratos, is_pratos_only:false });
   if(Array.isArray(m) && m.length) return m.map(r=>({ period:r.period, current_total:r.current_total, prev_total:r.prev_total }));
@@ -345,21 +392,31 @@ async function fetchMonthIfMissing(payload){
   const v2 = await rpcSafe('get_month_v2', { de:payload.start, ate:payload.end, unidades_filtro:payload.unidades, categorias_filtro:payload.categorias, pratos_filtro:payload.pratos });
   if(Array.isArray(v2) && v2.length) return v2.map(r=>({ period:r.mes, current_total:r.total, prev_total:0 }));
 
-  return [];
+  // último fallback: agrega por mês a partir de linhas (prev_total=0)
+  const rows = await fetchRowsPaged(payload, 8000);
+  const monthMap = new Map(); // 'YYYY-MM' -> total
+  for(const r of rows){
+    const k = (r.data||'').slice(0,7);
+    monthMap.set(k, (monthMap.get(k)||0) + clampNum(r.quantidade));
+  }
+  return Array.from(monthMap.entries()).sort((a,b)=> a[0].localeCompare(b[0])).map(([k,v])=>({ period:k, current_total:v, prev_total:0 }));
 }
 async function fetchDowIfMissing(payload){
   const d = await rpcSafe('get_dow_v2', { de:payload.start, ate:payload.end, unidades_filtro:payload.unidades, categorias_filtro:payload.categorias, pratos_filtro:payload.pratos });
-  if(Array.isArray(d)) return d.map(r=>({ dia_semana_nome:r.dia_semana_nome, total:r.total ?? r.total_vendido ?? 0, media:r.media ?? 0 }));
-  return [];
+  if(Array.isArray(d) && d.length) return d.map(r=>({ dia_semana_nome:r.dia_semana_nome, total:r.total ?? r.total_vendido ?? 0, media:r.media ?? 0 }));
+
+  // agrega localmente
+  const rows = await fetchRowsPaged(payload, 8000);
+  return aggregateDowFromRows(rows);
 }
 async function fetchTop10IfMissing(payload){
   const j = await rpcSafe('get_top10_v2', { de:payload.start, ate:payload.end, unidades_filtro:payload.unidades, categorias_filtro:payload.categorias, pratos_filtro:payload.pratos });
-  if(!j) return { mais:[], menos:[] };
-  const obj = Array.isArray(j) ? (j[0]||{}) : j;
-  return {
-    mais: obj.top_10_mais_vendidos ?? obj.mais ?? obj.top10 ?? [],
-    menos: obj.top_10_menos_vendidos ?? obj.menos ?? []
-  };
+  if(j){
+    const obj = Array.isArray(j) ? (j[0]||{}) : j;
+    return { mais: obj.top_10_mais_vendidos ?? obj.mais ?? obj.top10 ?? [], menos: obj.top_10_menos_vendidos ?? obj.menos ?? [] };
+  }
+  const rows = await fetchRowsPaged(payload, 8000);
+  return aggregateTop10FromRows(rows);
 }
 
 /* ===================== BUSCA PRINCIPAL ===================== */
@@ -372,7 +429,6 @@ async function applyAll(payload){
   try{
     setLoadingState(true);
 
-    // 1) Tenta endpoint consolidado
     dtime('rpc:get_sales_dashboard_data');
     const { data:rawData, error } = await supaEstoque.rpc('get_sales_dashboard_data', {
       start_date: payload.start, end_date: payload.end,
@@ -388,48 +444,40 @@ async function applyAll(payload){
 
     dgbegc('↩️ resposta get_sales_dashboard_data'); dbg(dash); dgend();
 
-    // 2) Extrai blocos
+    // Extrai blocos
     let kpisBlock = dash.kpis ?? dash.kpi ?? dash.metrics ?? null;
     let monthBlock = dash.sales_by_month ?? dash.month_chart ?? dash.month ?? [];
     let dowBlock   = dash.sales_by_dow   ?? dash.dow_chart   ?? dash.dow   ?? [];
     let tMais      = dash.top_10_mais_vendidos ?? dash.top10_mais ?? dash.top10 ?? [];
     let tMenos     = dash.top_10_menos_vendidos ?? dash.top10_menos ?? [];
 
-    // 3) KPIs — se zerados, diagnostica e deriva de month
-    const K = normalizeKpis(kpisBlock||{});
-    const allZero = Object.values(K).every(v=> (v==null || v===0));
-    if(allZero){
-      console.warn('KPIs vieram zerados — executando diagnose e fallbacks.');
-      await diagnoseDataAvailability(payload, 'após get_sales_dashboard_data');
+    // Fallbacks se faltar coisa
+    if(!Array.isArray(monthBlock) || monthBlock.length===0){ monthBlock = await fetchMonthIfMissing(payload); }
+    if(!Array.isArray(dowBlock)   || dowBlock.length===0)  { dowBlock   = await fetchDowIfMissing(payload); }
+    if((!Array.isArray(tMais)||!tMais.length) && (!Array.isArray(tMenos)||!tMenos.length)){
+      const t = await fetchTop10IfMissing(payload); tMais=t.mais; tMenos=t.menos;
+    }
 
-      if(!Array.isArray(monthBlock) || monthBlock.length===0){ monthBlock = await fetchMonthIfMissing(payload); }
+    // KPIs — se zerados, derivar pelos dados mensais
+    const K0 = normalizeKpis(kpisBlock||{});
+    const allZero = Object.values(K0).every(v=> (v==null || v===0));
+    if(allZero){
+      await diagnoseDataAvailability(payload, 'após get_sales_dashboard_data');
       const totalC = (monthBlock||[]).reduce((s,r)=> s + clampNum(r.current_total ?? r.current ?? r.vendas_atual ?? r.total), 0);
       const totalP = (monthBlock||[]).reduce((s,r)=> s + clampNum(r.prev_total ?? r.previous ?? r.vendas_anterior), 0);
       const days = daysInclusive(payload.start, payload.end) || 1;
       kpisBlock = { current_total: totalC, prev_total: totalP, current_unique: 0, prev_unique: 0, current_daily_avg: totalC/days, prev_daily_avg: totalP/days };
     }
 
-    // 4) Atualiza UI
-    updateKpis(kpisBlock || K);
-
-    if(!Array.isArray(monthBlock) || monthBlock.length===0) monthBlock=await fetchMonthIfMissing(payload);
+    // Atualiza UI
+    updateKpis(kpisBlock || K0);
     renderMonthChart(monthBlock);
-
-    if(!Array.isArray(dowBlock) || dowBlock.length===0){
-      const tmp = await fetchDowIfMissing(payload);
-      if(tmp && tmp.length) dowBlock = tmp;
-    }
     const segModeBtn = document.querySelector('#segDowMode button.active');
     renderDowChart(dowBlock, segModeBtn ? segModeBtn.dataset.mode : 'TOTAL');
-
-    if((!Array.isArray(tMais)||!tMais.length) && (!Array.isArray(tMenos)||!tMenos.length)){
-      const t = await fetchTop10IfMissing(payload); tMais=t.mais; tMenos=t.menos;
-    }
     const activeTop10Btn = document.querySelector('#segTop10 button.active');
     renderTop10(activeTop10Btn && activeTop10Btn.dataset.mode==='MENOS' ? tMenos : tMais, activeTop10Btn?.dataset.mode || 'MAIS');
 
-    window.dashboardData = { ...dash, kpis: normalizeKpis(kpisBlock||K), sales_by_month: monthBlock, sales_by_dow: dowBlock, top_10_mais_vendidos: tMais, top_10_menos_vendidos: tMenos };
-
+    window.dashboardData = { ...dash, kpis: normalizeKpis(kpisBlock||K0), sales_by_month: monthBlock, sales_by_dow: dowBlock, top_10_mais_vendidos: tMais, top_10_menos_vendidos: tMenos };
     console.info(`[Status ${APP_VERSION}] [ok]: Dados atualizados.`);
   }catch(err){
     console.error(`[${APP_VERSION}] API Error:`, err);
@@ -441,7 +489,7 @@ async function applyAll(payload){
   }
 }
 
-/* ===================== IMPORTAÇÃO ROBUSTA ===================== */
+/* ===================== IMPORTAÇÃO ROBUSTA (logs extras) ===================== */
 function parseExcelDate(serial){
   if(typeof serial!=='number' || !isFinite(serial)) return null;
   const epoch=25569, ms=86400000; const d=new Date((serial-epoch)*ms);
@@ -458,7 +506,7 @@ async function setupImportFeature(){
   if(!btn||!input) return;
 
   const strip=(s)=> (s==null?'':String(s).trim());
-  const deburr=(s)=> strip(s).normalize('NFD').replace(/[\u0300-\u036f]/g,''); // remove acentos
+  const deburr=(s)=> strip(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const canon=(s)=> deburr(s).toLowerCase().replace(/\s+/g,' ').replace(/[^a-z0-9 ]/g,'').trim();
 
   const headerRules = [
@@ -479,9 +527,20 @@ async function setupImportFeature(){
 
     btn.disabled=true; txt.textContent='Processando...'; spn.style.display='inline-block';
     try{
-      await ensureXLSX();
+      dtime('ensureXLSX'); await ensureXLSX(); dtimeEnd('ensureXLSX');
+      if(!window.XLSX) throw new Error('Biblioteca XLSX indisponível.');
 
-      const buf=await file.arrayBuffer(); const isCsv=file.name.toLowerCase().endsWith('.csv');
+      dtime('file.arrayBuffer'); 
+      let buf;
+      try{ buf = await file.arrayBuffer(); }
+      catch(e){
+        console.warn('arrayBuffer falhou, tentando FileReader...', e);
+        buf = await new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=()=>rej(fr.error||new Error('FileReader erro')); fr.readAsArrayBuffer(file); });
+      }
+      dtimeEnd('file.arrayBuffer');
+
+      const isCsv=file.name.toLowerCase().endsWith('.csv');
+
       dtime('xlsx:read');
       let wb;
       if(isCsv){ const text=new TextDecoder('utf-8').decode(new Uint8Array(buf)); wb=XLSX.read(text,{type:'string', raw:true}); }
@@ -491,9 +550,12 @@ async function setupImportFeature(){
       const sheetName=wb.SheetNames[0]; const ws=wb.Sheets[sheetName]; if(!ws) throw new Error('Aba inicial não encontrada no arquivo.');
       dbg('Aba detectada:', sheetName);
 
-      const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null}); if(rows.length<=1) throw new Error('O arquivo está vazio ou só tem cabeçalho.');
-      const header=rows[0].map(strip); const map=mapHeaders(header);
+      dtime('sheet_to_json');
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+      dtimeEnd('sheet_to_json');
+      if(rows.length<=1) throw new Error('O arquivo está vazio ou só tem cabeçalho.');
 
+      const header=rows[0].map(strip); const map=mapHeaders(header);
       const missing=['data','unidade','prato','categoria','quantidade'].filter(k=> map[k]==null);
       if(missing.length){
         console.error('Cabeçalhos encontrados:', header);
@@ -513,9 +575,9 @@ async function setupImportFeature(){
         if(!d && rawDate){ const d2=new Date(rawDate); if(!isNaN(d2)) d=d2; }
         if(!d) continue;
 
-        const unidade=strip(r[map.unidade]); if(!unidade) continue;
-        const prato=strip(r[map.prato]); if(!prato) continue;
-        const categoria=strip(r[map.categoria]) || 'N/A';
+        const unidade=String(r[map.unidade] ?? '').trim(); if(!unidade) continue;
+        const prato=String(r[map.prato] ?? '').trim(); if(!prato) continue;
+        const categoria=String(r[map.categoria] ?? '').trim() || 'N/A';
 
         let qtdRaw=r[map.quantidade];
         if(typeof qtdRaw==='string'){ qtdRaw=deburr(qtdRaw).replace(/\./g,'').replace(/,/g,'.').replace(/[^\d\.-]/g,''); }
@@ -529,7 +591,6 @@ async function setupImportFeature(){
       dbg('Registros válidos:', processed.length, '— amostra:', processed.slice(0,5));
       if(processed.length===0) throw new Error('Nenhum registro válido após o processamento. Verifique cabeçalhos e formato das datas.');
 
-      // Inserção em lotes com timeout
       txt.textContent='Enviando...';
       const BATCH=500; let sent=0;
       for(let i=0;i<processed.length;i+=BATCH){
@@ -576,17 +637,14 @@ async function init(){
   try{
     console.info(`[Status ${APP_VERSION}] [info]: Inicializando aplicação...`);
 
-    // sanity check de elementos críticos
     const requiredIds = ['k_qtd','p_qtd','d_qtd','k_pratos_unicos','p_pratos_unicos','d_pratos_unicos','k_media_diaria','p_media_diaria','d_media_diaria','ch_month','ch_dow','top10-list-body','fxDuStart','fxDuEnd'];
     const missing = requiredIds.filter(id=> !$(id));
     if(missing.length){ console.warn('⚠️ Elementos ausentes no DOM:', missing); }
 
-    // MultiSelects
     filterUnidades = new MultiSelect('ms-unids', fxDispatchApply);
     filterCategorias= new MultiSelect('ms-cats',  fxDispatchApply);
     filterPratos    = new MultiSelect('ms-pratos', fxDispatchApply);
 
-    // data máxima
     let last = null;
     try{ const { data, error } = await supaEstoque.rpc('get_max_date'); if(!error && data) last=data; } catch(e){}
     if(!last){
@@ -600,7 +658,6 @@ async function init(){
     window.__lastDay = last || getDateISO();
     console.info(`[Status ${APP_VERSION}] Data base definida para: ${window.__lastDay}`);
 
-    // opções de filtros
     let filt = null;
     try{ const { data } = await supaEstoque.rpc('get_filter_options'); filt = Array.isArray(data) ? data[0] : data; }catch(e){}
     if(!filt){ filt = await loadFilterOptionsFallback(); }
@@ -609,12 +666,10 @@ async function init(){
     filterCategorias.initialize(filt?.categorias || []);
     filterPratos.initialize(filt?.pratos || []);
 
-    // Categoria padrão: 'Pratos' se existir
     const def = (filt?.categorias||[]).find(c=> String(c).toLowerCase()==='pratos');
     if(def){ filterCategorias.selected.add(def); filterCategorias.updateButtonText(); }
     else { console.warn('Categoria padrão "Pratos" não encontrada nos filtros — seguindo sem default.'); }
 
-    // listeners
     document.addEventListener('filters:apply', (e)=> applyAll(e.detail));
     document.addEventListener('filters:init', ()=>{
       setupFilterInteractions();
@@ -622,7 +677,6 @@ async function init(){
       fxDispatchApply();
     });
 
-    // seg toggles
     $('segDowMode')?.addEventListener('click',(e)=>{
       const b=e.target.closest('button'); if(!b) return;
       $$('#segDowMode button').forEach(x=>x.classList.remove('active')); b.classList.add('active');
