@@ -9,22 +9,16 @@ if (!window.supabase) {
 }
 
 const supaEstoque = window.supabase.createClient(SUPABASE_URL_ESTOQUE, SUPABASE_ANON_ESTOQUE);
-const APP_VERSION = 'v10.8'; // VERSÃO COM CORREÇÃO DE DADOS (TypeError), LAYOUT E CARREGAMENTO LOCAL (XLSX)
+const APP_VERSION = 'v10.9'; // VERSÃO COM CORREÇÃO DE LAYOUT E SELETORES DINÂMICOS
 
-/* ===================== HELPERS GERAIS (ESCOPADOS E CORRIGIDOS) ===================== */
-// Define o escopo de atuação do JS para o container do dashboard
-const dashboardContainer = document.querySelector('.dash-pratos-v10');
+/* ===================== HELPERS GERAIS (ESCOPADOS E DINÂMICOS) ===================== */
 
-if (!dashboardContainer) {
-    if (document.readyState !== 'loading') {
-        console.error(`[${APP_VERSION}] Erro Crítico: Container principal do Dashboard (.dash-pratos-v10) não encontrado.`);
-    }
-}
-
-// Helpers escopados ao container.
-const $id = id => dashboardContainer ? dashboardContainer.querySelector(`#${id}`) : null;
-const $sel = sel => dashboardContainer ? dashboardContainer.querySelector(sel) : null;
-const $$sel = sel => dashboardContainer ? dashboardContainer.querySelectorAll(sel) : [];
+// v10.9: Helpers Dinâmicos. Eles buscam o container toda vez que são chamados, 
+// garantindo que funcionem mesmo se o script carregar antes do HTML.
+const getContainer = () => document.querySelector('.dash-pratos-v10');
+const $id = id => getContainer() ? getContainer().querySelector(`#${id}`) : null;
+const $sel = sel => getContainer() ? getContainer().querySelector(sel) : null;
+const $$sel = sel => getContainer() ? getContainer().querySelectorAll(sel) : [];
 
 const num = (v, decimals = 0) => (v==null||!isFinite(+v)) ? '0' : (+v).toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
@@ -102,7 +96,7 @@ class MultiSelect {
     }
 
     initialize(optionsList) {
-        // v10.8: Garantir que optionsList contenha apenas strings válidas antes de ordenar, lidando com nulls/undefined
+        // Garantir que optionsList contenha apenas strings válidas antes de ordenar
         this.options = optionsList.filter(opt => opt !== null && opt !== undefined).map(String).sort((a, b) => a.localeCompare(b));
         this.renderPanel();
         this.initialized = true;
@@ -139,7 +133,6 @@ class MultiSelect {
             html += `<div style="text-align: center; padding: 10px; color: var(--muted); font-size: 11px;">Nenhuma opção</div>`;
         } else {
             this.options.forEach(option => {
-                // A segurança agora é feita no initialize, mas mantemos a conversão para HTML seguro
                 const safeOptionValue = option.replace(/"/g, '&quot;');
                 const isChecked = this.selected.has(option) ? 'checked' : '';
                 html += `
@@ -169,7 +162,6 @@ class MultiSelect {
     }
 
     handleSelection(value, isSelected) {
-        // Garantia de chave como string (importante se os dados originais tiverem números)
         const valueStr = String(value); 
         if (isSelected) {
             this.selected.add(valueStr);
@@ -306,7 +298,6 @@ function setupFilterInteractions() {
             if (filterUnidades) filterUnidades.reset();
             if (filterCategorias) {
                 filterCategorias.reset();
-                // v10.8: Segurança contra null na lista de opções
                 const defaultCategory = filterCategorias.options.find(cat => cat && cat.toLowerCase() === 'pratos');
                  if (defaultCategory) {
                      filterCategorias.handleSelection(defaultCategory, true);
@@ -442,8 +433,9 @@ function setLoadingState(isLoading) {
         el.disabled = isLoading;
     });
 
-    if (dashboardContainer) {
-        dashboardContainer.style.cursor = isLoading ? 'wait' : 'default';
+    const container = getContainer();
+    if (container) {
+        container.style.cursor = isLoading ? 'wait' : 'default';
     }
 }
 
@@ -478,6 +470,7 @@ function updateDelta(elId, current, previous) {
     }
 }
 
+// v10.9: Esta função agora funciona corretamente pois $id é dinâmico.
 function updateKpis(kpis) {
     if (!kpis) {
         const nullKpis = {
@@ -595,7 +588,7 @@ function renderDowChart(data) {
     });
 }
 
-// v10.8: CORREÇÃO CRÍTICA - Tratamento de valores nulos/undefined em 'prato'
+// Tratamento de valores nulos/undefined em 'prato'
 function renderTop10(data, mode) {
     const listBody = $id('top10-list-body');
     if (!listBody) return;
@@ -607,9 +600,9 @@ function renderTop10(data, mode) {
 
     let html = '';
     data.forEach((item, index) => {
-        // Código defensivo: Garante que o nome do prato seja uma string válida, mesmo se for null no banco.
+        // Código defensivo: Garante que o nome do prato seja uma string válida.
         const pratoName = item.prato ? String(item.prato) : 'N/A (Dado Inválido)';
-        // Escapa o nome para o atributo 'title' de forma segura. Isso previne o TypeError.
+        // Escapa o nome para o atributo 'title' de forma segura.
         const safePratoTitle = pratoName.replace(/"/g, '&quot;');
 
         html += `
@@ -631,6 +624,7 @@ async function applyAll(payload) {
         return;
     }
 
+    // v10.9: Prevenção de buscas concorrentes robusta
     if (isFetching) {
         console.warn(`[${APP_VERSION}] Busca já em progresso. Ignorando solicitação.`);
         return;
@@ -684,14 +678,12 @@ async function applyAll(payload) {
         const mode = activeTop10Btn ? activeTop10Btn.dataset.mode : 'MAIS';
         const top10Data = (mode === 'MAIS') ? dashboardData.top_10_mais_vendidos : dashboardData.top_10_menos_vendidos;
         
-        // A chamada para renderTop10 agora está segura contra TypeErrors
         renderTop10(top10Data, mode);
 
         window.dashboardData = dashboardData;
         console.info(`[Status ${APP_VERSION}] [ok]: Dados atualizados.`);
 
     } catch (e) {
-        // Captura erros inesperados (como o TypeError anterior)
         handleApiError(e);
     } finally {
         setLoadingState(false);
@@ -744,19 +736,18 @@ function parseBrazilianDate(dateString) {
 }
 
 
-// Configuração da funcionalidade de Importação (v10.8: Simplificada para carregamento local)
+// Configuração da funcionalidade de Importação (Simplificada para carregamento local)
 async function setupImportFeature() {
     const btnUpload = $id('btnUpload');
     const uploadText = $id('uploadText');
     const uploadSpinner = $id('uploadSpinner');
-    const fileInput = document.getElementById('fileExcel'); 
+    const fileInput = document.getElementById('fileExcel'); // Busca global
 
     if (!btnUpload || !fileInput || !uploadText || !uploadSpinner) return;
 
     const isXLSXAvailable = () => typeof window.XLSX !== 'undefined';
 
-    // v10.8: Verificação simplificada. Como é local, deve carregar imediatamente ou falhar.
-    // Adicionamos um pequeno delay para garantir que o script local teve tempo de ser parseado.
+    // Verificação simplificada para carregamento local.
     setTimeout(() => {
         if (!isXLSXAvailable()) {
             console.error(`[${APP_VERSION}] Erro Crítico: Biblioteca XLSX local (./xlsx.full.min.js) não encontrada ou falhou ao carregar. Importação desativada.`);
@@ -768,7 +759,6 @@ async function setupImportFeature() {
 
     btnUpload.addEventListener('click', () => {
         if (!isXLSXAvailable()) {
-             // Verificação extra no clique caso o setTimeout ainda não tenha executado
              alert("A funcionalidade de importação não está disponível. Verifique se o arquivo xlsx.full.min.js está presente.");
              return;
         }
@@ -884,8 +874,8 @@ async function setupImportFeature() {
 /* ===================== INICIALIZAÇÃO E CONTROLES DA UI ===================== */
 
 async function init() {
-    // Verificação final do container antes da inicialização
-    if (!dashboardContainer) {
+    // Verificação final do container usando o helper dinâmico
+    if (!getContainer()) {
          console.error(`[${APP_VERSION}] Inicialização abortada: Container do Dashboard não encontrado após DOMContentLoaded.`);
         return;
     }
@@ -935,7 +925,7 @@ async function init() {
                 filterCategorias.initialize(optionsData.categorias || []);
                 filterPratos.initialize(optionsData.pratos || []);
 
-                // Define o filtro padrão para Categoria = 'Pratos' (com check de null implementado no initialize)
+                // Define o filtro padrão para Categoria = 'Pratos'
                 const defaultCategory = (optionsData.categorias || []).find(cat => cat && String(cat).toLowerCase() === 'pratos');
                 if (defaultCategory) {
                     filterCategorias.selected.add(String(defaultCategory));
@@ -966,10 +956,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('filters:init', () => {
         setupFilterInteractions();
         fxSetToLastMonthWithData(lastDay);
-        fxDispatchApply();
+        // v10.9: Garantir que a busca inicial só ocorra uma vez
+        if (!isFetching) {
+            fxDispatchApply();
+        }
     });
 
-    // Listeners do Top 10 (Usando $id)
+    // Listeners do Top 10
     const segTop10 = $id('segTop10');
     if (segTop10) {
         segTop10.addEventListener('click', (e) => {
@@ -977,7 +970,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!btn || btn.classList.contains('active')) return;
 
             if (window.dashboardData) {
-                // querySelectorAll no próprio elemento é seguro
                 segTop10.querySelectorAll('button').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
 
