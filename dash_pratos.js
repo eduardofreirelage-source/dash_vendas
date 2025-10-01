@@ -1,5 +1,5 @@
 /* ===================== CONFIG ===================== */
-const APP_VERSION = 'v10.4-dbg5';
+const APP_VERSION = 'v10.4-dbg6';
 const DEBUG = true;
 
 const SUPABASE_URL_ESTOQUE  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
@@ -53,22 +53,35 @@ function formatMonthNameFromAny(x){
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-/* ===================== XLSX LOADER ===================== */
+/* ===================== XLSX LOADER (ROBUSTO) ===================== */
 function ensureXLSX(){
+  // Resolve imediatamente se já disponível
+  if (window.XLSX){ dbg('XLSX presente (window)'); return Promise.resolve(window.XLSX); }
+
+  // Procura script existente ou injeta um novo
+  const CDN_SRC = 'https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js';
+  let script = document.querySelector(`script[src="${CDN_SRC}"]`) || document.querySelector('script[src*="xlsx.full.min.js"]');
+  if (!script){
+    script = document.createElement('script');
+    script.src = CDN_SRC;
+    script.async = true;
+    document.head.appendChild(script);
+    dbg('Injetando script XLSX…');
+  } else {
+    dbg('Script XLSX já presente no DOM, aguardando disponibilidade…');
+  }
+
+  // Faz polling até window.XLSX aparecer (com timeout)
   return new Promise((resolve, reject)=>{
-    if (window.XLSX){ dbg('XLSX presente (window)'); return resolve(window.XLSX); }
-    const existing = document.querySelector('script[src*="xlsx.full.min.js"]');
-    if (existing){
-      dbg('Esperando script XLSX carregar…');
-      existing.addEventListener('load', ()=> resolve(window.XLSX));
-      existing.addEventListener('error', ()=> reject(new Error('Falha ao carregar XLSX (cdn)')));
-      return;
-    }
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js';
-    s.onload = ()=> resolve(window.XLSX);
-    s.onerror = ()=> reject(new Error('Falha ao carregar XLSX (dynamic)'));
-    document.head.appendChild(s);
+    const start = Date.now();
+    const MAX_MS = 15000;
+    const tick = ()=>{
+      if (window.XLSX){ dbg('XLSX OK'); return resolve(window.XLSX); }
+      if (Date.now()-start > MAX_MS) return reject(new Error('Timeout carregando XLSX (15s)'));
+      setTimeout(tick, 120);
+    };
+    script.addEventListener('error', ()=> reject(new Error('Falha ao baixar XLSX')));
+    tick();
   });
 }
 
@@ -212,16 +225,16 @@ function updateDelta(elId, current, previous){
 }
 function updateKpis(kpisObj){
   const K=normalizeKpis(kpisObj||{});
-  const elKQtd = $('k_qtd'); if (elKQtd) elKQtd.textContent = num(K.current_total);
-  const elPQtd = $('p_qtd'); if (elPQtd) elPQtd.textContent = num(K.prev_total);
+  $('k_qtd')?.( $('k_qtd').textContent = num(K.current_total) );
+  $('p_qtd')?.( $('p_qtd').textContent = num(K.prev_total) );
   updateDelta('d_qtd', K.current_total, K.prev_total);
 
-  const elKU = $('k_pratos_unicos'); if (elKU) elKU.textContent = num(K.current_unique);
-  const elPU = $('p_pratos_unicos'); if (elPU) elPU.textContent = num(K.prev_unique);
+  $('k_pratos_unicos')?.( $('k_pratos_unicos').textContent = num(K.current_unique) );
+  $('p_pratos_unicos')?.( $('p_pratos_unicos').textContent = num(K.prev_unique) );
   updateDelta('d_pratos_unicos', K.current_unique, K.prev_unique);
 
-  const elKM = $('k_media_diaria'); if (elKM) elKM.textContent = num(K.current_daily_avg,1);
-  const elPM = $('p_media_diaria'); if (elPM) elPM.textContent = num(K.prev_daily_avg,1);
+  $('k_media_diaria')?.( $('k_media_diaria').textContent = num(K.current_daily_avg,1) );
+  $('p_media_diaria')?.( $('p_media_diaria').textContent = num(K.prev_daily_avg,1) );
   updateDelta('d_media_diaria', K.current_daily_avg, K.prev_daily_avg);
 }
 
@@ -357,11 +370,11 @@ function aggregateDowFromRows(rows){
     const dt = r.data; const q = clampNum(r.quantidade);
     mapPerDate.set(dt, (mapPerDate.get(dt) || 0) + q);
   }
-  const totals = [0,0,0,0,0,0,0]; // 0=Dom...6=Sáb (usaremos UTC getUTCDay)
+  const totals = [0,0,0,0,0,0,0]; // 0=Dom...6=Sáb
   const dayCounts = [0,0,0,0,0,0,0];
   for(const [dateStr,total] of mapPerDate){
     const d = new Date(dateStr+'T00:00:00Z');
-    const dow = d.getUTCDay(); // 0..6
+    const dow = d.getUTCDay();
     totals[dow] += total;
     dayCounts[dow] += 1;
   }
@@ -392,7 +405,7 @@ async function fetchMonthIfMissing(payload){
   const v2 = await rpcSafe('get_month_v2', { de:payload.start, ate:payload.end, unidades_filtro:payload.unidades, categorias_filtro:payload.categorias, pratos_filtro:payload.pratos });
   if(Array.isArray(v2) && v2.length) return v2.map(r=>({ period:r.mes, current_total:r.total, prev_total:0 }));
 
-  // último fallback: agrega por mês a partir de linhas (prev_total=0)
+  // fallback: agrega por mês a partir de linhas (prev_total=0)
   const rows = await fetchRowsPaged(payload, 8000);
   const monthMap = new Map(); // 'YYYY-MM' -> total
   for(const r of rows){
@@ -458,15 +471,22 @@ async function applyAll(payload){
       const t = await fetchTop10IfMissing(payload); tMais=t.mais; tMenos=t.menos;
     }
 
-    // KPIs — se zerados, derivar pelos dados mensais
+    // KPIs — se current_total vier 0 mas o mês mostra >0, rederivar
     const K0 = normalizeKpis(kpisBlock||{});
-    const allZero = Object.values(K0).every(v=> (v==null || v===0));
-    if(allZero){
-      await diagnoseDataAvailability(payload, 'após get_sales_dashboard_data');
-      const totalC = (monthBlock||[]).reduce((s,r)=> s + clampNum(r.current_total ?? r.current ?? r.vendas_atual ?? r.total), 0);
-      const totalP = (monthBlock||[]).reduce((s,r)=> s + clampNum(r.prev_total ?? r.previous ?? r.vendas_anterior), 0);
+    const sumCurrent = (monthBlock||[]).reduce((s,r)=> s + clampNum(r.current_total ?? r.current ?? r.vendas_atual ?? r.total), 0);
+    const sumPrev    = (monthBlock||[]).reduce((s,r)=> s + clampNum(r.prev_total ?? r.previous ?? r.vendas_anterior), 0);
+
+    if (K0.current_total === 0 && sumCurrent > 0) {
+      await diagnoseDataAvailability(payload, 'corrigindo KPIs pela soma mensal');
       const days = daysInclusive(payload.start, payload.end) || 1;
-      kpisBlock = { current_total: totalC, prev_total: totalP, current_unique: 0, prev_unique: 0, current_daily_avg: totalC/days, prev_daily_avg: totalP/days };
+      kpisBlock = {
+        current_total: sumCurrent,
+        prev_total: sumPrev,
+        current_unique: K0.current_unique || 0,
+        prev_unique: K0.prev_unique || 0,
+        current_daily_avg: sumCurrent / days,
+        prev_daily_avg: sumPrev / days
+      };
     }
 
     // Atualiza UI
@@ -527,7 +547,10 @@ async function setupImportFeature(){
 
     btn.disabled=true; txt.textContent='Processando...'; spn.style.display='inline-block';
     try{
-      dtime('ensureXLSX'); await ensureXLSX(); dtimeEnd('ensureXLSX');
+      dtime('ensureXLSX');
+      await runWithTimeout(ensureXLSX(), 16000, 'ensureXLSX');
+      dtimeEnd('ensureXLSX');
+
       if(!window.XLSX) throw new Error('Biblioteca XLSX indisponível.');
 
       dtime('file.arrayBuffer'); 
