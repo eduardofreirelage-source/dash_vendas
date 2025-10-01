@@ -9,24 +9,19 @@ if (!window.supabase) {
 }
 
 const supaEstoque = window.supabase.createClient(SUPABASE_URL_ESTOQUE, SUPABASE_ANON_ESTOQUE);
-const APP_VERSION = 'v10.7'; // VERSÃO COM CORREÇÃO CRÍTICA DE SELETORES JS E ROBUSTEZ
+const APP_VERSION = 'v10.8'; // VERSÃO COM CORREÇÃO DE DADOS (TypeError), LAYOUT E CARREGAMENTO LOCAL (XLSX)
 
 /* ===================== HELPERS GERAIS (ESCOPADOS E CORRIGIDOS) ===================== */
 // Define o escopo de atuação do JS para o container do dashboard
 const dashboardContainer = document.querySelector('.dash-pratos-v10');
 
-// A verificação do container deve ocorrer após o DOM estar pronto, mas mantemos uma verificação inicial básica.
 if (!dashboardContainer) {
-    // Se o DOM ainda estiver carregando, esperamos o DOMContentLoaded para verificar novamente no init().
     if (document.readyState !== 'loading') {
         console.error(`[${APP_VERSION}] Erro Crítico: Container principal do Dashboard (.dash-pratos-v10) não encontrado.`);
     }
-    // Não podemos definir os helpers se o container não existe ainda.
-    // A inicialização real ocorrerá no DOMContentLoaded.
 }
 
 // Helpers escopados ao container.
-// v10.7: CORRIGIDO - Separação clara entre busca por ID e por Seletor CSS
 const $id = id => dashboardContainer ? dashboardContainer.querySelector(`#${id}`) : null;
 const $sel = sel => dashboardContainer ? dashboardContainer.querySelector(sel) : null;
 const $$sel = sel => dashboardContainer ? dashboardContainer.querySelectorAll(sel) : [];
@@ -67,7 +62,7 @@ function formatMonthName(isoMonth) {
 /* ===================== COMPONENTE MULTI-SELECT (MSel) ===================== */
 class MultiSelect {
     constructor(containerId, onChangeCallback) {
-        this.container = $id(containerId); // Usando $id
+        this.container = $id(containerId);
         if (!this.container) return;
 
         this.onChange = onChangeCallback;
@@ -82,7 +77,7 @@ class MultiSelect {
         this.initEvents();
     }
 
-    // (Métodos internos inalterados, pois usam querySelector no próprio container)
+    // (Métodos internos inalterados)
     initEvents() {
         this.btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -107,7 +102,8 @@ class MultiSelect {
     }
 
     initialize(optionsList) {
-        this.options = optionsList.sort((a, b) => a.localeCompare(b));
+        // v10.8: Garantir que optionsList contenha apenas strings válidas antes de ordenar, lidando com nulls/undefined
+        this.options = optionsList.filter(opt => opt !== null && opt !== undefined).map(String).sort((a, b) => a.localeCompare(b));
         this.renderPanel();
         this.initialized = true;
         this.updateButtonText();
@@ -143,12 +139,13 @@ class MultiSelect {
             html += `<div style="text-align: center; padding: 10px; color: var(--muted); font-size: 11px;">Nenhuma opção</div>`;
         } else {
             this.options.forEach(option => {
-                const safeOption = option.replace(/"/g, '&quot;');
+                // A segurança agora é feita no initialize, mas mantemos a conversão para HTML seguro
+                const safeOptionValue = option.replace(/"/g, '&quot;');
                 const isChecked = this.selected.has(option) ? 'checked' : '';
                 html += `
-                    <label class="msel-opt" data-value="${safeOption}">
+                    <label class="msel-opt" data-value="${safeOptionValue}">
                         <input type="checkbox" ${isChecked}>
-                        <span>${safeOption}</span>
+                        <span>${option}</span>
                     </label>
                 `;
             });
@@ -172,10 +169,12 @@ class MultiSelect {
     }
 
     handleSelection(value, isSelected) {
+        // Garantia de chave como string (importante se os dados originais tiverem números)
+        const valueStr = String(value); 
         if (isSelected) {
-            this.selected.add(value);
+            this.selected.add(valueStr);
         } else {
-            this.selected.delete(value);
+            this.selected.delete(valueStr);
         }
         this.updateButtonText();
         if (this.onChange) this.onChange();
@@ -210,8 +209,8 @@ class MultiSelect {
 let filterUnidades, filterCategorias, filterPratos;
 
 function fxDispatchApply(){
-    const startInput = $id('fxDuStart'); // Usando $id
-    const endInput = $id('fxDuEnd'); // Usando $id
+    const startInput = $id('fxDuStart');
+    const endInput = $id('fxDuEnd');
     if (!startInput || !endInput || !startInput.value || !endInput.value) {
         return;
     }
@@ -228,15 +227,14 @@ function fxDispatchApply(){
 }
 
 function fxSetRange(start, end) {
-    const startInput = $id('fxDuStart'); // Usando $id
-    const endInput = $id('fxDuEnd'); // Usando $id
+    const startInput = $id('fxDuStart');
+    const endInput = $id('fxDuEnd');
     if (startInput && endInput) {
         startInput.value = getDateISO(start);
         endInput.value = getDateISO(end);
     }
 }
 
-// v10.7: Correção Crítica - Usando $$sel e $sel
 function fxSetToLastMonthWithData(baseDateStr) {
     const baseDate = getDateUTC(baseDateStr);
     const year = baseDate.getUTCFullYear();
@@ -255,7 +253,7 @@ function fxSetToLastMonthWithData(baseDateStr) {
 
 function setupFilterInteractions() {
     const fx = {
-        $btnMore: $id('fxBtnMore'), // Usando $id
+        $btnMore: $id('fxBtnMore'),
         $dropup: $id('fxDropup'),
         $quickChips: $id('fxQuickChips'),
         $quickDays: $id('fxDuQuickDays'),
@@ -300,7 +298,6 @@ function setupFilterInteractions() {
             const btn = e.target.closest('button');
             if (!btn || btn.classList.contains('active')) return;
 
-            // v10.7: Correção Crítica - Usando $$sel
             $$sel('#fxQuickChips button').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             $$sel('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
@@ -309,7 +306,8 @@ function setupFilterInteractions() {
             if (filterUnidades) filterUnidades.reset();
             if (filterCategorias) {
                 filterCategorias.reset();
-                const defaultCategory = filterCategorias.options.find(cat => cat.toLowerCase() === 'pratos');
+                // v10.8: Segurança contra null na lista de opções
+                const defaultCategory = filterCategorias.options.find(cat => cat && cat.toLowerCase() === 'pratos');
                  if (defaultCategory) {
                      filterCategorias.handleSelection(defaultCategory, true);
                 }
@@ -354,7 +352,6 @@ function setupFilterInteractions() {
             const btn = e.target.closest('button');
             if (!btn) return;
 
-            // v10.7: Correção Crítica - Usando $$sel
             $$sel('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
             btn.classList.add('fx-active');
 
@@ -365,7 +362,6 @@ function setupFilterInteractions() {
             start.setUTCDate(end.getUTCDate() - (days - 1));
 
             fxSetRange(start, end);
-            // v10.7: Correção Crítica - Usando $$sel
             $$sel('#fxQuickChips button').forEach(b => b.classList.remove('active'));
             fxDispatchApply();
         });
@@ -378,7 +374,6 @@ function setupFilterInteractions() {
                 console.warn("Data inicial maior que a data final.");
                 return;
             }
-            // v10.7: Correção Crítica - Usando $$sel
             $$sel('#fxQuickChips button').forEach(b => b.classList.remove('active'));
             $$sel('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
             fxDispatchApply();
@@ -395,7 +390,7 @@ function setupFilterInteractions() {
             if (filterUnidades) filterUnidades.reset();
             if (filterCategorias) {
                 filterCategorias.reset();
-                const defaultCategory = filterCategorias.options.find(cat => cat.toLowerCase() === 'pratos');
+                const defaultCategory = filterCategorias.options.find(cat => cat && cat.toLowerCase() === 'pratos');
                  if (defaultCategory) {
                      filterCategorias.handleSelection(defaultCategory, true);
                 }
@@ -417,7 +412,7 @@ let isFetching = false;
 // Funções de Renderização, Estado e Tratamento de Erros
 
 function setChartMessage(boxId, message) {
-    const box = $id(boxId); // Usando $id
+    const box = $id(boxId);
     if (!box) return;
     let msgEl = box.querySelector('.dp-chart-message');
 
@@ -441,7 +436,6 @@ function setLoadingState(isLoading) {
     isFetching = isLoading;
     console.log(`[Status ${APP_VERSION}] Loading state: ${isLoading}`);
 
-    // v10.7: Correção Crítica - Usando $$sel
     const filterElements = $$sel('.fx-filters-bar button, .fx-dropup button, .fx-input, .msel-btn');
     filterElements.forEach(el => {
         if (el.id === 'btnUpload' && el.disabled && isLoading) return;
@@ -461,7 +455,7 @@ function handleApiError(error) {
 }
 
 function updateDelta(elId, current, previous) {
-    const el = $id(elId); // Usando $id
+    const el = $id(elId);
     if (!el) return;
 
     if (current == null || previous == null || !isFinite(current) || !isFinite(previous) || previous === 0) {
@@ -494,7 +488,6 @@ function updateKpis(kpis) {
         kpis = nullKpis;
     }
 
-    // Usando $id para todos os KPIs
     const k_qtd = $id('k_qtd');
     if (k_qtd) k_qtd.textContent = kpis.vendas_atual != null ? num(kpis.vendas_atual) : '—';
     const p_qtd = $id('p_qtd');
@@ -542,7 +535,7 @@ function renderMonthChart(data) {
         return;
     }
 
-    const canvasEl = $id('ch_month'); // Usando $id
+    const canvasEl = $id('ch_month');
     if (!canvasEl) return; 
 
     const ctx = canvasEl.getContext('2d');
@@ -579,7 +572,7 @@ function renderDowChart(data) {
         return;
     }
 
-    const canvasEl = $id('ch_dow'); // Usando $id
+    const canvasEl = $id('ch_dow');
     if (!canvasEl) return;
 
     const ctx = canvasEl.getContext('2d');
@@ -602,8 +595,9 @@ function renderDowChart(data) {
     });
 }
 
+// v10.8: CORREÇÃO CRÍTICA - Tratamento de valores nulos/undefined em 'prato'
 function renderTop10(data, mode) {
-    const listBody = $id('top10-list-body'); // Usando $id
+    const listBody = $id('top10-list-body');
     if (!listBody) return;
 
     if (!data || data.length === 0) {
@@ -613,10 +607,15 @@ function renderTop10(data, mode) {
 
     let html = '';
     data.forEach((item, index) => {
+        // Código defensivo: Garante que o nome do prato seja uma string válida, mesmo se for null no banco.
+        const pratoName = item.prato ? String(item.prato) : 'N/A (Dado Inválido)';
+        // Escapa o nome para o atributo 'title' de forma segura. Isso previne o TypeError.
+        const safePratoTitle = pratoName.replace(/"/g, '&quot;');
+
         html += `
             <div class="dp-top10-row">
                 <span class="dp-top10-col-rank">${index + 1}</span>
-                <span class="dp-top10-col-prato" title="${item.prato.replace(/"/g, '&quot;')}">${item.prato}</span>
+                <span class="dp-top10-col-prato" title="${safePratoTitle}">${pratoName}</span>
                 <span class="dp-top10-col-qty">${num(item.quantidade)}</span>
             </div>
         `;
@@ -681,16 +680,18 @@ async function applyAll(payload) {
         renderMonthChart(dashboardData.sales_by_month);
         renderDowChart(dashboardData.sales_by_dow);
 
-        // v10.7: Correção Crítica - Usando $sel para seletor complexo
         const activeTop10Btn = $sel('#segTop10 button.active');
         const mode = activeTop10Btn ? activeTop10Btn.dataset.mode : 'MAIS';
         const top10Data = (mode === 'MAIS') ? dashboardData.top_10_mais_vendidos : dashboardData.top_10_menos_vendidos;
+        
+        // A chamada para renderTop10 agora está segura contra TypeErrors
         renderTop10(top10Data, mode);
 
         window.dashboardData = dashboardData;
         console.info(`[Status ${APP_VERSION}] [ok]: Dados atualizados.`);
 
     } catch (e) {
+        // Captura erros inesperados (como o TypeError anterior)
         handleApiError(e);
     } finally {
         setLoadingState(false);
@@ -743,47 +744,32 @@ function parseBrazilianDate(dateString) {
 }
 
 
-// Configuração da funcionalidade de Importação
+// Configuração da funcionalidade de Importação (v10.8: Simplificada para carregamento local)
 async function setupImportFeature() {
-    // Usando $id
     const btnUpload = $id('btnUpload');
     const uploadText = $id('uploadText');
     const uploadSpinner = $id('uploadSpinner');
-    
-    // O input file deve ser buscado no documento global pois pode ser movido pelo browser
     const fileInput = document.getElementById('fileExcel'); 
 
     if (!btnUpload || !fileInput || !uploadText || !uploadSpinner) return;
 
     const isXLSXAvailable = () => typeof window.XLSX !== 'undefined';
 
-    // Verificação proativa inicial com espera ativa (Intervalo)
-    if (!isXLSXAvailable()) {
-        console.info(`[${APP_VERSION}] Aguardando carregamento da biblioteca XLSX...`);
-        const checkInterval = 500;
-        const maxWaitTime = 7000; // Aumentado para 7s devido ao fallback
-        let waitedTime = 0;
+    // v10.8: Verificação simplificada. Como é local, deve carregar imediatamente ou falhar.
+    // Adicionamos um pequeno delay para garantir que o script local teve tempo de ser parseado.
+    setTimeout(() => {
+        if (!isXLSXAvailable()) {
+            console.error(`[${APP_VERSION}] Erro Crítico: Biblioteca XLSX local (./xlsx.full.min.js) não encontrada ou falhou ao carregar. Importação desativada.`);
+            btnUpload.disabled = true;
+            uploadText.textContent = 'Erro Lib';
+        }
+    }, 500);
 
-        const intervalId = setInterval(() => {
-            if (isXLSXAvailable()) {
-                clearInterval(intervalId);
-                console.info(`[${APP_VERSION}] Biblioteca XLSX carregada após ${waitedTime}ms.`);
-            } else {
-                waitedTime += checkInterval;
-                if (waitedTime >= maxWaitTime) {
-                    clearInterval(intervalId);
-                    console.error(`[${APP_VERSION}] Erro Crítico: Biblioteca XLSX (SheetJS) não carregou após ${maxWaitTime}ms (incluindo fallback). Importação desativada.`);
-                    btnUpload.disabled = true;
-                    uploadText.textContent = 'Erro Lib';
-                }
-            }
-        }, checkInterval);
-    }
 
     btnUpload.addEventListener('click', () => {
-        // Verificação reativa no clique
         if (!isXLSXAvailable()) {
-             alert("A funcionalidade de importação ainda está carregando ou falhou (XLSX Undefined). Por favor, aguarde ou verifique sua conexão de rede (CDN).");
+             // Verificação extra no clique caso o setTimeout ainda não tenha executado
+             alert("A funcionalidade de importação não está disponível. Verifique se o arquivo xlsx.full.min.js está presente.");
              return;
         }
         if (btnUpload.disabled) return;
@@ -791,12 +777,6 @@ async function setupImportFeature() {
     });
 
     fileInput.addEventListener('change', async (event) => {
-        // Verificação final
-        if (!isXLSXAvailable()) {
-            alert("Erro: Biblioteca XLSX não está disponível.");
-            return;
-        }
-
         const file = event.target.files[0];
         if (!file) return;
 
@@ -805,7 +785,6 @@ async function setupImportFeature() {
         uploadSpinner.style.display = 'inline-block';
 
         try {
-            // (Lógica de processamento e upload inalterada)
             const data = await file.arrayBuffer();
             const readOptions = { type: 'array', cellDates: false };
 
@@ -825,7 +804,11 @@ async function setupImportFeature() {
             rawData.shift();
 
             const processedData = rawData.map((row, index) => {
-                if (row.length < 5 || row[1] == null || row[2] == null) {
+                // Segurança adicional para garantir que os campos não sejam null/undefined antes de trim()
+                const unidade = row[1] != null ? String(row[1]).trim() : null;
+                const prato = row[2] != null ? String(row[2]).trim() : null;
+
+                if (row.length < 5 || unidade === null || prato === null) {
                     return null;
                 }
 
@@ -859,8 +842,8 @@ async function setupImportFeature() {
 
                 return {
                     data: getDateISO(date),
-                    unidade: String(row[1]).trim(),
-                    prato: String(row[2]).trim(),
+                    unidade: unidade,
+                    prato: prato,
                     categoria: row[3] ? String(row[3]).trim() : 'N/A',
                     quantidade: quantity
                 };
@@ -919,7 +902,8 @@ async function init() {
         document.addEventListener('msel:closeAll', (e) => {
             const exceptId = e.detail ? e.detail.except : null;
             [filterUnidades, filterCategorias, filterPratos].forEach(ms => {
-                if (ms && ms.isOpen && ms.container.id !== exceptId) {
+                // Verifica se o container do MS existe antes de acessar o ID
+                if (ms && ms.isOpen && ms.container && ms.container.id !== exceptId) {
                     ms.close();
                 }
             });
@@ -951,10 +935,10 @@ async function init() {
                 filterCategorias.initialize(optionsData.categorias || []);
                 filterPratos.initialize(optionsData.pratos || []);
 
-                // Define o filtro padrão para Categoria = 'Pratos'
-                const defaultCategory = (optionsData.categorias || []).find(cat => cat.toLowerCase() === 'pratos');
+                // Define o filtro padrão para Categoria = 'Pratos' (com check de null implementado no initialize)
+                const defaultCategory = (optionsData.categorias || []).find(cat => cat && String(cat).toLowerCase() === 'pratos');
                 if (defaultCategory) {
-                    filterCategorias.selected.add(defaultCategory);
+                    filterCategorias.selected.add(String(defaultCategory));
                     filterCategorias.updateButtonText();
                     filterCategorias.renderPanel();
                 }
