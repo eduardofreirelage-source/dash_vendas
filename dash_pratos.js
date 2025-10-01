@@ -9,20 +9,28 @@ if (!window.supabase) {
 }
 
 const supaEstoque = window.supabase.createClient(SUPABASE_URL_ESTOQUE, SUPABASE_ANON_ESTOQUE);
-const APP_VERSION = 'v10.6'; // VERSÃO COM ENCAPSULAMENTO DE CSS E ROBUSTEZ
+const APP_VERSION = 'v10.7'; // VERSÃO COM CORREÇÃO CRÍTICA DE SELETORES JS E ROBUSTEZ
 
-/* ===================== HELPERS GERAIS (ESCOPADOS) ===================== */
-// v10.6: Define o escopo de atuação do JS para o container do dashboard
+/* ===================== HELPERS GERAIS (ESCOPADOS E CORRIGIDOS) ===================== */
+// Define o escopo de atuação do JS para o container do dashboard
 const dashboardContainer = document.querySelector('.dash-pratos-v10');
+
+// A verificação do container deve ocorrer após o DOM estar pronto, mas mantemos uma verificação inicial básica.
 if (!dashboardContainer) {
-    // Este check deve ocorrer após o DOMContentLoaded, mas mantemos aqui para segurança inicial.
-    console.error(`[${APP_VERSION}] Erro Crítico: Container principal do Dashboard (.dash-pratos-v10) não encontrado.`);
-    return;
+    // Se o DOM ainda estiver carregando, esperamos o DOMContentLoaded para verificar novamente no init().
+    if (document.readyState !== 'loading') {
+        console.error(`[${APP_VERSION}] Erro Crítico: Container principal do Dashboard (.dash-pratos-v10) não encontrado.`);
+    }
+    // Não podemos definir os helpers se o container não existe ainda.
+    // A inicialização real ocorrerá no DOMContentLoaded.
 }
 
-// Helpers escopados ao container para evitar conflitos
-const $ = id => dashboardContainer.querySelector(`#${id}`);
-const $$ = sel => dashboardContainer.querySelectorAll(sel);
+// Helpers escopados ao container.
+// v10.7: CORRIGIDO - Separação clara entre busca por ID e por Seletor CSS
+const $id = id => dashboardContainer ? dashboardContainer.querySelector(`#${id}`) : null;
+const $sel = sel => dashboardContainer ? dashboardContainer.querySelector(sel) : null;
+const $$sel = sel => dashboardContainer ? dashboardContainer.querySelectorAll(sel) : [];
+
 const num = (v, decimals = 0) => (v==null||!isFinite(+v)) ? '0' : (+v).toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
 // Helpers de Data (UTC) - (Inalterados)
@@ -57,10 +65,9 @@ function formatMonthName(isoMonth) {
 
 
 /* ===================== COMPONENTE MULTI-SELECT (MSel) ===================== */
-// (Classe Inalterada, pois já operava dentro do container fornecido pelo ID que agora é buscado via helper $)
 class MultiSelect {
     constructor(containerId, onChangeCallback) {
-        this.container = $(containerId);
+        this.container = $id(containerId); // Usando $id
         if (!this.container) return;
 
         this.onChange = onChangeCallback;
@@ -75,6 +82,7 @@ class MultiSelect {
         this.initEvents();
     }
 
+    // (Métodos internos inalterados, pois usam querySelector no próprio container)
     initEvents() {
         this.btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -118,7 +126,6 @@ class MultiSelect {
         if (searchInput) {
             searchInput.value = '';
             this.filterOptions('');
-            // Foco gerenciado com cuidado em componentes embedados
             try { searchInput.focus(); } catch (e) { console.warn("Não foi possível focar o input de busca."); }
         }
     }
@@ -199,13 +206,12 @@ class MultiSelect {
 }
 
 /* ===================== LÓGICA DOS FILTROS (FX) ===================== */
-// (Lógica Inalterada, pois IDs e Classes FX/MSel foram mantidos e são buscados via helper $)
 
 let filterUnidades, filterCategorias, filterPratos;
 
 function fxDispatchApply(){
-    const startInput = $('fxDuStart');
-    const endInput = $('fxDuEnd');
+    const startInput = $id('fxDuStart'); // Usando $id
+    const endInput = $id('fxDuEnd'); // Usando $id
     if (!startInput || !endInput || !startInput.value || !endInput.value) {
         return;
     }
@@ -222,14 +228,15 @@ function fxDispatchApply(){
 }
 
 function fxSetRange(start, end) {
-    const startInput = $('fxDuStart');
-    const endInput = $('fxDuEnd');
+    const startInput = $id('fxDuStart'); // Usando $id
+    const endInput = $id('fxDuEnd'); // Usando $id
     if (startInput && endInput) {
         startInput.value = getDateISO(start);
         endInput.value = getDateISO(end);
     }
 }
 
+// v10.7: Correção Crítica - Usando $$sel e $sel
 function fxSetToLastMonthWithData(baseDateStr) {
     const baseDate = getDateUTC(baseDateStr);
     const year = baseDate.getUTCFullYear();
@@ -240,22 +247,21 @@ function fxSetToLastMonthWithData(baseDateStr) {
 
     fxSetRange(startOfLastMonth, endOfLastMonth);
 
-    $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
-    // Usamos $ para garantir que buscamos dentro do dashboard
-    const lastMonthBtn = $('#fxQuickChips button[data-win="lastMonth"]'); 
+    $$sel('#fxQuickChips button').forEach(b => b.classList.remove('active'));
+    const lastMonthBtn = $sel('#fxQuickChips button[data-win="lastMonth"]'); 
     if (lastMonthBtn) lastMonthBtn.classList.add('active');
-    $$('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
+    $$sel('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
 }
 
 function setupFilterInteractions() {
     const fx = {
-        $btnMore: $('fxBtnMore'),
-        $dropup: $('fxDropup'),
-        $quickChips: $('fxQuickChips'),
-        $quickDays: $('fxDuQuickDays'),
-        $start: $('fxDuStart'),
-        $end: $('fxDuEnd'),
-        $btnReset: $('fxBtnReset')
+        $btnMore: $id('fxBtnMore'), // Usando $id
+        $dropup: $id('fxDropup'),
+        $quickChips: $id('fxQuickChips'),
+        $quickDays: $id('fxDuQuickDays'),
+        $start: $id('fxDuStart'),
+        $end: $id('fxDuEnd'),
+        $btnReset: $id('fxBtnReset')
     };
 
     // 1. Toggle do Dropup
@@ -267,11 +273,11 @@ function setupFilterInteractions() {
         });
     }
 
-    // Listener global (document) para fechar modais/dropups (Importante para a aplicação inteira)
+    // Listener global (document) para fechar modais/dropups
     document.addEventListener('click', (e) => {
-        // Fecha o dropup se ele estiver aberto E o clique foi fora dele
         if (fx.$dropup && fx.$dropup.classList.contains('fx-show')) {
-            if (!fx.$dropup.contains(e.target)) {
+            // Verifica se o clique foi fora do dropup E fora do botão que o abre
+            if (!fx.$dropup.contains(e.target) && (!fx.$btnMore || !fx.$btnMore.contains(e.target))) {
                fx.$dropup.classList.remove('fx-show');
                if (fx.$btnMore) fx.$btnMore.setAttribute('aria-expanded', false);
             }
@@ -281,7 +287,6 @@ function setupFilterInteractions() {
 
     if (fx.$dropup) {
         fx.$dropup.addEventListener('click', (e) => {
-            // Impede que cliques dentro do dropup (exceto em MSels) o fechem
             if (!e.target.closest('.msel')) {
                  e.stopPropagation();
             }
@@ -295,9 +300,10 @@ function setupFilterInteractions() {
             const btn = e.target.closest('button');
             if (!btn || btn.classList.contains('active')) return;
 
-            $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
+            // v10.7: Correção Crítica - Usando $$sel
+            $$sel('#fxQuickChips button').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            $$('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
+            $$sel('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
 
             // Resetar filtros analíticos
             if (filterUnidades) filterUnidades.reset();
@@ -348,7 +354,8 @@ function setupFilterInteractions() {
             const btn = e.target.closest('button');
             if (!btn) return;
 
-            $$('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
+            // v10.7: Correção Crítica - Usando $$sel
+            $$sel('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
             btn.classList.add('fx-active');
 
             const days = parseInt(btn.dataset.win);
@@ -358,7 +365,8 @@ function setupFilterInteractions() {
             start.setUTCDate(end.getUTCDate() - (days - 1));
 
             fxSetRange(start, end);
-            $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
+            // v10.7: Correção Crítica - Usando $$sel
+            $$sel('#fxQuickChips button').forEach(b => b.classList.remove('active'));
             fxDispatchApply();
         });
     }
@@ -370,8 +378,9 @@ function setupFilterInteractions() {
                 console.warn("Data inicial maior que a data final.");
                 return;
             }
-            $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
-            $$('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
+            // v10.7: Correção Crítica - Usando $$sel
+            $$sel('#fxQuickChips button').forEach(b => b.classList.remove('active'));
+            $$sel('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
             fxDispatchApply();
         }
     };
@@ -405,12 +414,11 @@ let lastDay = '';
 let chartMonth, chartDow;
 let isFetching = false;
 
-// Funções de Renderização, Estado e Tratamento de Erros (Ajustadas para classes prefixadas)
+// Funções de Renderização, Estado e Tratamento de Erros
 
 function setChartMessage(boxId, message) {
-    const box = $(boxId);
+    const box = $id(boxId); // Usando $id
     if (!box) return;
-    // Ajuste para a nova classe prefixada dp-chart-message
     let msgEl = box.querySelector('.dp-chart-message');
 
     if (message) {
@@ -433,15 +441,13 @@ function setLoadingState(isLoading) {
     isFetching = isLoading;
     console.log(`[Status ${APP_VERSION}] Loading state: ${isLoading}`);
 
-    // Desabilita elementos interativos dentro do dashboard
-    const filterElements = $$('.fx-filters-bar button, .fx-dropup button, .fx-input, .msel-btn');
+    // v10.7: Correção Crítica - Usando $$sel
+    const filterElements = $$sel('.fx-filters-bar button, .fx-dropup button, .fx-input, .msel-btn');
     filterElements.forEach(el => {
-        // Exceção para o botão de upload se já estiver desabilitado
         if (el.id === 'btnUpload' && el.disabled && isLoading) return;
         el.disabled = isLoading;
     });
 
-    // Controla o cursor apenas sobre o container do dashboard
     if (dashboardContainer) {
         dashboardContainer.style.cursor = isLoading ? 'wait' : 'default';
     }
@@ -455,11 +461,10 @@ function handleApiError(error) {
 }
 
 function updateDelta(elId, current, previous) {
-    const el = $(elId);
+    const el = $id(elId); // Usando $id
     if (!el) return;
 
     if (current == null || previous == null || !isFinite(current) || !isFinite(previous) || previous === 0) {
-        // Ajuste para a nova classe prefixada dp-delta
         el.className = 'dp-delta flat';
         el.textContent = '—';
         return;
@@ -479,7 +484,6 @@ function updateDelta(elId, current, previous) {
     }
 }
 
-// (Inalterado)
 function updateKpis(kpis) {
     if (!kpis) {
         const nullKpis = {
@@ -490,26 +494,26 @@ function updateKpis(kpis) {
         kpis = nullKpis;
     }
 
-    const k_qtd = $('k_qtd');
+    // Usando $id para todos os KPIs
+    const k_qtd = $id('k_qtd');
     if (k_qtd) k_qtd.textContent = kpis.vendas_atual != null ? num(kpis.vendas_atual) : '—';
-    const p_qtd = $('p_qtd');
+    const p_qtd = $id('p_qtd');
     if (p_qtd) p_qtd.textContent = kpis.vendas_anterior != null ? num(kpis.vendas_anterior) : '—';
     updateDelta('d_qtd', kpis.vendas_atual, kpis.vendas_anterior);
 
-    const k_pratos_unicos = $('k_pratos_unicos');
+    const k_pratos_unicos = $id('k_pratos_unicos');
     if (k_pratos_unicos) k_pratos_unicos.textContent = kpis.pratos_unicos_atual != null ? num(kpis.pratos_unicos_atual) : '—';
-    const p_pratos_unicos = $('p_pratos_unicos');
+    const p_pratos_unicos = $id('p_pratos_unicos');
     if (p_pratos_unicos) p_pratos_unicos.textContent = kpis.pratos_unicos_anterior != null ? num(kpis.pratos_unicos_anterior) : '—';
     updateDelta('d_pratos_unicos', kpis.pratos_unicos_atual, kpis.pratos_unicos_anterior);
 
-    const k_media_diaria = $('k_media_diaria');
+    const k_media_diaria = $id('k_media_diaria');
     if (k_media_diaria) k_media_diaria.textContent = kpis.media_diaria_atual != null ? num(kpis.media_diaria_atual, 1) : '—';
-    const p_media_diaria = $('p_media_diaria');
+    const p_media_diaria = $id('p_media_diaria');
     if (p_media_diaria) p_media_diaria.textContent = kpis.media_diaria_anterior != null ? num(kpis.media_diaria_anterior, 1) : '—';
     updateDelta('d_media_diaria', kpis.media_diaria_atual, kpis.media_diaria_anterior);
 }
 
-// (Inalterado)
 function handleEmptyData() {
     console.warn(`[${APP_VERSION}] Resetando UI para estado Vazio (Sem Dados ou Erro).`);
 
@@ -528,7 +532,6 @@ function handleEmptyData() {
 }
 
 
-// (Inalterado)
 function renderMonthChart(data) {
     if (chartMonth) chartMonth.destroy();
     chartMonth = null;
@@ -539,8 +542,7 @@ function renderMonthChart(data) {
         return;
     }
 
-    // Verificação necessária pois o canvas pode não existir se o DOM não carregou corretamente dentro do escopo
-    const canvasEl = $('ch_month');
+    const canvasEl = $id('ch_month'); // Usando $id
     if (!canvasEl) return; 
 
     const ctx = canvasEl.getContext('2d');
@@ -561,7 +563,6 @@ function renderMonthChart(data) {
     });
 }
 
-// (Inalterado)
 function renderDowChart(data) {
     if (chartDow) chartDow.destroy();
     chartDow = null;
@@ -578,7 +579,7 @@ function renderDowChart(data) {
         return;
     }
 
-    const canvasEl = $('ch_dow');
+    const canvasEl = $id('ch_dow'); // Usando $id
     if (!canvasEl) return;
 
     const ctx = canvasEl.getContext('2d');
@@ -601,9 +602,8 @@ function renderDowChart(data) {
     });
 }
 
-// Renderiza a lista Top 10 (Ajustado para classes prefixadas)
 function renderTop10(data, mode) {
-    const listBody = $('top10-list-body');
+    const listBody = $id('top10-list-body'); // Usando $id
     if (!listBody) return;
 
     if (!data || data.length === 0) {
@@ -613,7 +613,6 @@ function renderTop10(data, mode) {
 
     let html = '';
     data.forEach((item, index) => {
-        // Ajuste para as novas classes prefixadas dp-top10-*
         html += `
             <div class="dp-top10-row">
                 <span class="dp-top10-col-rank">${index + 1}</span>
@@ -626,7 +625,7 @@ function renderTop10(data, mode) {
 }
 
 
-// Função principal de busca de dados (Inalterada)
+// Função principal de busca de dados
 async function applyAll(payload) {
     if (!payload || !payload.start || !payload.end) {
         console.warn(`[${APP_VERSION}] Tentativa de busca com payload inválido.`);
@@ -682,8 +681,8 @@ async function applyAll(payload) {
         renderMonthChart(dashboardData.sales_by_month);
         renderDowChart(dashboardData.sales_by_dow);
 
-        // Ajuste para selecionar botões dentro do container do dashboard
-        const activeTop10Btn = $('#segTop10 button.active');
+        // v10.7: Correção Crítica - Usando $sel para seletor complexo
+        const activeTop10Btn = $sel('#segTop10 button.active');
         const mode = activeTop10Btn ? activeTop10Btn.dataset.mode : 'MAIS';
         const top10Data = (mode === 'MAIS') ? dashboardData.top_10_mais_vendidos : dashboardData.top_10_menos_vendidos;
         renderTop10(top10Data, mode);
@@ -744,13 +743,15 @@ function parseBrazilianDate(dateString) {
 }
 
 
-// Configuração da funcionalidade de Importação (ATUALIZADA com maior tolerância de carregamento)
+// Configuração da funcionalidade de Importação
 async function setupImportFeature() {
-    const btnUpload = $('btnUpload');
-    // O input file deve ser buscado no documento global pois pode estar fora do container principal ou ser movido pelo browser
+    // Usando $id
+    const btnUpload = $id('btnUpload');
+    const uploadText = $id('uploadText');
+    const uploadSpinner = $id('uploadSpinner');
+    
+    // O input file deve ser buscado no documento global pois pode ser movido pelo browser
     const fileInput = document.getElementById('fileExcel'); 
-    const uploadText = $('uploadText');
-    const uploadSpinner = $('uploadSpinner');
 
     if (!btnUpload || !fileInput || !uploadText || !uploadSpinner) return;
 
@@ -760,7 +761,7 @@ async function setupImportFeature() {
     if (!isXLSXAvailable()) {
         console.info(`[${APP_VERSION}] Aguardando carregamento da biblioteca XLSX...`);
         const checkInterval = 500;
-        const maxWaitTime = 5000; // 5 segundos
+        const maxWaitTime = 7000; // Aumentado para 7s devido ao fallback
         let waitedTime = 0;
 
         const intervalId = setInterval(() => {
@@ -771,7 +772,7 @@ async function setupImportFeature() {
                 waitedTime += checkInterval;
                 if (waitedTime >= maxWaitTime) {
                     clearInterval(intervalId);
-                    console.error(`[${APP_VERSION}] Erro Crítico: Biblioteca XLSX (SheetJS) não carregou após ${maxWaitTime}ms. Importação desativada.`);
+                    console.error(`[${APP_VERSION}] Erro Crítico: Biblioteca XLSX (SheetJS) não carregou após ${maxWaitTime}ms (incluindo fallback). Importação desativada.`);
                     btnUpload.disabled = true;
                     uploadText.textContent = 'Erro Lib';
                 }
@@ -804,7 +805,7 @@ async function setupImportFeature() {
         uploadSpinner.style.display = 'inline-block';
 
         try {
-            // (Lógica de processamento e upload inalterada - já era robusta)
+            // (Lógica de processamento e upload inalterada)
             const data = await file.arrayBuffer();
             const readOptions = { type: 'array', cellDates: false };
 
@@ -900,6 +901,12 @@ async function setupImportFeature() {
 /* ===================== INICIALIZAÇÃO E CONTROLES DA UI ===================== */
 
 async function init() {
+    // Verificação final do container antes da inicialização
+    if (!dashboardContainer) {
+         console.error(`[${APP_VERSION}] Inicialização abortada: Container do Dashboard não encontrado após DOMContentLoaded.`);
+        return;
+    }
+
     try {
         console.info(`[Status ${APP_VERSION}] [info]: Inicializando aplicação...`);
 
@@ -967,7 +974,7 @@ async function init() {
 document.addEventListener('DOMContentLoaded', () => {
     console.log(`[DIAGNÓSTICO ${APP_VERSION}] Script final iniciado.`);
 
-    // Listeners de eventos customizados (podem ser disparados globalmente)
+    // Listeners de eventos customizados
     document.addEventListener('filters:apply', (e) => {
         applyAll(e.detail);
     });
@@ -978,15 +985,15 @@ document.addEventListener('DOMContentLoaded', () => {
         fxDispatchApply();
     });
 
-    // Listeners do Top 10 (Ajustado para buscar dentro do container via helper $)
-    const segTop10 = $('segTop10');
+    // Listeners do Top 10 (Usando $id)
+    const segTop10 = $id('segTop10');
     if (segTop10) {
         segTop10.addEventListener('click', (e) => {
             const btn = e.target.closest('button');
             if (!btn || btn.classList.contains('active')) return;
 
             if (window.dashboardData) {
-                // Ajustado para selecionar botões dentro do segmento
+                // querySelectorAll no próprio elemento é seguro
                 segTop10.querySelectorAll('button').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
 
