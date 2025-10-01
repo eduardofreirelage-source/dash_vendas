@@ -1,7 +1,6 @@
-(function() { // IIFE para encapsulamento
+(function() { // IIFE para encapsulamento seguro
 /* ===================== CONFIG (PROJETO ESTOQUE) ===================== */
 const SUPABASE_URL_ESTOQUE  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
-// Chave Anon Atualizada fornecida
 const SUPABASE_ANON_ESTOQUE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
 
 if (!window.supabase) {
@@ -10,14 +9,23 @@ if (!window.supabase) {
 }
 
 const supaEstoque = window.supabase.createClient(SUPABASE_URL_ESTOQUE, SUPABASE_ANON_ESTOQUE);
-const APP_VERSION = 'v10.5'; // VERSÃO COM ROBUSTEZ E CORREÇÃO DE ERROS
+const APP_VERSION = 'v10.6'; // VERSÃO COM ENCAPSULAMENTO DE CSS E ROBUSTEZ
 
-/* ===================== HELPERS GERAIS ===================== */
-const $ = id => document.getElementById(id);
-const $$ = sel => document.querySelectorAll(sel);
+/* ===================== HELPERS GERAIS (ESCOPADOS) ===================== */
+// v10.6: Define o escopo de atuação do JS para o container do dashboard
+const dashboardContainer = document.querySelector('.dash-pratos-v10');
+if (!dashboardContainer) {
+    // Este check deve ocorrer após o DOMContentLoaded, mas mantemos aqui para segurança inicial.
+    console.error(`[${APP_VERSION}] Erro Crítico: Container principal do Dashboard (.dash-pratos-v10) não encontrado.`);
+    return;
+}
+
+// Helpers escopados ao container para evitar conflitos
+const $ = id => dashboardContainer.querySelector(`#${id}`);
+const $$ = sel => dashboardContainer.querySelectorAll(sel);
 const num = (v, decimals = 0) => (v==null||!isFinite(+v)) ? '0' : (+v).toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
-// Helpers de Data (UTC)
+// Helpers de Data (UTC) - (Inalterados)
 function getDateUTC(input) {
     let d;
     if (typeof input === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
@@ -39,7 +47,6 @@ function getDateISO(dateObj) {
     return d.toISOString().split('T')[0];
 }
 
-// Formata YYYY-MM para Nome do Mês (ex: 'Agosto')
 function formatMonthName(isoMonth) {
     if (!isoMonth || !/^\d{4}-\d{2}$/.test(isoMonth)) return isoMonth;
     const [year, monthIndex] = isoMonth.split('-').map(Number);
@@ -50,6 +57,7 @@ function formatMonthName(isoMonth) {
 
 
 /* ===================== COMPONENTE MULTI-SELECT (MSel) ===================== */
+// (Classe Inalterada, pois já operava dentro do container fornecido pelo ID que agora é buscado via helper $)
 class MultiSelect {
     constructor(containerId, onChangeCallback) {
         this.container = $(containerId);
@@ -110,7 +118,8 @@ class MultiSelect {
         if (searchInput) {
             searchInput.value = '';
             this.filterOptions('');
-            searchInput.focus();
+            // Foco gerenciado com cuidado em componentes embedados
+            try { searchInput.focus(); } catch (e) { console.warn("Não foi possível focar o input de busca."); }
         }
     }
 
@@ -190,6 +199,7 @@ class MultiSelect {
 }
 
 /* ===================== LÓGICA DOS FILTROS (FX) ===================== */
+// (Lógica Inalterada, pois IDs e Classes FX/MSel foram mantidos e são buscados via helper $)
 
 let filterUnidades, filterCategorias, filterPratos;
 
@@ -225,15 +235,14 @@ function fxSetToLastMonthWithData(baseDateStr) {
     const year = baseDate.getUTCFullYear();
     const month = baseDate.getUTCMonth();
 
-    // Calcula o início do mês anterior (lidando com a virada do ano)
     const startOfLastMonth = new Date(Date.UTC(year, month - 1, 1));
-    // O dia 0 do mês atual retorna o último dia do mês anterior
     const endOfLastMonth = new Date(Date.UTC(year, month, 0));
 
     fxSetRange(startOfLastMonth, endOfLastMonth);
 
     $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
-    const lastMonthBtn = document.querySelector('#fxQuickChips button[data-win="lastMonth"]');
+    // Usamos $ para garantir que buscamos dentro do dashboard
+    const lastMonthBtn = $('#fxQuickChips button[data-win="lastMonth"]'); 
     if (lastMonthBtn) lastMonthBtn.classList.add('active');
     $$('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
 }
@@ -250,105 +259,115 @@ function setupFilterInteractions() {
     };
 
     // 1. Toggle do Dropup
-    fx.$btnMore.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const isShown = fx.$dropup.classList.toggle('fx-show');
-        fx.$btnMore.setAttribute('aria-expanded', isShown);
-    });
+    if (fx.$btnMore) {
+        fx.$btnMore.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isShown = fx.$dropup.classList.toggle('fx-show');
+            fx.$btnMore.setAttribute('aria-expanded', isShown);
+        });
+    }
 
+    // Listener global (document) para fechar modais/dropups (Importante para a aplicação inteira)
     document.addEventListener('click', (e) => {
-        if (fx.$dropup.classList.contains('fx-show')) {
-            fx.$dropup.classList.remove('fx-show');
-            fx.$btnMore.setAttribute('aria-expanded', false);
+        // Fecha o dropup se ele estiver aberto E o clique foi fora dele
+        if (fx.$dropup && fx.$dropup.classList.contains('fx-show')) {
+            if (!fx.$dropup.contains(e.target)) {
+               fx.$dropup.classList.remove('fx-show');
+               if (fx.$btnMore) fx.$btnMore.setAttribute('aria-expanded', false);
+            }
         }
         document.dispatchEvent(new CustomEvent('msel:closeAll'));
     });
 
-    fx.$dropup.addEventListener('click', (e) => {
-        if (!e.target.closest('.msel')) {
-             e.stopPropagation();
-        }
-    });
+    if (fx.$dropup) {
+        fx.$dropup.addEventListener('click', (e) => {
+            // Impede que cliques dentro do dropup (exceto em MSels) o fechem
+            if (!e.target.closest('.msel')) {
+                 e.stopPropagation();
+            }
+        });
+    }
 
 
     // 2. Botões Rápidos
-    fx.$quickChips.addEventListener('click', (e) => {
-        const btn = e.target.closest('button');
-        if (!btn || btn.classList.contains('active')) return;
+    if (fx.$quickChips) {
+        fx.$quickChips.addEventListener('click', (e) => {
+            const btn = e.target.closest('button');
+            if (!btn || btn.classList.contains('active')) return;
 
-        $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        $$('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
+            $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            $$('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
 
-        // Resetar filtros analíticos ao usar filtros rápidos
-        if (filterUnidades) filterUnidades.reset();
-        // Ponto 4: Ao clicar em um filtro rápido, resetamos a Categoria para o padrão ("Pratos")
-        if (filterCategorias) {
-            filterCategorias.reset();
-            const defaultCategory = filterCategorias.options.find(cat => cat.toLowerCase() === 'pratos');
-             if (defaultCategory) {
-                 filterCategorias.handleSelection(defaultCategory, true);
+            // Resetar filtros analíticos
+            if (filterUnidades) filterUnidades.reset();
+            if (filterCategorias) {
+                filterCategorias.reset();
+                const defaultCategory = filterCategorias.options.find(cat => cat.toLowerCase() === 'pratos');
+                 if (defaultCategory) {
+                     filterCategorias.handleSelection(defaultCategory, true);
+                }
             }
-        }
-        if (filterPratos) filterPratos.reset();
+            if (filterPratos) filterPratos.reset();
 
 
-        const win = btn.dataset.win;
-        const baseDate = getDateUTC(lastDay);
-        let start, end;
+            const win = btn.dataset.win;
+            const baseDate = getDateUTC(lastDay);
+            let start, end;
 
-        switch(win) {
-            case 'today':
-                start = end = baseDate;
-                break;
-            case 'yesterday':
-                start = new Date(baseDate.getTime());
-                start.setUTCDate(baseDate.getUTCDate() - 1);
-                end = start;
-                break;
-            case 'lastMonth':
-                fxSetToLastMonthWithData(lastDay);
+            switch(win) {
+                case 'today':
+                    start = end = baseDate;
+                    break;
+                case 'yesterday':
+                    start = new Date(baseDate.getTime());
+                    start.setUTCDate(baseDate.getUTCDate() - 1);
+                    end = start;
+                    break;
+                case 'lastMonth':
+                    fxSetToLastMonthWithData(lastDay);
+                    fxDispatchApply();
+                    return;
+                case 'lastYear':
+                    const year = baseDate.getUTCFullYear() - 1;
+                    start = new Date(Date.UTC(year, 0, 1));
+                    end = new Date(Date.UTC(year, 11, 31));
+                    break;
+            }
+
+            if (start && end) {
+                fxSetRange(start, end);
                 fxDispatchApply();
-                return;
-            case 'lastYear':
-                const year = baseDate.getUTCFullYear() - 1;
-                start = new Date(Date.UTC(year, 0, 1));
-                end = new Date(Date.UTC(year, 11, 31));
-                break;
-        }
-
-        if (start && end) {
-            fxSetRange(start, end);
-            fxDispatchApply();
-        }
-    });
+            }
+        });
+    }
 
     // 3. Segmento de Dias Rápidos
-    fx.$quickDays.addEventListener('click', (e) => {
-        const btn = e.target.closest('button');
-        if (!btn) return;
+    if (fx.$quickDays) {
+        fx.$quickDays.addEventListener('click', (e) => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
 
-        $$('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
-        btn.classList.add('fx-active');
+            $$('#fxDuQuickDays button').forEach(b => b.classList.remove('fx-active'));
+            btn.classList.add('fx-active');
 
-        const days = parseInt(btn.dataset.win);
-        const currentEndStr = fx.$end.value || lastDay;
-        const end = getDateUTC(currentEndStr);
-        const start = new Date(end.getTime());
-        start.setUTCDate(end.getUTCDate() - (days - 1));
+            const days = parseInt(btn.dataset.win);
+            const currentEndStr = (fx.$end && fx.$end.value) || lastDay;
+            const end = getDateUTC(currentEndStr);
+            const start = new Date(end.getTime());
+            start.setUTCDate(end.getUTCDate() - (days - 1));
 
-        fxSetRange(start, end);
-        $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
-        fxDispatchApply();
-    });
+            fxSetRange(start, end);
+            $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
+            fxDispatchApply();
+        });
+    }
 
     // 4. Mudanças Manuais nos Inputs de Data
     const handleDateChange = () => {
-        if (fx.$start.value && fx.$end.value) {
-            // Validação básica de datas
+        if (fx.$start && fx.$end && fx.$start.value && fx.$end.value) {
             if (new Date(fx.$start.value) > new Date(fx.$end.value)) {
                 console.warn("Data inicial maior que a data final.");
-                // Opcional: alertar o usuário ou impedir a busca
                 return;
             }
             $$('#fxQuickChips button').forEach(b => b.classList.remove('active'));
@@ -356,47 +375,48 @@ function setupFilterInteractions() {
             fxDispatchApply();
         }
     };
-    fx.$start.addEventListener('change', handleDateChange);
-    fx.$end.addEventListener('change', handleDateChange);
+    if (fx.$start) fx.$start.addEventListener('change', handleDateChange);
+    if (fx.$end) fx.$end.addEventListener('change', handleDateChange);
 
 
     // 5. Botão Limpar (Reset)
-    fx.$btnReset.addEventListener('click', () => {
-        fxSetToLastMonthWithData(lastDay);
-        if (filterUnidades) filterUnidades.reset();
-        // Ponto 4: Ao limpar, resetamos a Categoria para o padrão ("Pratos")
-        if (filterCategorias) {
-            filterCategorias.reset();
-            const defaultCategory = filterCategorias.options.find(cat => cat.toLowerCase() === 'pratos');
-             if (defaultCategory) {
-                 filterCategorias.handleSelection(defaultCategory, true);
+    if (fx.$btnReset) {
+        fx.$btnReset.addEventListener('click', () => {
+            fxSetToLastMonthWithData(lastDay);
+            if (filterUnidades) filterUnidades.reset();
+            if (filterCategorias) {
+                filterCategorias.reset();
+                const defaultCategory = filterCategorias.options.find(cat => cat.toLowerCase() === 'pratos');
+                 if (defaultCategory) {
+                     filterCategorias.handleSelection(defaultCategory, true);
+                }
             }
-        }
-        if (filterPratos) filterPratos.reset();
+            if (filterPratos) filterPratos.reset();
 
-        fxDispatchApply();
-        fx.$dropup.classList.remove('fx-show');
-        fx.$btnMore.setAttribute('aria-expanded', false);
-    });
+            fxDispatchApply();
+            if (fx.$dropup) fx.$dropup.classList.remove('fx-show');
+            if (fx.$btnMore) fx.$btnMore.setAttribute('aria-expanded', false);
+        });
+    }
 }
 
 /* ===================== ESTADO E GRÁFICOS ===================== */
 let lastDay = '';
 let chartMonth, chartDow;
-let isFetching = false; // Flag para prevenir buscas concorrentes
+let isFetching = false;
 
-// Funções de Renderização, Estado e Tratamento de Erros (Reconstruídas e Aprimoradas)
+// Funções de Renderização, Estado e Tratamento de Erros (Ajustadas para classes prefixadas)
 
-// Define mensagem no container do gráfico (e.g., "Carregando", "Sem dados")
 function setChartMessage(boxId, message) {
     const box = $(boxId);
     if (!box) return;
-    let msgEl = box.querySelector('.chart-message');
+    // Ajuste para a nova classe prefixada dp-chart-message
+    let msgEl = box.querySelector('.dp-chart-message');
 
     if (message) {
         if (!msgEl) {
             msgEl = document.createElement('div');
-            msgEl.className = 'chart-message';
+            msgEl.className = 'dp-chart-message';
             box.appendChild(msgEl);
         }
         msgEl.textContent = message;
@@ -409,59 +429,58 @@ function setChartMessage(boxId, message) {
     }
 }
 
-// Gerencia o estado de carregamento global
 function setLoadingState(isLoading) {
     isFetching = isLoading;
     console.log(`[Status ${APP_VERSION}] Loading state: ${isLoading}`);
-    
-    // Desabilita elementos interativos durante o carregamento
+
+    // Desabilita elementos interativos dentro do dashboard
     const filterElements = $$('.fx-filters-bar button, .fx-dropup button, .fx-input, .msel-btn');
     filterElements.forEach(el => {
-        // Não desabilita o botão de Upload se ele já estiver processando uma importação ou se tiver falhado ao carregar XLSX
+        // Exceção para o botão de upload se já estiver desabilitado
         if (el.id === 'btnUpload' && el.disabled && isLoading) return;
         el.disabled = isLoading;
     });
-    
-    document.body.style.cursor = isLoading ? 'wait' : 'default';
+
+    // Controla o cursor apenas sobre o container do dashboard
+    if (dashboardContainer) {
+        dashboardContainer.style.cursor = isLoading ? 'wait' : 'default';
+    }
 }
 
-// Tratamento robusto de erros da API
 function handleApiError(error) {
     console.error(`[${APP_VERSION}] Erro na API/Dados:`, error);
     const message = error.message || JSON.stringify(error);
     alert(`Falha ao processar dados:\n${message}\n\nO Dashboard será resetado.`);
-    handleEmptyData(); // Reseta a UI em caso de erro
+    handleEmptyData();
 }
 
-// Calcula e atualiza os indicadores de variação (Delta)
 function updateDelta(elId, current, previous) {
     const el = $(elId);
     if (!el) return;
 
-    // Trata divisões por zero ou valores nulos/não finitos
     if (current == null || previous == null || !isFinite(current) || !isFinite(previous) || previous === 0) {
-        el.className = 'delta flat';
+        // Ajuste para a nova classe prefixada dp-delta
+        el.className = 'dp-delta flat';
         el.textContent = '—';
         return;
     }
 
     const deltaVal = ((current - previous) / previous) * 100;
-    
+
     if (deltaVal > 0.1) {
-        el.className = 'delta up';
+        el.className = 'dp-delta up';
         el.textContent = `▲ ${num(deltaVal, 1)}%`;
     } else if (deltaVal < -0.1) {
-        el.className = 'delta down';
+        el.className = 'dp-delta down';
         el.textContent = `▼ ${num(Math.abs(deltaVal), 1)}%`;
     } else {
-        el.className = 'delta flat';
+        el.className = 'dp-delta flat';
         el.textContent = '—';
     }
 }
 
-// Atualiza os KPIs principais
+// (Inalterado)
 function updateKpis(kpis) {
-    // Se kpis for null (chamado por handleEmptyData), reseta os valores
     if (!kpis) {
         const nullKpis = {
             vendas_atual: null, vendas_anterior: null,
@@ -471,43 +490,45 @@ function updateKpis(kpis) {
         kpis = nullKpis;
     }
 
-    $('k_qtd').textContent = kpis.vendas_atual != null ? num(kpis.vendas_atual) : '—';
-    $('p_qtd').textContent = kpis.vendas_anterior != null ? num(kpis.vendas_anterior) : '—';
+    const k_qtd = $('k_qtd');
+    if (k_qtd) k_qtd.textContent = kpis.vendas_atual != null ? num(kpis.vendas_atual) : '—';
+    const p_qtd = $('p_qtd');
+    if (p_qtd) p_qtd.textContent = kpis.vendas_anterior != null ? num(kpis.vendas_anterior) : '—';
     updateDelta('d_qtd', kpis.vendas_atual, kpis.vendas_anterior);
 
-    // Usando chaves que correspondem aos IDs do HTML (pratos_unicos)
-    $('k_pratos_unicos').textContent = kpis.pratos_unicos_atual != null ? num(kpis.pratos_unicos_atual) : '—';
-    $('p_pratos_unicos').textContent = kpis.pratos_unicos_anterior != null ? num(kpis.pratos_unicos_anterior) : '—';
+    const k_pratos_unicos = $('k_pratos_unicos');
+    if (k_pratos_unicos) k_pratos_unicos.textContent = kpis.pratos_unicos_atual != null ? num(kpis.pratos_unicos_atual) : '—';
+    const p_pratos_unicos = $('p_pratos_unicos');
+    if (p_pratos_unicos) p_pratos_unicos.textContent = kpis.pratos_unicos_anterior != null ? num(kpis.pratos_unicos_anterior) : '—';
     updateDelta('d_pratos_unicos', kpis.pratos_unicos_atual, kpis.pratos_unicos_anterior);
 
-    $('k_media_diaria').textContent = kpis.media_diaria_atual != null ? num(kpis.media_diaria_atual, 1) : '—';
-    $('p_media_diaria').textContent = kpis.media_diaria_anterior != null ? num(kpis.media_diaria_anterior, 1) : '—';
+    const k_media_diaria = $('k_media_diaria');
+    if (k_media_diaria) k_media_diaria.textContent = kpis.media_diaria_atual != null ? num(kpis.media_diaria_atual, 1) : '—';
+    const p_media_diaria = $('p_media_diaria');
+    if (p_media_diaria) p_media_diaria.textContent = kpis.media_diaria_anterior != null ? num(kpis.media_diaria_anterior, 1) : '—';
     updateDelta('d_media_diaria', kpis.media_diaria_atual, kpis.media_diaria_anterior);
 }
 
-// Função centralizada para resetar a UI quando não há dados ou ocorre um erro
+// (Inalterado)
 function handleEmptyData() {
     console.warn(`[${APP_VERSION}] Resetando UI para estado Vazio (Sem Dados ou Erro).`);
 
-    // Reset KPIs
     updateKpis(null);
-    
-    // Reset Charts (destruir e mostrar mensagem)
+
     if (chartMonth) chartMonth.destroy();
-    chartMonth = null; 
+    chartMonth = null;
     setChartMessage('box_month', 'Nenhum dado encontrado para o período selecionado.');
 
     if (chartDow) chartDow.destroy();
     chartDow = null;
     setChartMessage('box_dow', 'Nenhum dado encontrado para o período selecionado.');
 
-    // Reset Top 10
     renderTop10([], null);
     window.dashboardData = null;
 }
 
 
-// Renderiza o gráfico de Vendas Mensais
+// (Inalterado)
 function renderMonthChart(data) {
     if (chartMonth) chartMonth.destroy();
     chartMonth = null;
@@ -518,7 +539,11 @@ function renderMonthChart(data) {
         return;
     }
 
-    const ctx = $('ch_month').getContext('2d');
+    // Verificação necessária pois o canvas pode não existir se o DOM não carregou corretamente dentro do escopo
+    const canvasEl = $('ch_month');
+    if (!canvasEl) return; 
+
+    const ctx = canvasEl.getContext('2d');
     const labels = data.map(d => formatMonthName(d.mes));
     const currentData = data.map(d => d.vendas_atual);
     const previousData = data.map(d => d.vendas_anterior);
@@ -536,7 +561,7 @@ function renderMonthChart(data) {
     });
 }
 
-// Renderiza o gráfico de Vendas por Dia da Semana (DoW)
+// (Inalterado)
 function renderDowChart(data) {
     if (chartDow) chartDow.destroy();
     chartDow = null;
@@ -546,7 +571,6 @@ function renderDowChart(data) {
         data = [];
     }
 
-    // Verifica se há dados reais, não apenas um array vazio
     const hasData = data.length > 0 && data.some(d => d.total_vendido > 0);
 
     if (!hasData) {
@@ -554,9 +578,11 @@ function renderDowChart(data) {
         return;
     }
 
-    const ctx = $('ch_dow').getContext('2d');
+    const canvasEl = $('ch_dow');
+    if (!canvasEl) return;
+
+    const ctx = canvasEl.getContext('2d');
     const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-    // Garante que todos os dias da semana estejam presentes, mesmo que com valor zero
     const sortedData = labels.map(label => data.find(d => d.dia_semana_nome === label) || { total_vendido: 0 });
 
     chartDow = new Chart(ctx, {
@@ -575,12 +601,11 @@ function renderDowChart(data) {
     });
 }
 
-// Renderiza a lista Top 10
+// Renderiza a lista Top 10 (Ajustado para classes prefixadas)
 function renderTop10(data, mode) {
     const listBody = $('top10-list-body');
     if (!listBody) return;
 
-    // Tratamento de estado vazio específico para o Top 10
     if (!data || data.length === 0) {
         listBody.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--muted);">Nenhum registro encontrado.</div>`;
         return;
@@ -588,11 +613,12 @@ function renderTop10(data, mode) {
 
     let html = '';
     data.forEach((item, index) => {
+        // Ajuste para as novas classes prefixadas dp-top10-*
         html += `
-            <div class="top10-row">
-                <span class="top10-col-rank">${index + 1}</span>
-                <span class="top10-col-prato" title="${item.prato.replace(/"/g, '&quot;')}">${item.prato}</span>
-                <span class="top10-col-qty">${num(item.quantidade)}</span>
+            <div class="dp-top10-row">
+                <span class="dp-top10-col-rank">${index + 1}</span>
+                <span class="dp-top10-col-prato" title="${item.prato.replace(/"/g, '&quot;')}">${item.prato}</span>
+                <span class="dp-top10-col-qty">${num(item.quantidade)}</span>
             </div>
         `;
     });
@@ -600,7 +626,7 @@ function renderTop10(data, mode) {
 }
 
 
-// Função principal de busca de dados (ATUALIZADA com Robustez e try...finally)
+// Função principal de busca de dados (Inalterada)
 async function applyAll(payload) {
     if (!payload || !payload.start || !payload.end) {
         console.warn(`[${APP_VERSION}] Tentativa de busca com payload inválido.`);
@@ -616,7 +642,6 @@ async function applyAll(payload) {
     setLoadingState(true);
 
     try {
-        // Chama a função RPC
         const { data: rawData, error } = await supaEstoque.rpc('get_sales_dashboard_data', {
             start_date: payload.start,
             end_date: payload.end,
@@ -625,7 +650,7 @@ async function applyAll(payload) {
             pratos_filter: payload.pratos
         });
 
-        // 1. Tratamento de Erros de Rede/Supabase
+        // 1. Tratamento de Erros
         if (error) {
             handleApiError(error);
             return;
@@ -640,14 +665,13 @@ async function applyAll(payload) {
             dashboardData = rawData;
         }
 
-        // Se após a normalização, não temos dados, tratamos como estado vazio.
         if (!dashboardData) {
             console.warn(`[${APP_VERSION}] Aviso: A consulta retornou vazia.`);
             handleEmptyData();
             return;
         }
 
-        // 3. Validação da Estrutura dos Dados
+        // 3. Validação da Estrutura
         if (!dashboardData.kpis || !dashboardData.sales_by_month || !dashboardData.sales_by_dow) {
             handleApiError(new Error("A resposta da API tem um formato inesperado (chaves ausentes)."));
             return;
@@ -658,7 +682,8 @@ async function applyAll(payload) {
         renderMonthChart(dashboardData.sales_by_month);
         renderDowChart(dashboardData.sales_by_dow);
 
-        const activeTop10Btn = document.querySelector('#segTop10 button.active');
+        // Ajuste para selecionar botões dentro do container do dashboard
+        const activeTop10Btn = $('#segTop10 button.active');
         const mode = activeTop10Btn ? activeTop10Btn.dataset.mode : 'MAIS';
         const top10Data = (mode === 'MAIS') ? dashboardData.top_10_mais_vendidos : dashboardData.top_10_menos_vendidos;
         renderTop10(top10Data, mode);
@@ -667,25 +692,22 @@ async function applyAll(payload) {
         console.info(`[Status ${APP_VERSION}] [ok]: Dados atualizados.`);
 
     } catch (e) {
-        // Captura erros inesperados de JS durante o processamento
         handleApiError(e);
     } finally {
-        // Garante que o estado de carregamento seja SEMPRE finalizado
         setLoadingState(false);
     }
 }
 
 
-/* ===================== LÓGICA DE IMPORTAÇÃO (ATUALIZADA) ===================== */
+/* ===================== LÓGICA DE IMPORTAÇÃO ===================== */
 
-// Helper para Excel Serial Number (XLSX)
+// Helpers de Parsing de Data (Inalterados)
 function parseExcelDate(serial) {
     if (typeof serial !== 'number' || !isFinite(serial)) {
         return null;
     }
     const excelEpochDiff = 25569;
     const millisecondsPerDay = 24 * 60 * 60 * 1000;
-    // O cálculo deve ser feito em UTC
     const timestamp = (serial - excelEpochDiff) * millisecondsPerDay;
     const date = new Date(timestamp);
 
@@ -695,7 +717,6 @@ function parseExcelDate(serial) {
     return date;
 }
 
-// Helper Robusto para formato Brasileiro dd/mm/aaaa (CSV ou XLSX como texto)
 function parseBrazilianDate(dateString) {
     if (typeof dateString !== 'string') return null;
 
@@ -723,33 +744,45 @@ function parseBrazilianDate(dateString) {
 }
 
 
-// Configuração da funcionalidade de Importação (ATUALIZADA com Robustez)
+// Configuração da funcionalidade de Importação (ATUALIZADA com maior tolerância de carregamento)
 async function setupImportFeature() {
     const btnUpload = $('btnUpload');
-    const fileInput = $('fileExcel');
+    // O input file deve ser buscado no documento global pois pode estar fora do container principal ou ser movido pelo browser
+    const fileInput = document.getElementById('fileExcel'); 
     const uploadText = $('uploadText');
     const uploadSpinner = $('uploadSpinner');
 
-    if (!btnUpload || !fileInput) return;
+    if (!btnUpload || !fileInput || !uploadText || !uploadSpinner) return;
 
-    // Função auxiliar para verificar se a biblioteca XLSX carregou
     const isXLSXAvailable = () => typeof window.XLSX !== 'undefined';
 
-    // Verificação proativa inicial (com tolerância para carregamento lento)
+    // Verificação proativa inicial com espera ativa (Intervalo)
     if (!isXLSXAvailable()) {
-        setTimeout(() => {
-            if (!isXLSXAvailable()) {
-                console.error(`[${APP_VERSION}] Erro Crítico: Biblioteca XLSX (SheetJS) não carregou após espera. Importação desativada.`);
-                btnUpload.disabled = true;
-                uploadText.textContent = 'Erro Lib';
+        console.info(`[${APP_VERSION}] Aguardando carregamento da biblioteca XLSX...`);
+        const checkInterval = 500;
+        const maxWaitTime = 5000; // 5 segundos
+        let waitedTime = 0;
+
+        const intervalId = setInterval(() => {
+            if (isXLSXAvailable()) {
+                clearInterval(intervalId);
+                console.info(`[${APP_VERSION}] Biblioteca XLSX carregada após ${waitedTime}ms.`);
+            } else {
+                waitedTime += checkInterval;
+                if (waitedTime >= maxWaitTime) {
+                    clearInterval(intervalId);
+                    console.error(`[${APP_VERSION}] Erro Crítico: Biblioteca XLSX (SheetJS) não carregou após ${maxWaitTime}ms. Importação desativada.`);
+                    btnUpload.disabled = true;
+                    uploadText.textContent = 'Erro Lib';
+                }
             }
-        }, 2000);
+        }, checkInterval);
     }
 
     btnUpload.addEventListener('click', () => {
         // Verificação reativa no clique
         if (!isXLSXAvailable()) {
-             alert("A funcionalidade de importação não está disponível (XLSX Undefined). Verifique sua conexão de rede (CDN) ou atualize a página.");
+             alert("A funcionalidade de importação ainda está carregando ou falhou (XLSX Undefined). Por favor, aguarde ou verifique sua conexão de rede (CDN).");
              return;
         }
         if (btnUpload.disabled) return;
@@ -757,7 +790,7 @@ async function setupImportFeature() {
     });
 
     fileInput.addEventListener('change', async (event) => {
-        // Verificação final antes do processamento
+        // Verificação final
         if (!isXLSXAvailable()) {
             alert("Erro: Biblioteca XLSX não está disponível.");
             return;
@@ -771,7 +804,7 @@ async function setupImportFeature() {
         uploadSpinner.style.display = 'inline-block';
 
         try {
-            // 1. Ler o arquivo
+            // (Lógica de processamento e upload inalterada - já era robusta)
             const data = await file.arrayBuffer();
             const readOptions = { type: 'array', cellDates: false };
 
@@ -788,30 +821,24 @@ async function setupImportFeature() {
                 throw new Error("O arquivo está vazio ou contém apenas o cabeçalho.");
             }
 
-            // 2. Processar e Validar Dados
-            rawData.shift(); // Remove o cabeçalho
+            rawData.shift();
 
             const processedData = rawData.map((row, index) => {
-                // Assumindo a ordem: Data[0], Unidade[1], Prato[2], Categoria[3], Quantidade[4]
                 if (row.length < 5 || row[1] == null || row[2] == null) {
                     return null;
                 }
 
-                // Parse da Data (Robusto e Sequencial)
                 const rawDate = row[0];
                 let date;
 
-                // Tentativa 1: Formato Brasileiro (dd/mm/aaaa)
                 if (typeof rawDate === 'string') {
                     date = parseBrazilianDate(rawDate);
                 }
 
-                // Tentativa 2: Excel Serial Number
                 if (!date && typeof rawDate === 'number') {
                     date = parseExcelDate(rawDate);
                 }
 
-                // Tentativa 3: Parsing Padrão (ISO)
                 if (!date && rawDate) {
                     const parsedDate = new Date(rawDate);
                     if (!isNaN(parsedDate.getTime())) {
@@ -824,7 +851,6 @@ async function setupImportFeature() {
                     return null;
                 }
 
-                // Parse da Quantidade
                 const quantity = parseInt(row[4], 10);
                 if (isNaN(quantity) || quantity <= 0) {
                     return null;
@@ -843,13 +869,11 @@ async function setupImportFeature() {
                 throw new Error("Nenhum dado válido encontrado no arquivo após o processamento.");
             }
 
-            // 3. Upload em Lotes
             uploadText.textContent = 'Enviando...';
             const BATCH_SIZE = 500;
             let successCount = 0;
             for (let i = 0; i < processedData.length; i += BATCH_SIZE) {
                 const batch = processedData.slice(i, i + BATCH_SIZE);
-                // Usamos insert e contamos o tamanho do batch, pois o retorno do insert pode variar dependendo da configuração do Supabase
                 const { error } = await supaEstoque.from('vendas_pratos').insert(batch);
                 if (error) {
                     throw new Error(`Falha ao enviar lote para o Supabase: ${error.message}`);
@@ -858,15 +882,12 @@ async function setupImportFeature() {
             }
 
             alert(`${successCount} registros importados com sucesso!\n\nAtualizando dashboard...`);
-
-            // 4. Recarrega a página
             window.location.reload();
 
         } catch (error) {
             console.error(`[${APP_VERSION}] Erro na importação:`, error);
             alert(`Falha na importação:\n${error.message}`);
         } finally {
-            // Reset do estado da UI (caso não ocorra o reload)
             btnUpload.disabled = false;
             uploadText.textContent = 'Importar';
             uploadSpinner.style.display = 'none';
@@ -887,7 +908,7 @@ async function init() {
         filterCategorias = new MultiSelect('ms-cats', fxDispatchApply);
         filterPratos = new MultiSelect('ms-pratos', fxDispatchApply);
 
-        // Listener global para fechar MSels ao clicar fora
+        // Listener global para fechar MSels
         document.addEventListener('msel:closeAll', (e) => {
             const exceptId = e.detail ? e.detail.except : null;
             [filterUnidades, filterCategorias, filterPratos].forEach(ms => {
@@ -897,7 +918,7 @@ async function init() {
             });
         });
 
-        // 2. Buscar Data Máxima e Opções de Filtro em paralelo
+        // 2. Buscar Data Máxima e Opções de Filtro
         const [dateResult, filterResult] = await Promise.all([
             supaEstoque.from('vendas_pratos_daterange').select('max_data').maybeSingle(),
             supaEstoque.rpc('get_filter_options')
@@ -926,10 +947,8 @@ async function init() {
                 // Define o filtro padrão para Categoria = 'Pratos'
                 const defaultCategory = (optionsData.categorias || []).find(cat => cat.toLowerCase() === 'pratos');
                 if (defaultCategory) {
-                    // Seleciona o item sem disparar o onChange ainda
                     filterCategorias.selected.add(defaultCategory);
                     filterCategorias.updateButtonText();
-                    // Garante que o painel renderize o checkbox marcado
                     filterCategorias.renderPanel();
                 }
             }
@@ -944,33 +963,31 @@ async function init() {
     }
 }
 
+// Usamos DOMContentLoaded no documento global para iniciar o script
 document.addEventListener('DOMContentLoaded', () => {
     console.log(`[DIAGNÓSTICO ${APP_VERSION}] Script final iniciado.`);
 
-    // Listener principal para aplicação de filtros
+    // Listeners de eventos customizados (podem ser disparados globalmente)
     document.addEventListener('filters:apply', (e) => {
         applyAll(e.detail);
     });
 
-    // Listener para configurar a UI após o carregamento inicial dos dados básicos
     document.addEventListener('filters:init', () => {
         setupFilterInteractions();
-        // Define o período padrão (Mês Anterior)
         fxSetToLastMonthWithData(lastDay);
-        // Dispara a busca inicial
         fxDispatchApply();
     });
 
-    // Listeners do Top 10 (Controle de Mais/Menos Vendidos)
+    // Listeners do Top 10 (Ajustado para buscar dentro do container via helper $)
     const segTop10 = $('segTop10');
     if (segTop10) {
         segTop10.addEventListener('click', (e) => {
             const btn = e.target.closest('button');
             if (!btn || btn.classList.contains('active')) return;
 
-            // Só permite a troca se os dados já estiverem carregados
             if (window.dashboardData) {
-                $$('#segTop10 button').forEach(b => b.classList.remove('active'));
+                // Ajustado para selecionar botões dentro do segmento
+                segTop10.querySelectorAll('button').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
 
                 const mode = btn.dataset.mode;
@@ -980,10 +997,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Configura a funcionalidade de Importação
     setupImportFeature();
 
-    init(); // Inicia o processo de inicialização da aplicação
+    init();
 });
 
 })();
