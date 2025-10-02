@@ -1,13 +1,13 @@
 /* =======================================================================
-   dash_pratos.js — v10.4-dbg10
-   - Default exclusivo "Pratos" na categoria (UX)
+   dash_pratos.js — v10.4-dbg11
+   - KPIs calculados estritamente no período filtrado (sem usar o gráfico mensal)
    - Gráfico mensal: últimos 12 meses ancorados em payload.start
-   - Importação robusta (multi-CDN SheetJS)
-   - Fallbacks e diagnósticos completos
+   - Default exclusivo "Pratos" na Categoria
+   - Importação robusta + diagnósticos
    ======================================================================= */
 
 /* ===================== CONFIG ===================== */
-const APP_VERSION = 'v10.4-dbg10';
+const APP_VERSION = 'v10.4-dbg11';
 const DEBUG = true;
 
 const SUPABASE_URL_ESTOQUE  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
@@ -524,11 +524,32 @@ function previousRangeOf(payload){
   const start = new Date(end); start.setUTCDate(end.getUTCDate()-(days-1));
   return { start:getDateISO(start), end:getDateISO(end), unidades:payload.unidades, categorias:payload.categorias, pratos:payload.pratos };
 }
-async function uniqueCountFromRowsOrQuery(payload){
+
+/* ======= NOVO: KPIs calculados do período filtrado (linhas reais) ======= */
+async function computeKpisFromRows(payload){
+  // período atual
   const rows = await fetchRowsPagedFor(payload.start, payload.end, payload, 8000);
-  const set = new Set();
-  for(const r of rows){ if(clampNum(r.quantidade)>0) set.add(r.prato||'—'); }
-  return set.size;
+  const total = rows.reduce((s,r)=> s + clampNum(r.quantidade), 0);
+  const uniq  = (()=>{ const s=new Set(); for(const r of rows){ if(clampNum(r.quantidade)>0) s.add(r.prato||'—'); } return s.size; })();
+  const days  = Math.max(1, daysInclusive(payload.start, payload.end));
+  const avg   = total / days;
+
+  // período anterior (mesma quantidade de dias imediatamente antes)
+  const prevRange = previousRangeOf(payload);
+  const prevRows  = await fetchRowsPagedFor(prevRange.start, prevRange.end, prevRange, 8000);
+  const prevTotal = prevRows.reduce((s,r)=> s + clampNum(r.quantidade), 0);
+  const prevUniq  = (()=>{ const s=new Set(); for(const r of prevRows){ if(clampNum(r.quantidade)>0) s.add(r.prato||'—'); } return s.size; })();
+  const prevDays  = Math.max(1, daysInclusive(prevRange.start, prevRange.end));
+  const prevAvg   = prevTotal / prevDays;
+
+  return {
+    current_total: total,
+    prev_total: prevTotal,
+    current_unique: uniq,
+    prev_unique: prevUniq,
+    current_daily_avg: avg,
+    prev_daily_avg: prevAvg
+  };
 }
 
 /* ===================== BUSCA PRINCIPAL ===================== */
@@ -556,13 +577,14 @@ async function applyAll(payload){
 
     dgbegc('↩️ resposta get_sales_dashboard_data'); dbg(dash); dgend();
 
+    // Blocos que vierem do RPC (usaremos fallbacks quando necessário)
     let kpisBlock = dash.kpis ?? dash.kpi ?? dash.metrics ?? null;
     let monthBlock = dash.sales_by_month ?? dash.month_chart ?? dash.month ?? [];
     let dowBlock   = dash.sales_by_dow   ?? dash.dow_chart   ?? dash.dow   ?? [];
     let tMais      = dash.top_10_mais_vendidos ?? dash.top10_mais ?? dash.top10 ?? [];
     let tMenos     = dash.top_10_menos_vendidos ?? dash.top10_menos ?? [];
 
-    // Gráfico mensal: sempre 12 meses ancorados em payload.start
+    // 12 meses ancorados na data mais velha do filtro
     monthBlock = await fetchMonthIfMissing(payload);
 
     if(!Array.isArray(dowBlock)   || dowBlock.length===0)  { dowBlock   = await fetchDowIfMissing(payload); }
@@ -570,46 +592,24 @@ async function applyAll(payload){
       const t = await fetchTop10IfMissing(payload); tMais=t.mais; tMenos=t.menos;
     }
 
-    // KPIs — fallback quando vierem zerados
-    const K0 = normalizeKpis(kpisBlock||{});
-    const sumCurrent = (monthBlock||[]).reduce((s,r)=> s + clampNum(r.current_total ?? r.current ?? r.vendas_atual ?? r.total), 0);
-    const sumPrev    = (monthBlock||[]).reduce((s,r)=> s + clampNum(r.prev_total ?? r.previous ?? r.vendas_anterior), 0);
-
-    let uniqCurr = K0.current_unique;
-    let uniqPrev = K0.prev_unique;
-
-    if (uniqCurr === 0){
-      dbg('🔎 calculando únicos (período atual) via scan…');
-      try{ uniqCurr = await uniqueCountFromRowsOrQuery(payload); }catch(_){}
-    }
-    if (uniqPrev === 0){
-      dbg('🔎 calculando únicos (período anterior) via scan…');
-      try{ const prevRange = previousRangeOf(payload); uniqPrev = await uniqueCountFromRowsOrQuery(prevRange); }catch(_){}
+    // === KPIs: sempre do período filtrado (linhas reais), para garantir monotonicidade 120 ≥ 90 ===
+    let kpisFinal = null;
+    try{
+      kpisFinal = await computeKpisFromRows(payload);
+    }catch(e){
+      console.warn('computeKpisFromRows falhou; tentando normalizar KPIs do RPC:', e);
+      kpisFinal = normalizeKpis(kpisBlock||{});
+      await diagnoseDataAvailability(payload, 'kpis do RPC (sem recalcular por linhas)');
     }
 
-    if ((K0.current_total === 0 && sumCurrent > 0) || K0.current_unique === 0){
-      await diagnoseDataAvailability(payload, 'corrigindo KPIs pela soma mensal/únicos');
-      const days = daysInclusive(payload.start, payload.end) || 1;
-      kpisBlock = {
-        current_total: sumCurrent,
-        prev_total: sumPrev,
-        current_unique: uniqCurr||0,
-        prev_unique: uniqPrev||0,
-        current_daily_avg: sumCurrent / days,
-        prev_daily_avg: sumPrev / days
-      };
-    } else if (K0.current_unique === 0 && (uniqCurr||uniqPrev)){
-      kpisBlock = { ...K0, current_unique: uniqCurr||0, prev_unique: uniqPrev||0 };
-    }
-
-    updateKpis(kpisBlock || K0);
+    updateKpis(kpisFinal);
     renderMonthChart(monthBlock);
     const segModeBtn = document.querySelector('#segDowMode button.active');
     renderDowChart(dowBlock, segModeBtn ? segModeBtn.dataset.mode : 'TOTAL');
     const activeTop10Btn = document.querySelector('#segTop10 button.active');
     renderTop10(activeTop10Btn && activeTop10Btn.dataset.mode==='MENOS' ? tMenos : tMais, activeTop10Btn?.dataset.mode || 'MAIS');
 
-    window.dashboardData = { ...dash, kpis: normalizeKpis(kpisBlock||K0), sales_by_month: monthBlock, sales_by_dow: dowBlock, top_10_mais_vendidos: tMais, top_10_menos_vendidos: tMenos };
+    window.dashboardData = { ...dash, kpis: kpisFinal, sales_by_month: monthBlock, sales_by_dow: dowBlock, top_10_mais_vendidos: tMais, top_10_menos_vendidos: tMenos };
     console.info(`[Status ${APP_VERSION}] [ok]: Dados atualizados.`);
   }catch(err){
     console.error(`[${APP_VERSION}] API Error:`, err);
