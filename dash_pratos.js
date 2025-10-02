@@ -1,5 +1,5 @@
 /* ===================== CONFIG ===================== */
-const APP_VERSION = 'v10.4-dbg7';
+const APP_VERSION = 'v10.4-dbg8';
 const DEBUG = true;
 
 const SUPABASE_URL_ESTOQUE  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
@@ -53,33 +53,32 @@ function formatMonthNameFromAny(x){
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-/* ===================== XLSX LOADER (ROBUSTO) ===================== */
-function ensureXLSX(){
-  if (window.XLSX){ dbg('XLSX presente (window)'); return Promise.resolve(window.XLSX); }
+/* ===================== XLSX LOADER (MULTI-CDN ROBUSTO) ===================== */
+async function ensureXLSX(){
+  if (window.XLSX){ dbg('XLSX presente (window)'); return window.XLSX; }
 
-  const CDN_SRC = 'https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js';
-  let script = document.querySelector(`script[src="${CDN_SRC}"]`) || document.querySelector('script[src*="xlsx.full.min.js"]');
-  if (!script){
-    script = document.createElement('script');
-    script.src = CDN_SRC;
-    script.async = true;
-    document.head.appendChild(script);
-    dbg('Injetando script XLSX…');
-  } else {
-    dbg('Script XLSX já presente no DOM, aguardando disponibilidade…');
+  const SOURCES = [
+    'https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js',
+    'https://unpkg.com/xlsx@0.20.2/dist/xlsx.full.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.20.2/xlsx.full.min.js',
+  ];
+
+  for (let i=0; i<SOURCES.length; i++){
+    const src = `${SOURCES[i]}?v=${Date.now()}`; // cache-bust
+    dbg('Carregando XLSX de', src);
+    const ok = await new Promise((resolve)=>{
+      const s = document.createElement('script');
+      s.src = src;
+      s.async = true;
+      s.crossOrigin = 'anonymous';
+      s.onload = ()=> resolve(true);
+      s.onerror = ()=> resolve(false);
+      document.head.appendChild(s);
+      setTimeout(()=> resolve(!!window.XLSX), 17000); // 17s por fonte
+    });
+    if (window.XLSX || ok){ dbg('XLSX OK de', src); return window.XLSX; }
   }
-
-  return new Promise((resolve, reject)=>{
-    const start = Date.now();
-    const MAX_MS = 45000; // ↑ 45s
-    const tick = ()=>{
-      if (window.XLSX){ dbg('XLSX OK'); return resolve(window.XLSX); }
-      if (Date.now()-start > MAX_MS) return reject(new Error('Timeout carregando XLSX (45s)'));
-      setTimeout(tick, 120);
-    };
-    script.addEventListener('error', ()=> reject(new Error('Falha ao baixar XLSX')));
-    tick();
-  });
+  throw new Error('XLSX não pôde ser carregado (multi-CDN).');
 }
 
 /* ===================== MultiSelect ===================== */
@@ -212,11 +211,8 @@ function normalizeKpis(k){
   const prev_daily_avg    = clampNum(co(k.prev_daily_avg,    k.media_diaria_prev, k.media_anterior, k.avg_prev));
   return { current_total, prev_total, current_unique, prev_unique, current_daily_avg, prev_daily_avg };
 }
-
-/* FIX CRÍTICO: escrevia como função. Agora é DOM-safe. */
 function updateKpis(kpisObj){
   const K = normalizeKpis(kpisObj||{});
-
   const kQtd=$('k_qtd'); if(kQtd) kQtd.textContent = num(K.current_total);
   const pQtd=$('p_qtd'); if(pQtd) pQtd.textContent = num(K.prev_total);
   updateDelta('d_qtd', K.current_total, K.prev_total);
@@ -229,7 +225,6 @@ function updateKpis(kpisObj){
   const pMed=$('p_media_diaria'); if(pMed) pMed.textContent = num(K.prev_daily_avg,1);
   updateDelta('d_media_diaria', K.current_daily_avg, K.prev_daily_avg);
 }
-
 function updateDelta(elId, current, previous){
   const el=$(elId); if(!el) return;
   const c=+current||0, p=+previous||0;
@@ -296,7 +291,10 @@ async function diagnoseDataAvailability(payload, note=''){
   if(!DEBUG) return;
   dgbegc(`🔎 Diagnose vendas_pratos ${note?('— '+note):''}`);
   try{
-    let q = supaEstoque.from('vendas_pratos').select('quantidade',{ count:'exact', head:true }).gte('data', payload.start).lte('data', payload.end);
+    // COUNT precisa de select() antes dos filtros
+    let q = supaEstoque.from('vendas_pratos')
+      .select('data', { count:'exact', head:true })
+      .gte('data', payload.start).lte('data', payload.end);
     if(payload.categorias) q = q.in('categoria', payload.categorias);
     if(payload.unidades)   q = q.in('unidade', payload.unidades);
     if(payload.pratos)     q = q.in('prato',    payload.pratos);
@@ -310,7 +308,8 @@ async function diagnoseDataAvailability(payload, note=''){
     dbg('Total linhas no período (com filtros):', count);
     if(error) console.warn('Erro COUNT vendas_pratos:', error);
 
-    const sample = await supaEstoque.from('vendas_pratos').select('*').gte('data', payload.start).lte('data', payload.end).limit(1);
+    const sample = await supaEstoque.from('vendas_pratos')
+      .select('*').gte('data', payload.start).lte('data', payload.end).limit(1);
     if(sample.error) console.warn('RLS/sample erro:', sample.error);
     else dbg('Sample linha:', sample.data);
 
@@ -340,12 +339,16 @@ async function rpcSafe(name, args){
 
 async function fetchRowsPaged(payload, limit=5000){
   dgbegc('🧩 Fallback scan — carregando linhas paginadas');
-  let base = supaEstoque.from('vendas_pratos').gte('data', payload.start).lte('data', payload.end);
-  if(payload.categorias) base = base.in('categoria', payload.categorias);
-  if(payload.unidades)   base = base.in('unidade', payload.unidades);
-  if(payload.pratos)     base = base.in('prato', payload.pratos);
 
-  const head = await base.select('*', { count:'exact', head:true });
+  // HEAD/COUNT
+  let baseCount = supaEstoque.from('vendas_pratos')
+    .select('data', { count:'exact', head:true })
+    .gte('data', payload.start).lte('data', payload.end);
+  if(payload.categorias) baseCount = baseCount.in('categoria', payload.categorias);
+  if(payload.unidades)   baseCount = baseCount.in('unidade', payload.unidades);
+  if(payload.pratos)     baseCount = baseCount.in('prato', payload.pratos);
+
+  const head = await baseCount;
   const total = head.count || 0;
   dbg('total rows scan:', total);
   if(total===0){ dgend(); return []; }
@@ -353,9 +356,18 @@ async function fetchRowsPaged(payload, limit=5000){
   const rows = [];
   for(let from=0; from<total; from+=limit){
     const to = Math.min(from+limit-1, total-1);
+
+    let page = supaEstoque.from('vendas_pratos')
+      .select('data,quantidade,prato,unidade,categoria')
+      .gte('data', payload.start).lte('data', payload.end);
+    if(payload.categorias) page = page.in('categoria', payload.categorias);
+    if(payload.unidades)   page = page.in('unidade', payload.unidades);
+    if(payload.pratos)     page = page.in('prato', payload.pratos);
+
     dtime(`scan ${from}-${to}`);
-    const { data, error } = await base.select('data,quantidade,prato,unidade,categoria').order('data', { ascending:true }).range(from, to);
+    const { data, error } = await page.order('data', { ascending:true }).range(from, to);
     dtimeEnd(`scan ${from}-${to}`);
+
     if(error){ console.warn('scan error:', error); break; }
     rows.push(...(data||[]));
     await new Promise(r=> setTimeout(r,0));
@@ -452,21 +464,18 @@ async function applyAll(payload){
 
     dgbegc('↩️ resposta get_sales_dashboard_data'); dbg(dash); dgend();
 
-    // Extrai blocos
     let kpisBlock = dash.kpis ?? dash.kpi ?? dash.metrics ?? null;
     let monthBlock = dash.sales_by_month ?? dash.month_chart ?? dash.month ?? [];
     let dowBlock   = dash.sales_by_dow   ?? dash.dow_chart   ?? dash.dow   ?? [];
     let tMais      = dash.top_10_mais_vendidos ?? dash.top10_mais ?? dash.top10 ?? [];
     let tMenos     = dash.top_10_menos_vendidos ?? dash.top10_menos ?? [];
 
-    // Fallbacks se faltar coisa
     if(!Array.isArray(monthBlock) || monthBlock.length===0){ monthBlock = await fetchMonthIfMissing(payload); }
     if(!Array.isArray(dowBlock)   || dowBlock.length===0)  { dowBlock   = await fetchDowIfMissing(payload); }
     if((!Array.isArray(tMais)||!tMais.length) && (!Array.isArray(tMenos)||!tMenos.length)){
       const t = await fetchTop10IfMissing(payload); tMais=t.mais; tMenos=t.menos;
     }
 
-    // KPIs — se current_total vier 0 mas o mês mostra >0, rederivar
     const K0 = normalizeKpis(kpisBlock||{});
     const sumCurrent = (monthBlock||[]).reduce((s,r)=> s + clampNum(r.current_total ?? r.current ?? r.vendas_atual ?? r.total), 0);
     const sumPrev    = (monthBlock||[]).reduce((s,r)=> s + clampNum(r.prev_total ?? r.previous ?? r.vendas_anterior), 0);
@@ -484,7 +493,6 @@ async function applyAll(payload){
       };
     }
 
-    // Atualiza UI
     updateKpis(kpisBlock || K0);
     renderMonthChart(monthBlock);
     const segModeBtn = document.querySelector('#segDowMode button.active');
@@ -504,7 +512,7 @@ async function applyAll(payload){
   }
 }
 
-/* ===================== IMPORTAÇÃO ROBUSTA (logs extras) ===================== */
+/* ===================== IMPORTAÇÃO ROBUSTA ===================== */
 function parseExcelDate(serial){
   if(typeof serial!=='number' || !isFinite(serial)) return null;
   const epoch=25569, ms=86400000; const d=new Date((serial-epoch)*ms);
@@ -543,7 +551,7 @@ async function setupImportFeature(){
     btn.disabled=true; txt.textContent='Processando...'; spn.style.display='inline-block';
     try{
       dtime('ensureXLSX');
-      await runWithTimeout(ensureXLSX(), 48000, 'ensureXLSX'); // ↑ 48s
+      await runWithTimeout(ensureXLSX(), 60000, 'ensureXLSX'); // até 60s com multi-cdn
       dtimeEnd('ensureXLSX');
       dbg('ensureXLSX concluído');
 
@@ -616,7 +624,7 @@ async function setupImportFeature(){
         const batch=processed.slice(i,i+BATCH);
         txt.textContent=`Enviando ${Math.min(i+BATCH,processed.length)}/${processed.length}…`;
         dtime(`insert:lote:${i/BATCH+1}`);
-        const { error } = await runWithTimeout( supaEstoque.from('vendas_pratos').insert(batch), 300000, `insert lote ${i/BATCH+1}` ); // ↑ 5 min/lote
+        const { error } = await runWithTimeout( supaEstoque.from('vendas_pratos').insert(batch), 300000, `insert lote ${i/BATCH+1}` );
         dtimeEnd(`insert:lote:${i/BATCH+1}`);
         if(error) throw new Error(`Falha ao enviar lote: ${error.message}`);
         sent+=batch.length; dbg(`✔️ Lote ${i/BATCH+1} concluído — total acumulado: ${sent}`); await new Promise(r=> setTimeout(r,0));
@@ -656,10 +664,6 @@ async function init(){
   try{
     console.info(`[Status ${APP_VERSION}] [info]: Inicializando aplicação...`);
 
-    const requiredIds = ['k_qtd','p_qtd','d_qtd','k_pratos_unicos','p_pratos_unicos','d_pratos_unicos','k_media_diaria','p_media_diaria','d_media_diaria','ch_month','ch_dow','top10-list-body','fxDuStart','fxDuEnd'];
-    const missing = requiredIds.filter(id=> !$(id));
-    if(missing.length){ console.warn('⚠️ Elementos ausentes no DOM:', missing); }
-
     filterUnidades = new MultiSelect('ms-unids', fxDispatchApply);
     filterCategorias= new MultiSelect('ms-cats',  fxDispatchApply);
     filterPratos    = new MultiSelect('ms-pratos', fxDispatchApply);
@@ -687,7 +691,6 @@ async function init(){
 
     const def = (filt?.categorias||[]).find(c=> String(c).toLowerCase()==='pratos');
     if(def){ filterCategorias.selected.add(def); filterCategorias.updateButtonText(); }
-    else { console.warn('Categoria padrão "Pratos" não encontrada nos filtros — seguindo sem default.'); }
 
     document.addEventListener('filters:apply', (e)=> applyAll(e.detail));
     document.addEventListener('filters:init', ()=>{
