@@ -1,12 +1,20 @@
+/* =======================================================================
+   dash_pratos.js — v10.4-dbg10
+   - Default exclusivo "Pratos" na categoria (UX)
+   - Gráfico mensal: últimos 12 meses ancorados em payload.start
+   - Importação robusta (multi-CDN SheetJS)
+   - Fallbacks e diagnósticos completos
+   ======================================================================= */
+
 /* ===================== CONFIG ===================== */
-const APP_VERSION = 'v10.4-dbg9';
+const APP_VERSION = 'v10.4-dbg10';
 const DEBUG = true;
 
 const SUPABASE_URL_ESTOQUE  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
 const SUPABASE_ANON_ESTOQUE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5a2RteGFxdnF3c2twbWRpZWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyOTg2NDYsImV4cCI6MjA3Mjg3NDY0Nn0.XojR4nVx_Hr4FtZa1eYi3jKKSVVPokG23jrJtm8_3ps';
 const supaEstoque = window.supabase.createClient(SUPABASE_URL_ESTOQUE, SUPABASE_ANON_ESTOQUE);
 
-/* ===================== DEBUG HELPERS ===================== */
+/* ===================== DEBUG ===================== */
 const dbg = (...a)=> DEBUG && console.log(...a);
 const dgbeg = (l)=> DEBUG && console.group(l);
 const dgbegc = (l)=> DEBUG && console.groupCollapsed(l);
@@ -41,6 +49,19 @@ function getDateUTC(input){
 }
 const getDateISO = (dateObj)=> getDateUTC(dateObj).toISOString().split('T')[0];
 const daysInclusive = (s,e)=> Math.max(0, Math.round((getDateUTC(e)-getDateUTC(s))/(24*60*60*1000)) + 1);
+
+function startOfMonthUTC(d){
+  const dt = getDateUTC(d); return new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), 1, 12,0,0));
+}
+function endOfMonthUTC(d){
+  const dt = getDateUTC(d); return new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth()+1, 0, 12,0,0));
+}
+function addMonthsUTC(d, delta){
+  const dt = getDateUTC(d); const y = dt.getUTCFullYear(); const m = dt.getUTCMonth() + delta;
+  const base = new Date(Date.UTC(y, m, 1, 12,0,0));
+  return base;
+}
+function ymKey(d){ const dt=getDateUTC(d); return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth()+1).padStart(2,'0')}`; }
 function formatMonthNameFromAny(x){
   if (!x) return '';
   let dt;
@@ -53,29 +74,22 @@ function formatMonthNameFromAny(x){
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-/* ===================== XLSX LOADER (MULTI-CDN ROBUSTO) ===================== */
+/* ===================== XLSX LOADER (MULTI-CDN) ===================== */
 async function ensureXLSX(){
   if (window.XLSX){ dbg('XLSX presente (window)'); return window.XLSX; }
-
   const SOURCES = [
-    // CDN oficial SheetJS primeiro (reduz 404/MIME inconsistentes)
     'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js',
     'https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js',
     'https://unpkg.com/xlsx@0.20.2/dist/xlsx.full.min.js',
     'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.20.2/xlsx.full.min.js',
   ];
-
-  for (let i=0; i<SOURCES.length; i++){
+  for (let i=0;i<SOURCES.length;i++){
     const src = `${SOURCES[i]}?v=${Date.now()}`;
     dbg('Carregando XLSX de', src);
     const ok = await new Promise((resolve)=>{
       const s = document.createElement('script');
-      s.src = src;
-      s.async = true;
-      s.referrerPolicy = 'no-referrer';
-      // não setar crossorigin nem type=module (evita CORS/mime chatos)
-      s.onload = ()=> resolve(true);
-      s.onerror = ()=> resolve(false);
+      s.src = src; s.async = true; s.referrerPolicy = 'no-referrer';
+      s.onload = ()=> resolve(true); s.onerror = ()=> resolve(false);
       document.head.appendChild(s);
       setTimeout(()=> resolve(!!window.XLSX), 17000);
     });
@@ -84,7 +98,7 @@ async function ensureXLSX(){
   throw new Error('XLSX não pôde ser carregado (multi-CDN).');
 }
 
-/* ===================== MultiSelect ===================== */
+/* ===================== MultiSelect (com default exclusivo) ===================== */
 class MultiSelect{
   constructor(containerId, onChange){
     this.container = $(containerId); if (!this.container) return;
@@ -93,6 +107,10 @@ class MultiSelect{
     this.panel = this.container.querySelector('.msel-panel');
     this.labelSingular = this.container.dataset.singular || 'Item';
     this.options = []; this.selected = new Set(); this.isOpen = false; this.initialized = false;
+
+    // NOVO: valor "default exclusivo" (ex.: 'Pratos')
+    this.exclusiveDefault = null;
+
     this.initEvents();
   }
   initEvents(){
@@ -103,7 +121,7 @@ class MultiSelect{
       if (e.target!==cb) cb.checked = !cb.checked; this.handleSelection(val, cb.checked);
     });
     this.panel.addEventListener('click',(e)=> e.stopPropagation());
-    document.addEventListener('msel:closeAll',(e)=>{ const exc = e.detail?.except; if (this.container.id!==exc) this.close(); });
+    document.addEventListener('msel:closeAll',(e)=>{ const exc=e.detail?.except; if (this.container.id!==exc) this.close(); });
   }
   initialize(list){
     this.options = (list||[]).slice().sort((a,b)=> String(a).localeCompare(String(b)));
@@ -127,7 +145,24 @@ class MultiSelect{
   }
   filterOptions(q){ const f=(q||'').toLowerCase(); this.panel.querySelectorAll('.msel-opt').forEach(el=>{ const t=(el.dataset.value||'').toLowerCase(); el.style.display = t.includes(f) ? 'flex':'none'; }); }
   updateButtonText(){ const c=this.selected.size; if(c===0)this.btn.textContent='Todos'; else if(c===1)this.btn.textContent=Array.from(this.selected)[0]; else this.btn.textContent=`${c} ${this.labelSingular}s Selec.`; }
-  handleSelection(val,on){ if(on)this.selected.add(val); else this.selected.delete(val); this.updateButtonText(); if(this.onChange)this.onChange(); }
+  handleSelection(value, isSelected) {
+    if (isSelected) {
+      if (this.exclusiveDefault && value === this.exclusiveDefault) {
+        this.selected.clear();
+        this.selected.add(this.exclusiveDefault);
+      } else {
+        this.selected.add(value);
+        if (this.exclusiveDefault && this.selected.has(this.exclusiveDefault)) {
+          this.selected.delete(this.exclusiveDefault);
+        }
+      }
+    } else {
+      this.selected.delete(value);
+    }
+    this.renderPanel();
+    this.updateButtonText();
+    if (this.onChange) this.onChange();
+  }
   getSelected(){ return this.selected.size>0 ? Array.from(this.selected) : null; }
   reset(){ this.selected.clear(); if(this.initialized){ this.renderPanel(); this.updateButtonText(); } }
   toggle(){ this.isOpen ? this.close() : this.open(); }
@@ -137,6 +172,7 @@ class MultiSelect{
 
 /* ===================== FILTROS ===================== */
 let filterUnidades, filterCategorias, filterPratos;
+
 function fxDispatchApply(){
   const s=$('fxDuStart'), e=$('fxDuEnd'); if(!s||!e||!s.value||!e.value) return;
   const payload = { start:s.value, end:e.value, unidades:filterUnidades?.getSelected()||null, categorias:filterCategorias?.getSelected()||null, pratos:filterPratos?.getSelected()||null };
@@ -145,7 +181,7 @@ function fxDispatchApply(){
 function fxSetRange(start,end){ const s=$('fxDuStart'), e=$('fxDuEnd'); if(s&&e){ s.value=getDateISO(start); e.value=getDateISO(end); } }
 function fxSetToLastMonthWithData(baseDateStr){
   const base=getDateUTC(baseDateStr); const y=base.getUTCFullYear(), m=base.getUTCMonth();
-  const from=new Date(Date.UTC(y,m-1,1)); const to=new Date(Date.UTC(y,m,0));
+  const from=new Date(Date.UTC(y, m-1, 1)); const to=new Date(Date.UTC(y, m, 0));
   fxSetRange(from,to); $$('#fxQuickChips button').forEach(b=>b.classList.remove('active'));
   document.querySelector('#fxQuickChips button[data-win="lastMonth"]')?.classList.add('active');
   $$('#fxDuQuickDays button').forEach(b=>b.classList.remove('fx-active'));
@@ -161,7 +197,11 @@ function setupFilterInteractions(){
     $$('#fxQuickChips button').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
     $$('#fxDuQuickDays button').forEach(b=>b.classList.remove('fx-active'));
     if(filterUnidades) filterUnidades.reset();
-    if(filterCategorias){ filterCategorias.reset(); const def = filterCategorias.options.find(c=> String(c).toLowerCase()==='pratos'); if(def) filterCategorias.handleSelection(def,true); }
+    if(filterCategorias){
+      filterCategorias.reset();
+      const def = filterCategorias.options.find(c=> String(c).toLowerCase()==='pratos');
+      if(def){ filterCategorias.handleSelection(def,true); }
+    }
     if(filterPratos) filterPratos.reset();
 
     const win=btn.dataset.win; const base=getDateUTC(window.__lastDay||new Date()); let start,end;
@@ -185,7 +225,11 @@ function setupFilterInteractions(){
   fx.$btnReset.addEventListener('click', ()=>{
     fxSetToLastMonthWithData(window.__lastDay);
     if(filterUnidades) filterUnidades.reset();
-    if(filterCategorias){ filterCategorias.reset(); const def = filterCategorias.options.find(c=> String(c).toLowerCase()==='pratos'); if(def) filterCategorias.handleSelection(def,true); }
+    if(filterCategorias){
+      filterCategorias.reset();
+      const def = filterCategorias.options.find(c=> String(c).toLowerCase()==='pratos');
+      if(def){ filterCategorias.handleSelection(def,true); }
+    }
     if(filterPratos) filterPratos.reset();
     fxDispatchApply();
     fx.$dropup.classList.remove('fx-show'); fx.$btnMore.setAttribute('aria-expanded', false);
@@ -194,6 +238,7 @@ function setupFilterInteractions(){
 
 /* ===================== UI STATE ===================== */
 let chartMonth, chartDow;
+
 function setChartMessage(boxId, message){
   const box=$(boxId); if(!box) return;
   let msg=box.querySelector('.chart-message');
@@ -289,7 +334,7 @@ function renderTop10(data, mode='MAIS'){
   });
 }
 
-/* ===================== DIAGNÓSTICOS E FALLBACKS ===================== */
+/* ===================== DIAGNÓSTICOS & FALLBACKS ===================== */
 async function diagnoseDataAvailability(payload, note=''){
   if(!DEBUG) return;
   dgbegc(`🔎 Diagnose vendas_pratos ${note?('— '+note):''}`);
@@ -341,19 +386,19 @@ async function rpcSafe(name, args){
 
 let __lastScanRows = null;
 
-async function fetchRowsPaged(payload, limit=5000){
+async function fetchRowsPagedFor(startIso, endIso, filters, limit=5000){
   dgbegc('🧩 Fallback scan — carregando linhas paginadas');
 
   let baseCount = supaEstoque.from('vendas_pratos')
     .select('data', { count:'exact', head:true })
-    .gte('data', payload.start).lte('data', payload.end);
-  if(payload.categorias) baseCount = baseCount.in('categoria', payload.categorias);
-  if(payload.unidades)   baseCount = baseCount.in('unidade', payload.unidades);
-  if(payload.pratos)     baseCount = baseCount.in('prato', payload.pratos);
+    .gte('data', startIso).lte('data', endIso);
+  if(filters?.categorias) baseCount = baseCount.in('categoria', filters.categorias);
+  if(filters?.unidades)   baseCount = baseCount.in('unidade', filters.unidades);
+  if(filters?.pratos)     baseCount = baseCount.in('prato', filters.pratos);
 
   const head = await baseCount;
   const total = head.count || 0;
-  dbg('total rows scan:', total);
+  dbg('total rows scan:', total, 'range:', startIso, '→', endIso);
   if(total===0){ __lastScanRows = []; dgend(); return []; }
 
   const rows = [];
@@ -362,10 +407,10 @@ async function fetchRowsPaged(payload, limit=5000){
 
     let page = supaEstoque.from('vendas_pratos')
       .select('data,quantidade,prato,unidade,categoria')
-      .gte('data', payload.start).lte('data', payload.end);
-    if(payload.categorias) page = page.in('categoria', payload.categorias);
-    if(payload.unidades)   page = page.in('unidade', payload.unidades);
-    if(payload.pratos)     page = page.in('prato', payload.pratos);
+      .gte('data', startIso).lte('data', endIso);
+    if(filters?.categorias) page = page.in('categoria', filters.categorias);
+    if(filters?.unidades)   page = page.in('unidade', filters.unidades);
+    if(filters?.pratos)     page = page.in('prato', filters.pratos);
 
     dtime(`scan ${from}-${to}`);
     const { data, error } = await page.order('data', { ascending:true }).range(from, to);
@@ -379,6 +424,7 @@ async function fetchRowsPaged(payload, limit=5000){
   dgend();
   return rows;
 }
+
 function aggregateDowFromRows(rows){
   const mapPerDate = new Map();
   for(const r of rows){
@@ -409,28 +455,57 @@ function aggregateTop10FromRows(rows){
   return { mais, menos };
 }
 
+/* ======= 12 MESES ANCORADOS NO INÍCIO DO PERÍODO (payload.start) ======= */
+function monthWindowForPayload(payload){
+  const anchor = startOfMonthUTC(payload.start);        // mês da data mais velha
+  const startM = addMonthsUTC(anchor, -11);             // 11 meses antes
+  const endM   = endOfMonthUTC(anchor);                 // fim do mês âncora
+  return { startIso:getDateISO(startM), endIso:getDateISO(endM), months:12 };
+}
+
 async function fetchMonthIfMissing(payload){
-  let m = await rpcSafe('get_monthly_sales_chart_data_mom', { end_date_iso:payload.end, unids_filter:payload.unidades, cats_filter:payload.categorias, pratos_filter:payload.pratos, is_pratos_only:false });
-  if(Array.isArray(m) && m.length) return m.map(r=>({ period:r.period, current_total:r.current_total, prev_total:r.prev_total }));
+  // 1) Tenta o RPC MoM passando end_date_iso = payload.start (âncora)
+  const rpcData = await rpcSafe('get_monthly_sales_chart_data_mom', {
+    end_date_iso: payload.start,
+    unids_filter: payload.unidades,
+    cats_filter:  payload.categorias,
+    pratos_filter:payload.pratos,
+    is_pratos_only:false
+  });
+  if (Array.isArray(rpcData) && rpcData.length){
+    return rpcData.map(r=>({
+      period: r.period, current_total:r.current_total, prev_total:r.prev_total
+    }));
+  }
 
-  m = await rpcSafe('get_monthly_sales_chart_data', { end_date_iso:payload.end, unids_filter:payload.unidades, cats_filter:payload.categorias, pratos_filter:payload.pratos, is_pratos_only:false });
-  if(Array.isArray(m) && m.length) return m.map(r=>({ period:r.period, current_total:r.current_total, prev_total:r.prev_total }));
+  // 2) Fallback local: agregação nos últimos 12 meses ancorados
+  const win = monthWindowForPayload(payload);
+  const rows = await fetchRowsPagedFor(win.startIso, win.endIso, payload, 8000);
 
-  const v2 = await rpcSafe('get_month_v2', { de:payload.start, ate:payload.end, unidades_filtro:payload.unidades, categorias_filtro:payload.categorias, pratos_filtro:payload.pratos });
-  if(Array.isArray(v2) && v2.length) return v2.map(r=>({ period:r.mes, current_total:r.total, prev_total:0 }));
+  // Monta sequência de chaves mês a mês
+  const seq = [];
+  let cur = startOfMonthUTC(win.startIso);
+  for(let i=0;i<12;i++){
+    const k = ymKey(cur);
+    seq.push(k);
+    cur = addMonthsUTC(cur, 1);
+  }
 
-  const rows = await fetchRowsPaged(payload, 8000);
-  const monthMap = new Map();
+  // Soma por mês
+  const monthMap = new Map(seq.map(k=>[k,0]));
   for(const r of rows){
     const k = (r.data||'').slice(0,7);
-    monthMap.set(k, (monthMap.get(k)||0) + clampNum(r.quantidade));
+    if(monthMap.has(k)) monthMap.set(k, monthMap.get(k) + clampNum(r.quantidade));
   }
-  return Array.from(monthMap.entries()).sort((a,b)=> a[0].localeCompare(b[0])).map(([k,v])=>({ period:k, current_total:v, prev_total:0 }));
+
+  return seq.map(k=>({ period:k, current_total: monthMap.get(k)||0, prev_total:0 }));
 }
+
 async function fetchDowIfMissing(payload){
   const d = await rpcSafe('get_dow_v2', { de:payload.start, ate:payload.end, unidades_filtro:payload.unidades, categorias_filtro:payload.categorias, pratos_filtro:payload.pratos });
   if(Array.isArray(d) && d.length) return d.map(r=>({ dia_semana_nome:r.dia_semana_nome, total:r.total ?? r.total_vendido ?? 0, media:r.media ?? 0 }));
-  const rows = __lastScanRows || await fetchRowsPaged(payload, 8000);
+
+  const rows = await fetchRowsPagedFor(payload.start, payload.end, payload, 8000);
   return aggregateDowFromRows(rows);
 }
 async function fetchTop10IfMissing(payload){
@@ -439,11 +514,10 @@ async function fetchTop10IfMissing(payload){
     const obj = Array.isArray(j) ? (j[0]||{}) : j;
     return { mais: obj.top_10_mais_vendidos ?? obj.mais ?? obj.top10 ?? [], menos: obj.top_10_menos_vendidos ?? obj.menos ?? [] };
   }
-  const rows = __lastScanRows || await fetchRowsPaged(payload, 8000);
+  const rows = await fetchRowsPagedFor(payload.start, payload.end, payload, 8000);
   return aggregateTop10FromRows(rows);
 }
 
-/* === helpers p/ período anterior === */
 function previousRangeOf(payload){
   const days = daysInclusive(payload.start, payload.end);
   const end = getDateUTC(payload.start); end.setUTCDate(end.getUTCDate()-1);
@@ -451,7 +525,7 @@ function previousRangeOf(payload){
   return { start:getDateISO(start), end:getDateISO(end), unidades:payload.unidades, categorias:payload.categorias, pratos:payload.pratos };
 }
 async function uniqueCountFromRowsOrQuery(payload){
-  const rows = __lastScanRows || await fetchRowsPaged(payload, 8000);
+  const rows = await fetchRowsPagedFor(payload.start, payload.end, payload, 8000);
   const set = new Set();
   for(const r of rows){ if(clampNum(r.quantidade)>0) set.add(r.prato||'—'); }
   return set.size;
@@ -488,7 +562,9 @@ async function applyAll(payload){
     let tMais      = dash.top_10_mais_vendidos ?? dash.top10_mais ?? dash.top10 ?? [];
     let tMenos     = dash.top_10_menos_vendidos ?? dash.top10_menos ?? [];
 
-    if(!Array.isArray(monthBlock) || monthBlock.length===0){ monthBlock = await fetchMonthIfMissing(payload); }
+    // Gráfico mensal: sempre 12 meses ancorados em payload.start
+    monthBlock = await fetchMonthIfMissing(payload);
+
     if(!Array.isArray(dowBlock)   || dowBlock.length===0)  { dowBlock   = await fetchDowIfMissing(payload); }
     if((!Array.isArray(tMais)||!tMais.length) && (!Array.isArray(tMenos)||!tMenos.length)){
       const t = await fetchTop10IfMissing(payload); tMais=t.mais; tMenos=t.menos;
@@ -508,7 +584,7 @@ async function applyAll(payload){
     }
     if (uniqPrev === 0){
       dbg('🔎 calculando únicos (período anterior) via scan…');
-      try{ const prevRange = previousRangeOf(payload); __lastScanRows = null; uniqPrev = await uniqueCountFromRowsOrQuery(prevRange); }catch(_){}
+      try{ const prevRange = previousRangeOf(payload); uniqPrev = await uniqueCountFromRowsOrQuery(prevRange); }catch(_){}
     }
 
     if ((K0.current_total === 0 && sumCurrent > 0) || K0.current_unique === 0){
@@ -523,7 +599,6 @@ async function applyAll(payload){
         prev_daily_avg: sumPrev / days
       };
     } else if (K0.current_unique === 0 && (uniqCurr||uniqPrev)){
-      // Só únicos corrigidos
       kpisBlock = { ...K0, current_unique: uniqCurr||0, prev_unique: uniqPrev||0 };
     }
 
@@ -546,7 +621,7 @@ async function applyAll(payload){
   }
 }
 
-/* ===================== IMPORTAÇÃO ROBUSTA ===================== */
+/* ===================== IMPORTAÇÃO ===================== */
 function parseExcelDate(serial){
   if(typeof serial!=='number' || !isFinite(serial)) return null;
   const epoch=25569, ms=86400000; const d=new Date((serial-epoch)*ms);
@@ -585,9 +660,8 @@ async function setupImportFeature(){
     btn.disabled=true; txt.textContent='Processando...'; spn.style.display='inline-block';
     try{
       dtime('ensureXLSX');
-      await runWithTimeout(ensureXLSX(), 60000, 'ensureXLSX'); // até 60s, multi-CDN com SheetJS
+      await runWithTimeout(ensureXLSX(), 60000, 'ensureXLSX');
       dtimeEnd('ensureXLSX');
-      dbg('ensureXLSX concluído');
 
       if(!window.XLSX) throw new Error('Biblioteca XLSX indisponível.');
 
@@ -665,7 +739,7 @@ async function setupImportFeature(){
       }
 
       alert(`${sent} registros importados com sucesso! Atualizando dashboard…`);
-      __lastScanRows = null; // força reconsulta
+      __lastScanRows = null;
       fxDispatchApply();
 
     }catch(err){
@@ -724,8 +798,14 @@ async function init(){
     filterCategorias.initialize(filt?.categorias || []);
     filterPratos.initialize(filt?.pratos || []);
 
+    // PRATOS como default exclusivo na Categoria
     const def = (filt?.categorias||[]).find(c=> String(c).toLowerCase()==='pratos');
-    if(def){ filterCategorias.selected.add(def); filterCategorias.updateButtonText(); }
+    if(def){
+      filterCategorias.selected.add(def);
+      filterCategorias.updateButtonText();
+      filterCategorias.exclusiveDefault = def; // <- chave da UX
+      filterCategorias.renderPanel();          // marca checkbox visualmente
+    }
 
     document.addEventListener('filters:apply', (e)=> applyAll(e.detail));
     document.addEventListener('filters:init', ()=>{
