@@ -1,5 +1,5 @@
 /* ===================== CONFIG ===================== */
-const APP_VERSION = 'v10.4-dbg8';
+const APP_VERSION = 'v10.4-dbg9';
 const DEBUG = true;
 
 const SUPABASE_URL_ESTOQUE  = 'https://tykdmxaqvqwskpmdiekw.supabase.co';
@@ -58,23 +58,26 @@ async function ensureXLSX(){
   if (window.XLSX){ dbg('XLSX presente (window)'); return window.XLSX; }
 
   const SOURCES = [
+    // CDN oficial SheetJS primeiro (reduz 404/MIME inconsistentes)
+    'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js',
     'https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js',
     'https://unpkg.com/xlsx@0.20.2/dist/xlsx.full.min.js',
     'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.20.2/xlsx.full.min.js',
   ];
 
   for (let i=0; i<SOURCES.length; i++){
-    const src = `${SOURCES[i]}?v=${Date.now()}`; // cache-bust
+    const src = `${SOURCES[i]}?v=${Date.now()}`;
     dbg('Carregando XLSX de', src);
     const ok = await new Promise((resolve)=>{
       const s = document.createElement('script');
       s.src = src;
       s.async = true;
-      s.crossOrigin = 'anonymous';
+      s.referrerPolicy = 'no-referrer';
+      // não setar crossorigin nem type=module (evita CORS/mime chatos)
       s.onload = ()=> resolve(true);
       s.onerror = ()=> resolve(false);
       document.head.appendChild(s);
-      setTimeout(()=> resolve(!!window.XLSX), 17000); // 17s por fonte
+      setTimeout(()=> resolve(!!window.XLSX), 17000);
     });
     if (window.XLSX || ok){ dbg('XLSX OK de', src); return window.XLSX; }
   }
@@ -203,10 +206,10 @@ function setLoadingState(isLoading){ ['fxBtnMore','btnUpload','fxBtnReset'].forE
 function normalizeKpis(k){
   k = k || {};
   const co = (a, ...alts)=> a ?? alts.find(v=> v!=null);
-  const current_total     = clampNum(co(k.current_total, k.qtd_atual,        k.total_atual, k.current, k.qtd, k.total, k.itens_atual, k.itens));
-  const prev_total        = clampNum(co(k.prev_total,    k.qtd_anterior,     k.total_anterior, k.previous, k.prev));
-  const current_unique    = clampNum(co(k.current_unique,k.unicos_atual,     k.unique_current, k.pratos_unicos_atual, k.unicos));
-  const prev_unique       = clampNum(co(k.prev_unique,   k.unicos_anterior,  k.unique_previous, k.pratos_unicos_anterior));
+  const current_total     = clampNum(co(k.current_total, k.qtd_atual,  k.total_atual, k.current, k.qtd, k.total, k.itens_atual, k.itens));
+  const prev_total        = clampNum(co(k.prev_total,    k.qtd_anterior, k.total_anterior, k.previous, k.prev));
+  const current_unique    = clampNum(co(k.current_unique,k.unicos_atual, k.unique_current, k.pratos_unicos_atual, k.unicos));
+  const prev_unique       = clampNum(co(k.prev_unique,   k.unicos_anterior, k.unique_previous, k.pratos_unicos_anterior));
   const current_daily_avg = clampNum(co(k.current_daily_avg, k.media_diaria, k.media_atual, k.avg_current));
   const prev_daily_avg    = clampNum(co(k.prev_daily_avg,    k.media_diaria_prev, k.media_anterior, k.avg_prev));
   return { current_total, prev_total, current_unique, prev_unique, current_daily_avg, prev_daily_avg };
@@ -291,7 +294,6 @@ async function diagnoseDataAvailability(payload, note=''){
   if(!DEBUG) return;
   dgbegc(`🔎 Diagnose vendas_pratos ${note?('— '+note):''}`);
   try{
-    // COUNT precisa de select() antes dos filtros
     let q = supaEstoque.from('vendas_pratos')
       .select('data', { count:'exact', head:true })
       .gte('data', payload.start).lte('data', payload.end);
@@ -337,10 +339,11 @@ async function rpcSafe(name, args){
   }
 }
 
+let __lastScanRows = null;
+
 async function fetchRowsPaged(payload, limit=5000){
   dgbegc('🧩 Fallback scan — carregando linhas paginadas');
 
-  // HEAD/COUNT
   let baseCount = supaEstoque.from('vendas_pratos')
     .select('data', { count:'exact', head:true })
     .gte('data', payload.start).lte('data', payload.end);
@@ -351,7 +354,7 @@ async function fetchRowsPaged(payload, limit=5000){
   const head = await baseCount;
   const total = head.count || 0;
   dbg('total rows scan:', total);
-  if(total===0){ dgend(); return []; }
+  if(total===0){ __lastScanRows = []; dgend(); return []; }
 
   const rows = [];
   for(let from=0; from<total; from+=limit){
@@ -372,6 +375,7 @@ async function fetchRowsPaged(payload, limit=5000){
     rows.push(...(data||[]));
     await new Promise(r=> setTimeout(r,0));
   }
+  __lastScanRows = rows;
   dgend();
   return rows;
 }
@@ -426,7 +430,7 @@ async function fetchMonthIfMissing(payload){
 async function fetchDowIfMissing(payload){
   const d = await rpcSafe('get_dow_v2', { de:payload.start, ate:payload.end, unidades_filtro:payload.unidades, categorias_filtro:payload.categorias, pratos_filtro:payload.pratos });
   if(Array.isArray(d) && d.length) return d.map(r=>({ dia_semana_nome:r.dia_semana_nome, total:r.total ?? r.total_vendido ?? 0, media:r.media ?? 0 }));
-  const rows = await fetchRowsPaged(payload, 8000);
+  const rows = __lastScanRows || await fetchRowsPaged(payload, 8000);
   return aggregateDowFromRows(rows);
 }
 async function fetchTop10IfMissing(payload){
@@ -435,8 +439,22 @@ async function fetchTop10IfMissing(payload){
     const obj = Array.isArray(j) ? (j[0]||{}) : j;
     return { mais: obj.top_10_mais_vendidos ?? obj.mais ?? obj.top10 ?? [], menos: obj.top_10_menos_vendidos ?? obj.menos ?? [] };
   }
-  const rows = await fetchRowsPaged(payload, 8000);
+  const rows = __lastScanRows || await fetchRowsPaged(payload, 8000);
   return aggregateTop10FromRows(rows);
+}
+
+/* === helpers p/ período anterior === */
+function previousRangeOf(payload){
+  const days = daysInclusive(payload.start, payload.end);
+  const end = getDateUTC(payload.start); end.setUTCDate(end.getUTCDate()-1);
+  const start = new Date(end); start.setUTCDate(end.getUTCDate()-(days-1));
+  return { start:getDateISO(start), end:getDateISO(end), unidades:payload.unidades, categorias:payload.categorias, pratos:payload.pratos };
+}
+async function uniqueCountFromRowsOrQuery(payload){
+  const rows = __lastScanRows || await fetchRowsPaged(payload, 8000);
+  const set = new Set();
+  for(const r of rows){ if(clampNum(r.quantidade)>0) set.add(r.prato||'—'); }
+  return set.size;
 }
 
 /* ===================== BUSCA PRINCIPAL ===================== */
@@ -476,21 +494,37 @@ async function applyAll(payload){
       const t = await fetchTop10IfMissing(payload); tMais=t.mais; tMenos=t.menos;
     }
 
+    // KPIs — fallback quando vierem zerados
     const K0 = normalizeKpis(kpisBlock||{});
     const sumCurrent = (monthBlock||[]).reduce((s,r)=> s + clampNum(r.current_total ?? r.current ?? r.vendas_atual ?? r.total), 0);
     const sumPrev    = (monthBlock||[]).reduce((s,r)=> s + clampNum(r.prev_total ?? r.previous ?? r.vendas_anterior), 0);
 
-    if (K0.current_total === 0 && sumCurrent > 0) {
-      await diagnoseDataAvailability(payload, 'corrigindo KPIs pela soma mensal');
+    let uniqCurr = K0.current_unique;
+    let uniqPrev = K0.prev_unique;
+
+    if (uniqCurr === 0){
+      dbg('🔎 calculando únicos (período atual) via scan…');
+      try{ uniqCurr = await uniqueCountFromRowsOrQuery(payload); }catch(_){}
+    }
+    if (uniqPrev === 0){
+      dbg('🔎 calculando únicos (período anterior) via scan…');
+      try{ const prevRange = previousRangeOf(payload); __lastScanRows = null; uniqPrev = await uniqueCountFromRowsOrQuery(prevRange); }catch(_){}
+    }
+
+    if ((K0.current_total === 0 && sumCurrent > 0) || K0.current_unique === 0){
+      await diagnoseDataAvailability(payload, 'corrigindo KPIs pela soma mensal/únicos');
       const days = daysInclusive(payload.start, payload.end) || 1;
       kpisBlock = {
         current_total: sumCurrent,
         prev_total: sumPrev,
-        current_unique: K0.current_unique || 0,
-        prev_unique: K0.prev_unique || 0,
+        current_unique: uniqCurr||0,
+        prev_unique: uniqPrev||0,
         current_daily_avg: sumCurrent / days,
         prev_daily_avg: sumPrev / days
       };
+    } else if (K0.current_unique === 0 && (uniqCurr||uniqPrev)){
+      // Só únicos corrigidos
+      kpisBlock = { ...K0, current_unique: uniqCurr||0, prev_unique: uniqPrev||0 };
     }
 
     updateKpis(kpisBlock || K0);
@@ -551,7 +585,7 @@ async function setupImportFeature(){
     btn.disabled=true; txt.textContent='Processando...'; spn.style.display='inline-block';
     try{
       dtime('ensureXLSX');
-      await runWithTimeout(ensureXLSX(), 60000, 'ensureXLSX'); // até 60s com multi-cdn
+      await runWithTimeout(ensureXLSX(), 60000, 'ensureXLSX'); // até 60s, multi-CDN com SheetJS
       dtimeEnd('ensureXLSX');
       dbg('ensureXLSX concluído');
 
@@ -631,6 +665,7 @@ async function setupImportFeature(){
       }
 
       alert(`${sent} registros importados com sucesso! Atualizando dashboard…`);
+      __lastScanRows = null; // força reconsulta
       fxDispatchApply();
 
     }catch(err){
